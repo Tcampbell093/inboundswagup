@@ -465,6 +465,7 @@ function setAssemblyDateAndNavigate(dateStr,openAssemblyPage=true){
     activatePage('assemblyPage');
   }
   renderCalendar();
+  await loadAssemblyFromBackend();
   renderAssembly();
   setTimeout(()=>{
     document.getElementById('assemblyPage')?.scrollIntoView({behavior:'smooth',block:'start'});
