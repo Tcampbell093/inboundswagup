@@ -131,29 +131,18 @@ function applyAssemblySyncPayload(payload={}){
   localStorage.setItem(incompleteQueueStorageKey,JSON.stringify(incompleteQueueRows));
   localStorage.setItem(revenueReferenceStorageKey,JSON.stringify(revenueReferenceRows));
 }
-async function loadAssemblyFromBackend() {
-  try {
-    const res = await fetch('/.netlify/functions/assembly');
-    const data = await res.json();
-
-    if (data && data.state) {
-      const state = data.state;
-
-      assemblyBoardRows = state.board || [];
-      availableQueueRows = state.available || [];
-      scheduledQueueRows = state.scheduled || [];
-      incompleteQueueRows = state.incomplete || [];
-      revenueReferenceRows = state.revenue || [];
-
-      // Save locally as backup
-      localStorage.setItem(assemblyBoardStorageKey, JSON.stringify(assemblyBoardRows));
-      localStorage.setItem(queueStorageKey, JSON.stringify(availableQueueRows));
-      localStorage.setItem(scheduledQueueStorageKey, JSON.stringify(scheduledQueueRows));
-      localStorage.setItem(incompleteQueueStorageKey, JSON.stringify(incompleteQueueRows));
-      localStorage.setItem(revenueReferenceStorageKey, JSON.stringify(revenueReferenceRows));
+async function loadAssemblyFromBackend(){
+  try{
+    const data=await assemblyApiRequest('GET');
+    if(data&&data.state){
+      applyAssemblySyncPayload(data.state);
     }
-  } catch (err) {
-    console.log("Backend load failed, using localStorage");
+    assemblySyncEnabled=true;
+  }catch(err){
+    console.warn('Assembly sync unavailable, using browser storage.',err);
+    assemblySyncEnabled=false;
+  }finally{
+    assemblySyncLoaded=true;
   }
 }
 async function syncAssemblyState(){
