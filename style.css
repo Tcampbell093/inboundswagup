@@ -200,9 +200,3 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:14px 12p
   border:1px solid #cfd8e3;
   font-weight:600;
 }
-
-
-.storage-status-chip-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.attendance-sync-pill.is-remote{border-color:#bde5c8;color:#166534;background:#f0fdf4}
-.attendance-sync-pill.is-local{border-color:#f2d7a6;color:#9a5a03;background:#fff}
-.attendance-sync-pill.is-checking{border-color:#bfdcf1;color:#24598b;background:#f5fbff}

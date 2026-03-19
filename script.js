@@ -12,6 +12,13 @@ const queueStorageKey="ops_hub_available_queue_v1";
 const scheduledQueueStorageKey="ops_hub_scheduled_queue_v1";
 const incompleteQueueStorageKey="ops_hub_incomplete_queue_v1";
 const revenueReferenceStorageKey="ops_hub_revenue_reference_v1";
+const assemblyApiBase='/.netlify/functions/assembly';
+const assemblySyncKeys=new Set([assemblyBoardStorageKey,queueStorageKey,scheduledQueueStorageKey,incompleteQueueStorageKey,revenueReferenceStorageKey]);
+let assemblySyncEnabled=false;
+let assemblySyncLoaded=false;
+let assemblySyncInFlight=false;
+let assemblySyncQueued=false;
+let assemblySyncTimer=null;
 
 const attendanceSampleData=[
 {id:1,employeeName:"Diana Parra",department:"Receiving",date:"2026-03-10",mark:"Present"},
@@ -57,67 +64,73 @@ const pages=document.querySelectorAll('.page');
 navButtons.forEach(btn=>btn.addEventListener('click',()=>{navButtons.forEach(b=>b.classList.remove('active'));btn.classList.add('active');pages.forEach(p=>p.classList.remove('active'));document.getElementById(btn.dataset.page).classList.add('active');}));
 
 function loadJson(key,fallback){try{const raw=localStorage.getItem(key);return raw?JSON.parse(raw):fallback}catch{return fallback}}
-function saveJson(key,value){localStorage.setItem(key,JSON.stringify(value))}
-
-const attendanceApiBase='/.netlify/functions/attendance';
-let attendanceBackendMode='checking';
-let attendanceBackendMessage='Checking attendance sync…';
-
-function setAttendanceBackendState(mode,message){
-  attendanceBackendMode=mode;
-  attendanceBackendMessage=message||'';
-  updateAttendanceBackendIndicators();
+function saveJson(key,value){
+  localStorage.setItem(key,JSON.stringify(value));
+  if(assemblySyncKeys.has(key)) scheduleAssemblySync();
 }
-
-function updateAttendanceBackendIndicators(){
-  const pill=document.getElementById('attendanceSyncPill');
-  const text=document.getElementById('attendanceSyncText');
-  if(pill){
-    pill.textContent=attendanceBackendMode==='remote'?'Attendance sync: Neon live':attendanceBackendMode==='local'?'Attendance sync: Local fallback':'Attendance sync: Checking';
-    pill.className=`storage-status-pill attendance-sync-pill ${attendanceBackendMode==='remote'?'is-remote':attendanceBackendMode==='local'?'is-local':'is-checking'}`;
-  }
-  if(text){
-    text.textContent=attendanceBackendMessage||'';
-  }
+function scheduleAssemblySync(){
+  if(!assemblySyncEnabled||!assemblySyncLoaded) return;
+  if(assemblySyncTimer) clearTimeout(assemblySyncTimer);
+  assemblySyncTimer=setTimeout(()=>{assemblySyncTimer=null;syncAssemblyState();},250);
 }
-
-async function attendanceApiRequest(method='GET',payload){
-  const options={method,headers:{}};
-  if(payload!==undefined){
-    options.headers['Content-Type']='application/json';
-    options.body=JSON.stringify(payload);
-  }
-  const response=await fetch(attendanceApiBase,options);
-  let data=null;
-  try{data=await response.json();}catch{}
-  if(!response.ok){
-    const message=data?.error||`Attendance request failed with status ${response.status}.`;
-    throw new Error(message);
-  }
+async function assemblyApiRequest(method='GET',body){
+  const options={method,headers:{'Accept':'application/json'}};
+  if(body!==undefined){options.headers['Content-Type']='application/json';options.body=JSON.stringify(body);}
+  const response=await fetch(assemblyApiBase,options);
+  const raw=await response.text();
+  let data={};
+  try{data=raw?JSON.parse(raw):{}}catch{data={raw}}
+  if(!response.ok) throw new Error(data?.error||`Assembly sync failed (${response.status})`);
   return data;
 }
-
-async function loadAttendanceFromBackend(options={}){
+function buildAssemblySyncPayload(){
+  return {
+    board:assemblyBoardRows,
+    available:availableQueueRows,
+    scheduled:scheduledQueueRows,
+    incomplete:incompleteQueueRows,
+    revenue:revenueReferenceRows
+  };
+}
+function applyAssemblySyncPayload(payload={}){
+  assemblyBoardRows=normalizeAssemblyBoardRows(payload.board||[]);
+  availableQueueRows=normalizeQueueRows(payload.available||[]);
+  scheduledQueueRows=normalizeScheduledQueueRows(payload.scheduled||[]);
+  incompleteQueueRows=normalizeQueueRows(payload.incomplete||[]);
+  revenueReferenceRows=normalizeRevenueReferenceRows(payload.revenue||[]);
+  localStorage.setItem(assemblyBoardStorageKey,JSON.stringify(assemblyBoardRows));
+  localStorage.setItem(queueStorageKey,JSON.stringify(availableQueueRows));
+  localStorage.setItem(scheduledQueueStorageKey,JSON.stringify(scheduledQueueRows));
+  localStorage.setItem(incompleteQueueStorageKey,JSON.stringify(incompleteQueueRows));
+  localStorage.setItem(revenueReferenceStorageKey,JSON.stringify(revenueReferenceRows));
+}
+async function loadAssemblyStateFromBackend(){
   try{
-    const data=await attendanceApiRequest('GET');
-    const records=normalizeAttendanceRecords(data?.records||[]);
-    attendanceRecords=records;
-    saveJson(attendanceStorageKey,attendanceRecords);
-    setAttendanceBackendState('remote',`Shared attendance is live in Neon. ${records.length} record${records.length===1?'':'s'} loaded.`);
-    renderAttendance();
-    if(options.renderHome) renderHome();
-    return records;
-  }catch(error){
-    attendanceRecords=normalizeAttendanceRecords(loadJson(attendanceStorageKey,[]));
-    setAttendanceBackendState('local',`Using browser-only attendance right now. ${error.message}`);
-    renderAttendance();
-    if(options.renderHome) renderHome();
-    return attendanceRecords;
+    const data=await assemblyApiRequest('GET');
+    if(data&&data.state) applyAssemblySyncPayload(data.state);
+    assemblySyncEnabled=true;
+  }catch(err){
+    console.warn('Assembly sync unavailable, using browser storage.',err);
+    assemblySyncEnabled=false;
+  }finally{
+    assemblySyncLoaded=true;
   }
 }
-async function createOrUpdateAttendanceRemote(record){return attendanceApiRequest('POST',record)}
-async function deleteAttendanceRemote(id){return attendanceApiRequest('DELETE',{id})}
-async function clearAttendanceRemote(){return attendanceApiRequest('DELETE',{clearAll:true})}
+async function syncAssemblyState(){
+  if(!assemblySyncEnabled||!assemblySyncLoaded){return;}
+  if(assemblySyncInFlight){assemblySyncQueued=true;return;}
+  assemblySyncInFlight=true;
+  try{
+    const data=await assemblyApiRequest('POST',{state:buildAssemblySyncPayload()});
+    if(data&&data.state) applyAssemblySyncPayload(data.state);
+  }catch(err){
+    console.warn('Assembly sync save failed; keeping local copy.',err);
+    assemblySyncEnabled=false;
+  }finally{
+    assemblySyncInFlight=false;
+    if(assemblySyncQueued){assemblySyncQueued=false;syncAssemblyState();}
+  }
+}
 function normalizeEmployeeNames(list){return Array.from(new Set((list||[]).map(v=>String(v).trim()).filter(Boolean))).sort((a,b)=>a.localeCompare(b))}
 function normalizeEmployees(list){
   const mapped=(list||[]).map(item=>{
@@ -293,95 +306,15 @@ function getFilteredAttendanceRecords(){const q=attendanceSearchInput.value.trim
 function getAttendanceEmployeeStats(name){const personRecords=attendanceRecords.filter(r=>r.employeeName===name).sort((a,b)=>String(a.date).localeCompare(String(b.date)));let totalDemerits=0,credits=0,streakDays=0,bestStreak=0,lastDate=null;personRecords.forEach(record=>{totalDemerits+=Number(record.demerits||0);const currentDate=new Date(record.date+'T00:00:00');let consecutive=!lastDate||Math.round((currentDate-lastDate)/86400000)===1;if(record.mark==='Present')streakDays=consecutive?streakDays+1:1;else streakDays=0;if(streakDays>bestStreak)bestStreak=streakDays;if(streakDays>0&&streakDays%30===0)credits+=1;lastDate=currentDate});return{records:personRecords,totalDays:personRecords.length,present:personRecords.filter(r=>r.mark==='Present').length,credits,netDemerits:Math.max(0,totalDemerits-credits),currentStreak:streakDays,bestStreak}}
 function renderAttendanceRecords(){const filtered=getFilteredAttendanceRecords();if(!filtered.length){attendanceRecordsBody.innerHTML='<tr><td colspan="6" class="empty">No records found for this view.</td></tr>';return filtered}attendanceRecordsBody.innerHTML=filtered.map(r=>`<tr><td><button class="name-button" onclick="openAttendanceProfile('${escapeJs(r.employeeName)}')">${escapeHtml(r.employeeName)}</button></td><td>${escapeHtml(r.department)}</td><td>${escapeHtml(r.date)}</td><td><span class="badge ${toBadgeClass(r.mark)}">${escapeHtml(r.mark)}</span></td><td>${Number(r.demerits||0)}</td><td><div class="row-actions"><button class="btn danger" onclick="deleteAttendanceRecord(${r.id})">Delete</button></div></td></tr>`).join('');return filtered}
 function renderAttendanceSummary(filtered){const names=Array.from(new Set(filtered.map(r=>r.employeeName))).sort((a,b)=>a.localeCompare(b));if(!names.length){attendanceSummaryBody.innerHTML='<tr><td colspan="4" class="empty">No employee summary yet.</td></tr>';return}attendanceSummaryBody.innerHTML=names.map(name=>{const stats=getAttendanceEmployeeStats(name);return`<tr><td><button class="name-button" onclick="openAttendanceProfile('${escapeJs(name)}')">${escapeHtml(name)}</button></td><td>${stats.totalDays}</td><td>${stats.present}</td><td>${stats.netDemerits}</td></tr>`}).join('')}
-function renderAttendanceStats(filtered){const uniqueNames=Array.from(new Set(filtered.map(r=>r.employeeName)));const totals=filtered.reduce((acc,r)=>{acc.entries+=1;if(r.mark==='Present')acc.present+=1;if(r.mark==='Late')acc.late+=1;if(r.mark==='Absent')acc.absent+=1;return acc},{entries:0,present:0,late:0,absent:0});const net=uniqueNames.reduce((sum,name)=>sum+getAttendanceEmployeeStats(name).netDemerits,0);attendanceTotalEntries.textContent=totals.entries;attendancePresentCount.textContent=totals.present;attendanceLateAbsentCount.textContent=`${totals.late} / ${totals.absent}`;attendanceNetDemerits.textContent=net;attendanceCurrentDepartmentPill.textContent=activeAttendanceDepartment;updateAttendanceBackendIndicators()}
+function renderAttendanceStats(filtered){const uniqueNames=Array.from(new Set(filtered.map(r=>r.employeeName)));const totals=filtered.reduce((acc,r)=>{acc.entries+=1;if(r.mark==='Present')acc.present+=1;if(r.mark==='Late')acc.late+=1;if(r.mark==='Absent')acc.absent+=1;return acc},{entries:0,present:0,late:0,absent:0});const net=uniqueNames.reduce((sum,name)=>sum+getAttendanceEmployeeStats(name).netDemerits,0);attendanceTotalEntries.textContent=totals.entries;attendancePresentCount.textContent=totals.present;attendanceLateAbsentCount.textContent=`${totals.late} / ${totals.absent}`;attendanceNetDemerits.textContent=net;attendanceCurrentDepartmentPill.textContent=activeAttendanceDepartment}
 function updateAttendanceUndoButton(){attendanceUndoBtn.disabled=!localStorage.getItem(attendanceBackupKey)}
-function renderAttendance(){
-  renderAttendanceDepartmentTabs();
-  renderAttendanceEmployeeOptions(attendanceEmployeeInput.value);
-  updateAttendanceBackendIndicators();
-  const filtered=renderAttendanceRecords();
-  renderAttendanceSummary(filtered);
-  renderAttendanceStats(filtered);
-  updateAttendanceUndoButton();
-}
-async function addAttendanceRecord(){
-  const employeeName=attendanceEmployeeInput.value.trim();
-  const department=attendanceDepartmentInput.value;
-  const date=attendanceDateInput.value;
-  const mark=attendanceMarkInput.value;
-  const demerits=getDemeritForMark(mark);
-  if(!employeeName){alert('Select an employee first.');attendanceEmployeeInput.focus();return}
-  const duplicate=attendanceRecords.find(r=>r.employeeName===employeeName&&r.department===department&&r.date===date);
-  if(duplicate){
-    const replace=confirm('That employee already has a record for that department and date. Replace it?');
-    if(!replace)return;
-  }
-  const submitButton=document.getElementById('attendanceAddBtn');
-  const originalLabel=submitButton?.textContent||'Add';
-  if(submitButton){submitButton.disabled=true;submitButton.textContent='Saving…'}
-  try{
-    const payload={employeeName,department,date,mark,demerits};
-    if(attendanceBackendMode==='remote' || attendanceBackendMode==='checking'){
-      await createOrUpdateAttendanceRemote(payload);
-      await loadAttendanceFromBackend({renderHome:true});
-    }else{
-      if(duplicate){attendanceRecords=attendanceRecords.filter(r=>!(r.employeeName===employeeName&&r.department===department&&r.date===date))}
-      attendanceRecords.push({id:Date.now(),employeeName,department,date,mark,demerits});
-      saveJson(attendanceStorageKey,attendanceRecords);
-      renderHome();
-    }
-    attendanceEmployeeInput.value='';
-    attendanceMarkInput.value='Present';
-    updateAttendanceAutoDemerit();
-    activeAttendanceDepartment=department;
-    renderAttendance();
-  }catch(error){
-    setAttendanceBackendState('local',`Fell back to browser-only attendance. ${error.message}`);
-    alert(`Could not save to shared attendance yet. ${error.message}`);
-  }finally{
-    if(submitButton){submitButton.disabled=false;submitButton.textContent=originalLabel}
-  }
-}
+function renderAttendance(){renderAttendanceDepartmentTabs();renderAttendanceEmployeeOptions(attendanceEmployeeInput.value);const filtered=renderAttendanceRecords();renderAttendanceSummary(filtered);renderAttendanceStats(filtered);updateAttendanceUndoButton()}
+function addAttendanceRecord(){const employeeName=attendanceEmployeeInput.value.trim();const department=attendanceDepartmentInput.value;const date=attendanceDateInput.value;const mark=attendanceMarkInput.value;const demerits=getDemeritForMark(mark);if(!employeeName){alert('Select an employee first.');attendanceEmployeeInput.focus();return}const duplicate=attendanceRecords.find(r=>r.employeeName===employeeName&&r.department===department&&r.date===date);if(duplicate){const replace=confirm('That employee already has a record for that department and date. Replace it?');if(!replace)return;attendanceRecords=attendanceRecords.filter(r=>!(r.employeeName===employeeName&&r.department===department&&r.date===date))}attendanceRecords.push({id:Date.now(),employeeName,department,date,mark,demerits});saveJson(attendanceStorageKey,attendanceRecords);attendanceEmployeeInput.value='';attendanceMarkInput.value='Present';updateAttendanceAutoDemerit();activeAttendanceDepartment=department;renderAttendance()}
 function manageAttendanceEmployees(){document.querySelector('[data-page="employeesPage"]').click();}
-async function deleteAttendanceRecord(id){
-  try{
-    if(attendanceBackendMode==='remote'){
-      await deleteAttendanceRemote(id);
-      await loadAttendanceFromBackend({renderHome:true});
-    }else{
-      attendanceRecords=attendanceRecords.filter(r=>r.id!==id);
-      saveJson(attendanceStorageKey,attendanceRecords);
-      renderHome();
-    }
-    if(selectedProfileName)openAttendanceProfile(selectedProfileName);
-    renderAttendance();
-  }catch(error){
-    alert(`Could not delete that attendance record from the shared database. ${error.message}`);
-  }
-}
-async function clearAttendanceData(){
-  const remoteMode=attendanceBackendMode==='remote';
-  const confirmed=confirm(remoteMode?'Delete all shared attendance data from Neon for everyone using this site?':'Delete all attendance data from this browser? You can undo this once.');
-  if(!confirmed)return;
-  saveJson(attendanceBackupKey,attendanceRecords);
-  try{
-    if(remoteMode){
-      await clearAttendanceRemote();
-      await loadAttendanceFromBackend({renderHome:true});
-      alert('Shared attendance data cleared from Neon.');
-    }else{
-      attendanceRecords=[];
-      saveJson(attendanceStorageKey,attendanceRecords);
-      renderAttendance();
-      renderHome();
-      alert('Attendance data cleared. Use Undo clear if needed.');
-    }
-  }catch(error){
-    alert(`Could not clear shared attendance. ${error.message}`);
-  }
-}
-function undoAttendanceClear(){const backup=loadJson(attendanceBackupKey,null);if(!backup){alert('No attendance backup found.');return}attendanceRecords=normalizeAttendanceRecords(backup);saveJson(attendanceStorageKey,attendanceRecords);localStorage.removeItem(attendanceBackupKey);renderAttendance();renderHome()}
-function loadAttendanceSampleData(){attendanceRecords=normalizeAttendanceRecords(attendanceSampleData.map(item=>({...item,demerits:getDemeritForMark(item.mark)})));employees=normalizeEmployees(defaultEmployees);saveJson(attendanceStorageKey,attendanceRecords);saveEmployees();localStorage.removeItem(attendanceBackupKey);renderAttendance();renderEmployees();renderHome()}
+function deleteAttendanceRecord(id){attendanceRecords=attendanceRecords.filter(r=>r.id!==id);saveJson(attendanceStorageKey,attendanceRecords);if(selectedProfileName)openAttendanceProfile(selectedProfileName);renderAttendance()}
+function clearAttendanceData(){const confirmed=confirm('Delete all attendance data from this browser? You can undo this once.');if(!confirmed)return;saveJson(attendanceBackupKey,attendanceRecords);attendanceRecords=[];saveJson(attendanceStorageKey,attendanceRecords);renderAttendance();alert('Attendance data cleared. Use Undo clear if needed.');}
+function undoAttendanceClear(){const backup=loadJson(attendanceBackupKey,null);if(!backup){alert('No attendance backup found.');return}attendanceRecords=normalizeAttendanceRecords(backup);saveJson(attendanceStorageKey,attendanceRecords);localStorage.removeItem(attendanceBackupKey);renderAttendance()}
+function loadAttendanceSampleData(){attendanceRecords=normalizeAttendanceRecords(attendanceSampleData.map(item=>({...item,demerits:getDemeritForMark(item.mark)})));employees=normalizeEmployees(defaultEmployees);saveJson(attendanceStorageKey,attendanceRecords);saveEmployees();localStorage.removeItem(attendanceBackupKey);renderAttendance();renderEmployees()}
 function exportAttendanceCsv(){const filtered=getFilteredAttendanceRecords();const rows=[["Employee Name","Department","Date","Mark","Demerits"],...filtered.map(r=>[r.employeeName,r.department,r.date,r.mark,r.demerits])];const csv=rows.map(row=>row.map(cell=>`"${String(cell).replace(/"/g,'""')}"`).join(',')).join('\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`${activeAttendanceDepartment.toLowerCase()}_attendance.csv`;a.click();URL.revokeObjectURL(url)}
 function openAttendanceProfile(name){selectedProfileName=name;const stats=getAttendanceEmployeeStats(name);const latestDepartment=stats.records.length?stats.records[stats.records.length-1].department:'No department yet';profileName.textContent=name;profileSubtitle.textContent=`${latestDepartment} • ${stats.totalDays} total records • ${stats.currentStreak} day current present streak`;profileStats.innerHTML=[{label:'Net Demerits',value:stats.netDemerits},{label:'30-Day Credits',value:stats.credits},{label:'Best Streak',value:stats.bestStreak},{label:'Present Days',value:stats.present}].map(card=>`<div class="mini-card"><div class="mini-label">${card.label}</div><div class="mini-value">${card.value}</div></div>`).join('');if(!stats.records.length){profileHistoryBody.innerHTML='<tr><td colspan="4" class="empty">No history found for this employee.</td></tr>'}else{profileHistoryBody.innerHTML=[...stats.records].sort((a,b)=>String(b.date).localeCompare(String(a.date))).map(r=>`<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.department)}</td><td><span class="badge ${toBadgeClass(r.mark)}">${escapeHtml(r.mark)}</span></td><td>${Number(r.demerits||0)}</td></tr>`).join('')}profileModalBackdrop.classList.add('show')}
 function closeAttendanceProfile(){profileModalBackdrop.classList.remove('show');selectedProfileName=''}
@@ -1684,15 +1617,19 @@ function renderHome(){
 clearErrorForm();
 renderAttendanceEmployeeOptions();
 renderErrorAssociateOptions();
-renderAttendance();
-renderErrors();
-renderEmployees();
-renderCalendar();
-renderAssembly();
-renderQueue();
-renderRevenueReferenceStats();
-renderHome();
-loadAttendanceFromBackend({renderHome:true});
+
+async function bootstrapWarehouseHub(){
+  await loadAssemblyStateFromBackend();
+  renderAttendance();
+  renderErrors();
+  renderEmployees();
+  renderCalendar();
+  renderAssembly();
+  renderQueue();
+  renderRevenueReferenceStats();
+  renderHome();
+}
+bootstrapWarehouseHub();
 queueSearchInput.addEventListener('input',renderQueue);
 queueSortByInput.addEventListener('change',renderQueue);
 queueClearSearchBtn.addEventListener('click',()=>{queueSearchInput.value='';renderQueue();});
@@ -1919,3 +1856,16 @@ const exportStakeholderDashboardBtn=document.getElementById('exportStakeholderDa
 if(exportStakeholderDashboardBtn){
   exportStakeholderDashboardBtn.addEventListener('click',exportStakeholderDashboardDocx);
 }
+
+window.addEventListener('storage',(event)=>{
+  if(!assemblySyncKeys.has(event.key)) return;
+  if(event.key===assemblyBoardStorageKey) assemblyBoardRows=normalizeAssemblyBoardRows(loadJson(assemblyBoardStorageKey,[]));
+  if(event.key===queueStorageKey) availableQueueRows=normalizeQueueRows(loadJson(queueStorageKey,[]));
+  if(event.key===scheduledQueueStorageKey) scheduledQueueRows=normalizeScheduledQueueRows(loadJson(scheduledQueueStorageKey,[]));
+  if(event.key===incompleteQueueStorageKey) incompleteQueueRows=normalizeQueueRows(loadJson(incompleteQueueStorageKey,[]));
+  if(event.key===revenueReferenceStorageKey) revenueReferenceRows=normalizeRevenueReferenceRows(loadJson(revenueReferenceStorageKey,[]));
+  renderAssembly();
+  renderQueue();
+  renderRevenueReferenceStats();
+  renderHome();
+});
