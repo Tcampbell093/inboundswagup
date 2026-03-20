@@ -120,16 +120,26 @@ function buildAssemblySyncPayload(){
   };
 }
 function applyAssemblySyncPayload(payload={}){
-  assemblyBoardRows=normalizeAssemblyBoardRows(payload.board||[]);
-  availableQueueRows=normalizeQueueRows(payload.available||[]);
-  scheduledQueueRows=normalizeScheduledQueueRows(payload.scheduled||[]);
-  incompleteQueueRows=normalizeQueueRows(payload.incomplete||[]);
-  revenueReferenceRows=normalizeRevenueReferenceRows(payload.revenue||[]);
-  localStorage.setItem(assemblyBoardStorageKey,JSON.stringify(assemblyBoardRows));
-  localStorage.setItem(queueStorageKey,JSON.stringify(availableQueueRows));
-  localStorage.setItem(scheduledQueueStorageKey,JSON.stringify(scheduledQueueRows));
-  localStorage.setItem(incompleteQueueStorageKey,JSON.stringify(incompleteQueueRows));
-  localStorage.setItem(revenueReferenceStorageKey,JSON.stringify(revenueReferenceRows));
+  if(Array.isArray(payload.board)){
+    assemblyBoardRows=normalizeAssemblyBoardRows(payload.board);
+    localStorage.setItem(assemblyBoardStorageKey,JSON.stringify(assemblyBoardRows));
+  }
+  if(Array.isArray(payload.available)){
+    availableQueueRows=normalizeQueueRows(payload.available);
+    localStorage.setItem(queueStorageKey,JSON.stringify(availableQueueRows));
+  }
+  if(Array.isArray(payload.scheduled)){
+    scheduledQueueRows=normalizeScheduledQueueRows(payload.scheduled);
+    localStorage.setItem(scheduledQueueStorageKey,JSON.stringify(scheduledQueueRows));
+  }
+  if(Array.isArray(payload.incomplete)){
+    incompleteQueueRows=normalizeQueueRows(payload.incomplete);
+    localStorage.setItem(incompleteQueueStorageKey,JSON.stringify(incompleteQueueRows));
+  }
+  if(Array.isArray(payload.revenue)){
+    revenueReferenceRows=normalizeRevenueReferenceRows(payload.revenue);
+    localStorage.setItem(revenueReferenceStorageKey,JSON.stringify(revenueReferenceRows));
+  }
 }
 async function loadAssemblyFromBackend(){
   try{
@@ -453,7 +463,7 @@ function formatIsoDateForDisplay(dateStr){
   if(Number.isNaN(d.getTime())) return dateStr;
   return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
 }
-function setAssemblyDateAndNavigate(dateStr,openAssemblyPage=true){
+async function setAssemblyDateAndNavigate(dateStr,openAssemblyPage=true){
   const trimmed=String(dateStr||'').trim();
   if(!trimmed || !assemblyDateInput) return;
   assemblyDateInput.value=trimmed;
@@ -1641,7 +1651,7 @@ renderErrorAssociateOptions();
 restoreActivePage();
 
 async function bootstrapWarehouseHub(){
-  await loadAssemblyStateFromBackend();
+  await loadAssemblyFromBackend();
   renderAttendance();
   renderErrors();
   renderEmployees();
