@@ -492,8 +492,33 @@
 
     
     <!-- Queue -->
-    <section id="queuePage" class="page">
-      <div class="hero">
+    
+<section id="queuePage" class="page queue-page-redesign">
+      <div class="queue-sticky-bar">
+        <div class="queue-sticky-inner">
+          <div class="queue-sticky-group">
+            <div class="queue-sticky-label">Queue import</div>
+            <div class="queue-sticky-actions">
+              <input id="queueFileInput" type="file" accept=".xlsx,.xls" />
+              <button class="btn" id="queueImportBtn">Import report</button>
+              <button class="btn secondary" id="queueClearBtn">Clear queue</button>
+            </div>
+            <div id="queueImportStatus" class="queue-inline-status">Waiting for file.</div>
+          </div>
+          <div class="queue-sticky-divider"></div>
+          <div class="queue-sticky-group">
+            <div class="queue-sticky-label">Revenue reference</div>
+            <div class="queue-sticky-actions">
+              <input id="revenueFileInput" type="file" accept=".xlsx,.xls" />
+              <button class="btn" id="revenueImportBtn">Import revenue reference</button>
+              <button class="btn secondary" id="revenueClearBtn">Clear revenue reference</button>
+            </div>
+            <div id="revenueImportStatus" class="queue-inline-status">Waiting for revenue reference file.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero queue-hero">
         <div>
           <div class="eyebrow">Available Queue</div>
           <h2>Salesforce-ready pack builders</h2>
@@ -501,92 +526,168 @@
         </div>
       </div>
 
-      <div class="stats">
-        <div class="card"><div class="stat-label">Ready builders</div><div class="stat-value" id="queueImportedCount">0</div><div class="stat-hint">Ready-to-pack builders</div></div>
-        <div class="card"><div class="stat-label">Incomplete builders</div><div class="stat-value" id="queueIncompleteCount">0</div><div class="stat-hint">Pending or partial candidates</div></div>
-        <div class="card"><div class="stat-label">Scheduled builders</div><div class="stat-value" id="queueScheduledCount">0</div><div class="stat-hint">Already placed on the board</div></div>
-        <div class="card"><div class="stat-label">Earliest IHD</div><div class="stat-value" id="queueEarliestIhd">—</div><div class="stat-hint">Fast urgency check</div></div>
-      </div>
+      <section class="queue-stats-shell">
+        <div class="queue-stat-group">
+          <div class="queue-stat-group-title">Operations</div>
+          <div class="queue-stat-grid">
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Ready builders</span>
+              <strong class="queue-stat-value" id="queueImportedCount">0</strong>
+              <span class="queue-stat-subtle">Ready-to-pack builders</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Incomplete builders</span>
+              <strong class="queue-stat-value" id="queueIncompleteCount">0</strong>
+              <span class="queue-stat-subtle">Pending or partial candidates</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Scheduled builders</span>
+              <strong class="queue-stat-value" id="queueScheduledCount">0</strong>
+              <span class="queue-stat-subtle">Already placed on the board</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Earliest IHD</span>
+              <strong class="queue-stat-value" id="queueEarliestIhd">—</strong>
+              <span class="queue-stat-subtle">Fast urgency check</span>
+            </article>
+          </div>
+        </div>
 
-      <div class="stats" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-top:0">
-        <div class="card"><div class="stat-label">Ready Units</div><div class="stat-value" id="queueReadyUnitsStat">0</div><div class="stat-hint"><span id="queueReadyPbsStat">0</span> PBs currently ready</div></div>
-        <div class="card"><div class="stat-label">Pending Units</div><div class="stat-value" id="queuePendingUnitsStat">0</div><div class="stat-hint"><span id="queuePendingPbsStat">0</span> PBs currently pending</div></div>
-        <div class="card"><div class="stat-label">Scheduled Units</div><div class="stat-value" id="queueScheduledUnitsStat">0</div><div class="stat-hint"><span id="queueScheduledPbsStat">0</span> PB rows currently scheduled</div></div>
-        <div class="card"><div class="stat-label">Scheduled Today</div><div class="stat-value" id="queueScheduledTodayUnitsStat">0</div><div class="stat-hint"><span id="queueScheduledTodayPbsStat">0</span> PB rows on the selected Assembly day</div></div>
-      </div>
+        <div class="queue-stat-group">
+          <div class="queue-stat-group-title">Volume</div>
+          <div class="queue-stat-grid">
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Ready Units</span>
+              <strong class="queue-stat-value" id="queueReadyUnitsStat">0</strong>
+              <span class="queue-stat-subtle"><span id="queueReadyPbsStat">0</span> PBs currently ready</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Pending Units</span>
+              <strong class="queue-stat-value" id="queuePendingUnitsStat">0</strong>
+              <span class="queue-stat-subtle"><span id="queuePendingPbsStat">0</span> PBs currently pending</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Scheduled Units</span>
+              <strong class="queue-stat-value" id="queueScheduledUnitsStat">0</strong>
+              <span class="queue-stat-subtle"><span id="queueScheduledPbsStat">0</span> PB rows currently scheduled</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Scheduled Today</span>
+              <strong class="queue-stat-value" id="queueScheduledTodayUnitsStat">0</strong>
+              <span class="queue-stat-subtle"><span id="queueScheduledTodayPbsStat">0</span> PB rows on the selected Assembly day</span>
+            </article>
+          </div>
+        </div>
 
-      <div class="stats" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-top:0">
-        <div class="card"><div class="stat-label">Issue Hold PBs</div><div class="stat-value" id="queueIssueHoldCountStat">0</div><div class="stat-hint">Pack builders currently blocked</div></div>
-        <div class="card"><div class="stat-label">Issue Hold Units</div><div class="stat-value" id="queueIssueHoldUnitsStat">0</div><div class="stat-hint">Units currently tied up by issues</div></div>
-        <div class="card"><div class="stat-label">Issue Hold Revenue</div><div class="stat-value" id="queueIssueHoldRevenueStat">$0</div><div class="stat-hint">Estimated subtotal currently blocked</div></div>
-        <div class="card"><div class="stat-label">Top Issue Type</div><div class="stat-value" id="queueIssueHoldTopTypeStat">—</div><div class="stat-hint">Most common current hold reason</div></div>
-      </div>
+        <div class="queue-stat-group">
+          <div class="queue-stat-group-title">Risk & revenue</div>
+          <div class="queue-stat-grid">
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Issue Hold PBs</span>
+              <strong class="queue-stat-value" id="queueIssueHoldCountStat">0</strong>
+              <span class="queue-stat-subtle">Pack builders currently blocked</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Issue Hold Units</span>
+              <strong class="queue-stat-value" id="queueIssueHoldUnitsStat">0</strong>
+              <span class="queue-stat-subtle">Units currently tied up by issues</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Issue Hold Revenue</span>
+              <strong class="queue-stat-value" id="queueIssueHoldRevenueStat">$0</strong>
+              <span class="queue-stat-subtle">Estimated subtotal currently blocked</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Top Issue Type</span>
+              <strong class="queue-stat-value" id="queueIssueHoldTopTypeStat">—</strong>
+              <span class="queue-stat-subtle">Most common current hold reason</span>
+            </article>
+          </div>
+        </div>
 
-      <div class="queue-upload-grid">
-        <div class="card">
-          <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Import Salesforce report</h3>
-          <div class="queue-dropzone">
-            <div class="eyebrow">Recommended export</div>
-            <p class="subtitle" style="max-width:none">Use <strong>Details Only → Excel (.xlsx)</strong>. This queue groups repeated product rows into one Pack Builder row and rebuilds the Salesforce link from the Pack Builder ID.</p>
-            <input id="queueFileInput" type="file" accept=".xlsx,.xls" />
-            <div id="queueImportStatus" class="small-note" style="margin-top:12px;padding:10px 12px">Waiting for file.</div>
-            <div class="toolbar" style="margin-top:14px;margin-bottom:0">
-              <div class="left"><button class="btn" id="queueImportBtn">Import report</button><button class="btn secondary" id="queueClearBtn">Clear queue</button></div>
+        <div class="queue-stat-group">
+          <div class="queue-stat-group-title">Import health</div>
+          <div class="queue-stat-grid">
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Imported rows</span>
+              <strong class="queue-stat-value" id="queueRawRowsCount">0</strong>
+              <span class="queue-stat-subtle">Raw detail rows read from file</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Grouped builders</span>
+              <strong class="queue-stat-value" id="queueGroupedRowsCount">0</strong>
+              <span class="queue-stat-subtle">One row per Pack Builder</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Priority units</span>
+              <strong class="queue-stat-value" id="queuePriorityUnits">0</strong>
+              <span class="queue-stat-subtle">Units currently marked priority</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Sort mode</span>
+              <strong class="queue-stat-value" id="queueSortModeLabel">IHD</strong>
+              <span class="queue-stat-subtle">Current queue sorting</span>
+            </article>
+          </div>
+        </div>
+
+        <div class="queue-stat-group">
+          <div class="queue-stat-group-title">Revenue reference</div>
+          <div class="queue-stat-grid">
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Revenue rows</span>
+              <strong class="queue-stat-value" id="revenueRowsCount">0</strong>
+              <span class="queue-stat-subtle">Reference rows currently stored</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Lookup keys</span>
+              <strong class="queue-stat-value" id="revenueKeysCount">0</strong>
+              <span class="queue-stat-subtle">Unique Sales Orders detected</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Subtotal total</span>
+              <strong class="queue-stat-value" id="revenueSubtotalTotal">0</strong>
+              <span class="queue-stat-subtle">Sum of Original Subtotal values</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Earliest IHD</span>
+              <strong class="queue-stat-value" id="revenueEarliestIhd">—</strong>
+              <span class="queue-stat-subtle">Earliest IHD found in reference</span>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <div class="card queue-controls-card">
+        <div class="toolbar queue-controls-toolbar" style="margin-bottom:0">
+          <div class="left queue-controls-left">
+            <div class="field queue-control-field">
+              <label for="queueSearch">Search</label>
+              <input id="queueSearch" placeholder="PB, SORD, account, owner, status, note..." />
+            </div>
+            <div class="field queue-control-field queue-control-select">
+              <label for="queueSortBy">Sort By</label>
+              <select id="queueSortBy">
+                <option value="ihd_asc">IHD earliest first</option>
+                <option value="units_desc">Units highest first</option>
+                <option value="account_asc">Account A-Z</option>
+                <option value="pb_asc">Pack Builder A-Z</option>
+              </select>
             </div>
           </div>
-          <div class="queue-metrics">
-            <div class="card" style="padding:16px"><div class="stat-label">Imported rows</div><div class="stat-value" id="queueRawRowsCount">0</div><div class="stat-hint">Raw detail rows read from file</div></div>
-            <div class="card" style="padding:16px"><div class="stat-label">Grouped builders</div><div class="stat-value" id="queueGroupedRowsCount">0</div><div class="stat-hint">One row per Pack Builder</div></div>
-            <div class="card" style="padding:16px"><div class="stat-label">Priority units</div><div class="stat-value" id="queuePriorityUnits">0</div><div class="stat-hint">Units currently marked priority</div></div>
-            <div class="card" style="padding:16px"><div class="stat-label">Sort mode</div><div class="stat-value" id="queueSortModeLabel">IHD</div><div class="stat-hint">Current queue sorting</div></div>
+          <div class="right queue-controls-right">
+            <button class="btn secondary" id="queueClearSearchBtn">Clear Search</button>
           </div>
         </div>
-
-        <div class="card">
-          <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Queue controls</h3>
-          <div class="form-grid" style="grid-template-columns:1fr 1fr auto;align-items:end">
-            <div class="field"><label for="queueSearch">Search</label><input id="queueSearch" placeholder="PB, SORD, account, owner, status, note..." /></div>
-            <div class="field"><label for="queueSortBy">Sort By</label><select id="queueSortBy"><option value="ihd_asc">IHD earliest first</option><option value="units_desc">Units highest first</option><option value="account_asc">Account A-Z</option><option value="pb_asc">Pack Builder A-Z</option></select></div>
-            <div class="toolbar right" style="margin:0;justify-content:flex-end"><button class="btn secondary" id="queueClearSearchBtn">Clear Search</button></div>
-          </div>
-          <div class="small-note"><strong>Current scope:</strong> import one Salesforce report, route by status into Ready vs Incomplete/Pending, then schedule either type into Assembly. Scheduled rows still live in their own section below.</div>
-        </div>
+        <div class="queue-controls-note">Import one Salesforce report, let the site route builders into Ready vs Incomplete/Pending, and schedule either type into Assembly. Scheduled rows stay in their own section below.</div>
       </div>
 
-      <div class="card" style="margin-top:20px">
-        <div class="toolbar" style="margin-bottom:14px">
-          <div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Revenue reference import</h3></div>
-          <div class="right"><span class="pill">ASM-080</span></div>
-        </div>
-        <div class="queue-upload-grid" style="grid-template-columns:1.1fr .9fr">
-          <div>
-            <div class="queue-dropzone">
-              <div class="eyebrow">Revenue / IHD reference</div>
-              <p class="subtitle" style="max-width:none">Import the report that contains the <strong>Original Subtotal</strong> and <strong>In-Hands Date</strong>. This phase only stores the revenue reference safely so the next phase can match it to Pack Builders by Sales Order.</p>
-              <input id="revenueFileInput" type="file" accept=".xlsx,.xls" />
-              <div id="revenueImportStatus" class="small-note" style="margin-top:12px;padding:10px 12px">Waiting for revenue reference file.</div>
-              <div class="toolbar" style="margin-top:14px;margin-bottom:0">
-                <div class="left"><button class="btn" id="revenueImportBtn">Import revenue reference</button><button class="btn secondary" id="revenueClearBtn">Clear revenue reference</button></div>
-              </div>
-            </div>
-          </div>
-          <div>
-            <div class="queue-metrics" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:0">
-              <div class="card" style="padding:16px"><div class="stat-label">Revenue rows</div><div class="stat-value" id="revenueRowsCount">0</div><div class="stat-hint">Reference rows currently stored</div></div>
-              <div class="card" style="padding:16px"><div class="stat-label">Lookup keys</div><div class="stat-value" id="revenueKeysCount">0</div><div class="stat-hint">Unique Sales Orders detected</div></div>
-              <div class="card" style="padding:16px"><div class="stat-label">Subtotal total</div><div class="stat-value" id="revenueSubtotalTotal">0</div><div class="stat-hint">Sum of Original Subtotal values</div></div>
-              <div class="card" style="padding:16px"><div class="stat-label">Earliest IHD</div><div class="stat-value" id="revenueEarliestIhd">—</div><div class="stat-hint">Earliest IHD found in reference</div></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card" style="margin-top:20px">
+      <div class="card queue-section-card" style="margin-top:20px">
         <div class="toolbar" style="margin-bottom:14px">
           <div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Scheduled pack builders</h3></div>
           <div class="right"><label for="scheduledQueueLimit" style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="scheduledQueueLimit"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="all">All</option></select></div>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap queue-table-wrap">
           <table>
             <thead><tr><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>Scheduled For</th><th>Scheduled At</th><th>Flags</th><th>Schedule Note</th><th>Open</th><th>Action</th></tr></thead>
             <tbody id="scheduledQueueTableBody"></tbody>
@@ -594,13 +695,13 @@
         </div>
       </div>
 
-      <div class="card" style="margin-top:20px">
+      <div class="card queue-section-card" style="margin-top:20px">
         <div class="toolbar" style="margin-bottom:14px">
           <div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Issue Hold</h3></div>
           <div class="right"><label for="issueHoldQueueLimit" style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="issueHoldQueueLimit"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="all">All</option></select></div>
         </div>
-        <div class="small-note" style="margin-top:0;margin-bottom:14px"><strong>Use this when a pack builder is real but blocked.</strong> Issue Hold keeps the work visible, stores the problem, and keeps the revenue impact from disappearing.</div>
-        <div class="table-wrap">
+        <div class="queue-controls-note queue-hold-note"><strong>Use this when a pack builder is real but blocked.</strong> Issue Hold keeps the work visible, stores the problem, and keeps the revenue impact from disappearing.</div>
+        <div class="table-wrap queue-table-wrap">
           <table>
             <thead><tr><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>IHD</th><th>Issue Type</th><th>Hold Note</th><th>Hold Date</th><th>Revenue</th><th>Open</th><th>Action</th></tr></thead>
             <tbody id="issueHoldQueueTableBody"></tbody>
@@ -608,12 +709,12 @@
         </div>
       </div>
 
-      <div class="card" style="margin-top:20px">
+      <div class="card queue-section-card" style="margin-top:20px">
         <div class="toolbar" style="margin-bottom:14px">
           <div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Ready pack builders</h3></div>
           <div class="right"><label for="readyQueueLimit" style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="readyQueueLimit"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="all">All</option></select></div>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap queue-table-wrap">
           <table>
             <thead><tr><th>Priority</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Qty</th><th>Total Products</th><th>Units</th><th>IHD</th><th>Status</th><th>Flags</th><th>Account Owner</th><th>Open</th><th>Action</th></tr></thead>
             <tbody id="queueTableBody"></tbody>
@@ -621,12 +722,12 @@
         </div>
       </div>
 
-      <div class="card" style="margin-top:20px">
+      <div class="card queue-section-card" style="margin-top:20px">
         <div class="toolbar" style="margin-bottom:14px">
           <div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Incomplete / pending pack builders</h3></div>
           <div class="right"><label for="incompleteQueueLimit" style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="incompleteQueueLimit"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="all">All</option></select></div>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap queue-table-wrap">
           <table>
             <thead><tr><th>Priority</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Qty</th><th>Total Products</th><th>Units</th><th>IHD</th><th>Status</th><th>Flags</th><th>Account Owner</th><th>Open</th><th>Action</th></tr></thead>
             <tbody id="incompleteQueueTableBody"></tbody>
@@ -634,11 +735,7 @@
         </div>
       </div>
     </section>
-  
-
-    
-    <!-- Inbound Workflow -->
-    <section id="workflowInboundPage" class="page">
+<section id="workflowInboundPage" class="page">
       <div class="hero">
         <div>
           <div class="eyebrow">QA Inbound Workflow</div>
