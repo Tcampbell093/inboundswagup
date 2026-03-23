@@ -743,30 +743,88 @@ function renderAssembly(){
     const actionLabel=isPackBuilderWorkType(row.workType)?'Unschedule':'Delete';
 
     if(assemblyInlineEditId===row.id){
-      return `<tr>
-        <td><select id="assemblyEditWorkType"><option value="pack_builder" ${row.workType==='pack_builder'?'selected':''}>Pack Builder</option><option value="jira" ${row.workType==='jira'?'selected':''}>Jira</option><option value="placeholder" ${row.workType==='placeholder'?'selected':''}>Placeholder</option></select></td>
-        <td><input id="assemblyEditPb" value="${escapeHtml(row.pb)}" /></td>
-        <td><input id="assemblyEditSo" value="${escapeHtml(row.so)}" /></td>
-        <td><input id="assemblyEditAccount" value="${escapeHtml(row.account)}" /></td>
-        <td><input id="assemblyEditQty" type="number" min="0" value="${row.qty}" oninput="updateInlineAssemblyUnitsPreview()" /></td>
-        <td><input id="assemblyEditFullQty" type="number" min="0" value="${Number(row.fullQty||row.qty||0)}" /></td>
-        <td><input id="assemblyEditProducts" type="number" min="0" value="${row.products}" oninput="updateInlineAssemblyUnitsPreview()" /></td>
-        <td><input id="assemblyEditUnitsPreview" value="${units.toLocaleString()}" disabled /></td>
-        <td><input id="assemblyEditStatus" value="${escapeHtml(row.status)}" /></td>
-        <td><input id="assemblyEditIhd" type="date" value="${escapeHtml(getEffectiveIhdForRow(row)||'')}" /></td>
-        <td><input id="assemblyEditExternalLink" value="${escapeHtml(row.externalLink||'')}" placeholder="Optional URL" /></td>
-        <td>$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-        <td><select id="assemblyEditStage"><option value="aa" ${row.stage==='aa'?'selected':''}>A.A.</option><option value="print" ${row.stage==='print'?'selected':''}>Print</option><option value="picked" ${row.stage==='picked'?'selected':''}>Picked</option><option value="line" ${row.stage==='line'?'selected':''}>Line</option><option value="dpmo" ${row.stage==='dpmo'?'selected':''}>DPMO</option><option value="done" ${row.stage==='done'?'selected':''}>Done</option></select></td>
-        <td><input id="assemblyEditRescheduleNote" value="${escapeHtml(row.rescheduleNote||'')}" placeholder="Hold, missing units, box issue..." /></td>
-        <td><div class="row-actions"><button class="btn" onclick="saveAssemblyBoardRow(${row.id})">Save</button><button class="btn secondary" onclick="cancelAssemblyBoardEdit()">Cancel</button></div></td>
+      const colspan=assemblyShowDetails?14:6;
+      return `<tr class="assembly-inline-edit-row">
+        <td colspan="${colspan}">
+          <div class="assembly-edit-card">
+            <div class="assembly-edit-card__header">
+              <div>
+                <div class="mini-label">Editing Assembly Row</div>
+                <div class="assembly-edit-card__title">${escapeHtml(row.pb||row.account||'Assembly row')}</div>
+              </div>
+              <div class="assembly-edit-card__meta">
+                <span class="stage-pill ${escapeHtml(row.stage||'aa')}">${escapeHtml(formatAssemblyStageLabel(row.stage))}</span>
+                <span class="assembly-edit-card__subtotal">$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+              </div>
+            </div>
+            <div class="assembly-edit-grid">
+              <label class="assembly-edit-field">
+                <span>Work Type</span>
+                <select id="assemblyEditWorkType"><option value="pack_builder" ${row.workType==='pack_builder'?'selected':''}>Pack Builder</option><option value="jira" ${row.workType==='jira'?'selected':''}>Jira</option><option value="placeholder" ${row.workType==='placeholder'?'selected':''}>Placeholder</option></select>
+              </label>
+              <label class="assembly-edit-field">
+                <span>Pack Builder</span>
+                <input id="assemblyEditPb" value="${escapeHtml(row.pb)}" />
+              </label>
+              <label class="assembly-edit-field">
+                <span>Sales Order</span>
+                <input id="assemblyEditSo" value="${escapeHtml(row.so)}" />
+              </label>
+              <label class="assembly-edit-field">
+                <span>Account</span>
+                <input id="assemblyEditAccount" value="${escapeHtml(row.account)}" />
+              </label>
+              <label class="assembly-edit-field">
+                <span>Qty</span>
+                <input id="assemblyEditQty" type="number" min="0" value="${row.qty}" oninput="updateInlineAssemblyUnitsPreview()" />
+              </label>
+              <label class="assembly-edit-field">
+                <span>Full Qty</span>
+                <input id="assemblyEditFullQty" type="number" min="0" value="${Number(row.fullQty||row.qty||0)}" />
+              </label>
+              <label class="assembly-edit-field">
+                <span>Total Products</span>
+                <input id="assemblyEditProducts" type="number" min="0" value="${row.products}" oninput="updateInlineAssemblyUnitsPreview()" />
+              </label>
+              <label class="assembly-edit-field">
+                <span>Units</span>
+                <input id="assemblyEditUnitsPreview" value="${units.toLocaleString()}" disabled />
+              </label>
+              <label class="assembly-edit-field">
+                <span>Status</span>
+                <input id="assemblyEditStatus" value="${escapeHtml(row.status)}" />
+              </label>
+              <label class="assembly-edit-field">
+                <span>IHD</span>
+                <input id="assemblyEditIhd" type="date" value="${escapeHtml(getEffectiveIhdForRow(row)||'')}" />
+              </label>
+              <label class="assembly-edit-field">
+                <span>Current Stage</span>
+                <select id="assemblyEditStage"><option value="aa" ${row.stage==='aa'?'selected':''}>A.A.</option><option value="print" ${row.stage==='print'?'selected':''}>Print</option><option value="picked" ${row.stage==='picked'?'selected':''}>Picked</option><option value="line" ${row.stage==='line'?'selected':''}>Line</option><option value="dpmo" ${row.stage==='dpmo'?'selected':''}>DPMO</option><option value="done" ${row.stage==='done'?'selected':''}>Done</option></select>
+              </label>
+              <label class="assembly-edit-field assembly-edit-field--wide">
+                <span>External Link</span>
+                <input id="assemblyEditExternalLink" value="${escapeHtml(row.externalLink||'')}" placeholder="Optional URL" />
+              </label>
+              <label class="assembly-edit-field assembly-edit-field--wide">
+                <span>Reschedule / Hold Note</span>
+                <input id="assemblyEditRescheduleNote" value="${escapeHtml(row.rescheduleNote||'')}" placeholder="Hold, missing units, box issue..." />
+              </label>
+            </div>
+            <div class="assembly-edit-actions">
+              <button class="btn" onclick="saveAssemblyBoardRow(${row.id})">Save</button>
+              <button class="btn secondary" onclick="cancelAssemblyBoardEdit()">Cancel</button>
+            </div>
+          </div>
+        </td>
       </tr>`;
     }
 
     if(!assemblyShowDetails){
-      return `<tr><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${units.toLocaleString()}</td><td><select onchange="setAssemblyStage(${row.id},this.value)"><option value="aa" ${row.stage==='aa'?'selected':''}>A.A.</option><option value="print" ${row.stage==='print'?'selected':''}>Print</option><option value="picked" ${row.stage==='picked'?'selected':''}>Picked</option><option value="line" ${row.stage==='line'?'selected':''}>Line</option><option value="dpmo" ${row.stage==='dpmo'?'selected':''}>DPMO</option><option value="done" ${row.stage==='done'?'selected':''}>Done</option></select></td><td>${escapeHtml(row.status||'—')}</td><td><div class="row-actions">${openLink?`<a class="btn secondary" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:''}<button class="btn secondary" onclick="editAssemblyBoardRow(${row.id})">Edit</button><button class="btn warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button></div></td></tr>`;
+      return `<tr><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${units.toLocaleString()}</td><td><span class="stage-pill ${escapeHtml(row.stage||'aa')}">${escapeHtml(formatAssemblyStageLabel(row.stage))}</span></td><td>${escapeHtml(row.status||'—')}</td><td><div class="row-actions">${openLink?`<a class="btn secondary" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:''}<button class="btn secondary" onclick="hideHoverActionOverlay();editAssemblyBoardRow(${row.id})">Edit</button><button class="btn secondary" onclick="openAssemblyStagePicker(event,${row.id})">Stage</button>${isPackBuilderWorkType(row.workType)?`<button class="btn warn" onclick="holdAssemblyBoardRow(${row.id})">Hold</button>`:''}<button class="btn warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button></div></td></tr>`;
     }
 
-    return `<tr><td>${escapeHtml(getAssemblyWorkTypeLabel(row.workType)+(row.isPartial?' • Partial':''))}</td><td>${escapeHtml(row.pb)}</td><td>${escapeHtml(row.so)}</td><td>${escapeHtml(row.account)}</td><td>${formatAssemblyQty(row)}</td><td>${row.products}</td><td>${units.toLocaleString()}</td><td>${escapeHtml(row.status||'—')}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${openLink?`<a class="queue-link" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td>$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td><select onchange="setAssemblyStage(${row.id},this.value)"><option value="aa" ${row.stage==='aa'?'selected':''}>A.A.</option><option value="print" ${row.stage==='print'?'selected':''}>Print</option><option value="picked" ${row.stage==='picked'?'selected':''}>Picked</option><option value="line" ${row.stage==='line'?'selected':''}>Line</option><option value="dpmo" ${row.stage==='dpmo'?'selected':''}>DPMO</option><option value="done" ${row.stage==='done'?'selected':''}>Done</option></select></td><td>${escapeHtml(row.rescheduleNote||'—')}</td><td><div class="row-actions"><button class="btn secondary" onclick="editAssemblyBoardRow(${row.id})">Edit</button><button class="btn secondary" onclick="rescheduleAssemblyBoardRow(${row.id})">Reschedule</button><button class="btn warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button></div></td></tr>`;
+    return `<tr><td>${escapeHtml(getAssemblyWorkTypeLabel(row.workType)+(row.isPartial?' • Partial':''))}</td><td>${escapeHtml(row.pb)}</td><td>${escapeHtml(row.so)}</td><td>${escapeHtml(row.account)}</td><td>${formatAssemblyQty(row)}</td><td>${row.products}</td><td>${units.toLocaleString()}</td><td>${escapeHtml(row.status||'—')}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${openLink?`<a class="queue-link" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td>$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td><span class="stage-pill ${escapeHtml(row.stage||'aa')}">${escapeHtml(formatAssemblyStageLabel(row.stage))}</span></td><td>${escapeHtml(row.rescheduleNote||'—')}</td><td><div class="row-actions">${openLink?`<a class="btn secondary" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:''}<button class="btn secondary" onclick="hideHoverActionOverlay();editAssemblyBoardRow(${row.id})">Edit</button><button class="btn secondary" onclick="openAssemblyStagePicker(event,${row.id})">Stage</button>${isPackBuilderWorkType(row.workType)?`<button class="btn warn" onclick="holdAssemblyBoardRow(${row.id})">Hold</button>`:''}<button class="btn secondary" onclick="rescheduleAssemblyBoardRow(${row.id})">Reschedule</button><button class="btn warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button></div></td></tr>`;
   }).join('');
 }
 function clearAssemblyBoardForm(){
@@ -923,6 +981,68 @@ function saveAssemblyBoardRow(id){
   renderHome();
   renderCalendar();
 }
+function formatAssemblyStageLabel(stage){
+  const map={aa:'A.A.',print:'Print',picked:'Picked',line:'Line',dpmo:'DPMO',done:'Done'};
+  return map[String(stage||'').trim().toLowerCase()]||String(stage||'—').trim()||'—';
+}
+function closeAssemblyStageMenu(){
+  const existing=document.querySelector('.assembly-stage-menu');
+  if(existing) existing.remove();
+}
+function openAssemblyStagePicker(event,id){
+  const row=assemblyBoardRows.find(item=>String(item.id)===String(id));
+  if(!row) return;
+  closeAssemblyStageMenu();
+  const menu=document.createElement('div');
+  menu.className='assembly-stage-menu';
+  const stages=[
+    {value:'aa',label:'A.A.'},
+    {value:'print',label:'Print'},
+    {value:'picked',label:'Picked'},
+    {value:'line',label:'Line'},
+    {value:'dpmo',label:'DPMO'},
+    {value:'done',label:'Done'}
+  ];
+  stages.forEach(stage=>{
+    const button=document.createElement('button');
+    button.type='button';
+    button.className=`assembly-stage-menu__option${row.stage===stage.value?' is-active':''}`;
+    button.textContent=stage.label;
+    button.addEventListener('click',ev=>{
+      ev.preventDefault();
+      ev.stopPropagation();
+      setAssemblyStage(id,stage.value);
+      closeAssemblyStageMenu();
+      hideHoverActionOverlay();
+    });
+    menu.appendChild(button);
+  });
+  document.body.appendChild(menu);
+  const anchor=(event && event.currentTarget) ? event.currentTarget : document.body;
+  const rect=anchor.getBoundingClientRect();
+  const menuRect=menu.getBoundingClientRect();
+  let top=window.scrollY + rect.bottom + 10;
+  let left=window.scrollX + rect.left + (rect.width/2) - (menuRect.width/2);
+  const maxLeft=window.scrollX + window.innerWidth - menuRect.width - 12;
+  left=Math.max(window.scrollX + 12, Math.min(left, maxLeft));
+  const maxTop=window.scrollY + window.innerHeight - menuRect.height - 12;
+  if(top>maxTop){
+    top=window.scrollY + rect.top - menuRect.height - 10;
+  }
+  menu.style.top=`${Math.max(window.scrollY+12, top)}px`;
+  menu.style.left=`${left}px`;
+
+  const closeOnPointer=(ev)=>{
+    if(!menu.contains(ev.target)) closeAssemblyStageMenu();
+  };
+  const closeOnEscape=(ev)=>{
+    if(ev.key==='Escape') closeAssemblyStageMenu();
+  };
+  setTimeout(()=>{
+    document.addEventListener('pointerdown',closeOnPointer,{once:true});
+  },0);
+  document.addEventListener('keydown',closeOnEscape,{once:true});
+}
 function setAssemblyStage(id,stage){
   const row=assemblyBoardRows.find(r=>r.id===id);
   if(!row) return;
@@ -932,8 +1052,23 @@ function setAssemblyStage(id,stage){
   renderHome();
   renderCalendar();
 }
+function holdAssemblyBoardRow(id){
+  hideHoverActionOverlay();
+  if(typeof openIssueHoldModal==='function'){
+    openIssueHoldModal(String(id),'assembly');
+    return;
+  }
+  const row=assemblyBoardRows.find(r=>String(r.id)===String(id));
+  if(!row) return;
+  const note=window.prompt(`What is blocking ${row.pb||'this pack builder'}?`,'')||'';
+  row.rescheduleNote=note.trim();
+  saveJson(assemblyBoardStorageKey,assemblyBoardRows);
+  renderAssembly();
+}
 function rescheduleAssemblyBoardRow(id){openRescheduleModal(id)}
+window.holdAssemblyBoardRow=holdAssemblyBoardRow;
 window.setAssemblyStage=setAssemblyStage;
+window.openAssemblyStagePicker=openAssemblyStagePicker;
 window.rescheduleAssemblyBoardRow=rescheduleAssemblyBoardRow;
 window.editAssemblyBoardRow=editAssemblyBoardRow;
 window.deleteAssemblyBoardRow=deleteAssemblyBoardRow;
@@ -1192,12 +1327,12 @@ function renderQueue(){
   if(!readyFiltered.length){
     queueTableBody.innerHTML='<tr><td colspan="13" class="empty">No ready pack builders found for this view.</td></tr>';
   } else {
-    queueTableBody.innerHTML=readyVisible.map(row=>{const link=buildSalesforcePbLink(row.pbId,row.pdfUrl);return `<tr><td>${row.priority?'⭐':'—'}</td><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.so||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${Number(row.qty||0)}</td><td>${Number(row.products||0)}</td><td>${Number(row.units||0).toLocaleString()}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${escapeHtml(row.status||'—')}</td><td>${renderQueueFlags(row)}</td><td>${escapeHtml(row.accountOwner||'—')}</td><td>${link?`<a class="queue-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td><div class="row-actions"><button class="btn secondary" onclick="toggleQueuePriority('${escapeJs(String(row.id))}','ready')">${row.priority?'Unmark':'Priority'}</button><button class="btn" onclick="scheduleQueueRow('${escapeJs(String(row.id))}','ready')">Schedule</button></div></td></tr>`}).join('');
+    queueTableBody.innerHTML=readyVisible.map(row=>{const link=buildSalesforcePbLink(row.pbId,row.pdfUrl);return `<tr><td>${row.priority?'⭐':'—'}</td><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.so||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${Number(row.qty||0)}</td><td>${Number(row.products||0)}</td><td>${Number(row.units||0).toLocaleString()}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${escapeHtml(row.status||'—')}</td><td>${renderQueueFlags(row)}</td><td>${escapeHtml(row.accountOwner||'—')}</td><td>${link?`<a class="queue-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td><div class="row-actions"><button class="btn secondary" onclick="toggleQueuePriority('${escapeJs(String(row.id))}','ready')">${row.priority?'Unmark':'Priority'}</button><button class="btn warn" onclick="openIssueHoldModal('${escapeJs(String(row.id))}','ready')">Hold</button><button class="btn" onclick="scheduleQueueRow('${escapeJs(String(row.id))}','ready')">Schedule</button></div></td></tr>`}).join('');
   }
   if(!incompleteFiltered.length){
     incompleteQueueTableBody.innerHTML='<tr><td colspan="13" class="empty">No incomplete or pending pack builders found for this view.</td></tr>';
   } else {
-    incompleteQueueTableBody.innerHTML=incompleteVisible.map(row=>{const link=buildSalesforcePbLink(row.pbId,row.pdfUrl);return `<tr><td>${row.priority?'⭐':'—'}</td><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.so||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${Number(row.qty||0)}</td><td>${Number(row.products||0)}</td><td>${Number(row.units||0).toLocaleString()}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${escapeHtml(row.status||'—')}</td><td>${renderQueueFlags(row)}</td><td>${escapeHtml(row.accountOwner||'—')}</td><td>${link?`<a class="queue-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td><div class="row-actions"><button class="btn secondary" onclick="toggleQueuePriority('${escapeJs(String(row.id))}','incomplete')">${row.priority?'Unmark':'Priority'}</button><button class="btn" onclick="scheduleQueueRow('${escapeJs(String(row.id))}','incomplete')">Schedule</button></div></td></tr>`}).join('');
+    incompleteQueueTableBody.innerHTML=incompleteVisible.map(row=>{const link=buildSalesforcePbLink(row.pbId,row.pdfUrl);return `<tr><td>${row.priority?'⭐':'—'}</td><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.so||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${Number(row.qty||0)}</td><td>${Number(row.products||0)}</td><td>${Number(row.units||0).toLocaleString()}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${escapeHtml(row.status||'—')}</td><td>${renderQueueFlags(row)}</td><td>${escapeHtml(row.accountOwner||'—')}</td><td>${link?`<a class="queue-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td><div class="row-actions"><button class="btn secondary" onclick="toggleQueuePriority('${escapeJs(String(row.id))}','incomplete')">${row.priority?'Unmark':'Priority'}</button><button class="btn warn" onclick="openIssueHoldModal('${escapeJs(String(row.id))}','incomplete')">Hold</button><button class="btn" onclick="scheduleQueueRow('${escapeJs(String(row.id))}','incomplete')">Schedule</button></div></td></tr>`}).join('');
   }
   const scheduledSorted=getSortedQueueRows(scheduledQueueRows.filter(matchesQueueSearch)).sort((a,b)=>String(b.scheduledAt||'').localeCompare(String(a.scheduledAt||''))||String(a.scheduledFor||'').localeCompare(String(b.scheduledFor||'')));
   const scheduledVisible=applyQueueLimit(scheduledSorted,scheduledQueueLimit?.value||'10');
@@ -1901,3 +2036,137 @@ window.addEventListener('storage',(event)=>{
   renderRevenueReferenceStats();
   renderHome();
 });
+
+
+// Hover overlay for Available Queue and Assembly
+let hoverActionOverlayEl=null;
+let hoverOverlayRow=null;
+let hoverOverlayLeaveTimer=null;
+let hoverOverlayContainer=null;
+function ensureHoverActionOverlay(container=document.body){
+  if(!hoverActionOverlayEl){
+    const el=document.createElement('div');
+    el.className='queue-row-hover-overlay';
+    el.hidden=true;
+    el.addEventListener('mouseenter',()=>{ if(hoverOverlayLeaveTimer){clearTimeout(hoverOverlayLeaveTimer); hoverOverlayLeaveTimer=null;} });
+    el.addEventListener('mouseleave',()=>scheduleHideHoverActionOverlay());
+    hoverActionOverlayEl=el;
+  }
+  const targetContainer=container||document.body;
+  if(hoverActionOverlayEl.parentElement!==targetContainer){
+    targetContainer.appendChild(hoverActionOverlayEl);
+  }
+  hoverOverlayContainer=targetContainer;
+  if(hoverOverlayContainer!==document.body && getComputedStyle(hoverOverlayContainer).position==='static'){
+    hoverOverlayContainer.style.position='relative';
+  }
+  return hoverActionOverlayEl;
+}
+function isOverlayEligibleRow(row){
+  if(!row || row.closest('thead')) return false;
+  if(row.querySelector('.empty')) return false;
+  if(row.querySelector('#assemblyEditPb')) return false;
+  const actions=row.querySelector('.row-actions');
+  if(!actions || !actions.children.length) return false;
+  const tbody=row.parentElement;
+  if(!tbody) return false;
+  const id=tbody.id||'';
+  return ['queueTableBody','incompleteQueueTableBody','scheduledQueueTableBody','assemblyBoardBody','issueHoldQueueTableBody'].includes(id);
+}
+function positionHoverActionOverlay(row){
+  const container=row?.closest('.table-wrap')||document.body;
+  const overlay=ensureHoverActionOverlay(container);
+  const rect=row.getBoundingClientRect();
+  if(container===document.body){
+    overlay.style.top=`${window.scrollY + rect.top + 2}px`;
+    overlay.style.left=`${window.scrollX + rect.left + 2}px`;
+    overlay.style.width=`${Math.max(0, rect.width - 4)}px`;
+    overlay.style.height=`${Math.max(0, rect.height - 4)}px`;
+    return;
+  }
+  const containerRect=container.getBoundingClientRect();
+  const availableWidth=Math.max(0, container.clientWidth - 8);
+  const desiredWidth=Math.max(0, rect.width - 4);
+  const desiredLeft=(rect.left - containerRect.left) + container.scrollLeft + 2;
+  const clampedLeft=Math.max(container.scrollLeft + 4, Math.min(desiredLeft, container.scrollLeft + availableWidth - desiredWidth - 4));
+  overlay.style.top=`${(rect.top - containerRect.top) + container.scrollTop + 2}px`;
+  overlay.style.left=`${clampedLeft}px`;
+  overlay.style.width=`${Math.min(desiredWidth, availableWidth)}px`;
+  overlay.style.height=`${Math.max(0, rect.height - 4)}px`;
+}
+function showHoverActionOverlayForRow(row){
+  if(!isOverlayEligibleRow(row)) return hideHoverActionOverlay();
+  if(hoverOverlayLeaveTimer){clearTimeout(hoverOverlayLeaveTimer); hoverOverlayLeaveTimer=null;}
+  const actions=row.querySelector('.row-actions');
+  if(!actions) return hideHoverActionOverlay();
+  const overlay=ensureHoverActionOverlay(row.closest('.table-wrap')||document.body);
+  overlay.innerHTML=`<div class="queue-row-hover-overlay__inner">${actions.innerHTML}</div>`;
+  positionHoverActionOverlay(row);
+  overlay.hidden=false;
+  hoverOverlayRow=row;
+  row.classList.add('hover-overlay-active');
+}
+function hideHoverActionOverlay(){
+  if(hoverOverlayLeaveTimer){clearTimeout(hoverOverlayLeaveTimer); hoverOverlayLeaveTimer=null;}
+  if(hoverOverlayRow) hoverOverlayRow.classList.remove('hover-overlay-active');
+  hoverOverlayRow=null;
+  if(hoverActionOverlayEl){ hoverActionOverlayEl.hidden=true; hoverActionOverlayEl.innerHTML=''; }
+}
+function scheduleHideHoverActionOverlay(){
+  if(hoverOverlayLeaveTimer) clearTimeout(hoverOverlayLeaveTimer);
+  hoverOverlayLeaveTimer=setTimeout(()=>{
+    const rowHovered=hoverOverlayRow && hoverOverlayRow.matches(':hover');
+    const overlayHovered=hoverActionOverlayEl && hoverActionOverlayEl.matches(':hover');
+    if(!rowHovered && !overlayHovered) hideHoverActionOverlay();
+  },20);
+}
+function bindHoverOverlayDelegation(){
+  const selectors=['#queueTableBody','#incompleteQueueTableBody','#scheduledQueueTableBody','#assemblyBoardBody','#issueHoldQueueTableBody'];
+  selectors.forEach(sel=>{
+    const tbody=document.querySelector(sel);
+    if(!tbody || tbody.dataset.hoverOverlayBound==='true') return;
+    tbody.dataset.hoverOverlayBound='true';
+    tbody.addEventListener('mouseover',event=>{
+      const row=event.target.closest('tr');
+      if(!row || !tbody.contains(row)) return;
+      showHoverActionOverlayForRow(row);
+    });
+    tbody.addEventListener('mousemove',event=>{
+      const row=event.target.closest('tr');
+      if(row && tbody.contains(row) && row===hoverOverlayRow){
+        positionHoverActionOverlay(row);
+      }
+    });
+    tbody.addEventListener('mouseleave',()=>scheduleHideHoverActionOverlay());
+    const tableWrap=tbody.closest('.table-wrap');
+    if(tableWrap && tableWrap.dataset.hoverOverlayScrollBound!=='true'){
+      tableWrap.dataset.hoverOverlayScrollBound='true';
+      tableWrap.addEventListener('scroll',()=>{
+        if(hoverOverlayRow && tableWrap.contains(hoverOverlayRow)){
+          positionHoverActionOverlay(hoverOverlayRow);
+        }
+      },{passive:true});
+    }
+  });
+}
+
+document.addEventListener('mouseover',event=>{
+  const row=event.target.closest('tr');
+  if(!row || !isOverlayEligibleRow(row)) {
+    if(!event.target.closest('.queue-row-hover-overlay')) scheduleHideHoverActionOverlay();
+    return;
+  }
+  showHoverActionOverlayForRow(row);
+});
+document.addEventListener('scroll',()=>{ if(hoverOverlayRow) positionHoverActionOverlay(hoverOverlayRow); closeAssemblyStageMenu(); },true);
+window.addEventListener('resize',()=>{ if(hoverOverlayRow) positionHoverActionOverlay(hoverOverlayRow); closeAssemblyStageMenu(); });
+document.addEventListener('click',event=>{ if(!event.target.closest('.queue-row-hover-overlay')) hideHoverActionOverlay(); });
+
+const _renderQueueOriginal=renderQueue;
+renderQueue=function(){ const result=_renderQueueOriginal.apply(this,arguments); bindHoverOverlayDelegation(); hideHoverActionOverlay(); return result; };
+const _renderAssemblyOriginal=renderAssembly;
+renderAssembly=function(){ const result=_renderAssemblyOriginal.apply(this,arguments); bindHoverOverlayDelegation(); hideHoverActionOverlay(); closeAssemblyStageMenu(); return result; };
+const _renderIssueHoldQueueOriginal=typeof renderIssueHoldQueue==='function' ? renderIssueHoldQueue : null;
+if(_renderIssueHoldQueueOriginal){
+  renderIssueHoldQueue=function(){ const result=_renderIssueHoldQueueOriginal.apply(this,arguments); bindHoverOverlayDelegation(); hideHoverActionOverlay(); return result; };
+}
