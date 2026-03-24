@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Warehouse Operations Hub</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="Styles/base.css">
+<link rel="stylesheet" href="Styles/layout.css">
+<link rel="stylesheet" href="Styles/attendance.css">
+<link rel="stylesheet" href="Styles/errors.css">
+<link rel="stylesheet" href="Styles/employees.css">
+<link rel="stylesheet" href="Styles/calendar.css">
+<link rel="stylesheet" href="Styles/queue.css">
+<link rel="stylesheet" href="Styles/assembly.css">
+<link rel="stylesheet" href="Styles/workflow.css">
+<link rel="stylesheet" href="risk-row.css">
+</head>
+<body>
+<div class="app" data-app-shell="warehouse-hub">
+  <aside class="sidebar">
+    <button class="sidebar-toggle" id="sidebarToggleBtn" type="button" aria-label="Toggle sidebar">⇤</button>
+    <div class="brand">
+      <div class="brand-mark">WH</div>
+      <div class="brand-text">
+        <h1>Warehouse Hub</h1>
+        <p>Light-blue internal prototype</p>
+      </div>
+    </div>
+    <div class="nav-title">Pages</div>
+    <div class="nav-list">
+      <button class="nav-btn active" data-page="homePage">Home</button>
+      <button class="nav-btn" data-page="attendancePage">Attendance</button>
+      <button class="nav-btn" data-page="errorsPage">Warehouse Errors</button>
+      <button class="nav-btn" data-page="employeesPage">Employees</button>
+      <button class="nav-btn" data-page="calendarPage">Calendar</button>
+    </div>
+    <div class="nav-title">Assembly Workflow</div>
+    <div class="nav-list">
+      <button class="nav-btn" data-page="assemblyPage">Assembly</button>
+      <button class="nav-btn" data-page="queuePage">Available Queue</button>
+    </div>
+    <div class="nav-title">Inbound Workflow</div>
+    <div class="nav-list">
+      <button class="nav-btn" data-page="workflowInboundPage">QA Inbound</button>
+    </div>
+    <div class="nav-title">Build Note</div>
+    <div class="sidebar-note">The attendance tab keeps the stronger layout you liked. The site structure changed, but the attendance experience does not have to get dumbed down.</div>
+  </aside>
+
+  <main class="main">
+    <!-- Home -->
+    <section id="homePage" class="page active">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Operations Dashboard</div>
+          <h2>Warehouse command center</h2>
+          <p class="subtitle">Read-only overview of the current operation. This dashboard summarizes what is already scheduled, tracked, or logged in the other tabs without letting anyone edit from here.</p>
+        </div>
+        <div class="toolbar right">
+          <button class="btn secondary" id="printSnapshotBtn" type="button">Print Snapshot</button>
+        </div>
+      </div>
+
+      <div id="homeAlertBanner" class="home-alert-banner" hidden></div>
+
+      <div class="stats">
+        <div class="card"><div class="stat-label">Employees</div><div class="stat-value" id="homeEmployeesCount">0</div><div class="stat-hint">Active employees in the shared source</div></div>
+        <div class="card"><div class="stat-label">Birthdays This Month</div><div class="stat-value" id="homeBirthdaysCount">0</div><div class="stat-hint">Pulled from the Employees tab</div></div>
+        <div class="card"><div class="stat-label">Open Error Logs</div><div class="stat-value" id="homeErrorsCount">0</div><div class="stat-hint">Current warehouse error records</div></div>
+        <div class="card"><div class="stat-label">Assembly PBs Today</div><div class="stat-value" id="homeAssemblyPbCount">0</div><div class="stat-hint">Pack builders on the selected Assembly day</div></div>
+      </div>
+
+      <div class="grid-2">
+        <div style="display:grid;gap:20px">
+          <div class="card">
+            <div class="eyebrow">Attendance Snapshot</div>
+            <h3 style="margin:6px 0 14px;font-size:24px">Today’s attendance signals</h3>
+            <div class="stats" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:0">
+              <div class="card" style="padding:16px"><div class="stat-label">Present</div><div class="stat-value" id="homePresentToday">0</div><div class="stat-hint">Marked present today</div></div>
+              <div class="card" style="padding:16px"><div class="stat-label">Late</div><div class="stat-value" id="homeLateToday">0</div><div class="stat-hint">Late marks today</div></div>
+              <div class="card" style="padding:16px"><div class="stat-label">Absent / Call Out</div><div class="stat-value" id="homeAbsentToday">0</div><div class="stat-hint">Missed attendance today</div></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="eyebrow">Assembly Snapshot</div>
+            <h3 style="margin:6px 0 14px;font-size:24px">What’s scheduled in assembly</h3>
+            <div class="stats" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:14px">
+              <div class="card" style="padding:16px"><div class="stat-label">Scheduled Units</div><div class="stat-value" id="homeAssemblyUnits">0</div><div class="stat-hint">Qty × Total Products</div></div>
+              <div class="card" style="padding:16px"><div class="stat-label">Done Units</div><div class="stat-value" id="homeAssemblyDoneUnits">0</div><div class="stat-hint">Current completed units</div></div>
+              <div class="card" style="padding:16px"><div class="stat-label">Capacity</div><div class="stat-value" id="homeAssemblyCapacity">0</div><div class="stat-hint">Current assembly capacity</div></div>
+              <div class="card" style="padding:16px"><div class="stat-label">Completion</div><div class="stat-value" id="homeAssemblyCompletion">0%</div><div class="stat-hint">Done units / scheduled units</div></div>
+            </div>
+            <div class="table-wrap" style="margin-bottom:14px">
+              <table>
+                <thead><tr><th>Work Type</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>Stage</th><th>Status</th><th>IHD</th><th>Open</th><th>Reschedule Note</th><th>Subtotal</th></tr></thead>
+                <tbody id="homeAssemblyScheduleBody"></tbody>
+              </table>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Stage</th><th>Units</th><th>PBs</th></tr></thead>
+                <tbody id="homeAssemblyStageSummary"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="eyebrow">Revenue Snapshot</div>
+            <h3 style="margin:6px 0 14px;font-size:24px">Revenue dashboard</h3>
+            <div class="stats" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:0">
+              <div class="card" style="padding:16px"><div class="stat-label">Scheduled Revenue</div><div class="stat-value" id="homeScheduledRevenue">$0.00</div><div class="stat-hint">Revenue value currently scheduled on the selected Assembly day</div></div>
+              <div class="card" style="padding:16px"><div class="stat-label">Done Revenue</div><div class="stat-value" id="homeDoneRevenue">$0.00</div><div class="stat-hint">Revenue value already completed on the selected Assembly day</div></div>
+              <div class="card" style="padding:16px"><div class="stat-label">Remaining Revenue</div><div class="stat-value" id="homeRemainingRevenue">$0.00</div><div class="stat-hint">Scheduled revenue still left to finish</div></div>
+              <div class="card" style="padding:16px"><div class="stat-label">Revenue Completion %</div><div class="stat-value" id="homeRevenueCompletion">0%</div><div class="stat-hint">Done revenue divided by scheduled revenue</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid;gap:20px">
+          <div class="card">
+            <div class="eyebrow">Calendar Snapshot</div>
+            <h3 style="margin:6px 0 14px;font-size:24px">Upcoming birthdays</h3>
+            <div id="homeBirthdaysList" class="module-list"></div>
+          </div>
+
+          <div class="card">
+            <div class="eyebrow">Error Snapshot</div>
+            <h3 style="margin:6px 0 14px;font-size:24px">Recent warehouse issues</h3>
+            <div id="homeErrorsList" class="module-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    
+    <!-- Attendance -->
+    <section id="attendancePage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Attendance Dashboard</div>
+          <h2>Department attendance tracker</h2>
+          <p class="subtitle">A real website version of your Excel sheet. It tracks employee attendance, status marks, auto-demerits, department views, employee history, and safer data controls without ugly pivot-table blanks.</p>
+        </div>
+        <div class="toolbar right">
+          <button class="btn secondary" id="attendanceSeedBtn">Load sample data</button>
+          <button class="btn" id="attendanceExportBtn">Export CSV</button>
+        </div>
+      </div>
+
+      <div class="dept-tabs" id="attendanceDeptTabs"></div>
+
+      <div class="stats">
+        <div class="card"><div class="stat-label">Total entries</div><div class="stat-value" id="attendanceTotalEntries">0</div><div class="stat-hint">Records in the current department view</div></div>
+        <div class="card"><div class="stat-label">Present</div><div class="stat-value" id="attendancePresentCount">0</div><div class="stat-hint">Marked present in current filter</div></div>
+        <div class="card"><div class="stat-label">Late / Absent</div><div class="stat-value" id="attendanceLateAbsentCount">0 / 0</div><div class="stat-hint">Fast attendance risk check</div></div>
+        <div class="card"><div class="stat-label">Net demerits</div><div class="stat-value" id="attendanceNetDemerits">0</div><div class="stat-hint">After 30-day streak credits are applied</div></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Attendance log</h3>
+          <div class="form-grid attendance-form-grid">
+            <div class="field"><label for="attendanceEmployeeName">Employee Name</label><select id="attendanceEmployeeName"></select></div>
+            <div class="field"><label for="attendanceDepartment">Department</label><select id="attendanceDepartment"></select></div>
+            <div class="field"><label for="attendanceDate">Date</label><input id="attendanceDate" type="date" /></div>
+            <div class="field"><label for="attendanceMark">Mark</label><select id="attendanceMark"></select></div>
+            <div class="field"><label for="attendanceDemerits">Auto Demerits</label><input id="attendanceDemerits" type="number" value="0" disabled /></div>
+          </div>
+          <div class="toolbar">
+            <div class="left">
+              <input class="search" id="attendanceSearch" type="text" placeholder="Search employee, mark, or date" />
+              <span class="pill" id="attendanceCurrentDepartmentPill">Receiving</span>
+              <select id="attendanceSortBy">
+                <option value="date_desc">Newest first</option>
+                <option value="date_asc">Oldest first</option>
+                <option value="name_asc">Name A-Z</option>
+                <option value="name_desc">Name Z-A</option>
+                <option value="mark_asc">Mark A-Z</option>
+                <option value="demerits_desc">Highest demerits</option>
+              </select>
+            </div>
+            <div class="right">
+              <button class="btn secondary" id="attendanceManageEmployeesBtn">Manage employees</button>
+              <button class="btn secondary" id="attendanceUndoBtn" disabled>Undo clear</button>
+              <button class="btn warn" id="attendanceClearBtn">Clear all data</button>
+              <button class="btn" id="attendanceAddBtn">Add record</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Employee Name</th><th>Department</th><th>Date</th><th>Mark</th><th>Demerits</th><th>Action</th></tr></thead>
+              <tbody id="attendanceRecordsBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Employee summary</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Employee Name</th><th>Total Days</th><th>Present</th><th>Net Demerits</th></tr></thead>
+              <tbody id="attendanceSummaryBody"></tbody>
+            </table>
+          </div>
+          <div class="small-note">
+            <strong>What was added:</strong><br>
+            Employee dropdown, sorting, clickable employee history, automatic demerits by status, 30-day streak credits, employee delete tools, and an undo button for accidental clear-all actions.<br><br>
+            <strong>Demerit rule in this version:</strong> Late = 0.5, Absent = 1, Call Out = 1, Present = 0, Excused = 0.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    
+    <!-- Errors -->
+    <section id="errorsPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Warehouse Errors</div>
+          <h2>Error log</h2>
+          <p class="subtitle">A separate tab for warehouse and department errors. Voice can be added later without changing the overall structure.</p>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="card"><div class="stat-label">Total errors</div><div class="stat-value" id="errorsTotalCount">0</div><div class="stat-hint">Errors in current view</div></div>
+        <div class="card"><div class="stat-label">Absolute error qty</div><div class="stat-value" id="errorsAbsoluteTotal">0</div><div class="stat-hint">Sum of quantity differences</div></div>
+        <div class="card"><div class="stat-label">Avg error rate</div><div class="stat-value" id="errorsAverageRate">0%</div><div class="stat-hint">Average rate across filtered records</div></div>
+        <div class="card"><div class="stat-label">Most common type</div><div class="stat-value" id="errorsTopType">—</div><div class="stat-hint">Most frequent error type</div></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Log warehouse error</h3>
+          <div class="form-grid errors-form-grid">
+            <div class="field"><label for="errorDate">Date</label><input id="errorDate" type="date" /></div>
+            <div class="field"><label for="errorDepartment">Department</label><select id="errorDepartment"></select></div>
+            <div class="field"><label for="errorAssociate">Associate</label><select id="errorAssociate"></select></div>
+            <div class="field"><label for="errorProofed">Lead Notified</label><select id="errorProofed"><option>Yes</option><option>No</option></select></div>
+            <div class="field"><label for="errorPoNumber">PO Number</label><input id="errorPoNumber" placeholder="PO number" /></div>
+            <div class="field"><label for="errorLinkedId">Linked ID</label><input id="errorLinkedId" placeholder="SORD, Pack Builder, etc." /></div>
+            <div class="field"><label for="errorCategory">Category</label><input id="errorCategory" placeholder="Drinkware, Apparel, etc." /></div>
+            <div class="field"><label for="errorPalletLocation">Pallet Location</label><input id="errorPalletLocation" placeholder="A-12-4" /></div>
+            <div class="field"><label for="errorExpectedQty">Expected Qty</label><input id="errorExpectedQty" type="number" min="0" value="0" /></div>
+            <div class="field"><label for="errorReceivedQty">Received Qty</label><input id="errorReceivedQty" type="number" min="0" value="0" /></div>
+            <div class="field"><label for="errorType">Error Type</label><select id="errorType"></select></div>
+            <div class="field"><label for="errorAbsoluteAmount">Absolute Error Amount</label><input id="errorAbsoluteAmount" type="number" value="0" disabled /></div>
+          </div>
+          <div class="form-grid" style="grid-template-columns:1.4fr .7fr .9fr;align-items:end">
+            <div class="field"><label for="errorNotes">Notes</label><textarea id="errorNotes" placeholder="Describe exactly what the issue was"></textarea></div>
+            <div class="field"><label for="errorRate">Error Rate</label><input id="errorRate" value="0%" disabled /></div>
+            <div class="toolbar right" style="margin:0;justify-content:flex-end"><button class="btn" id="errorAddBtn">Add error</button></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Error quick controls</h3>
+          <div class="toolbar" style="margin-bottom:8px">
+            <div class="left"><input class="search" id="errorsSearch" type="text" placeholder="Search associate, PO, ID, or type" /></div>
+            <div class="right"><select id="errorsSortBy"><option value="date_desc">Newest first</option><option value="date_asc">Oldest first</option><option value="associate_asc">Associate A-Z</option><option value="po_asc">PO A-Z</option><option value="absolute_desc">Highest absolute error</option><option value="rate_desc">Highest error rate</option></select></div>
+          </div>
+          <div class="form-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:0">
+            <div class="field"><label for="errorsDepartmentFilter">Department Filter</label><select id="errorsDepartmentFilter"></select></div>
+            <div class="field"><label for="errorsTypeFilter">Type Filter</label><select id="errorsTypeFilter"></select></div>
+            <div class="field"><label for="errorsNotifiedFilter">Lead Notified</label><select id="errorsNotifiedFilter"><option value="All">All</option><option value="Yes">Yes</option><option value="No">No</option></select></div>
+          </div>
+          <div class="small-note"><strong>Note:</strong> Voice input is intentionally not included in this version so we can keep the architecture clean and the attendance tab intact. It can be added later as an enhancement to this errors module.</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Warehouse error log</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Department</th><th>Associate</th><th>Lead Notified</th><th>PO Number</th><th>Linked ID</th><th>Category</th><th>Pallet</th><th>Expected</th><th>Received</th><th>Error Type</th><th>Absolute</th><th>Rate</th><th>Notes</th><th>Action</th></tr></thead>
+            <tbody id="errorsRecordsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    
+    <!-- Employees -->
+    <section id="employeesPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Employees</div>
+          <h2>Shared employee source</h2>
+          <p class="subtitle">Manage employees in one place so every module can pull from the same source. Add or remove people here, and Attendance and Warehouse Errors will use the updated list.</p>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="card"><div class="stat-label">Active employees</div><div class="stat-value" id="employeesActiveCount">0</div><div class="stat-hint">Available in dropdowns across the site</div></div>
+        <div class="card"><div class="stat-label">Departments used</div><div class="stat-value" id="employeesDepartmentCount">0</div><div class="stat-hint">Departments currently assigned</div></div>
+        <div class="card"><div class="stat-label">Attendance source</div><div class="stat-value">Shared</div><div class="stat-hint">Attendance pulls from this employee list</div></div>
+        <div class="card"><div class="stat-label">Errors source</div><div class="stat-value">Shared</div><div class="stat-hint">Warehouse Errors pulls from this employee list</div></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Add employee</h3>
+          <div class="form-grid" style="grid-template-columns:1.4fr 1fr 1fr .8fr;align-items:end">
+            <div class="field"><label for="employeeManagerName">Employee Name</label><input id="employeeManagerName" placeholder="Full name" /></div>
+            <div class="field"><label for="employeeManagerDepartment">Default Department</label><select id="employeeManagerDepartment"></select></div>
+            <div class="field"><label for="employeeManagerBirthday">Birthday</label><input id="employeeManagerBirthday" type="date" /></div>
+            <div class="field"><label for="employeeManagerSize">Preferred Size</label><input id="employeeManagerSize" placeholder="S, M, L, XL, 2XL..." /></div>
+            <div class="toolbar right" style="margin:0;justify-content:flex-end"><button class="btn" id="employeeAddBtn">Save employee</button></div>
+          </div>
+          <div class="small-note"><strong>How this works:</strong> this tab is now the shared source. New employees are added from the form above. Existing employees are edited directly in the table below so you do not have to scroll back up and down.</div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Quick controls</h3>
+          <div class="toolbar" style="margin-bottom:8px">
+            <div class="left"><input class="search" id="employeesSearch" type="text" placeholder="Search employee or department" /></div>
+            <div class="right"><select id="employeesDepartmentFilter"></select></div>
+          </div>
+          <div class="small-note">Removing an employee here removes them from the shared dropdown source. Existing attendance or error history tied to that name stays in the records unless you delete those records separately.</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Employee list</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Employee Name</th><th>Default Department</th><th>Birthday</th><th>Preferred Size</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody id="employeesTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    
+    <!-- Calendar -->
+    <section id="calendarPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Calendar</div>
+          <h2>Planning calendar</h2>
+          <p class="subtitle">This is the safe Phase 1 version: a simple calendar tab only. No birthday wiring yet, no event automation yet. It gives the site a clean place for birthdays and upcoming events in later phases.</p>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="card"><div class="stat-label">Current month</div><div class="stat-value" id="calendarCurrentMonthLabel">—</div><div class="stat-hint">Simple calendar shell for planning</div></div>
+        <div class="card"><div class="stat-label">Birthdays linked</div><div class="stat-value" id="calendarBirthdaysLinked">0</div><div class="stat-hint">Employee birthdays now appear on the calendar</div></div>
+        <div class="card"><div class="stat-label">Upcoming events</div><div class="stat-value">0</div><div class="stat-hint">Phase 3 can add custom events and reminders</div></div>
+        <div class="card"><div class="stat-label">Status</div><div class="stat-value">Phase 1</div><div class="stat-hint">Structure only, safe incremental build</div></div>
+      </div>
+
+      <div class="calendar-grid">
+        <div class="card">
+          <div class="calendar-controls">
+            <button class="btn secondary" id="calendarPrevBtn">Previous</button>
+            <div class="calendar-month-title" id="calendarMonthTitle">Month</div>
+            <button class="btn secondary" id="calendarNextBtn">Next</button>
+          </div>
+          <div class="calendar-days" id="calendarHeaderRow"></div>
+          <div class="calendar-days" id="calendarGrid"></div>
+        </div>
+
+      </div>
+    </section>
+
+    
+    <!-- Assembly -->
+    <section id="assemblyPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Assembly</div>
+          <h2>Assembly daily planner</h2>
+          <p class="subtitle">Daily planning, unit forecasting, stage tracking, and rescheduling for Assembly. This version keeps the module date-based and uses one true current stage per pack builder to avoid overlap.</p>
+        </div>
+        <div class="toolbar right">
+          <button class="btn secondary" id="assemblyExportStyledSnapshotBtn">Export Styled Snapshot XLSX</button>
+          <button class="btn secondary" id="exportStakeholderDashboardBtn">Export 7-Day Stakeholder Dashboard</button>
+        </div>
+      </div>
+
+      <div class="stats assembly-command-stats">
+        <div class="card assembly-card-tight"><div class="stat-label">Scheduled Units</div><div class="stat-value" id="assemblyScheduledUnitsStat">0</div><div class="stat-hint">All units planned on the selected day</div></div>
+        <div class="card assembly-card-tight"><div class="stat-label">Done Units</div><div class="stat-value" id="assemblyDoneUnitsStat2">0</div><div class="stat-hint">Units already completed</div></div>
+        <div class="card assembly-card-tight"><div class="stat-label">Remaining Units</div><div class="stat-value" id="assemblyRemainingUnitsStat">0</div><div class="stat-hint">Units still left today</div></div>
+        <div class="card assembly-card-tight"><div class="stat-label">Completion</div><div class="stat-value" id="assemblyCompletionStat">0%</div><div class="stat-hint">Done vs scheduled</div></div>
+        <div class="card assembly-card-tight"><div class="stat-label">Total Capacity</div><div class="stat-value" id="assemblyCapacityStat">0</div><div class="stat-hint">Headcount × hours × UPH</div></div>
+        <div class="card assembly-card-tight"><div class="stat-label">Current UPH</div><div class="stat-value" id="assemblyCurrentUphDisplay">0</div><div class="stat-hint">Done units ÷ hours elapsed</div></div>
+      </div>
+
+      <div class="card assembly-compact-shell">
+        <div class="toolbar assembly-toolbar-stack">
+          <div class="left">
+            <button class="btn secondary" id="assemblyPrevDayBtn">Previous Day</button>
+            <button class="btn secondary" id="assemblyNextDayBtn">Next Day</button>
+            <span class="pill" id="assemblySelectedDatePill">Selected day</span>
+            <span class="pill" id="assemblyBoardCountPill">0 rows</span>
+          </div>
+          <div class="right">
+            <button class="btn secondary" id="assemblyBreakdownToggleBtn" type="button">Show Breakdown</button>
+            <button class="btn secondary" id="assemblyDetailsToggleBtn" type="button">Show Detail Columns</button>
+            <button class="btn" id="assemblyEditModeToggleBtn" type="button">Enter Edit Mode</button>
+          </div>
+        </div>
+
+        <div class="assembly-grid assembly-grid-tight">
+          <div>
+            <div class="assembly-planning-bar">
+              <div class="field"><label for="assemblyDate">Date</label><input id="assemblyDate" type="date" /></div>
+              <div class="field"><label for="assemblyHeadcount">Headcount</label><input id="assemblyHeadcount" type="number" min="0" value="7" /></div>
+              <div class="field"><label for="assemblyHours">Shift Hours</label><input id="assemblyHours" type="number" min="0" step="0.25" value="8" /></div>
+              <div class="field"><label for="assemblyHoursElapsed">Hours Elapsed</label><input id="assemblyHoursElapsed" type="number" min="0" step="0.25" value="1" /></div>
+              <div class="field"><label for="assemblyUph">Target UPH</label><input id="assemblyUph" type="number" min="0" value="150" /></div>
+              <div class="field"><label for="assemblyScheduledPb">Scheduled PBs</label><input id="assemblyScheduledPb" type="number" min="0" value="0" /></div>
+            </div>
+
+            <div class="assembly-mini-stats">
+              <div class="mini-card"><div class="mini-label">Headcount</div><div class="mini-value" id="assemblyHeadcountStat">0</div></div>
+              <div class="mini-card"><div class="mini-label">Shift Hours</div><div class="mini-value" id="assemblyHoursStat">0</div></div>
+              <div class="mini-card"><div class="mini-label">Target UPH</div><div class="mini-value" id="assemblyUphStat">0</div></div>
+              <div class="mini-card"><div class="mini-label">Goal Progress</div><div class="mini-value" id="assemblyGoalProgressDisplay">0%</div></div>
+              <div class="mini-card"><div class="mini-label">Rows Today</div><div class="mini-value" id="assemblyRowsTodayStat">0</div></div>
+              <div class="mini-card"><div class="mini-label">Scheduled PB Rows</div><div class="mini-value" id="assemblyScheduledPbDisplay">0</div></div>
+            </div>
+
+            <div class="small-note assembly-note-compact"><strong>Command view first:</strong> the top stays focused on today’s output. Breakdown, full columns, and editing stay tucked away until needed.</div>
+
+            <div class="assembly-collapse" id="assemblyBreakdownPanel" hidden>
+              <div class="assembly-stage-totals-grid assembly-stage-totals-grid-tight">
+                <div class="card assembly-card-tight"><div class="stat-label">A.A. Units</div><div class="stat-value" id="assemblyAaUnits">0</div><div class="stat-hint">Actually available</div></div>
+                <div class="card assembly-card-tight"><div class="stat-label">Print Units</div><div class="stat-value" id="assemblyPrintUnits">0</div><div class="stat-hint">Currently in print</div></div>
+                <div class="card assembly-card-tight"><div class="stat-label">Picked Units</div><div class="stat-value" id="assemblyPickedUnits">0</div><div class="stat-hint">Currently picked</div></div>
+                <div class="card assembly-card-tight"><div class="stat-label">Line Units</div><div class="stat-value" id="assemblyLineUnits">0</div><div class="stat-hint">Currently on line</div></div>
+                <div class="card assembly-card-tight"><div class="stat-label">DPMO Units</div><div class="stat-value" id="assemblyDpmoUnits">0</div><div class="stat-hint">Currently in DPMO</div></div>
+                <div class="card assembly-card-tight"><div class="stat-label">Done Units</div><div class="stat-value" id="assemblyDoneUnits">0</div><div class="stat-hint">Currently completed</div></div>
+              </div>
+            </div>
+
+            <div class="assembly-board-section">
+              <div class="toolbar" style="margin-top:18px;margin-bottom:12px">
+                <div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Today’s work</h3></div>
+                <div class="right"><span class="pill" id="assemblyViewModePill">Compact View</span></div>
+              </div>
+
+              <div class="assembly-collapse" id="assemblyEditModePanel" hidden>
+                <div class="small-note" style="margin-bottom:14px"><strong>Edit mode:</strong> row creation and heavier controls live here so the default view stays lighter for meetings and quick reviews.</div>
+                <div class="form-grid assembly-board-form">
+                  <div class="field"><label for="assemblyWorkType">Work Type</label><select id="assemblyWorkType"><option value="pack_builder">Pack Builder</option><option value="jira">Jira</option><option value="placeholder">Placeholder</option></select></div>
+                  <div class="field"><label for="assemblyPb">Primary ID / Name</label><input id="assemblyPb" placeholder="PB-00031972 or JIRA-1234" /></div>
+                  <div class="field"><label for="assemblySo">Sales Order</label><input id="assemblySo" placeholder="SORD-047805" /></div>
+                  <div class="field"><label for="assemblyAccount">Account</label><input id="assemblyAccount" placeholder="Account name" /></div>
+                  <div class="field"><label for="assemblyQty">Scheduled Qty</label><input id="assemblyQty" type="number" min="0" value="0" /></div>
+                  <div class="field"><label for="assemblyFullQty">Full Qty</label><input id="assemblyFullQty" type="number" min="0" value="0" /></div>
+                  <div class="field"><label for="assemblyProducts">Total Products</label><input id="assemblyProducts" type="number" min="0" value="0" /></div>
+                  <div class="field"><label for="assemblyStatus">Status</label><input id="assemblyStatus" placeholder="Ready, Printing, On Line..." /></div>
+                  <div class="field"><label for="assemblyIhd">IHD</label><input id="assemblyIhd" type="date" /></div>
+                  <div class="field"><label for="assemblyExternalLink">External Link</label><input id="assemblyExternalLink" placeholder="Jira or other URL" /></div>
+                </div>
+
+                <div class="form-grid assembly-edit-subgrid">
+                  <div class="field"><label for="assemblyStage">Current Stage</label><select id="assemblyStage"><option value="aa">A.A.</option><option value="print">Print</option><option value="picked">Picked</option><option value="line">Line</option><option value="dpmo">DPMO</option><option value="done">Done</option></select></div>
+                  <div class="field"><label for="assemblyIsPartial">Partial Pack</label><select id="assemblyIsPartial"><option value="false">No</option><option value="true">Yes</option></select></div>
+                  <div class="field"><label>Units</label><input id="assemblyUnitsPreview" value="0" disabled /></div>
+                  <div class="toolbar right" style="margin:0;justify-content:flex-end"><button class="btn" id="assemblyAddBoardRowBtn">Add board row</button></div>
+                </div>
+              </div>
+
+              <div class="table-wrap">
+                <table>
+                  <thead id="assemblyBoardHead"></thead>
+                  <tbody id="assemblyBoardBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="card assembly-card-side">
+              <div class="eyebrow">7-Day Lookahead</div>
+              <h3 style="margin:6px 0 14px;font-size:22px;font-weight:900">Upcoming scheduled work</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Day</th><th>PBs</th><th>Units</th><th>Done</th><th>Completion</th></tr></thead>
+                  <tbody id="assemblyWeekViewBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card assembly-card-side" style="margin-top:20px">
+              <div class="eyebrow">Build Notes</div>
+              <h3 style="margin:6px 0 14px;font-size:22px;font-weight:900">Planned build path</h3>
+              <div class="assembly-note-list">
+                <div class="assembly-note-item"><h4>Phase 1</h4><p>Command view focused on today’s output and capacity.</p></div>
+                <div class="assembly-note-item"><h4>Phase 2</h4><p>Compact board for the day, with detail columns shown only when needed.</p></div>
+                <div class="assembly-note-item"><h4>Phase 3</h4><p>Breakdown metrics, stage tracking, and rescheduling tools behind toggles instead of always on-screen.</p></div>
+                <div class="assembly-note-item"><h4>Phase 4+</h4><p>Report imports, dollar matching, and later hyperlink support where the source data allows it.</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    
+    <!-- Queue -->
+    
+<section id="queuePage" class="page queue-page-redesign">
+      <div class="queue-sticky-bar">
+        <div class="queue-sticky-inner">
+          <div class="queue-sticky-group">
+            <div class="queue-sticky-label">Queue import</div>
+            <div class="queue-sticky-actions">
+              <input id="queueFileInput" type="file" accept=".xlsx,.xls" />
+              <button class="btn" id="queueImportBtn">Import report</button>
+              <button class="btn secondary" id="queueClearBtn">Clear queue</button>
+            </div>
+            <div id="queueImportStatus" class="queue-inline-status">Waiting for file.</div>
+          </div>
+          <div class="queue-sticky-divider"></div>
+          <div class="queue-sticky-group">
+            <div class="queue-sticky-label">Revenue reference</div>
+            <div class="queue-sticky-actions">
+              <input id="revenueFileInput" type="file" accept=".xlsx,.xls" />
+              <button class="btn" id="revenueImportBtn">Import revenue reference</button>
+              <button class="btn secondary" id="revenueClearBtn">Clear revenue reference</button>
+            </div>
+            <div id="revenueImportStatus" class="queue-inline-status">Waiting for revenue reference file.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero queue-hero">
+        <div>
+          <div class="eyebrow">Available Queue</div>
+          <h2>Salesforce-ready pack builders</h2>
+          <p class="subtitle">Upload one Salesforce report with a status column, group rows by Pack Builder, and let the site route builders into Ready, Incomplete/Pending, and Scheduled sections automatically.</p>
+        </div>
+      </div>
+
+      <section class="queue-stats-shell">
+        <div class="queue-stat-group">
+          <div class="queue-stat-group-title">Operations</div>
+          <div class="queue-stat-grid">
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Ready builders</span>
+              <strong class="queue-stat-value" id="queueImportedCount">0</strong>
+              <span class="queue-stat-subtle">Ready-to-pack builders</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Incomplete builders</span>
+              <strong class="queue-stat-value" id="queueIncompleteCount">0</strong>
+              <span class="queue-stat-subtle">Pending or partial candidates</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Scheduled builders</span>
+              <strong class="queue-stat-value" id="queueScheduledCount">0</strong>
+              <span class="queue-stat-subtle">Already placed on the board</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Earliest IHD</span>
+              <strong class="queue-stat-value" id="queueEarliestIhd">—</strong>
+              <span class="queue-stat-subtle">Fast urgency check</span>
+            </article>
+          </div>
+        </div>
+
+        <div class="queue-stat-group">
+          <div class="queue-stat-group-title">Volume</div>
+          <div class="queue-stat-grid">
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Ready Units</span>
+              <strong class="queue-stat-value" id="queueReadyUnitsStat">0</strong>
+              <span class="queue-stat-subtle"><span id="queueReadyPbsStat">0</span> PBs currently ready</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Pending Units</span>
+              <strong class="queue-stat-value" id="queuePendingUnitsStat">0</strong>
+              <span class="queue-stat-subtle"><span id="queuePendingPbsStat">0</span> PBs currently pending</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Scheduled Units</span>
+              <strong class="queue-stat-value" id="queueScheduledUnitsStat">0</strong>
+              <span class="queue-stat-subtle"><span id="queueScheduledPbsStat">0</span> PB rows currently scheduled</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Scheduled Today</span>
+              <strong class="queue-stat-value" id="queueScheduledTodayUnitsStat">0</strong>
+              <span class="queue-stat-subtle"><span id="queueScheduledTodayPbsStat">0</span> PB rows on the selected Assembly day</span>
+            </article>
+          </div>
+        </div>
+
+        <div class="queue-stat-group">
+          <div class="queue-stat-group-title">Risk & revenue</div>
+          <div class="queue-stat-grid">
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Issue Hold PBs</span>
+              <strong class="queue-stat-value" id="queueIssueHoldCountStat">0</strong>
+              <span class="queue-stat-subtle">Pack builders currently blocked</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Issue Hold Units</span>
+              <strong class="queue-stat-value" id="queueIssueHoldUnitsStat">0</strong>
+              <span class="queue-stat-subtle">Units currently tied up by issues</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Issue Hold Revenue</span>
+              <strong class="queue-stat-value" id="queueIssueHoldRevenueStat">$0</strong>
+              <span class="queue-stat-subtle">Estimated subtotal currently blocked</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Top Issue Type</span>
+              <strong class="queue-stat-value" id="queueIssueHoldTopTypeStat">—</strong>
+              <span class="queue-stat-subtle">Most common current hold reason</span>
+            </article>
+          </div>
+        </div>
+
+        <div class="queue-stat-group">
+          <div class="queue-stat-group-title">Import health</div>
+          <div class="queue-stat-grid">
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Imported rows</span>
+              <strong class="queue-stat-value" id="queueRawRowsCount">0</strong>
+              <span class="queue-stat-subtle">Raw detail rows read from file</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Grouped builders</span>
+              <strong class="queue-stat-value" id="queueGroupedRowsCount">0</strong>
+              <span class="queue-stat-subtle">One row per Pack Builder</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Priority units</span>
+              <strong class="queue-stat-value" id="queuePriorityUnits">0</strong>
+              <span class="queue-stat-subtle">Units currently marked priority</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Sort mode</span>
+              <strong class="queue-stat-value" id="queueSortModeLabel">IHD</strong>
+              <span class="queue-stat-subtle">Current queue sorting</span>
+            </article>
+          </div>
+        </div>
+
+        <div class="queue-stat-group">
+          <div class="queue-stat-group-title">Revenue reference</div>
+          <div class="queue-stat-grid">
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Revenue rows</span>
+              <strong class="queue-stat-value" id="revenueRowsCount">0</strong>
+              <span class="queue-stat-subtle">Reference rows currently stored</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Lookup keys</span>
+              <strong class="queue-stat-value" id="revenueKeysCount">0</strong>
+              <span class="queue-stat-subtle">Unique Sales Orders detected</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Subtotal total</span>
+              <strong class="queue-stat-value" id="revenueSubtotalTotal">0</strong>
+              <span class="queue-stat-subtle">Sum of Original Subtotal values</span>
+            </article>
+            <article class="queue-stat-card">
+              <span class="queue-stat-label">Earliest IHD</span>
+              <strong class="queue-stat-value" id="revenueEarliestIhd">—</strong>
+              <span class="queue-stat-subtle">Earliest IHD found in reference</span>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <div class="card queue-controls-card">
+        <div class="toolbar queue-controls-toolbar" style="margin-bottom:0">
+          <div class="left queue-controls-left">
+            <div class="field queue-control-field">
+              <label for="queueSearch">Search</label>
+              <input id="queueSearch" placeholder="PB, SORD, account, owner, status, note..." />
+            </div>
+            <div class="field queue-control-field queue-control-select">
+              <label for="queueSortBy">Sort By</label>
+              <select id="queueSortBy">
+                <option value="ihd_asc">IHD earliest first</option>
+                <option value="units_desc">Units highest first</option>
+                <option value="account_asc">Account A-Z</option>
+                <option value="pb_asc">Pack Builder A-Z</option>
+              </select>
+            </div>
+          </div>
+          <div class="right queue-controls-right">
+            <button class="btn secondary" id="queueClearSearchBtn">Clear Search</button>
+          </div>
+        </div>
+        <div class="queue-controls-note">Import one Salesforce report, let the site route builders into Ready vs Incomplete/Pending, and schedule either type into Assembly. Scheduled rows stay in their own section below.</div>
+      </div>
+
+      <div class="card queue-section-card" style="margin-top:20px">
+        <div class="toolbar" style="margin-bottom:14px">
+          <div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Scheduled pack builders</h3></div>
+          <div class="right"><label for="scheduledQueueLimit" style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="scheduledQueueLimit"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="all">All</option></select></div>
+        </div>
+        <div class="table-wrap queue-table-wrap">
+          <table>
+            <thead><tr><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>Scheduled For</th><th>Scheduled At</th><th>Flags</th><th>Schedule Note</th></tr></thead>
+            <tbody id="scheduledQueueTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card queue-section-card" style="margin-top:20px">
+        <div class="toolbar" style="margin-bottom:14px">
+          <div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Issue Hold</h3></div>
+          <div class="right"><label for="issueHoldQueueLimit" style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="issueHoldQueueLimit"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="all">All</option></select></div>
+        </div>
+        <div class="queue-controls-note queue-hold-note"><strong>Use this when a pack builder is real but blocked.</strong> Issue Hold keeps the work visible, stores the problem, and keeps the revenue impact from disappearing.</div>
+        <div class="table-wrap queue-table-wrap">
+          <table>
+            <thead><tr><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>IHD</th><th>Issue Type</th><th>Hold Note</th><th>Hold Date</th><th>Revenue</th></tr></thead>
+            <tbody id="issueHoldQueueTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card queue-section-card" style="margin-top:20px">
+        <div class="toolbar" style="margin-bottom:14px">
+          <div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Ready pack builders</h3></div>
+          <div class="right"><label for="readyQueueLimit" style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="readyQueueLimit"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="all">All</option></select></div>
+        </div>
+        <div class="table-wrap queue-table-wrap">
+          <table>
+            <thead><tr><th>Priority</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Qty</th><th>Total Products</th><th>Units</th><th>IHD</th><th>Status</th><th>Flags</th><th>Account Owner</th></tr></thead>
+            <tbody id="queueTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card queue-section-card" style="margin-top:20px">
+        <div class="toolbar" style="margin-bottom:14px">
+          <div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Incomplete / pending pack builders</h3></div>
+          <div class="right"><label for="incompleteQueueLimit" style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="incompleteQueueLimit"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="all">All</option></select></div>
+        </div>
+        <div class="table-wrap queue-table-wrap">
+          <table>
+            <thead><tr><th>Priority</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Qty</th><th>Total Products</th><th>Units</th><th>IHD</th><th>Status</th><th>Flags</th><th>Account Owner</th></tr></thead>
+            <tbody id="incompleteQueueTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+<section id="workflowInboundPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">QA Inbound Workflow</div>
+          <h2>Embedded inbound workflow board</h2>
+          <p class="subtitle">One clean entry point for Docker, QA Receiving, Prep, Overstock, Putaway, and performance. Open the board below and switch views inside the embedded workflow when needed.</p>
+        </div>
+        <div class="toolbar right">
+          <a class="btn secondary" href="workflow.html" target="_blank" rel="noopener">Open Full Screen</a>
+        </div>
+      </div>
+      <div class="card" style="padding:12px">
+        <iframe id="workflowIframe" src="workflow.html" loading="lazy" title="QA Inbound Workflow" style="width:100%;min-height:1200px;border:none;border-radius:18px;background:#fff;"></iframe>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="modal-backdrop" id="profileModalBackdrop">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="eyebrow">Employee Profile</div>
+        <h2 id="profileName" style="margin:6px 0 4px;font-size:32px"></h2>
+        <p id="profileSubtitle" class="subtitle" style="max-width:none"></p>
+      </div>
+      <button class="btn secondary" id="closeProfileBtn">Close</button>
+    </div>
+    <div class="profile-grid" id="profileStats"></div>
+    <div class="table-wrap"><table><thead><tr><th>Date</th><th>Department</th><th>Mark</th><th>Demerits</th></tr></thead><tbody id="profileHistoryBody"></tbody></table></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="scheduleModalBackdrop">
+  <div class="modal" style="width:min(560px,100%)">
+    <div class="modal-header">
+      <div>
+        <div class="eyebrow">Schedule Pack Builder</div>
+        <h2 style="margin:6px 0 4px;font-size:30px">Choose a date</h2>
+        <p class="subtitle" style="max-width:none">Pick the Assembly date from the calendar input below. This is safer than typing dates manually.</p>
+      </div>
+      <button class="btn secondary" id="closeScheduleBtn">Close</button>
+    </div>
+    <div class="schedule-summary" id="scheduleModalSummary"></div>
+    <div class="schedule-modal-grid">
+      <div class="field"><label for="scheduleModalDate">Assembly Date</label><input id="scheduleModalDate" type="date" /></div>
+      <div class="field"><label for="scheduleModalNote">Schedule Note</label><input id="scheduleModalNote" placeholder="Optional note for the schedule" /></div>
+      <div class="field"><label for="scheduleMode">Schedule Mode</label><select id="scheduleMode"><option value="full">Full amount</option><option value="partial">Partial amount</option></select></div>
+      <div class="field"><label for="scheduleQty">Scheduled Qty</label><input id="scheduleQty" type="number" min="0" value="0" /></div>
+      <div class="field"><label for="scheduleFullQty">Full Qty</label><input id="scheduleFullQty" type="number" min="0" value="0" disabled /></div>
+      <div class="field"><label for="scheduleRemainderToggle">Auto-schedule Remainder</label><select id="scheduleRemainderToggle"><option value="false">No</option><option value="true">Yes</option></select></div>
+      <div class="field"><label for="scheduleRemainderDate">Remainder Date</label><input id="scheduleRemainderDate" type="date" /></div>
+    </div>
+    <div class="toolbar" style="margin-top:16px;margin-bottom:0;justify-content:flex-end">
+      <div class="right"><button class="btn secondary" id="cancelScheduleBtn">Cancel</button><button class="btn" id="confirmScheduleBtn">Confirm Schedule</button></div>
+    </div>
+  </div>
+</div>
+
+
+<div class="modal-backdrop" id="issueHoldModalBackdrop">
+  <div class="modal" style="width:min(620px,100%)">
+    <div class="modal-header">
+      <div>
+        <div class="eyebrow">Issue Hold</div>
+        <h2 style="margin:6px 0 4px;font-size:30px">Set this pack builder aside</h2>
+        <p class="subtitle" style="max-width:none">Use Issue Hold when the work is still real, but there is a problem blocking it. This keeps the units and revenue visible without pretending the work is ready.</p>
+      </div>
+      <button class="btn secondary" id="closeIssueHoldBtn">Close</button>
+    </div>
+    <div class="schedule-summary" id="issueHoldModalSummary"></div>
+    <div class="schedule-modal-grid">
+      <div class="field"><label for="issueHoldType">Issue Type</label><select id="issueHoldType"><option value="Missing Items">Missing Items</option><option value="Inventory Mismatch">Inventory Mismatch</option><option value="Print Issue">Print Issue</option><option value="Damaged Goods">Damaged Goods</option><option value="Awaiting Repush">Awaiting Repush</option><option value="Data Mismatch">Data Mismatch</option><option value="Customer Change">Customer Change</option><option value="Unknown / Investigate">Unknown / Investigate</option></select></div>
+      <div class="field"><label for="issueHoldNote">Hold Note</label><input id="issueHoldNote" placeholder="What exactly is blocking this pack builder?" /></div>
+    </div>
+    <div class="toolbar" style="margin-top:16px;margin-bottom:0;justify-content:flex-end">
+      <div class="right"><button class="btn secondary" id="cancelIssueHoldBtn">Cancel</button><button class="btn warn" id="confirmIssueHoldBtn">Put on Hold</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="assemblyEditModalBackdrop">
+  <div class="modal assembly-edit-modal">
+    <div class="modal-header">
+      <div>
+        <div class="eyebrow">Assembly Edit</div>
+        <h2 style="margin:6px 0 4px;font-size:30px">Edit scheduled work</h2>
+        <p class="subtitle" style="max-width:none">Make changes in a clean form instead of squeezing edits into the board row.</p>
+      </div>
+      <button class="btn secondary" id="closeAssemblyEditBtn">Close</button>
+    </div>
+    <div class="schedule-summary" id="assemblyEditModalSummary"></div>
+    <div class="assembly-edit-grid">
+      <div class="field"><label for="assemblyEditWorkType">Work Type</label><select id="assemblyEditWorkType"><option value="pack_builder">Pack Builder</option><option value="jira">Jira</option><option value="placeholder">Placeholder</option></select></div>
+      <div class="field"><label for="assemblyEditPb">Primary ID / Name</label><input id="assemblyEditPb" /></div>
+      <div class="field"><label for="assemblyEditSo">Sales Order</label><input id="assemblyEditSo" /></div>
+      <div class="field"><label for="assemblyEditAccount">Account</label><input id="assemblyEditAccount" /></div>
+      <div class="field"><label for="assemblyEditQty">Scheduled Qty</label><input id="assemblyEditQty" type="number" min="0" /></div>
+      <div class="field"><label for="assemblyEditFullQty">Full Qty</label><input id="assemblyEditFullQty" type="number" min="0" /></div>
+      <div class="field"><label for="assemblyEditProducts">Total Products</label><input id="assemblyEditProducts" type="number" min="0" /></div>
+      <div class="field"><label for="assemblyEditUnitsPreview">Units</label><input id="assemblyEditUnitsPreview" disabled /></div>
+      <div class="field"><label for="assemblyEditStatus">Status</label><input id="assemblyEditStatus" /></div>
+      <div class="field"><label for="assemblyEditIhd">IHD</label><input id="assemblyEditIhd" type="date" /></div>
+      <div class="field"><label for="assemblyEditExternalLink">External Link</label><input id="assemblyEditExternalLink" placeholder="Optional URL" /></div>
+      <div class="field"><label for="assemblyEditStage">Current Stage</label><select id="assemblyEditStage"><option value="aa">A.A.</option><option value="print">Print</option><option value="picked">Picked</option><option value="line">Line</option><option value="dpmo">DPMO</option><option value="done">Done</option></select></div>
+      <div class="field field-span-2"><label for="assemblyEditRescheduleNote">Reschedule Note</label><textarea id="assemblyEditRescheduleNote" placeholder="Hold, missing units, box issue..."></textarea></div>
+      <div class="field assembly-edit-readonly"><label>Revenue</label><div class="assembly-edit-readonly-value" id="assemblyEditRevenue">$0.00</div></div>
+    </div>
+    <div class="toolbar" style="margin-top:18px;margin-bottom:0;justify-content:flex-end">
+      <div class="right">
+        <button class="btn secondary" id="cancelAssemblyEditBtn">Cancel</button>
+        <button class="btn" id="saveAssemblyEditBtn">Save changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
+<script src="navigation.js"></script>
+<script src="storage.js"></script>
+<script src="queue.js"></script>
+<script src="assembly.js"></script>
+<script src="script.js"></script>
+
+</body>
+</html>

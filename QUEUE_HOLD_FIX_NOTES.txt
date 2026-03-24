@@ -1,0 +1,9 @@
+Phase 2 queue hold fix
+
+What changed:
+- Added Hold button back to Ready queue rows
+- Added Hold button back to Incomplete queue rows
+- Added holdQueueRow() to move held rows into the Incomplete bucket with status 'On Hold'
+
+What to replace:
+- Replace only queue.js
