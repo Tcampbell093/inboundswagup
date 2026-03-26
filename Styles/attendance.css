@@ -1,4 +1,111 @@
-/* Attendance module styles
-   Safe-first split placeholder.
-   Attendance-specific rules still live in base.css for this first pass.
-*/
+.attendance-quick-card{
+  margin-bottom:20px;
+}
+.attendance-quick-header,
+.attendance-quick-footer{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:14px;
+  flex-wrap:wrap;
+}
+.attendance-quick-toolbar{
+  display:grid;
+  grid-template-columns:repeat(6,minmax(140px,1fr));
+  gap:12px;
+  margin:16px 0;
+}
+.attendance-quick-toolbar .field-wide{
+  grid-column:span 2;
+}
+.attendance-quick-actions{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.attendance-batch-summary{
+  font-size:13px;
+  font-weight:800;
+  color:#39536d;
+  background:#eef6ff;
+  border:1px solid #d6e6f6;
+  border-radius:999px;
+  padding:8px 12px;
+}
+.attendance-roster-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:12px;
+  margin-top:18px;
+}
+.attendance-roster-card{
+  border:1px solid #d8e6f5;
+  border-radius:18px;
+  background:#f9fcff;
+  padding:14px;
+  text-align:left;
+  cursor:pointer;
+  transition:.18s ease;
+  box-shadow:0 10px 22px rgba(31,69,112,.06);
+}
+.attendance-roster-card:hover{
+  transform:translateY(-1px);
+  box-shadow:0 14px 26px rgba(31,69,112,.1);
+}
+.attendance-roster-card.selected{
+  border-color:#5b98d3;
+  background:#edf6ff;
+  box-shadow:0 0 0 2px rgba(91,152,211,.18);
+}
+.attendance-roster-top{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:10px;
+  margin-bottom:8px;
+}
+.attendance-roster-name{
+  font-weight:900;
+  color:#163b60;
+}
+.attendance-roster-meta{
+  font-size:12px;
+  color:#58738f;
+  margin-top:4px;
+}
+.attendance-roster-status{
+  display:inline-flex;
+  margin-top:12px;
+  padding:6px 10px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:800;
+  background:#eef3f8;
+  color:#49657f;
+}
+.attendance-roster-status.present{background:#e8f7ec;color:#24623d}
+.attendance-roster-status.late{background:#fff4df;color:#8d6200}
+.attendance-roster-status.absent,
+.attendance-roster-status.callout,
+.attendance-roster-status.nocallnoshow{background:#ffe9ea;color:#9b2b33}
+.attendance-roster-status.excused{background:#eef2ff;color:#4052a2}
+.attendance-roster-status.unset{background:#eef3f8;color:#49657f}
+.empty-roster{
+  border:1px dashed #c6d9ed;
+  border-radius:18px;
+  padding:24px;
+  text-align:center;
+  color:#5d7893;
+  background:#f9fcff;
+}
+.attendance-move-block{
+  margin-top:18px;
+}
+@media (max-width:1100px){
+  .attendance-quick-toolbar{grid-template-columns:repeat(2,minmax(160px,1fr));}
+  .attendance-quick-toolbar .field-wide{grid-column:span 2;}
+}
+@media (max-width:700px){
+  .attendance-quick-toolbar{grid-template-columns:1fr;}
+  .attendance-quick-toolbar .field-wide{grid-column:span 1;}
+}

@@ -1,4 +1,10 @@
-/* Employees module styles
-   Safe-first split placeholder.
-   Add employee-page-only rules here during the next cleanup pass.
-*/
+#employeesPage select,
+#employeesPage input{
+  min-height:42px;
+}
+#employeesPage .small-note{
+  line-height:1.5;
+}
+#employeesPage table td .pill{
+  white-space:nowrap;
+}
