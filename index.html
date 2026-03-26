@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="Styles/queue.css">
 <link rel="stylesheet" href="Styles/assembly.css">
 <link rel="stylesheet" href="Styles/workflow.css">
+<link rel="stylesheet" href="Styles/sord.css">
 <link rel="stylesheet" href="risk-row.css">
 </head>
 <body>
@@ -27,18 +28,21 @@
         <p>Light-blue internal prototype</p>
       </div>
     </div>
-    <div class="nav-title">Pages</div>
+    <div class="nav-title">Daily Tools</div>
     <div class="nav-list">
       <button class="nav-btn active" data-page="homePage">Home</button>
       <button class="nav-btn" data-page="attendancePage">Attendance</button>
       <button class="nav-btn" data-page="errorsPage">Warehouse Errors</button>
-      <button class="nav-btn" data-page="employeesPage">Employees</button>
       <button class="nav-btn" data-page="calendarPage">Calendar</button>
     </div>
     <div class="nav-title">Assembly Workflow</div>
     <div class="nav-list">
       <button class="nav-btn" data-page="assemblyPage">Assembly</button>
       <button class="nav-btn" data-page="queuePage">Available Queue</button>
+    </div>
+    <div class="nav-title">SORD Summary</div>
+    <div class="nav-list">
+      <button class="nav-btn" data-page="sordPage">Daily Tools</button>
     </div>
     <div class="nav-title">Inbound Workflow</div>
     <div class="nav-list">
@@ -94,7 +98,7 @@
             </div>
             <div class="table-wrap" style="margin-bottom:14px">
               <table>
-                <thead><tr><th>Work Type</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>Stage</th><th>Status</th><th>IHD</th><th>Open</th><th>Reschedule Note</th><th>Subtotal</th></tr></thead>
+                <thead><tr><th>Work Type</th><th>Pack Builder</th><th>Sales Order</th><th>Owner</th><th>Units</th><th>Stage</th><th>Status</th><th>IHD</th><th>Open</th><th>Reschedule Note</th><th>Subtotal</th></tr></thead>
                 <tbody id="homeAssemblyScheduleBody"></tbody>
               </table>
             </div>
@@ -133,85 +137,90 @@
         </div>
       </div>
     </section>
+<!-- Attendance -->
+<section id="attendancePage" class="page">
+  <div class="attendance-remix-shell">
 
-    
-    <!-- Attendance -->
-    <section id="attendancePage" class="page">
-      <div class="hero">
-        <div>
-          <div class="eyebrow">Attendance Dashboard</div>
-          <h2>Department attendance tracker</h2>
-          <p class="subtitle">A real website version of your Excel sheet. It tracks employee attendance, status marks, auto-demerits, department views, employee history, and safer data controls without ugly pivot-table blanks.</p>
-        </div>
-        <div class="toolbar right">
-          <button class="btn secondary" id="attendanceSeedBtn">Load sample data</button>
-          <button class="btn" id="attendanceExportBtn">Export CSV</button>
-        </div>
+    <!-- STICKY DEPARTMENT TABS (top bar) — "All" is first -->
+    <div class="attendance-remix-sticky-bar">
+      <div class="attendance-remix-dept-tabs" id="attendanceRemixDeptTabs"></div>
+      <div class="attendance-remix-sticky-actions">
+        <button class="attendance-remix-gear-btn" id="attendanceRemixOpenSettingsBtn" type="button" title="Settings">⚙</button>
       </div>
+    </div>
 
-      <div class="dept-tabs" id="attendanceDeptTabs"></div>
+    <!-- STATS ROW -->
+    <div class="attendance-remix-stats-row" id="attendanceRemixStats"></div>
 
-      <div class="stats">
-        <div class="card"><div class="stat-label">Total entries</div><div class="stat-value" id="attendanceTotalEntries">0</div><div class="stat-hint">Records in the current department view</div></div>
-        <div class="card"><div class="stat-label">Present</div><div class="stat-value" id="attendancePresentCount">0</div><div class="stat-hint">Marked present in current filter</div></div>
-        <div class="card"><div class="stat-label">Late / Absent</div><div class="stat-value" id="attendanceLateAbsentCount">0 / 0</div><div class="stat-hint">Fast attendance risk check</div></div>
-        <div class="card"><div class="stat-label">Net demerits</div><div class="stat-value" id="attendanceNetDemerits">0</div><div class="stat-hint">After 30-day streak credits are applied</div></div>
+    <!-- DATE BAR -->
+    <div class="attendance-remix-datebar">
+      <div class="attendance-remix-date-nav">
+        <button id="attendanceRemixPrevBtn" type="button">← Previous</button>
+        <button id="attendanceRemixTodayBtn" type="button" class="today-btn">Today</button>
+        <button id="attendanceRemixNextBtn" type="button">Next →</button>
+        <input id="attendanceRemixDateInput" type="date" />
+        <span class="attendance-remix-date-label" id="attendanceRemixDateLabel">Selected date</span>
       </div>
-
-      <div class="grid-2">
-        <div class="card">
-          <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Attendance log</h3>
-          <div class="form-grid attendance-form-grid">
-            <div class="field"><label for="attendanceEmployeeName">Employee Name</label><select id="attendanceEmployeeName"></select></div>
-            <div class="field"><label for="attendanceDepartment">Department</label><select id="attendanceDepartment"></select></div>
-            <div class="field"><label for="attendanceDate">Date</label><input id="attendanceDate" type="date" /></div>
-            <div class="field"><label for="attendanceMark">Mark</label><select id="attendanceMark"></select></div>
-            <div class="field"><label for="attendanceDemerits">Auto Demerits</label><input id="attendanceDemerits" type="number" value="0" disabled /></div>
-          </div>
-          <div class="toolbar">
-            <div class="left">
-              <input class="search" id="attendanceSearch" type="text" placeholder="Search employee, mark, or date" />
-              <span class="pill" id="attendanceCurrentDepartmentPill">Receiving</span>
-              <select id="attendanceSortBy">
-                <option value="date_desc">Newest first</option>
-                <option value="date_asc">Oldest first</option>
-                <option value="name_asc">Name A-Z</option>
-                <option value="name_desc">Name Z-A</option>
-                <option value="mark_asc">Mark A-Z</option>
-                <option value="demerits_desc">Highest demerits</option>
-              </select>
-            </div>
-            <div class="right">
-              <button class="btn secondary" id="attendanceManageEmployeesBtn">Manage employees</button>
-              <button class="btn secondary" id="attendanceUndoBtn" disabled>Undo clear</button>
-              <button class="btn warn" id="attendanceClearBtn">Clear all data</button>
-              <button class="btn" id="attendanceAddBtn">Add record</button>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Employee Name</th><th>Department</th><th>Date</th><th>Mark</th><th>Demerits</th><th>Action</th></tr></thead>
-              <tbody id="attendanceRecordsBody"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Employee summary</h3>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Employee Name</th><th>Total Days</th><th>Present</th><th>Net Demerits</th></tr></thead>
-              <tbody id="attendanceSummaryBody"></tbody>
-            </table>
-          </div>
-          <div class="small-note">
-            <strong>What was added:</strong><br>
-            Employee dropdown, sorting, clickable employee history, automatic demerits by status, 30-day streak credits, employee delete tools, and an undo button for accidental clear-all actions.<br><br>
-            <strong>Demerit rule in this version:</strong> Late = 0.5, Absent = 1, Call Out = 1, Present = 0, Excused = 0.
-          </div>
-        </div>
+      <div class="attendance-remix-date-actions">
+        <button class="attendance-remix-quick-present-btn" id="attendanceRemixQuickPresentBtn" type="button">✓ Mark All Present</button>
+        <button class="attendance-remix-open-editor-btn" id="attendanceRemixOpenEditorBtn" type="button">Open Attendance Editor</button>
       </div>
-    </section>
+    </div>
+
+    <!-- MAIN: AT-A-GLANCE SUMMARY (replaces roster) -->
+    <div class="attendance-remix-summary-section">
+      <h3 id="attendanceRemixSummaryTitle">Warehouse Overview</h3>
+      <div class="attendance-remix-summary-table-wrap">
+        <table class="attendance-remix-summary-table" id="attendanceRemixSummaryTable">
+          <thead id="attendanceRemixSummaryHead"></thead>
+          <tbody id="attendanceRemixSummaryBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Hidden legacy shells for backward compat -->
+  <div class="attendance-legacy-shell" hidden>
+    <div class="dept-tabs" id="attendanceDeptTabs"></div>
+    <div class="stats">
+      <div class="card"><div class="stat-label">Total entries</div><div class="stat-value" id="attendanceTotalEntries">0</div></div>
+      <div class="card"><div class="stat-label">Present</div><div class="stat-value" id="attendancePresentCount">0</div></div>
+      <div class="card"><div class="stat-label">Late / Absent</div><div class="stat-value" id="attendanceLateAbsentCount">0 / 0</div></div>
+      <div class="card"><div class="stat-label">Net demerits</div><div class="stat-value" id="attendanceNetDemerits">0</div></div>
+    </div>
+    <div class="card"><div class="form-grid attendance-form-grid">
+      <div class="field"><select id="attendanceEmployeeName"></select></div>
+      <div class="field"><select id="attendanceDepartment"></select></div>
+      <div class="field"><input id="attendanceDate" type="date" /></div>
+      <div class="field"><select id="attendanceMark"></select></div>
+      <div class="field"><input id="attendanceDemerits" type="number" value="0" disabled /></div>
+    </div>
+    <div class="toolbar">
+      <div class="left"><input class="search" id="attendanceSearch" type="text" /><span class="pill" id="attendanceCurrentDepartmentPill">Receiving</span><select id="attendanceSortBy"><option value="date_desc">Newest first</option></select></div>
+      <div class="right"><button class="btn secondary" id="attendanceManageEmployeesBtn">Manage</button><button class="btn secondary" id="attendanceUndoBtn" disabled>Undo clear</button><button class="btn warn" id="attendanceClearBtn">Clear all data</button><button class="btn" id="attendanceAddBtn">Add record</button></div>
+    </div>
+    <table><tbody id="attendanceRecordsBody"></tbody></table></div>
+    <div class="card"><table><tbody id="attendanceSummaryBody"></tbody></table></div>
+    <!-- Legacy batch/roster elements -->
+    <input id="attendanceBatchDate" type="date" />
+    <select id="attendanceBatchMark"></select>
+    <select id="attendanceMoveToDepartment"></select>
+    <input id="attendanceMoveStartTime" type="time" />
+    <input id="attendanceMoveEndTime" type="time" />
+    <input id="attendanceMoveNote" />
+    <div id="attendanceBatchSummary"></div>
+    <div id="attendanceRosterGrid"></div>
+    <div id="attendanceMoveLogBody"></div>
+    <button id="attendanceSeedBtn"></button>
+    <button id="attendanceExportBtn"></button>
+    <button id="attendanceApplyBatchBtn"></button>
+    <button id="attendanceSelectAllBtn"></button>
+    <button id="attendanceClearSelectionBtn"></button>
+    <button id="attendanceMarkAllPresentBtn"></button>
+    <button id="attendanceLogMoveBtn"></button>
+  </div>
+</section>
 
     
     <!-- Errors -->
@@ -282,56 +291,72 @@
     </section>
 
     
-    <!-- Employees -->
-    <section id="employeesPage" class="page">
-      <div class="hero">
-        <div>
-          <div class="eyebrow">Employees</div>
-          <h2>Shared employee source</h2>
-          <p class="subtitle">Manage employees in one place so every module can pull from the same source. Add or remove people here, and Attendance and Warehouse Errors will use the updated list.</p>
-        </div>
+    
+<!-- Employees -->
+<section id="employeesPage" class="page">
+  <div class="card attendance-merged-card">
+    <div class="eyebrow">Merged into Attendance</div>
+    <h2>Employees now live inside Attendance Settings</h2>
+    <p class="subtitle">This page is intentionally reduced so employee management can stay attached to the attendance workflow. Use Attendance → Settings to add names, remove names, move people between departments, and manage marks and demerits.</p>
+    <div class="toolbar">
+      <div class="left">
+        <button class="btn" id="employeesMergedGoBtn" type="button">Go to Attendance</button>
       </div>
+    </div>
+  </div>
+  <div class="employees-legacy-shell" hidden>
 
-      <div class="stats">
-        <div class="card"><div class="stat-label">Active employees</div><div class="stat-value" id="employeesActiveCount">0</div><div class="stat-hint">Available in dropdowns across the site</div></div>
-        <div class="card"><div class="stat-label">Departments used</div><div class="stat-value" id="employeesDepartmentCount">0</div><div class="stat-hint">Departments currently assigned</div></div>
-        <div class="card"><div class="stat-label">Attendance source</div><div class="stat-value">Shared</div><div class="stat-hint">Attendance pulls from this employee list</div></div>
-        <div class="card"><div class="stat-label">Errors source</div><div class="stat-value">Shared</div><div class="stat-hint">Warehouse Errors pulls from this employee list</div></div>
+  <div class="hero">
+    <div>
+      <div class="eyebrow">Employees</div>
+      <h2>Shared employee source</h2>
+      <p class="subtitle">Manage employees in one place so every module can pull from the same source. Add or remove people here, and Attendance and Warehouse Errors will use the updated list.</p>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="card"><div class="stat-label">Active employees</div><div class="stat-value" id="employeesActiveCount">0</div><div class="stat-hint">Available in dropdowns across the site</div></div>
+    <div class="card"><div class="stat-label">Departments used</div><div class="stat-value" id="employeesDepartmentCount">0</div><div class="stat-hint">Departments currently assigned</div></div>
+    <div class="card"><div class="stat-label">Attendance source</div><div class="stat-value">Shared</div><div class="stat-hint">Attendance pulls from this employee list</div></div>
+    <div class="card"><div class="stat-label">Errors source</div><div class="stat-value">Shared</div><div class="stat-hint">Warehouse Errors pulls from this employee list</div></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Add employee</h3>
+      <div class="form-grid" style="grid-template-columns:1.4fr 1fr 1fr .8fr;align-items:end">
+        <div class="field"><label for="employeeManagerName">Employee Name</label><input id="employeeManagerName" placeholder="Full name" /></div>
+        <div class="field"><label for="employeeManagerDepartment">Default Department</label><select id="employeeManagerDepartment"></select></div>
+        <div class="field"><label for="employeeManagerBirthday">Birthday</label><input id="employeeManagerBirthday" type="date" /></div>
+        <div class="field"><label for="employeeManagerSize">Preferred Size</label><select id="employeeManagerSize"></select></div>
+        <div class="toolbar right" style="margin:0;justify-content:flex-end"><button class="btn" id="employeeAddBtn">Save employee</button></div>
       </div>
+      <div class="small-note"><strong>How this works:</strong> this tab is now the shared source. New employees are added from the form above. Existing employees are edited directly in the table below so you do not have to scroll back up and down.</div>
+    </div>
 
-      <div class="grid-2">
-        <div class="card">
-          <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Add employee</h3>
-          <div class="form-grid" style="grid-template-columns:1.4fr 1fr 1fr .8fr;align-items:end">
-            <div class="field"><label for="employeeManagerName">Employee Name</label><input id="employeeManagerName" placeholder="Full name" /></div>
-            <div class="field"><label for="employeeManagerDepartment">Default Department</label><select id="employeeManagerDepartment"></select></div>
-            <div class="field"><label for="employeeManagerBirthday">Birthday</label><input id="employeeManagerBirthday" type="date" /></div>
-            <div class="field"><label for="employeeManagerSize">Preferred Size</label><input id="employeeManagerSize" placeholder="S, M, L, XL, 2XL..." /></div>
-            <div class="toolbar right" style="margin:0;justify-content:flex-end"><button class="btn" id="employeeAddBtn">Save employee</button></div>
-          </div>
-          <div class="small-note"><strong>How this works:</strong> this tab is now the shared source. New employees are added from the form above. Existing employees are edited directly in the table below so you do not have to scroll back up and down.</div>
-        </div>
-
-        <div class="card">
-          <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Quick controls</h3>
-          <div class="toolbar" style="margin-bottom:8px">
-            <div class="left"><input class="search" id="employeesSearch" type="text" placeholder="Search employee or department" /></div>
-            <div class="right"><select id="employeesDepartmentFilter"></select></div>
-          </div>
-          <div class="small-note">Removing an employee here removes them from the shared dropdown source. Existing attendance or error history tied to that name stays in the records unless you delete those records separately.</div>
-        </div>
+    <div class="card">
+      <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Quick controls</h3>
+      <div class="toolbar" style="margin-bottom:8px">
+        <div class="left"><input class="search" id="employeesSearch" type="text" placeholder="Search employee or department" /></div>
+        <div class="right"><select id="employeesDepartmentFilter"></select></div>
       </div>
+      <div class="small-note">Removing an employee here removes them from the shared dropdown source. Existing attendance or error history tied to that name stays in the records unless you delete those records separately.</div>
+    </div>
+  </div>
 
-      <div class="card" style="margin-top:20px">
-        <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Employee list</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Employee Name</th><th>Default Department</th><th>Birthday</th><th>Preferred Size</th><th>Status</th><th>Action</th></tr></thead>
-            <tbody id="employeesTableBody"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
+  <div class="card" style="margin-top:20px">
+    <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Employee list</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Employee Name</th><th>Default Department</th><th>Birthday</th><th>Preferred Size</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody id="employeesTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  </div>
+</section>
+
 
     
     <!-- Calendar -->
@@ -747,6 +772,186 @@
         </div>
       </div>
     </section>
+<section id="sordPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Daily tools</div>
+          <h2>Daily tools dossier</h2>
+          <p class="subtitle">Search one SORD and see pack builders, revenue, purchase orders, suppliers, account-product detail, notes, owner coverage, and feasibility clues in one place. This page uses your imported reports plus live queue / assembly data when available.</p>
+        </div>
+        <div class="toolbar right">
+          <button class="btn secondary" id="sordRefreshBtn" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <div class="card sord-import-card">
+        <div class="sord-import-grid">
+          <div class="field">
+            <label for="sordQueueFileInput">Assembly / Queue report</label>
+            <input id="sordQueueFileInput" type="file" accept=".xlsx,.xls,.csv,text/csv" />
+          </div>
+          <div class="field">
+            <label for="sordRevenueFileInput">Revenue report</label>
+            <input id="sordRevenueFileInput" type="file" accept=".xlsx,.xls,.csv,text/csv" />
+          </div>
+          <div class="field">
+            <label for="sordEomFileInput">SORD / PO detail report</label>
+            <input id="sordEomFileInput" type="file" accept=".xlsx,.xls,.csv,text/csv" />
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <div class="toolbar" style="margin:0">
+              <button class="btn" id="sordImportBtn" type="button">Import / Replace SORD Data</button>
+              <button class="btn secondary" id="sordClearImportsBtn" type="button">Clear Imported Data</button>
+            </div>
+          </div>
+        </div>
+        <div id="sordImportStatus" class="import-status">No SORD imports loaded yet.</div>
+      </div>
+
+      <div class="stats" id="sordTopStats"></div>
+
+      <div class="card" style="margin-bottom:20px">
+        <div class="toolbar">
+          <div class="left" style="gap:12px;flex-wrap:wrap">
+            <div class="field">
+              <label for="sordStatusFilter">Status</label>
+              <select id="sordStatusFilter"><option value="">All</option></select>
+            </div>
+            <div class="field">
+              <label for="sordReadinessFilter">Readiness</label>
+              <select id="sordReadinessFilter"><option value="">All</option><option value="Ready">Ready</option><option value="Partially Ready">Partially Ready</option><option value="Blocked">Blocked</option><option value="Needs Review">Needs Review</option></select>
+            </div>
+            <div class="field">
+              <label for="sordComplexityFilter">Complexity</label>
+              <select id="sordComplexityFilter"><option value="">All</option><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option></select>
+            </div>
+            <div class="field">
+              <label for="sordRiskFilter">Risk</label>
+              <select id="sordRiskFilter"><option value="">All</option><option value="none">No Flags</option><option value="flagged">Flagged</option></select>
+            </div>
+          </div>
+          <div class="right">
+            <button class="btn secondary" id="sordResetFiltersBtn" type="button">Reset Filters</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="sord-layout">
+        <div class="card sord-explorer-card">
+          <div class="sord-card-head sord-card-head-search">
+            <div>
+              <div class="eyebrow">Explorer</div>
+              <h3>SORD list</h3>
+            </div>
+            <div class="sord-card-head-tools">
+              <div class="field sord-search-field">
+                <label for="sordSearchInput">Search</label>
+                <input id="sordSearchInput" placeholder="SORD, account, owner, supplier, pack builder..." />
+              </div>
+              <div id="sordExplorerCount" class="sord-meta-pill">0 results</div>
+            </div>
+          </div>
+          <div class="table-wrap sord-explorer-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>SORD</th>
+                  <th>Account Owner</th>
+                  <th>Status</th>
+                  <th>Revenue</th>
+                  <th>PBs</th>
+                  <th>Suppliers</th>
+                  <th>Readiness</th>
+                  <th>Complexity</th>
+                  <th>Flags</th>
+                </tr>
+              </thead>
+              <tbody id="sordExplorerBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="sord-dossier-column">
+          <div class="card">
+            <div class="sord-card-head">
+              <div>
+                <div class="eyebrow">Dossier</div>
+                <h3 id="sordDossierTitle">Select a SORD</h3>
+              </div>
+              <div id="sordDossierBadges" class="sord-badges"></div>
+            </div>
+            <div id="sordSummaryGrid" class="sord-summary-grid"></div>
+          </div>
+
+          <div class="card">
+            <div class="sord-card-head"><div><div class="eyebrow">Risk & blockers</div><h3>Flags</h3></div></div>
+            <div id="sordFlagsWrap" class="sord-flags-wrap"></div>
+          </div>
+
+          <div class="card">
+            <div class="sord-card-head"><div><div class="eyebrow">Pack builders</div><h3>Assembly / queue view</h3></div></div>
+            <div class="table-wrap"><table><thead><tr><th>Pack Builder</th><th>PB ID</th><th>Source</th><th>Qty</th><th>Products</th><th>Units</th><th>Status</th><th>IHD</th><th>Stage</th><th>Open</th></tr></thead><tbody id="sordPackBuilderBody"></tbody></table></div>
+          </div>
+
+          <div class="grid-2">
+            <div class="card">
+              <div class="sord-card-head"><div><div class="eyebrow">Financials</div><h3>Revenue panel</h3></div></div>
+              <div id="sordRevenuePanel" class="sord-mini-grid"></div>
+            </div>
+            <div class="card">
+              <div class="sord-card-head"><div><div class="eyebrow">Timeline</div><h3>Lifecycle markers</h3></div></div>
+              <div id="sordTimelinePanel" class="sord-timeline"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="sord-card-head"><div><div class="eyebrow">POs & suppliers</div><h3>Purchasing detail</h3></div></div>
+            <div class="table-wrap"><table><thead><tr><th>PO</th><th>Status</th><th>PO Owner</th><th>Supplier</th><th>Estimated Ship</th><th>Item Cost</th><th>Line Price</th><th>Account Product</th><th>Image</th></tr></thead><tbody id="sordPoBody"></tbody></table></div>
+          </div>
+
+          <div class="card">
+            <div class="sord-card-head"><div><div class="eyebrow">Account products</div><h3>Item layer</h3></div></div>
+            <div class="table-wrap"><table><thead><tr><th>Account Product</th><th>External ID</th><th>PO Count</th><th>Supplier Count</th><th>Qty</th><th>Item Cost</th></tr></thead><tbody id="sordAccountProductBody"></tbody></table></div>
+          </div>
+          <div class="card">
+            <div class="sord-card-head">
+              <div><div class="eyebrow">Reference</div><h3>Owner mapping</h3></div>
+              <div class="toolbar right" style="margin:0">
+                <a id="sordOwnerUtilityLink" class="btn secondary" href="#" target="_blank" rel="noopener" style="display:none">Open link</a>
+                <button class="btn secondary" id="sordAddOwnerRowBtn" type="button">Add Row</button>
+                <button class="btn" id="sordSaveOwnerMapBtn" type="button">Save Mapping</button>
+              </div>
+            </div>
+            <div class="sord-owner-toolbar">
+              <div class="field">
+                <label for="sordOwnerUtilityLabel">Utility Link Label</label>
+                <input id="sordOwnerUtilityLabel" placeholder="Open team directory" />
+              </div>
+              <div class="field">
+                <label for="sordOwnerUtilityUrl">Utility Link URL</label>
+                <input id="sordOwnerUtilityUrl" placeholder="https://..." />
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="sord-owner-table">
+                <thead>
+                  <tr>
+                    <th>Name in SF</th>
+                    <th>Account Manager</th>
+                    <th>Project Manager</th>
+                    <th>PSA</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="sordOwnerMapBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
 <section id="workflowInboundPage" class="page">
       <div class="hero">
         <div>
@@ -865,6 +1070,85 @@
   </div>
 </div>
 
+
+<!-- ATTENDANCE EDITOR POPUP (transparent blue overlay from sketch) -->
+<div class="attendance-remix-overlay" id="attendanceRemixEditorBackdrop">
+  <div class="attendance-remix-popup">
+    <div class="attendance-remix-popup-head">
+      <div>
+        <h3 id="attendanceRemixEditorTitle">Attendance Editor</h3>
+        <div class="attendance-remix-popup-subtitle">Select a status, then tap names to apply. Or use chips per person.</div>
+      </div>
+      <button class="attendance-remix-popup-close" id="attendanceRemixEditorCloseBtn" type="button">✕</button>
+    </div>
+    <div class="attendance-remix-popup-datebar">
+      <button id="attendanceRemixEditorPrevBtn" type="button">← Prev</button>
+      <button id="attendanceRemixEditorTodayBtn" type="button">Today</button>
+      <button id="attendanceRemixEditorNextBtn" type="button">Next →</button>
+      <input id="attendanceRemixEditorDateInput" type="date" />
+      <span class="attendance-remix-popup-date-label" id="attendanceRemixEditorDateLabel"></span>
+      <button id="attendanceRemixEditorClearBtn" type="button" style="margin-left:auto;color:#dc2626;border-color:#fecaca;">Clear Day</button>
+    </div>
+    <div class="attendance-remix-popup-body" id="attendanceRemixEditorTable"></div>
+    <div class="attendance-remix-popup-foot">
+      <div class="foot-left">
+        <button class="attendance-remix-btn danger" id="attendanceRemixEditorCancelBtn" type="button">Cancel</button>
+      </div>
+      <div class="foot-right">
+        <button class="attendance-remix-btn primary" id="attendanceRemixEditorSaveBtn" type="button">Save & Quit</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS OVERLAY -->
+<div class="attendance-remix-settings-overlay" id="attendanceRemixSettingsBackdrop">
+  <div class="attendance-remix-settings-popup">
+    <div class="attendance-remix-settings-head">
+      <h3>Settings — Roster, Departments, Marks & Demerits</h3>
+      <button class="attendance-remix-popup-close" id="attendanceRemixSettingsCloseBtn" type="button">✕</button>
+    </div>
+    <div class="attendance-remix-settings-body">
+      <div class="attendance-remix-settings-section">
+        <h4>Departments</h4>
+        <div id="attendanceRemixDepartmentsList" class="attendance-remix-settings-list"></div>
+        <div class="attendance-remix-add-row">
+          <input id="attendanceRemixNewDepartmentInput" placeholder="New department name" />
+          <button class="add-btn" id="attendanceRemixAddDepartmentBtn" type="button">+ Add</button>
+        </div>
+      </div>
+
+      <div class="attendance-remix-settings-section">
+        <h4>Marks & Demerits</h4>
+        <div id="attendanceRemixMarksList" class="attendance-remix-settings-list"></div>
+        <div class="attendance-remix-add-row">
+          <input id="attendanceRemixNewMarkInput" placeholder="Mark name" />
+          <input id="attendanceRemixNewMarkDemeritInput" type="number" step="0.5" placeholder="Demerits" style="max-width:100px;" />
+          <button class="add-btn" id="attendanceRemixAddMarkBtn" type="button">+ Add</button>
+        </div>
+      </div>
+
+      <div class="attendance-remix-settings-section full-span">
+        <h4>Employees — move people between departments here</h4>
+        <div id="attendanceRemixEmployeesList" class="attendance-remix-settings-list"></div>
+        <div class="attendance-remix-add-row">
+          <input id="attendanceRemixNewEmployeeName" placeholder="Employee name" />
+          <select id="attendanceRemixNewEmployeeDepartment"></select>
+          <input id="attendanceRemixNewEmployeeBirthday" type="date" title="Birthday" />
+          <select id="attendanceRemixNewEmployeeSize"></select>
+          <button class="add-btn" id="attendanceRemixAddEmployeeSaveBtn" type="button">+ Add Person</button>
+        </div>
+      </div>
+    </div>
+    <div class="attendance-remix-settings-foot">
+      <button class="attendance-remix-btn" id="attendanceRemixSettingsCancelBtn" type="button">Cancel</button>
+      <button class="attendance-remix-btn primary" id="attendanceRemixSettingsSaveBtn" type="button">Save Settings</button>
+    </div>
+  </div>
+</div>
+
+<link rel="stylesheet" href="Styles/attendance-remix.css">
+
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
@@ -873,6 +1157,8 @@
 <script src="queue.js"></script>
 <script src="assembly.js"></script>
 <script src="script.js"></script>
+<script src="sord.js"></script>
+<script src="attendance-remix.js"></script>
 
 </body>
 </html>
