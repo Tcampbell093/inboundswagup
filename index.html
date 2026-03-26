@@ -15,25 +15,25 @@
 <link rel="stylesheet" href="Styles/assembly.css">
 <link rel="stylesheet" href="Styles/workflow.css">
 <link rel="stylesheet" href="Styles/sord.css">
+<link rel="stylesheet" href="Styles/policy.css">
 <link rel="stylesheet" href="risk-row.css">
+  <link rel="icon" type="image/png" href="assets/houston-control-logo-left.png">
 </head>
 <body>
 <div class="app" data-app-shell="warehouse-hub">
   <aside class="sidebar">
     <button class="sidebar-toggle" id="sidebarToggleBtn" type="button" aria-label="Toggle sidebar">⇤</button>
-    <div class="brand">
-      <div class="brand-mark">WH</div>
-      <div class="brand-text">
-        <h1>Warehouse Hub</h1>
-        <p>Light-blue internal prototype</p>
-      </div>
+    <div class="brand brand-polished">
+      <img class="brand-mark brand-mark-image" src="assets/houston-control-logo-left.png" alt="Houston Control logo">
     </div>
     <div class="nav-title">Daily Tools</div>
     <div class="nav-list">
       <button class="nav-btn active" data-page="homePage">Home</button>
+      <button class="nav-btn" data-page="importHubPage">Import Hub</button>
       <button class="nav-btn" data-page="attendancePage">Attendance</button>
       <button class="nav-btn" data-page="errorsPage">Warehouse Errors</button>
       <button class="nav-btn" data-page="calendarPage">Calendar</button>
+      <button class="nav-btn" data-page="policyPage">Policy</button>
     </div>
     <div class="nav-title">Assembly Workflow</div>
     <div class="nav-list">
@@ -133,6 +133,66 @@
             <div class="eyebrow">Error Snapshot</div>
             <h3 style="margin:6px 0 14px;font-size:24px">Recent warehouse issues</h3>
             <div id="homeErrorsList" class="module-list"></div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <section id="importHubPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Shared imports</div>
+          <h2>Import hub</h2>
+          <p class="subtitle">Use one import area for the Queue and Daily Tools dossier. Queue report feeds the Available Queue and Daily Tools. Revenue feeds Queue revenue reference and Daily Tools. SORD / PO detail feeds Daily Tools.</p>
+        </div>
+      </div>
+
+      <div class="card import-hub-card">
+        <div class="import-hub-grid">
+          <div class="field">
+            <label for="importHubQueueFile"><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00ODu000000XJCOMA4/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Queue / Assembly report</a></label>
+            <input id="importHubQueueFile" type="file" accept=".xlsx,.xls,.csv,text/csv" />
+            <div class="import-hub-hint">Updates Available Queue and Daily Tools.</div>
+          </div>
+          <div class="field">
+            <label for="importHubRevenueFile"><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BE2jMAG/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Revenue report</a></label>
+            <input id="importHubRevenueFile" type="file" accept=".xlsx,.xls,.csv,text/csv" />
+            <div class="import-hub-hint">Updates Queue revenue reference and Daily Tools.</div>
+          </div>
+          <div class="field">
+            <label for="importHubEomFile"><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BDbJMAW/view" target="_blank" rel="noopener noreferrer">SORD / PO detail report</a></label>
+            <input id="importHubEomFile" type="file" accept=".xlsx,.xls,.csv,text/csv" />
+            <div class="import-hub-hint">Updates Daily Tools dossier detail only.</div>
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <div class="toolbar" style="margin:0;flex-wrap:wrap">
+              <button class="btn" id="importHubRunBtn" type="button">Import Selected Files</button>
+              <button class="btn secondary" id="importHubClearBtn" type="button">Clear Shared Imports</button>
+            </div>
+          </div>
+        </div>
+        <div id="importHubStatus" class="import-status">No shared imports have been loaded yet.</div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="eyebrow">What this controls</div>
+          <h3 style="margin:6px 0 14px;font-size:24px">One source of import truth</h3>
+          <ul class="import-hub-list">
+            <li><strong><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00ODu000000XJCOMA4/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Queue / Assembly report</a></strong> updates the Available Queue and the Daily Tools dossier pack-builder side.</li>
+            <li><strong>Revenue reference report</strong> updates Queue revenue reference and the Daily Tools dossier revenue side.</li>
+            <li><strong><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BDbJMAW/view" target="_blank" rel="noopener noreferrer">SORD / PO detail report</a></strong> updates purchase orders, supplier detail, account products, and related dossier intelligence.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="eyebrow">Legacy page imports</div>
+          <h3 style="margin:6px 0 14px;font-size:24px">Now centralized</h3>
+          <p class="subtitle" style="margin:0">The old import bars on Queue and Daily Tools are hidden so you only have to import once here.</p>
+          <div class="toolbar" style="margin-top:12px">
+            <button class="btn secondary" type="button" data-page-jump="queuePage">Open Available Queue</button>
+            <button class="btn secondary" type="button" data-page-jump="sordPage">Open Daily Tools</button>
           </div>
         </div>
       </div>
@@ -391,6 +451,160 @@
     </section>
 
     
+    
+    <!-- Policy -->
+    <section id="policyPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Policy Desk</div>
+          <h2>Policy & SOP Library</h2>
+          <p class="subtitle">Create, update, archive, and search internal policies. Import SOP files into one place so you have a clean policy module instead of scattered reference docs.</p>
+        </div>
+        <div class="toolbar right">
+          <span class="pill" id="policyDocCountPill">0 SOP files</span>
+          <span class="pill" id="policyRuleCountPill">0 policies</span>
+        </div>
+      </div>
+
+      <div class="grid-2 policy-grid">
+        <div style="display:grid;gap:20px">
+          <div class="card">
+            <div class="toolbar">
+              <div class="left">
+                <div>
+                  <div class="eyebrow">Policy entry</div>
+                  <h3 style="margin:6px 0 0">Add or update policy</h3>
+                </div>
+              </div>
+              <div class="right">
+                <button class="btn secondary" id="policyFormResetBtn" type="button">Clear Form</button>
+              </div>
+            </div>
+
+            <div class="form-grid policy-form-grid">
+              <div class="field">
+                <label for="policyTitleInput">Policy title</label>
+                <input id="policyTitleInput" type="text" placeholder="Ex: Attendance point reset policy">
+              </div>
+              <div class="field">
+                <label for="policyCategoryInput">Category</label>
+                <input id="policyCategoryInput" type="text" placeholder="Ex: Attendance, Safety, QA, Assembly">
+              </div>
+              <div class="field">
+                <label for="policyOwnerInput">Owner</label>
+                <input id="policyOwnerInput" type="text" placeholder="Ex: Operations, HR, QA">
+              </div>
+              <div class="field">
+                <label for="policyStatusSelect">Status</label>
+                <select id="policyStatusSelect">
+                  <option value="Active">Active</option>
+                  <option value="Draft">Draft</option>
+                  <option value="Archived">Archived</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="policyEffectiveDateInput">Effective date</label>
+                <input id="policyEffectiveDateInput" type="date">
+              </div>
+              <div class="field">
+                <label for="policyReviewDateInput">Review date</label>
+                <input id="policyReviewDateInput" type="date">
+              </div>
+            </div>
+
+            <div class="field" style="margin-top:12px">
+              <label for="policySummaryInput">Short summary</label>
+              <textarea id="policySummaryInput" placeholder="What is this policy for and when should it be used?"></textarea>
+            </div>
+
+            <div class="field" style="margin-top:12px">
+              <label for="policyBodyInput">Policy details</label>
+              <textarea id="policyBodyInput" class="policy-body-input" placeholder="Write the policy here. You can paste SOP steps, exception notes, escalation rules, examples, and anything you want later reference for."></textarea>
+            </div>
+
+            <div class="toolbar" style="margin-top:14px">
+              <div class="left">
+                <span class="pill" id="policyEditingPill">Creating new policy</span>
+              </div>
+              <div class="right">
+                <button class="btn" id="policySaveBtn" type="button">Save Policy</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="toolbar">
+              <div class="left">
+                <div>
+                  <div class="eyebrow">SOP library</div>
+                  <h3 style="margin:6px 0 0">Import SOPs and reference files</h3>
+                </div>
+              </div>
+              <div class="right">
+                <label class="btn secondary policy-upload-btn" for="policyFileInput">Import SOP Files</label>
+                <input id="policyFileInput" type="file" multiple accept=".pdf,.doc,.docx,.txt,.md,.csv,.json,.rtf">
+              </div>
+            </div>
+            <p class="subtitle" style="max-width:none">Imported files are stored in your browser for quick reference. Text-based files can be previewed directly in the module. Binary files still save with metadata so you can label, remove, and revisit them later.</p>
+            <div id="policyDocsList" class="policy-doc-list"></div>
+          </div>
+        </div>
+
+        <div style="display:grid;gap:20px">
+          <div class="card">
+            <div class="toolbar">
+              <div class="left">
+                <div>
+                  <div class="eyebrow">Search</div>
+                  <h3 style="margin:6px 0 0">Find policy fast</h3>
+                </div>
+              </div>
+            </div>
+            <div class="form-grid" style="grid-template-columns:1.6fr 1fr 1fr">
+              <div class="field">
+                <label for="policySearchInput">Search</label>
+                <input id="policySearchInput" type="text" placeholder="Search title, category, owner, summary, policy text">
+              </div>
+              <div class="field">
+                <label for="policyCategoryFilter">Category</label>
+                <select id="policyCategoryFilter">
+                  <option value="">All categories</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="policyStatusFilter">Status</label>
+                <select id="policyStatusFilter">
+                  <option value="">All statuses</option>
+                  <option value="Active">Active</option>
+                  <option value="Draft">Draft</option>
+                  <option value="Archived">Archived</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="toolbar">
+              <div class="left">
+                <div>
+                  <div class="eyebrow">Library</div>
+                  <h3 style="margin:6px 0 0">Policies</h3>
+                </div>
+              </div>
+            </div>
+            <div id="policyList" class="policy-list"></div>
+          </div>
+
+          <div class="card">
+            <div class="eyebrow">Preview</div>
+            <h3 style="margin:6px 0 14px">Policy / SOP preview</h3>
+            <div id="policyPreview" class="policy-preview empty">Select a policy or SOP file to preview it here.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
     <!-- Assembly -->
     <section id="assemblyPage" class="page">
       <div class="hero">
@@ -531,7 +745,7 @@
     <!-- Queue -->
     
 <section id="queuePage" class="page queue-page-redesign">
-      <div class="queue-sticky-bar">
+      <div class="queue-sticky-bar legacy-import-ui">
         <div class="queue-sticky-inner">
           <div class="queue-sticky-group">
             <div class="queue-sticky-label">Queue import</div>
@@ -544,7 +758,7 @@
           </div>
           <div class="queue-sticky-divider"></div>
           <div class="queue-sticky-group">
-            <div class="queue-sticky-label">Revenue reference</div>
+            <div class="queue-sticky-label"><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BE2jMAG/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Revenue reference</a></div>
             <div class="queue-sticky-actions">
               <input id="revenueFileInput" type="file" accept=".xlsx,.xls" />
               <button class="btn" id="revenueImportBtn">Import revenue reference</button>
@@ -553,6 +767,11 @@
             <div id="revenueImportStatus" class="queue-inline-status">Waiting for revenue reference file.</div>
           </div>
         </div>
+      </div>
+
+      <div class="card import-hub-inline-note">
+        <div><strong>Imports moved.</strong> Use the shared <strong>Import Hub</strong> page for Queue, Revenue, and Daily Tools report imports.</div>
+        <button class="btn secondary" type="button" data-page-jump="importHubPage">Open Import Hub</button>
       </div>
 
       <div class="hero queue-hero">
@@ -669,7 +888,7 @@
         </div>
 
         <div class="queue-stat-group">
-          <div class="queue-stat-group-title">Revenue reference</div>
+          <div class="queue-stat-group-title"><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BE2jMAG/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Revenue reference</a></div>
           <div class="queue-stat-grid">
             <article class="queue-stat-card">
               <span class="queue-stat-label">Revenue rows</span>
@@ -740,7 +959,7 @@
         <div class="queue-controls-note queue-hold-note"><strong>Use this when a pack builder is real but blocked.</strong> Issue Hold keeps the work visible, stores the problem, and keeps the revenue impact from disappearing.</div>
         <div class="table-wrap queue-table-wrap">
           <table>
-            <thead><tr><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>IHD</th><th>Issue Type</th><th>Hold Note</th><th>Hold Date</th><th>Revenue</th></tr></thead>
+            <thead><tr><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>IHD</th><th>Issue Type</th><th>Hold Note</th><th>Hold Start</th><th>Days</th><th>Revenue</th><th>Action</th></tr></thead>
             <tbody id="issueHoldQueueTableBody"></tbody>
           </table>
         </div>
@@ -784,18 +1003,18 @@
         </div>
       </div>
 
-      <div class="card sord-import-card">
+      <div class="card sord-import-card legacy-import-ui">
         <div class="sord-import-grid">
           <div class="field">
-            <label for="sordQueueFileInput">Assembly / Queue report</label>
+            <label for="sordQueueFileInput"><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00ODu000000XJCOMA4/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Assembly / Queue report</a></label>
             <input id="sordQueueFileInput" type="file" accept=".xlsx,.xls,.csv,text/csv" />
           </div>
           <div class="field">
-            <label for="sordRevenueFileInput">Revenue report</label>
+            <label for="sordRevenueFileInput"><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BE2jMAG/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Revenue report</a></label>
             <input id="sordRevenueFileInput" type="file" accept=".xlsx,.xls,.csv,text/csv" />
           </div>
           <div class="field">
-            <label for="sordEomFileInput">SORD / PO detail report</label>
+            <label for="sordEomFileInput"><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BDbJMAW/view" target="_blank" rel="noopener noreferrer">SORD / PO detail report</a></label>
             <input id="sordEomFileInput" type="file" accept=".xlsx,.xls,.csv,text/csv" />
           </div>
           <div class="field">
@@ -807,6 +1026,11 @@
           </div>
         </div>
         <div id="sordImportStatus" class="import-status">No SORD imports loaded yet.</div>
+      </div>
+
+      <div class="card import-hub-inline-note">
+        <div><strong>Imports moved.</strong> Use the shared <strong>Import Hub</strong> page to load the Queue, Revenue, and SORD / PO reports for this dossier.</div>
+        <button class="btn secondary" type="button" data-page-jump="importHubPage">Open Import Hub</button>
       </div>
 
       <div class="stats" id="sordTopStats"></div>
@@ -906,8 +1130,17 @@
           </div>
 
           <div class="card">
-            <div class="sord-card-head"><div><div class="eyebrow">POs & suppliers</div><h3>Purchasing detail</h3></div></div>
-            <div class="table-wrap"><table><thead><tr><th>PO</th><th>Status</th><th>PO Owner</th><th>Supplier</th><th>Estimated Ship</th><th>Item Cost</th><th>Line Price</th><th>Account Product</th><th>Image</th></tr></thead><tbody id="sordPoBody"></tbody></table></div>
+            <div class="sord-card-head">
+              <div><div class="eyebrow">POs & suppliers</div><h3>Purchasing detail</h3></div>
+              <div id="sordPoCategoryChips" class="po-category-filters">
+                <button class="po-chip active" type="button" data-po-filter="all">All (0)</button>
+                <button class="po-chip" type="button" data-po-filter="pack">Pack Items (0)</button>
+                <button class="po-chip" type="button" data-po-filter="bulk">Bulk Products (0)</button>
+                <button class="po-chip" type="button" data-po-filter="mix">Mix (0)</button>
+              </div>
+            </div>
+            <div id="sordPoCategorySummary" class="sord-po-filter-summary">Showing all purchase orders.</div>
+            <div class="table-wrap"><table><thead><tr><th>PO</th><th>Status</th><th>Category</th><th>PO Owner</th><th>Supplier</th><th>Estimated Ship</th><th>Item Cost</th><th>Line Price</th><th>Account Product</th><th>Image</th></tr></thead><tbody id="sordPoBody"></tbody></table></div>
           </div>
 
           <div class="card">
@@ -1019,14 +1252,15 @@
       <div>
         <div class="eyebrow">Issue Hold</div>
         <h2 style="margin:6px 0 4px;font-size:30px">Set this pack builder aside</h2>
-        <p class="subtitle" style="max-width:none">Use Issue Hold when the work is still real, but there is a problem blocking it. This keeps the units and revenue visible without pretending the work is ready.</p>
+        <p class="subtitle" style="max-width:none">Use Issue Hold when the work is still real, but there is a problem blocking it. Pick the hold reason, add a note, and set the true start date so days on hold keep counting correctly.</p>
       </div>
       <button class="btn secondary" id="closeIssueHoldBtn">Close</button>
     </div>
     <div class="schedule-summary" id="issueHoldModalSummary"></div>
     <div class="schedule-modal-grid">
-      <div class="field"><label for="issueHoldType">Issue Type</label><select id="issueHoldType"><option value="Missing Items">Missing Items</option><option value="Inventory Mismatch">Inventory Mismatch</option><option value="Print Issue">Print Issue</option><option value="Damaged Goods">Damaged Goods</option><option value="Awaiting Repush">Awaiting Repush</option><option value="Data Mismatch">Data Mismatch</option><option value="Customer Change">Customer Change</option><option value="Unknown / Investigate">Unknown / Investigate</option></select></div>
-      <div class="field"><label for="issueHoldNote">Hold Note</label><input id="issueHoldNote" placeholder="What exactly is blocking this pack builder?" /></div>
+      <div class="field"><label for="issueHoldType">Issue Type</label><select id="issueHoldType"></select></div>
+      <div class="field"><label for="issueHoldStartDate">Hold Start Date</label><input id="issueHoldStartDate" type="date" /></div>
+      <div class="field field-span-2"><label for="issueHoldNote">Hold Note</label><textarea id="issueHoldNote" placeholder="What exactly is blocking this pack builder?"></textarea></div>
     </div>
     <div class="toolbar" style="margin-top:16px;margin-bottom:0;justify-content:flex-end">
       <div class="right"><button class="btn secondary" id="cancelIssueHoldBtn">Cancel</button><button class="btn warn" id="confirmIssueHoldBtn">Put on Hold</button></div>
@@ -1158,7 +1392,9 @@
 <script src="assembly.js"></script>
 <script src="script.js"></script>
 <script src="sord.js"></script>
+<script src="import-hub.js"></script>
 <script src="attendance-remix.js"></script>
 
+<script src="policy.js"></script>
 </body>
 </html>

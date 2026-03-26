@@ -3,6 +3,37 @@ const MASTER_KEY = "qaBlueSheetMastersV5";
 const LANGUAGE_KEY = "qaWorkflowLanguageV1";
 const CURRENT_USER_KEY = "qaWorkflowCurrentUserV2";
 
+const ATTENDANCE_EMPLOYEE_KEY = "ops_hub_employees_v1";
+
+function readAttendanceEmployees() {
+  try {
+    const raw = localStorage.getItem(ATTENDANCE_EMPLOYEE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(item => item && item.active !== false)
+      .map(item => typeof item === "string" ? item.trim() : String(item.name || "").trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function syncAssociatesFromAttendance() {
+  const attendanceNames = [...new Set(readAttendanceEmployees())].sort((a, b) => a.localeCompare(b));
+  if (!attendanceNames.length) return;
+  const existing = Array.isArray(state?.masters?.associates) ? state.masters.associates : [];
+  const changed =
+    attendanceNames.length !== existing.length ||
+    attendanceNames.some((name, index) => existing[index] !== name);
+  if (changed && state && state.masters) {
+    state.masters.associates = attendanceNames;
+    persistMasters();
+  }
+}
+
+
 const defaultMasters = {
   categories: [
     "Apparel / Ropa",
@@ -42,7 +73,7 @@ const translations = {
     dockDailyLayout: "Docker Daily Layout", receivingLayout: "QA Receiving Layout", prepLayout: "Prep Layout",
     dockSaveOnly: "Only saves to Docker.", receivingSaveOnly: "Only saves to QA Receiving.", prepSaveOnly: "Only saves to Prep.",
     dockDataOnly: "Docker data only.", receivingDataOnly: "QA Receiving data only.", prepDataOnly: "Prep data only.",
-    settingsMasterLists: "Settings / Master Lists", settingsHelp: "Manage associates, categories, and locations here so the rest of the workflow can use dropdowns.",
+    settingsMasterLists: "Settings / Master Lists", settingsHelp: "Associate names now come from Attendance. Manage categories and locations here so the rest of the workflow can use dropdowns.",
     associates: "Associates", categories: "Categories", locations: "Locations",
     add: "Add", associate: "Associate", associateName: "Associate Name", day: "Day", date: "Date", location: "Location",
     search: "Search", clearFilters: "Clear Filters", createSection: "Create Section", loadDemo: "Load Demo Data", clearAll: "Clear All",
@@ -65,7 +96,7 @@ const translations = {
     dockDailyLayout: "Diseño diario de descarga", receivingLayout: "Diseño de recepción QA", prepLayout: "Diseño de preparación",
     dockSaveOnly: "Solo guarda en descarga.", receivingSaveOnly: "Solo guarda en recepción QA.", prepSaveOnly: "Solo guarda en preparación.",
     dockDataOnly: "Solo datos de descarga.", receivingDataOnly: "Solo datos de recepción QA.", prepDataOnly: "Solo datos de preparación.",
-    settingsMasterLists: "Configuración / Listas maestras", settingsHelp: "Administra asociados, categorías y ubicaciones aquí para que el resto del flujo use menús.",
+    settingsMasterLists: "Configuración / Listas maestras", settingsHelp: "Los nombres de asociados ahora vienen de Asistencia. Administra categorías y ubicaciones aquí para que el resto del flujo use menús.",
     associates: "Asociados", categories: "Categorías", locations: "Ubicaciones",
     add: "Agregar", associate: "Asociado", associateName: "Nombre del asociado", day: "Día", date: "Fecha", location: "Ubicación",
     search: "Buscar", clearFilters: "Limpiar filtros", createSection: "Crear sección", loadDemo: "Cargar demo", clearAll: "Borrar todo",
@@ -183,6 +214,7 @@ function getInitials(name) {
 }
 
 function populateCurrentUserSelect() {
+  syncAssociatesFromAttendance();
   if (!currentUserSelect) return;
   currentUserSelect.innerHTML = "";
   appendOption(currentUserSelect, "", t("selectAssociate"));
@@ -1738,7 +1770,7 @@ function applyLanguage() {
   document.getElementById("todayLabelText").textContent = t("today");
   document.getElementById("totalQtyLabel").textContent = t("totalQty");
   document.getElementById("languageLabel").textContent = t("language");
-  associateInput.placeholder = t("addAssociatePlaceholder");
+  if (associateInput) associateInput.placeholder = t("addAssociatePlaceholder");
   categoryInput.placeholder = t("addCategoryPlaceholder");
   locationInput.placeholder = t("addLocationPlaceholder");
   document.querySelectorAll(".search-field input").forEach((input) => input.placeholder = t("searchPlaceholder"));
@@ -1822,11 +1854,13 @@ function bindPageEvents() {
 }
 
 function bindMasterEvents() {
-  associateForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    addMasterItem("associates", associateInput.value);
-    associateInput.value = "";
-  });
+  if (associateForm && associateInput) {
+    associateForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      addMasterItem("associates", associateInput.value);
+      associateInput.value = "";
+    });
+  }
   categoryForm.addEventListener("submit", (event) => {
     event.preventDefault();
     addMasterItem("categories", categoryInput.value);
@@ -2121,6 +2155,7 @@ function bindRoleTabs() {
 }
 
 function renderAll() {
+  syncAssociatesFromAttendance();
   Object.keys(pageConfig).forEach(renderPage);
   renderOverstockPage();
   renderPerformancePage();
@@ -2620,12 +2655,13 @@ function renderStats() {
 }
 
 function renderMasterLists() {
-  renderSingleMasterList("associates", associatesList);
-  renderSingleMasterList("categories", categoriesList);
-  renderSingleMasterList("locations", locationsList);
+  syncAssociatesFromAttendance();
+  if (categoriesList) renderSingleMasterList("categories", categoriesList);
+  if (locationsList) renderSingleMasterList("locations", locationsList);
 }
 
 function renderSingleMasterList(type, container) {
+  if (!container) return;
   container.innerHTML = "";
   const items = [...state.masters[type]].sort((a, b) => a.localeCompare(b));
   if (!items.length) {
@@ -2763,9 +2799,19 @@ function getDefaultData() {
 function loadMasters() {
   try {
     const raw = localStorage.getItem(MASTER_KEY);
-    return raw ? JSON.parse(raw) : defaultMasters;
+    const base = raw ? JSON.parse(raw) : { ...defaultMasters };
+    const attendanceNames = [...new Set(readAttendanceEmployees())].sort((a, b) => a.localeCompare(b));
+    return {
+      ...defaultMasters,
+      ...base,
+      associates: attendanceNames.length ? attendanceNames : (Array.isArray(base.associates) ? base.associates : defaultMasters.associates)
+    };
   } catch {
-    return defaultMasters;
+    const attendanceNames = [...new Set(readAttendanceEmployees())].sort((a, b) => a.localeCompare(b));
+    return {
+      ...defaultMasters,
+      associates: attendanceNames.length ? attendanceNames : defaultMasters.associates
+    };
   }
 }
 

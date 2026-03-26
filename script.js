@@ -1,4 +1,3 @@
-
 // =============================
 // DATA VALIDATION LAYER
 // =============================
@@ -263,7 +262,7 @@ function normalizeAttendanceMoveRecords(list){
   })).filter(item=>item.employeeName);
 }
 function normalizeErrorRecords(list){return(list||[]).map(item=>{const expectedQty=Number(item.expectedQty||0);const receivedQty=Number(item.receivedQty||0);const absoluteAmount=Math.abs(expectedQty-receivedQty);const errorRate=expectedQty>0?(absoluteAmount/expectedQty)*100:0;return{id:item.id||Date.now()+Math.random(),date:item.date||new Date().toISOString().slice(0,10),department:item.department||"Prepping",associate:item.associate||"",proofed:item.proofed||"Yes",poNumber:item.poNumber||"",linkedId:item.linkedId||"",category:item.category||"",palletLocation:item.palletLocation||"",expectedQty,receivedQty,errorType:item.errorType||"Other",absoluteAmount,errorRate,notes:item.notes||""}})}
-function normalizeAssemblyBoardRows(list){return(list||[]).map(item=>({id:item.id||Date.now()+Math.random(),date:item.date||new Date().toISOString().slice(0,10),pb:String(item.pb||'').trim(),so:String(item.so||'').trim(),account:String(item.account||'').trim(),qty:Number(item.qty||0),products:Number(item.products||0),status:String(item.status||'').trim(),ihd:item.ihd||'',subtotal:Number(item.subtotal||0),stage:String(item.stage||inferLegacyStage(item)||'aa').trim(),rescheduleNote:String(item.rescheduleNote||'').trim(),pbId:String(item.pbId||'').trim(),pdfUrl:String(item.pdfUrl||'').trim(),workType:String(item.workType||'pack_builder').trim(),externalLink:String(item.externalLink||'').trim(),isPartial:!!item.isPartial,fullQty:Number(item.fullQty||item.qty||0),sourceQueue:String(item.sourceQueue||'').trim(),sourceStatus:String(item.sourceStatus||item.status||'').trim()}))}
+function normalizeAssemblyBoardRows(list){return(list||[]).map(item=>({id:item.id||Date.now()+Math.random(),date:item.date||new Date().toISOString().slice(0,10),pb:String(item.pb||'').trim(),so:String(item.so||'').trim(),account:String(item.account||'').trim(),qty:Number(item.qty||0),products:Number(item.products||0),status:String(item.status||'').trim(),ihd:item.ihd||'',subtotal:Number(item.subtotal||0),stage:String(item.stage||inferLegacyStage(item)||'aa').trim(),rescheduleNote:String(item.rescheduleNote||'').trim(),pbId:String(item.pbId||'').trim(),pdfUrl:String(item.pdfUrl||'').trim(),workType:String(item.workType||'pack_builder').trim(),externalLink:String(item.externalLink||'').trim(),isPartial:!!item.isPartial,fullQty:Number(item.fullQty||item.qty||0),accountOwner:String(item.accountOwner||'').trim(),sourceQueue:String(item.sourceQueue||'').trim(),sourceStatus:String(item.sourceStatus||item.status||'').trim()}))}
 function inferLegacyStage(item){if(item.done) return 'done'; if(item.dpmo) return 'dpmo'; if(item.line) return 'line'; if(item.picked) return 'picked'; if(item.print) return 'print'; return 'aa';}
 function normalizeQueueRows(list){return(list||[]).map(item=>({id:item.id||Date.now()+Math.random(),priority:!!item.priority,pb:String(item.pb||'').trim(),pbId:String(item.pbId||'').trim(),so:String(item.so||'').trim(),account:String(item.account||'').trim(),qty:Number(item.qty||0),products:Number(item.products||0),units:Number(item.units||0),ihd:String(item.ihd||'').trim(),accountOwner:String(item.accountOwner||'').trim(),pdfUrl:String(item.pdfUrl||'').trim(),status:String(item.status||'').trim()}))}
 function normalizeScheduledQueueRows(list){return(list||[]).map(item=>({id:item.id||Date.now()+Math.random(),priority:!!item.priority,pb:String(item.pb||'').trim(),pbId:String(item.pbId||'').trim(),so:String(item.so||'').trim(),account:String(item.account||'').trim(),qty:Number(item.qty||0),products:Number(item.products||0),units:Number(item.units||0),ihd:String(item.ihd||'').trim(),accountOwner:String(item.accountOwner||'').trim(),pdfUrl:String(item.pdfUrl||'').trim(),scheduledFor:String(item.scheduledFor||'').trim(),scheduledAt:String(item.scheduledAt||'').trim(),scheduleNote:String(item.scheduleNote||'').trim(),status:String(item.status||'').trim(),sourceQueue:String(item.sourceQueue||'ready').trim(),sourceStatus:String(item.sourceStatus||item.status||'').trim()}))}
@@ -889,10 +888,10 @@ queueClearSearchBtn.addEventListener('click',()=>{queueSearchInput.value='';rend
 scheduledQueueLimit.addEventListener('change',renderQueue);
 readyQueueLimit.addEventListener('change',renderQueue);
 incompleteQueueLimit.addEventListener('change',renderQueue);
-document.getElementById('queueImportBtn').addEventListener('click',importQueueReport);
-document.getElementById('queueClearBtn').addEventListener('click',clearQueue);
-document.getElementById('revenueImportBtn').addEventListener('click',importRevenueReference);
-document.getElementById('revenueClearBtn').addEventListener('click',clearRevenueReference);
+document.getElementById('queueImportBtn')?.addEventListener('click',importQueueReport);
+document.getElementById('queueClearBtn')?.addEventListener('click',clearQueue);
+document.getElementById('revenueImportBtn')?.addEventListener('click',importRevenueReference);
+document.getElementById('revenueClearBtn')?.addEventListener('click',clearRevenueReference);
 document.getElementById('closeScheduleBtn').addEventListener('click',closeScheduleModal);
 document.getElementById('cancelScheduleBtn').addEventListener('click',closeScheduleModal);
 document.getElementById('confirmScheduleBtn').addEventListener('click',confirmSchedule);

@@ -36,6 +36,8 @@
     ownerUtilityLabel: document.getElementById('sordOwnerUtilityLabel'),
     ownerUtilityUrl: document.getElementById('sordOwnerUtilityUrl'),
     ownerUtilityLink: document.getElementById('sordOwnerUtilityLink'),
+    poCategoryChips: document.getElementById('sordPoCategoryChips'),
+    poCategorySummary: document.getElementById('sordPoCategorySummary'),
     addOwnerRowBtn: document.getElementById('sordAddOwnerRowBtn'),
     saveOwnerMapBtn: document.getElementById('sordSaveOwnerMapBtn')
   };
@@ -60,6 +62,7 @@
   if (!els.page) return;
 
   const state = {
+    poCategoryFilter: 'all',
     imports: loadJson(STORAGE_KEY, {
       queueRows: [],
       revenueRows: [],
@@ -71,6 +74,7 @@
     selectedKey: '',
     ownerMap: loadJson(OWNER_MAP_KEY, DEFAULT_OWNER_MAP)
   };
+window.__sordState = state;
 
   function saveState(){ saveJson(STORAGE_KEY, state.imports); }
   function safeText(v){ return String(v ?? '').trim(); }
@@ -330,7 +334,9 @@
         accountProductExternalId: safeText(r.account_product_external_id),
         externalId: safeText(r.external_id),
         quantity: num(r.quantity),
-        quantityReceived: num(r.quantity_received)
+        quantityReceived: num(r.quantity_received),
+        status: safeText(r.status || r.purchase_order_status || r.po_status),
+        image: safeText(r.image || r.image_url || r.thumbnail || r.po_image)
       };
     }).filter(r => r.sord || r.salesOrderId || r.purchaseOrderId || r.purchaseOrderName);
   }
@@ -374,7 +380,123 @@
     return safeText(parts.salesOrderId || parts.sord);
   }
 
-  function buildDataset(){
+  
+  function canMergeOrders(a, b){
+    if (!a || !b) return false;
+    const aSord = safeText(a.sord);
+    const bSord = safeText(b.sord);
+    const aSo = safeText(a.salesOrderId);
+    const bSo = safeText(b.salesOrderId);
+    return !!(
+      (aSo && bSo && aSo === bSo) ||
+      (aSord && bSord && aSord === bSord) ||
+      (aSo && bSord && aSo === bSord) ||
+      (aSord && bSo && aSord === bSo)
+    );
+  }
+
+  function mergeOrderMaps(targetMap, sourceMap, mergeFn){
+    (sourceMap ? [...sourceMap.entries()] : []).forEach(([key, value]) => {
+      if (!targetMap.has(key)) {
+        targetMap.set(key, value);
+      } else if (mergeFn) {
+        mergeFn(targetMap.get(key), value);
+      }
+    });
+  }
+
+  function mergeRawOrders(target, source){
+    target.sord = target.sord || source.sord;
+    target.salesOrderId = target.salesOrderId || source.salesOrderId;
+    target.account = target.account || source.account;
+    target.accountOwner = target.accountOwner || source.accountOwner;
+    target.orderOwner = target.orderOwner || source.orderOwner;
+    target.createdBy = target.createdBy || source.createdBy;
+    target.status = target.status || source.status;
+    target.poStatus = target.poStatus || source.poStatus;
+    target.invoiceName = target.invoiceName || source.invoiceName;
+    target.subtotal = Math.max(target.subtotal || 0, source.subtotal || 0);
+    target.originalSubtotal = Math.max(target.originalSubtotal || 0, source.originalSubtotal || 0);
+    target.invoiceTotal = Math.max(target.invoiceTotal || 0, source.invoiceTotal || 0);
+    target.totalPackItems = Math.max(target.totalPackItems || 0, source.totalPackItems || 0);
+    target.totalBulkProducts = Math.max(target.totalBulkProducts || 0, source.totalBulkProducts || 0);
+
+    (source.revenueRows || []).forEach(row => target.revenueRows.push(row));
+    (source.queueRows || []).forEach(row => target.queueRows.push(row));
+    (source.eomRows || []).forEach(row => target.eomRows.push(row));
+    (source.liveRows || []).forEach(row => target.liveRows.push(row));
+
+    mergeOrderMaps(target.packBuilderMap, source.packBuilderMap, (a, b) => {
+      a.pb = a.pb || b.pb;
+      a.pbId = a.pbId || b.pbId;
+      a.source = a.source || b.source;
+      a.qty = a.qty || b.qty;
+      a.products = a.products || b.products;
+      a.units = a.units || b.units;
+      a.status = a.status || b.status;
+      a.ihd = a.ihd || b.ihd;
+      a.stage = a.stage || b.stage;
+      a.link = a.link || b.link;
+      a.account = a.account || b.account;
+      a.accountOwner = a.accountOwner || b.accountOwner;
+      a.scheduledFor = a.scheduledFor || b.scheduledFor;
+    });
+
+    mergeOrderMaps(target.poMap, source.poMap, (a, b) => {
+      a.purchaseOrderName = a.purchaseOrderName || b.purchaseOrderName;
+      a.purchaseOrderId = a.purchaseOrderId || b.purchaseOrderId;
+      a.poOwner = a.poOwner || b.poOwner;
+      a.supplier = a.supplier || b.supplier;
+      a.printerName = a.printerName || b.printerName;
+      a.estimatedShipDate = a.estimatedShipDate || b.estimatedShipDate;
+      a.createdDate = a.createdDate || b.createdDate;
+      a.ihd = a.ihd || b.ihd;
+      a.itemTotalCost = Math.max(a.itemTotalCost || 0, b.itemTotalCost || 0);
+      a.lineItemPrice = Math.max(a.lineItemPrice || 0, b.lineItemPrice || 0);
+      a.accountProductName = a.accountProductName || b.accountProductName;
+      a.accountProductExternalId = a.accountProductExternalId || b.accountProductExternalId;
+      a.quantity = Math.max(a.quantity || 0, b.quantity || 0);
+      a.status = a.status || b.status;
+      a.image = a.image || b.image;
+    });
+
+    mergeOrderMaps(target.accountProductMap, source.accountProductMap, (a, b) => {
+      (b.suppliers || new Set()).forEach(v => a.suppliers.add(v));
+      (b.printers || new Set()).forEach(v => a.printers.add(v));
+      (b.poKeys || new Set()).forEach(v => a.poKeys.add(v));
+      a.quantity += b.quantity || 0;
+      a.itemTotalCost += b.itemTotalCost || 0;
+      a.accountProductName = a.accountProductName || b.accountProductName;
+      a.accountProductExternalId = a.accountProductExternalId || b.accountProductExternalId;
+    });
+
+    (source.suppliers || new Set()).forEach(v => target.suppliers.add(v));
+    (source.poOwners || new Set()).forEach(v => target.poOwners.add(v));
+    (source.printerNames || new Set()).forEach(v => target.printerNames.add(v));
+    (source.productionTypes || new Set()).forEach(v => target.productionTypes.add(v));
+    (source.notesSet || new Set()).forEach(v => target.notesSet.add(v));
+    (source.relatedSords || new Set()).forEach(v => target.relatedSords.add(v));
+    (source.estimatedDates || []).forEach(v => target.estimatedDates.push(v));
+    (source.ihdDates || []).forEach(v => target.ihdDates.push(v));
+    (source.dueDates || []).forEach(v => target.dueDates.push(v));
+    (source.createdDates || []).forEach(v => target.createdDates.push(v));
+    (source.salesOrderCreatedDates || []).forEach(v => target.salesOrderCreatedDates.push(v));
+    (source.flags || []).forEach(v => target.flags.push(v));
+    return target;
+  }
+
+  function consolidateOrders(rawOrders){
+    const merged = [];
+    (rawOrders || []).forEach(order => {
+      const existing = merged.find(candidate => canMergeOrders(candidate, order));
+      if (existing) mergeRawOrders(existing, order);
+      else merged.push(order);
+    });
+    return merged;
+  }
+
+
+function buildDataset(){
     const map = new Map();
     const ensure = (parts) => {
       const key = resolveOrderKey(parts);
@@ -495,7 +617,9 @@
           lineItemPrice: row.lineItemPrice,
           accountProductName: row.accountProductName,
           accountProductExternalId: row.accountProductExternalId,
-          quantity: row.quantity
+          quantity: row.quantity,
+          status: row.status,
+          image: row.image
         });
       } else {
         const po = obj.poMap.get(poKey);
@@ -504,6 +628,8 @@
         po.quantity += row.quantity || 0;
         po.accountProductName = po.accountProductName || row.accountProductName;
         po.accountProductExternalId = po.accountProductExternalId || row.accountProductExternalId;
+        po.status = po.status || row.status;
+        po.image = po.image || row.image;
         po.printerName = po.printerName || row.printerName;
         po.createdDate = po.createdDate || row.createdDate;
         po.ihd = po.ihd || row.ihd;
@@ -553,7 +679,7 @@
       }
     });
 
-    const out = [...map.values()].map(order=>finalizeOrder(order));
+    const out = consolidateOrders([...map.values()]).map(order=>finalizeOrder(order));
     out.sort((a,b)=> (b.subtotal - a.subtotal) || a.sord.localeCompare(b.sord));
     state.dataset = out;
     if(!state.selectedKey && out[0]) state.selectedKey = out[0].key;
@@ -751,7 +877,55 @@ function finalizeOrder(order){
     return `<div class="card"><div class="stat-label">${escape(label)}</div><div class="stat-value">${escape(value)}</div><div class="stat-hint">${escape(hint)}</div></div>`;
   }
 
-  function renderExplorer(){
+  
+  function poCategoryLabel(value){
+    return value === 'pack' ? 'Pack Items' : value === 'bulk' ? 'Bulk Products' : value === 'mix' ? 'Mix' : 'All';
+  }
+
+  function buildPackHintTokens(item){
+    const text = (item.packBuilders || []).map(pb => `${pb.pb || ''} ${pb.pbId || ''}`).join(' ').toLowerCase();
+    return new Set(text.split(/[^a-z0-9]+/).filter(token => token && token.length >= 4));
+  }
+
+  function hasTokenOverlap(textValue, tokenSet){
+    const tokens = String(textValue || '').toLowerCase().split(/[^a-z0-9]+/).filter(token => token && token.length >= 4);
+    return tokens.some(token => tokenSet.has(token));
+  }
+
+  function classifyPoCategoryForItem(item, po){
+    const orderHasPack = Number(item.totalPackItems || 0) > 0;
+    const orderHasBulk = Number(item.totalBulkProducts || 0) > 0;
+    const baseText = `${po.purchaseOrderName || ''} ${po.accountProductName || ''} ${po.status || ''} ${po.supplier || ''}`.toLowerCase();
+
+    if (orderHasPack && !orderHasBulk) return 'pack';
+    if (orderHasBulk && !orderHasPack) return 'bulk';
+
+    const explicitBulk = /\bbulk\b|loose item|loose items|individual/.test(baseText);
+    if (explicitBulk) return 'bulk';
+
+    const packTokens = buildPackHintTokens(item);
+    const looksPack = hasTokenOverlap(baseText, packTokens);
+
+    if (orderHasPack && orderHasBulk) {
+      if (looksPack && explicitBulk) return 'mix';
+      if (looksPack) return 'pack';
+      return 'mix';
+    }
+
+    return looksPack ? 'pack' : 'mix';
+  }
+
+  function computePoCategoryCounts(item){
+    const counts = { all: 0, pack: 0, bulk: 0, mix: 0 };
+    (item?.poRows || []).forEach(po => {
+      const cat = classifyPoCategoryForItem(item, po);
+      counts.all += 1;
+      counts[cat] += 1;
+    });
+    return counts;
+  }
+
+function renderExplorer(){
     const list = getFilteredDataset();
     renderTopStats(list);
     els.explorerCount.textContent = `${list.length} result${list.length===1?'':'s'}`;
@@ -877,14 +1051,48 @@ function finalizeOrder(order){
       ? item.timeline.map(row=>`<div class="sord-timeline-row"><div class="sord-timeline-dot"></div><div><div class="sord-timeline-label">${escape(row.label)}</div><div class="sord-timeline-value">${escape(fmtDate(row.value))}</div></div></div>`).join('')
       : '<div class="empty-state">No timeline dates were available from the imported data.</div>';
 
-    els.poBody.innerHTML = item.poRows.length
-      ? item.poRows.map(po=>{
+    const poCounts = computePoCategoryCounts(item);
+    if (els.poCategoryChips) {
+      els.poCategoryChips.innerHTML = [
+        `<button class="po-chip ${state.poCategoryFilter === 'all' ? 'active' : ''}" type="button" data-po-filter="all">All (${poCounts.all})</button>`,
+        `<button class="po-chip ${state.poCategoryFilter === 'pack' ? 'active' : ''}" type="button" data-po-filter="pack">Pack Items (${poCounts.pack})</button>`,
+        `<button class="po-chip ${state.poCategoryFilter === 'bulk' ? 'active' : ''}" type="button" data-po-filter="bulk">Bulk Products (${poCounts.bulk})</button>`,
+        `<button class="po-chip ${state.poCategoryFilter === 'mix' ? 'active' : ''}" type="button" data-po-filter="mix">Mix (${poCounts.mix})</button>`
+      ].join('');
+    }
+    const visiblePoRows = (item.poRows || []).filter(po => {
+      const category = classifyPoCategoryForItem(item, po);
+      return state.poCategoryFilter === 'all' ? true : category === state.poCategoryFilter;
+    });
+    if (els.poCategorySummary) {
+      els.poCategorySummary.textContent = `Showing ${visiblePoRows.length} ${state.poCategoryFilter === 'all' ? 'purchase orders' : poCategoryLabel(state.poCategoryFilter).toLowerCase()} for ${item.sord}.`;
+    }
+    els.poBody.innerHTML = visiblePoRows.length
+      ? visiblePoRows.map(po=>{
           const poUrl = purchaseOrderUrl(po.purchaseOrderId);
           const poName = escape(po.purchaseOrderName || '—');
-          const poId = escape(po.purchaseOrderId || '—');
-          return `<tr><td>${poUrl ? `<a class="queue-link" href="${escape(poUrl)}" target="_blank" rel="noopener noreferrer">${poName}</a>` : poName}</td><td>${poUrl ? `<a class="queue-link" href="${escape(poUrl)}" target="_blank" rel="noopener noreferrer">${poId}</a>` : poId}</td><td>${escape(po.poOwner || '—')}</td><td>${escape(po.supplier || '—')}${po.printerName ? `<div class="sord-subline">Printer: ${escape(po.printerName)}</div>` : ''}</td><td>${escape(fmtDate(po.estimatedShipDate || po.ihd))}${po.createdDate ? `<div class="sord-subline">Created: ${escape(fmtDate(po.createdDate))}</div>` : ''}</td><td>${escape(fmtMoney(po.itemTotalCost))}</td><td>${escape(fmtMoney(po.lineItemPrice))}</td><td>${escape(po.accountProductName || '—')}</td></tr>`;
+          const poStatus = escape(po.status || po.poStatus || '—');
+          const category = classifyPoCategoryForItem(item, po);
+          const categoryLabel = poCategoryLabel(category);
+          const categoryClass = category === 'pack' ? 'pack' : category === 'bulk' ? 'bulk' : 'mix';
+          const imageUrl = parseSalesforceImageUrl(po.image || po.imageUrl || po.thumbnail || '');
+          const imageCell = imageUrl
+            ? `<button class="btn secondary btn-sm po-image-link" type="button" data-po-image="${escape(imageUrl)}" data-po-title="${poName} image">View image</button>`
+            : '—';
+          return `<tr>
+            <td>${poUrl ? `<a class="queue-link" href="${escape(poUrl)}" target="_blank" rel="noopener noreferrer">${poName}</a>` : poName}${po.purchaseOrderId ? `<div class="sord-subline">${escape(po.purchaseOrderId)}</div>` : ''}</td>
+            <td>${poUrl ? `<a class="queue-link" href="${escape(poUrl)}" target="_blank" rel="noopener noreferrer">${poStatus}</a>` : poStatus}</td>
+            <td><span class="po-category-badge ${categoryClass}">${escape(categoryLabel)}</span></td>
+            <td>${escape(po.poOwner || '—')}</td>
+            <td>${escape(po.supplier || '—')}${po.printerName ? `<div class="sord-subline">Printer: ${escape(po.printerName)}</div>` : ''}</td>
+            <td>${escape(fmtDate(po.estimatedShipDate || po.ihd))}${po.createdDate ? `<div class="sord-subline">Created: ${escape(fmtDate(po.createdDate))}</div>` : ''}</td>
+            <td>${escape(fmtMoney(po.itemTotalCost))}</td>
+            <td>${escape(fmtMoney(po.lineItemPrice))}</td>
+            <td>${escape(po.accountProductName || '—')}</td>
+            <td>${imageCell}</td>
+          </tr>`;
         }).join('')
-      : '<tr><td colspan="8" class="empty">No PO detail found for this SORD.</td></tr>';
+      : '<tr><td colspan="10" class="empty">No PO detail found for this filter.</td></tr>';
 
     els.accountProductBody.innerHTML = item.accountProducts.length
       ? item.accountProducts.map(ap=>`<tr><td>${escape(ap.accountProductName || '—')}${ap.printers?.size ? `<div class="sord-subline">${escape([...ap.printers].slice(0,2).join(', '))}${ap.printers.size>2 ? ' +' + (ap.printers.size-2) + ' more' : ''}</div>` : ''}</td><td>${escape(ap.accountProductExternalId || '—')}</td><td>${escape(fmtInt(ap.poCount))}</td><td>${escape(fmtInt(ap.supplierCount))}</td><td>${escape(fmtInt(ap.quantity))}</td><td>${escape(fmtMoney(ap.itemTotalCost))}</td></tr>`).join('')
@@ -904,9 +1112,39 @@ function finalizeOrder(order){
       const queueFile = els.queueInput.files?.[0] || null;
       const revenueFile = els.revenueInput.files?.[0] || null;
       const eomFile = els.eomInput.files?.[0] || null;
+      await importSharedFiles({ queueFile, revenueFile, eomFile });
+    } catch (error) {
+      console.error(error);
+      setStatus(error.message || 'Import failed.', true);
+      alert(error.message || 'Import failed.');
+    }
+  }
+
+  function clearImports(){
+    clearSharedImports();
+  }
+
+  function setStatus(text, isError=false){
+    els.importStatus.textContent = text;
+    els.importStatus.classList.toggle('error', !!isError);
+  }
+
+  function rebuildAndRender(){
+    buildDataset();
+    fillStatusFilter();
+    renderExplorer();
+  }
+
+
+  async function importSharedFiles(files,{silent=false}={}){
+    try{
+      if(typeof XLSX === 'undefined') throw new Error('XLSX library is not available.');
+      const queueFile = files?.queueFile || null;
+      const revenueFile = files?.revenueFile || null;
+      const eomFile = files?.eomFile || null;
       if(!queueFile && !revenueFile && !eomFile){
         setStatus('Choose at least one report to import.', true);
-        return;
+        throw new Error('Choose at least one report to import.');
       }
       setStatus('Reading report files...');
       if(queueFile){
@@ -924,31 +1162,27 @@ function finalizeOrder(order){
       state.imports.importedAt = new Date().toISOString();
       saveState();
       rebuildAndRender();
-      setStatus(`SORD data imported. Queue rows: ${fmtInt(state.imports.queueRows.length)} • Revenue rows: ${fmtInt(state.imports.revenueRows.length)} • EOM rows: ${fmtInt(state.imports.eomRows.length)}${summarizeFileNames() ? ' • ' + summarizeFileNames() : ''}`);
+      const text = `SORD data imported. Queue rows: ${fmtInt(state.imports.queueRows.length)} • Revenue rows: ${fmtInt(state.imports.revenueRows.length)} • EOM rows: ${fmtInt(state.imports.eomRows.length)}${summarizeFileNames() ? ' • ' + summarizeFileNames() : ''}`;
+      setStatus(text);
+      return { message: text, counts: { queue: state.imports.queueRows.length, revenue: state.imports.revenueRows.length, eom: state.imports.eomRows.length } };
     } catch (error) {
       console.error(error);
       setStatus(error.message || 'Import failed.', true);
-      alert(error.message || 'Import failed.');
+      if(!silent) alert(error.message || 'Import failed.');
+      throw error;
     }
   }
 
-  function clearImports(){
+  function clearSharedImports({silent=false}={}){
     state.imports = { queueRows: [], revenueRows: [], eomRows: [], importedAt: '', fileNames: { queue:'', revenue:'', eom:'' } };
     saveState();
     rebuildAndRender();
-    els.queueInput.value=''; els.revenueInput.value=''; els.eomInput.value='';
-    setStatus('Imported SORD report data cleared. Live queue / assembly data is still visible when it can be matched.');
-  }
-
-  function setStatus(text, isError=false){
-    els.importStatus.textContent = text;
-    els.importStatus.classList.toggle('error', !!isError);
-  }
-
-  function rebuildAndRender(){
-    buildDataset();
-    fillStatusFilter();
-    renderExplorer();
+    if (els.queueInput) els.queueInput.value='';
+    if (els.revenueInput) els.revenueInput.value='';
+    if (els.eomInput) els.eomInput.value='';
+    const text='Imported <a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BDbJMAW/view" target="_blank" rel="noopener noreferrer">SORD report</a> data cleared. Live queue / assembly data is still visible when it can be matched.';
+    setStatus(text);
+    return { message: text };
   }
 
   function bind(){
@@ -996,7 +1230,65 @@ function finalizeOrder(order){
 
 
 
-  function parseSalesforceImageUrl(value) {
+  
+  function numberFromLoose(value) {
+    if (value === null || value === undefined || value === '') return 0;
+    const n = Number(String(value).replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function classifyPoCategory(po) {
+    const statusText = String(po.status || '').toLowerCase();
+    const descText = [
+      po.purchaseOrderName,
+      po.accountProductName,
+      po.notes,
+      po.clientName,
+      po.supplier
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    const packCount =
+      numberFromLoose(po.totalPackItems) +
+      numberFromLoose(po.packItems) +
+      numberFromLoose(po.packCount);
+
+    const bulkCount =
+      numberFromLoose(po.totalBulkProducts) +
+      numberFromLoose(po.bulkProducts) +
+      numberFromLoose(po.bulkCount);
+
+    const hintsPack = /pack item|pack items|packbuilder|pack builder|kitting|kit/i.test(statusText + ' ' + descText);
+    const hintsBulk = /bulk|loose item|loose items|individual/i.test(statusText + ' ' + descText);
+
+    const hasPack = packCount > 0 || hintsPack;
+    const hasBulk = bulkCount > 0 || hintsBulk;
+
+    if (hasPack && hasBulk) return 'mix';
+    if (hasPack) return 'pack';
+    if (hasBulk) return 'bulk';
+    return 'mix';
+  }
+
+  function getFilteredPurchaseOrders(purchaseOrders, filterValue) {
+    const tagged = (purchaseOrders || []).map(po => ({
+      ...po,
+      categoryTag: po.categoryTag || classifyPoCategory(po)
+    }));
+    if (!filterValue || filterValue === 'all') return tagged;
+    return tagged.filter(po => po.categoryTag === filterValue);
+  }
+
+  function purchaseOrderCategoryCounts(purchaseOrders) {
+    const counts = { all: 0, pack: 0, bulk: 0, mix: 0 };
+    (purchaseOrders || []).forEach(po => {
+      const tag = po.categoryTag || classifyPoCategory(po);
+      counts.all += 1;
+      if (counts[tag] !== undefined) counts[tag] += 1;
+    });
+    return counts;
+  }
+
+function parseSalesforceImageUrl(value) {
     if (!value) return '';
     const raw = String(value).trim();
     if (!raw) return '';
@@ -1030,3 +1322,13 @@ function finalizeOrder(order){
 
     return '';
   }
+
+document.addEventListener('click', (event) => {
+  const filterBtn = event.target.closest('[data-po-filter]');
+  if (!filterBtn) return;
+  state.poCategoryFilter = filterBtn.getAttribute('data-po-filter') || 'all';
+  renderExplorer();
+});
+
+window.importSordSharedFiles = importSharedFiles;
+window.clearSordSharedImports = clearSharedImports;
