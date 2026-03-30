@@ -215,3 +215,24 @@
 .po-category-badge.pack { background: #e8f7ee; color: #1f6a42; }
 .po-category-badge.bulk { background: #fff4e5; color: #8a5a14; }
 .po-category-badge.mix { background: #efeaff; color: #5a3ea6; }
+
+
+/* ── Confirmed This Month ─────────────────────────────────────────────────── */
+.stat-card-confirmed {
+  background: linear-gradient(160deg, #f0fdf4 0%, #dcfce7 100%) !important;
+  border-color: #86efac !important;
+}
+.stat-card-confirmed .stat-label {
+  color: #14532d;
+}
+.stat-card-confirmed .stat-value {
+  color: #15803d;
+}
+.stat-card-confirmed .stat-hint {
+  color: #166534;
+}
+.sord-badge-confirmed {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #15803d;
+}

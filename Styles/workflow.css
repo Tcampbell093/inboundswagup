@@ -1102,3 +1102,1229 @@ font-size:1.02rem
 .workflow-page .priority-note-strong {
 font-weight:800
 }
+
+
+
+/* QA inbound aesthetic cleanup */
+.workflow-page .hero {
+  margin-bottom: 0;
+  border-radius: 28px 28px 0 0;
+  padding-bottom: 20px;
+}
+
+.workflow-page .role-tabs-wrap {
+  margin: 0;
+  border-top: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: linear-gradient(180deg, rgba(255,255,255,0.88) 0%, rgba(247,251,255,0.92) 100%);
+  padding: 12px 16px;
+}
+
+.workflow-page .page.active > .panel:first-child {
+  margin-top: 0;
+  border-top: none;
+  border-radius: 0 0 28px 28px;
+  box-shadow: 0 16px 35px rgba(29, 73, 111, 0.10);
+}
+
+.workflow-page .page > .panel:first-child .panel-header {
+  padding-top: 4px;
+}
+
+.workflow-page .page > .panel + .panel {
+  margin-top: 18px;
+}
+
+.workflow-page .panel-header h2 {
+  letter-spacing: -0.02em;
+}
+
+.workflow-page .filters {
+  display: grid;
+  grid-template-columns: 1.2fr 0.95fr 1.2fr auto;
+  gap: 12px;
+  align-items: end;
+  width: 100%;
+}
+
+.workflow-page .filter-field {
+  min-width: 0;
+}
+
+.workflow-page .filter-field input,
+.workflow-page .filter-field select {
+  border-radius: 14px;
+  background: rgba(255,255,255,0.96);
+}
+
+.workflow-page .filter-field.search-field input {
+  box-shadow: inset 0 0 0 1px rgba(106, 174, 220, 0.06);
+}
+
+.workflow-page .sheet-section {
+  border: 1px solid rgba(206, 227, 241, 0.95);
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(249,252,255,0.96) 100%);
+}
+
+.workflow-page .section-left {
+  min-width: 240px;
+}
+
+.workflow-page .left-card.left-name {
+  background: linear-gradient(180deg, rgba(234,247,255,0.95) 0%, rgba(221,240,252,0.92) 100%);
+  border-color: rgba(125, 180, 221, 0.35);
+}
+
+.workflow-page .left-card.left-name .left-label {
+  color: #467097;
+}
+
+.workflow-page .left-card.left-name .name-text {
+  font-size: 24px;
+  line-height: 1.08;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  color: var(--navy);
+}
+
+.workflow-page .location-bar {
+  align-items: center;
+  gap: 12px;
+}
+
+.workflow-page .section-owner-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 12px;
+  border-radius: 999px;
+  background: #f4f9fd;
+  border: 1px solid rgba(125, 180, 221, 0.28);
+  color: #416b92;
+  font-weight: 800;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.workflow-page .location-chip {
+  font-weight: 900;
+}
+
+.workflow-page .sheet-section.has-associate-name .left-date {
+  opacity: 0.94;
+}
+
+@media (max-width: 1180px) {
+  .workflow-page .filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .workflow-page .hero {
+    border-radius: 24px 24px 0 0;
+  }
+  .workflow-page .page.active > .panel:first-child {
+    border-radius: 0 0 24px 24px;
+  }
+  .workflow-page .filters {
+    grid-template-columns: 1fr;
+  }
+  .workflow-page .left-card.left-name .name-text {
+    font-size: 20px;
+  }
+}
+
+
+
+/* Compact inbound tracker redesign */
+.workflow-page .hero {
+  padding: 20px 24px 14px;
+  gap: 18px;
+}
+
+.workflow-page .hero-copy-wrap {
+  max-width: 860px;
+}
+
+.workflow-page .hero h1 {
+  font-size: 30px;
+  line-height: 1.02;
+}
+
+.workflow-page .hero-copy {
+  margin-top: 8px;
+  font-size: 14px;
+  max-width: 640px;
+}
+
+.workflow-page .hero-badges {
+  gap: 10px;
+}
+
+.workflow-page .hero-badge {
+  min-width: 132px;
+  padding: 11px 13px;
+  border-radius: 14px;
+}
+
+.workflow-page .hero-badge strong {
+  font-size: 20px;
+}
+
+.workflow-page .role-tabs-wrap {
+  padding: 8px 16px 10px;
+}
+
+.workflow-page .role-tabs {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.workflow-page .role-tab {
+  border-radius: 12px;
+  padding: 9px 12px;
+  font-size: 13px;
+}
+
+.workflow-page .compact-top-shell {
+  margin-top: 0;
+  border-top: none;
+  border-radius: 0 0 24px 24px;
+  box-shadow: 0 12px 28px rgba(29,73,111,0.08);
+}
+
+.workflow-page .compact-top-shell .panel-header {
+  padding: 10px 18px 14px;
+}
+
+.workflow-page .compact-shell-label {
+  margin-bottom: 4px;
+  font-size: 10px;
+  letter-spacing: .18em;
+}
+
+.workflow-page .compact-top-shell .panel-header h2,
+.workflow-page .compact-create-header h2 {
+  font-size: 18px;
+  margin: 0 0 4px;
+}
+
+.workflow-page .compact-top-shell .panel-header p,
+.workflow-page .compact-create-header p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.workflow-page .filters {
+  grid-template-columns: 1.1fr .9fr 1.2fr auto;
+  gap: 10px;
+}
+
+.workflow-page .compact-create-shell {
+  padding: 14px 18px 16px;
+  box-shadow: 0 10px 24px rgba(29,73,111,0.06);
+}
+
+.workflow-page .compact-create-header {
+  padding: 0 0 10px;
+}
+
+.workflow-page .compact-create-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  gap: 12px;
+  align-items: end;
+  margin: 0;
+}
+
+.workflow-page .compact-create-action {
+  align-self: end;
+}
+
+.workflow-page .compact-create-action .primary-btn {
+  min-width: 160px;
+}
+
+.workflow-page .page.active > .panel:nth-child(2),
+.workflow-page .page.active > .panel:nth-child(3) {
+  margin-top: 14px;
+}
+
+.workflow-page .panel {
+  padding: 18px;
+}
+
+.workflow-page .panel-header {
+  margin-bottom: 10px;
+}
+
+.workflow-page .section-left {
+  min-width: 220px;
+}
+
+.workflow-page .left-card {
+  padding: 14px;
+  border-radius: 18px;
+}
+
+.workflow-page .left-card.left-name .name-text {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.workflow-page .left-card.left-date .date-text {
+  font-size: 20px;
+  line-height: 1.05;
+}
+
+.workflow-page .location-bar {
+  padding-bottom: 8px;
+}
+
+.workflow-page .table-wrap {
+  margin-top: 6px;
+}
+
+@media (max-width: 1180px) {
+  .workflow-page .compact-create-grid,
+  .workflow-page .filters {
+    grid-template-columns: repeat(2, minmax(0,1fr));
+  }
+  .workflow-page .compact-create-action {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .workflow-page .hero {
+    padding: 18px 18px 12px;
+  }
+  .workflow-page .hero h1 {
+    font-size: 26px;
+  }
+  .workflow-page .filters,
+  .workflow-page .compact-create-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+
+/* Receiving performance dashboard */
+.workflow-page .receiving-command-shell {
+  overflow: visible;
+}
+.workflow-page .receiving-command-stats {
+  margin-top: 16px;
+}
+.workflow-page .receiving-command-detail,
+.workflow-page .receiving-uph-cards {
+  margin-top: 16px;
+}
+.workflow-page .receiving-uph-shell {
+  margin-top: 18px;
+}
+.workflow-page .receiving-uph-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.workflow-page .receiving-rank-item,
+.workflow-page .receiving-category-item {
+  align-items: center;
+}
+.workflow-page .receiving-rank-name,
+.workflow-page .receiving-category-name {
+  font-weight: 800;
+  color: var(--navy);
+}
+.workflow-page .receiving-command-shell .pill {
+  align-self: flex-start;
+}
+@media (max-width: 1180px) {
+  .workflow-page .receiving-uph-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .workflow-page .receiving-uph-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+
+/* Department pace planner */
+.workflow-page .performance-dept-shell {
+  margin-bottom: 16px;
+  padding: 18px 20px;
+}
+
+.workflow-page .performance-dept-switch {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.workflow-page .dept-view-chip {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.workflow-page .dept-view-chip.active {
+  background: linear-gradient(180deg, #76bbe8 0%, #529fd1 100%);
+  color: #fff;
+  border-color: transparent;
+}
+
+@media (max-width: 760px) {
+  .workflow-page .performance-dept-shell {
+    padding: 16px;
+  }
+}
+
+
+/* Hero UPH badge */
+.workflow-page .uph-hero-badge {
+  min-width: 168px;
+  transition: background .2s ease, border-color .2s ease, color .2s ease;
+}
+.workflow-page .uph-hero-badge small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+}
+.workflow-page .uph-hero-badge.uph-state-neutral {
+  background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(240,249,255,0.92) 100%);
+}
+.workflow-page .uph-hero-badge.uph-state-red {
+  background: linear-gradient(180deg, #fff1f2 0%, #ffe4e6 100%);
+  border-color: rgba(190, 24, 93, 0.18);
+}
+.workflow-page .uph-hero-badge.uph-state-yellow {
+  background: linear-gradient(180deg, #fff8db 0%, #fef3c7 100%);
+  border-color: rgba(202, 138, 4, 0.2);
+}
+.workflow-page .uph-hero-badge.uph-state-green {
+  background: linear-gradient(180deg, #ecfdf3 0%, #dcfce7 100%);
+  border-color: rgba(22, 163, 74, 0.18);
+}
+.workflow-page .reset-imports-btn {
+  margin-left: 4px;
+}
+
+
+.workflow-page .overstock-entry-grid {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.workflow-page #overstockEntryQty[readonly] {
+  background: #f6fbff;
+  color: #244d73;
+  font-weight: 800;
+}
+@media (max-width: 1200px) {
+  .workflow-page .overstock-entry-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .workflow-page .overstock-entry-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* UPH pace dinosaur visual */
+.workflow-page .hero-badge-language {
+  min-width: 270px;
+}
+.workflow-page .hero-language-and-pace {
+  display: grid;
+  gap: 10px;
+}
+.workflow-page .uph-pace-visual {
+  display: grid;
+  grid-template-columns: 68px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid rgba(106, 174, 220, 0.22);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.72);
+}
+.workflow-page .uph-pace-visual img {
+  display: block;
+  width: 68px;
+  height: 68px;
+  object-fit: contain;
+}
+.workflow-page .uph-pace-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.workflow-page .uph-pace-meta strong {
+  font-size: 13px;
+  color: var(--navy);
+}
+.workflow-page .uph-pace-meta span {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.25;
+}
+.workflow-page .uph-pace-visual[data-stage="1"] {
+  border-color: rgba(148, 163, 184, 0.28);
+}
+.workflow-page .uph-pace-visual[data-stage="2"] {
+  border-color: rgba(202, 138, 4, 0.28);
+  background: rgba(255, 251, 235, 0.82);
+}
+.workflow-page .uph-pace-visual[data-stage="3"] {
+  border-color: rgba(234, 179, 8, 0.28);
+  background: rgba(254, 249, 195, 0.82);
+}
+.workflow-page .uph-pace-visual[data-stage="4"] {
+  border-color: rgba(22, 163, 74, 0.28);
+  background: rgba(240, 253, 244, 0.82);
+}
+@media (max-width: 760px) {
+  .workflow-page .hero-badge-language {
+    min-width: 100%;
+  }
+  .workflow-page .uph-pace-visual {
+    grid-template-columns: 56px 1fr;
+  }
+  .workflow-page .uph-pace-visual img {
+    width: 56px;
+    height: 56px;
+  }
+}
+
+
+
+/* Compact customizable UPH pace widget */
+.workflow-page .hero-badge-language {
+  min-width: 210px;
+  max-width: 280px;
+}
+.workflow-page .hero-language-and-pace {
+  display: grid;
+  gap: 8px;
+}
+.workflow-page .uph-pace-visual.compact {
+  grid-template-columns: 52px 1fr;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 12px;
+}
+.workflow-page .uph-pace-visual.compact img {
+  width: 52px;
+  height: 52px;
+}
+.workflow-page .uph-pace-meta strong {
+  font-size: 12px;
+}
+.workflow-page .uph-pace-meta span {
+  font-size: 11px;
+}
+.workflow-page .uph-pace-customizer {
+  border: 1px dashed rgba(106, 174, 220, 0.26);
+  border-radius: 12px;
+  padding: 6px 8px;
+  background: rgba(255,255,255,0.55);
+}
+.workflow-page .uph-pace-customizer summary {
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--muted);
+}
+.workflow-page .uph-pace-upload-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+.workflow-page .uph-upload-item {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+}
+.workflow-page .uph-upload-item input {
+  width: 100%;
+  font-size: 11px;
+}
+.workflow-page .uph-pace-customizer-actions {
+  margin-top: 8px;
+}
+.workflow-page .uph-pace-customizer .secondary-btn {
+  width: 100%;
+  padding: 8px 10px;
+}
+@media (max-width: 760px) {
+  .workflow-page .hero-badge-language {
+    max-width: none;
+  }
+  .workflow-page .uph-pace-upload-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+
+/* Smaller pace widget + settings move */
+.workflow-page .hero-badge-language {
+  min-width: 180px;
+  max-width: 220px;
+}
+.workflow-page .uph-pace-visual.compact.tiny {
+  grid-template-columns: 28px 1fr;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 10px;
+}
+.workflow-page .uph-pace-visual.compact.tiny img {
+  width: 28px;
+  height: 28px;
+}
+.workflow-page .uph-pace-visual.compact.tiny .uph-pace-meta strong {
+  font-size: 11px;
+}
+.workflow-page .uph-pace-visual.compact.tiny .uph-pace-meta span {
+  font-size: 10px;
+  line-height: 1.15;
+}
+.workflow-page .uph-pace-settings-copy {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.workflow-page .settings-upload-grid {
+  margin-bottom: 12px;
+}
+.workflow-page .settings-reset-pace-btn {
+  width: 100%;
+}
+.workflow-page .performance-grid.three-up {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 1100px) {
+  .workflow-page .performance-grid.three-up {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+
+/* Final hard override for tiny hero UPH pace widget */
+.workflow-page .hero-badge.hero-badge-language {
+  min-width: 150px !important;
+  max-width: 170px !important;
+  width: 170px !important;
+  padding: 10px 12px !important;
+}
+
+.workflow-page .hero-badge-language .hero-language-and-pace {
+  gap: 6px !important;
+}
+
+.workflow-page .hero-badge-language .uph-pace-visual,
+.workflow-page .hero-badge-language .uph-pace-visual.compact,
+.workflow-page .hero-badge-language .uph-pace-visual.compact.tiny {
+  grid-template-columns: 20px 1fr !important;
+  gap: 5px !important;
+  padding: 3px 4px !important;
+  border-radius: 8px !important;
+  min-height: 0 !important;
+}
+
+.workflow-page .hero-badge-language .uph-pace-visual img,
+.workflow-page .hero-badge-language .uph-pace-visual.compact img,
+.workflow-page .hero-badge-language .uph-pace-visual.compact.tiny img,
+.workflow-page .hero-badge-language #uphPaceIcon {
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  min-height: 20px !important;
+  max-width: 20px !important;
+  max-height: 20px !important;
+  object-fit: contain !important;
+}
+
+.workflow-page .hero-badge-language .uph-pace-meta {
+  gap: 1px !important;
+}
+
+.workflow-page .hero-badge-language .uph-pace-meta strong,
+.workflow-page .hero-badge-language #uphPaceLabel {
+  font-size: 10px !important;
+  line-height: 1.05 !important;
+}
+
+.workflow-page .hero-badge-language .uph-pace-meta span,
+.workflow-page .hero-badge-language #uphPaceText {
+  font-size: 9px !important;
+  line-height: 1.05 !important;
+  white-space: normal !important;
+}
+
+.workflow-page .hero-badge-language .uph-pace-customizer {
+  display: none !important;
+}
+
+@media (max-width: 760px) {
+  .workflow-page .hero-badge.hero-badge-language {
+    min-width: 140px !important;
+    max-width: 150px !important;
+    width: 150px !important;
+  }
+}
+
+
+
+/* Definitive tiny UPH pace widget */
+.workflow-page .hero-badge.hero-badge-language {
+  min-width: 118px !important;
+  max-width: 132px !important;
+  width: 132px !important;
+  padding: 8px 10px !important;
+}
+.workflow-page .hero-language-and-pace {
+  display: grid !important;
+  gap: 6px !important;
+}
+.workflow-page .uph-pace-inline {
+  display: grid !important;
+  grid-template-columns: 18px 1fr !important;
+  gap: 5px !important;
+  align-items: center !important;
+  padding: 2px 0 0 !important;
+}
+.workflow-page .uph-pace-inline-meta {
+  display: grid !important;
+  gap: 0 !important;
+  min-width: 0 !important;
+}
+.workflow-page .uph-pace-inline-meta strong,
+.workflow-page #uphPaceLabel {
+  font-size: 9px !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+}
+.workflow-page .uph-pace-inline-meta span,
+.workflow-page #uphPaceText {
+  font-size: 8px !important;
+  line-height: 1.05 !important;
+  margin: 0 !important;
+  color: var(--muted) !important;
+  white-space: normal !important;
+}
+
+
+/* Separate large UPH pace card */
+.workflow-page .hero-badge.hero-badge-language {
+  min-width: 92px !important;
+  max-width: 110px !important;
+  width: 110px !important;
+  padding: 10px 12px !important;
+  align-self: stretch;
+}
+
+.workflow-page .hero-badge.hero-badge-pace {
+  min-width: 120px !important;
+  max-width: 150px !important;
+  width: 150px !important;
+  padding: 10px 10px 12px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  align-self: stretch !important;
+}
+
+.workflow-page .hero-badge-pace img,
+.workflow-page #uphPaceIcon {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 86px !important;
+  max-height: 86px !important;
+  min-height: 86px !important;
+  object-fit: contain !important;
+  margin: 0 auto !important;
+}
+
+.workflow-page .uph-pace-card-meta {
+  display: grid !important;
+  gap: 2px !important;
+  min-width: 0 !important;
+}
+
+.workflow-page .uph-pace-card-meta strong,
+.workflow-page #uphPaceLabel {
+  font-size: 11px !important;
+  line-height: 1.05 !important;
+  margin: 0 !important;
+  color: var(--navy) !important;
+}
+
+.workflow-page .uph-pace-card-meta span,
+.workflow-page #uphPaceText {
+  font-size: 10px !important;
+  line-height: 1.15 !important;
+  color: var(--muted) !important;
+  margin: 0 !important;
+}
+
+.workflow-page .hero-badges {
+  align-items: stretch !important;
+}
+
+@media (max-width: 760px) {
+  .workflow-page .hero-badge.hero-badge-pace {
+    width: 132px !important;
+    min-width: 132px !important;
+    max-width: 132px !important;
+  }
+  .workflow-page .hero-badge-pace img,
+  .workflow-page #uphPaceIcon {
+    height: 72px !important;
+    min-height: 72px !important;
+    max-height: 72px !important;
+  }
+}
+
+
+
+/* Force hero badges into one horizontal strip */
+.workflow-page .hero {
+  align-items: stretch !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+  gap: 8px !important;
+  width: auto !important;
+  min-width: 0 !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  padding-bottom: 2px !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip > .hero-badge {
+  flex: 0 0 auto !important;
+  height: 98px !important;
+  min-height: 98px !important;
+  max-height: 98px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
+  overflow: hidden !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip > .hero-badge.current-user-badge {
+  width: 265px !important;
+  min-width: 265px !important;
+  max-width: 265px !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip > .hero-badge:not(.current-user-badge):not(.hero-badge-pace):not(.hero-badge-language) {
+  width: 126px !important;
+  min-width: 126px !important;
+  max-width: 126px !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip > .hero-badge.hero-badge-language {
+  width: 96px !important;
+  min-width: 96px !important;
+  max-width: 96px !important;
+  padding: 10px !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip > .hero-badge.hero-badge-pace {
+  width: 118px !important;
+  min-width: 118px !important;
+  max-width: 118px !important;
+  height: 98px !important;
+  min-height: 98px !important;
+  max-height: 98px !important;
+  padding: 8px 8px 10px !important;
+  margin: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  align-self: stretch !important;
+}
+
+.workflow-page .hero-badge-pace img,
+.workflow-page #uphPaceIcon {
+  width: 100% !important;
+  height: 56px !important;
+  min-height: 56px !important;
+  max-height: 56px !important;
+  object-fit: contain !important;
+  margin: 0 auto !important;
+  display: block !important;
+}
+
+.workflow-page .uph-pace-card-meta {
+  display: grid !important;
+  gap: 2px !important;
+}
+
+.workflow-page .uph-pace-card-meta strong,
+.workflow-page #uphPaceLabel {
+  font-size: 10px !important;
+  line-height: 1.05 !important;
+  margin: 0 !important;
+}
+
+.workflow-page .uph-pace-card-meta span,
+.workflow-page #uphPaceText {
+  font-size: 9px !important;
+  line-height: 1.1 !important;
+  margin: 0 !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip .hero-badge span {
+  font-size: 12px !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip .hero-badge strong {
+  font-size: 15px !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip .current-user-badge .current-user-card {
+  gap: 8px !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip .current-user-avatar {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 12px !important;
+  font-size: 15px !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip .current-user-controls {
+  grid-template-columns: minmax(0,1fr) auto auto !important;
+  gap: 6px !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip .current-user-controls select,
+.workflow-page .hero-badges.hero-badges-strip .current-user-controls button {
+  height: 32px !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip .lang-switch {
+  display: flex !important;
+  gap: 6px !important;
+  align-items: center !important;
+  margin-top: 6px !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip .lang-btn {
+  padding: 7px 10px !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
+}
+
+@media (max-width: 1200px) {
+  .workflow-page .hero-badges.hero-badges-strip {
+    overflow-x: auto !important;
+  }
+}
+
+
+
+/* Exact desktop strip for hero cards */
+.workflow-page .hero {
+  display: grid !important;
+  grid-template-columns: minmax(240px, 1fr) 894px !important;
+  align-items: start !important;
+  gap: 18px !important;
+}
+
+.workflow-page .hero > div:first-child {
+  min-width: 0 !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip {
+  display: grid !important;
+  grid-template-columns: 265px 95px 215px 70px 100px 119px !important;
+  grid-auto-rows: 98px !important;
+  gap: 8px !important;
+  align-items: stretch !important;
+  justify-content: end !important;
+  width: 894px !important;
+  min-width: 894px !important;
+  max-width: 894px !important;
+  overflow: hidden !important;
+  flex-wrap: unset !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip > .hero-badge {
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: 98px !important;
+  min-height: 98px !important;
+  max-height: 98px !important;
+  margin: 0 !important;
+  align-self: stretch !important;
+  overflow: hidden !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip > .current-user-badge {
+  padding: 10px 12px !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip > .hero-badge.hero-badge-pace {
+  padding: 8px 8px 10px !important;
+}
+
+.workflow-page .hero-badge-pace img,
+.workflow-page #uphPaceIcon {
+  width: 100% !important;
+  height: 56px !important;
+  min-height: 56px !important;
+  max-height: 56px !important;
+  object-fit: contain !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip .hero-badge span {
+  font-size: 12px !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip .hero-badge strong {
+  font-size: 14px !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip .current-user-avatar {
+  width: 36px !important;
+  height: 36px !important;
+  font-size: 15px !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip .current-user-controls select,
+.workflow-page .hero-badges.hero-badges-strip .current-user-controls button {
+  height: 32px !important;
+}
+
+.workflow-page .hero-badges.hero-badges-strip .lang-btn {
+  padding: 7px 10px !important;
+  font-size: 12px !important;
+}
+
+@media (max-width: 1360px) {
+  .workflow-page .hero {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .workflow-page .hero-badges.hero-badges-strip {
+    width: 100% !important;
+    min-width: 894px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    justify-content: start !important;
+    padding-bottom: 2px !important;
+  }
+}
+
+
+
+/* ===== Fresh rebuilt workflow hero strip ===== */
+.workflow-page .hero {
+  display: grid !important;
+  grid-template-columns: minmax(260px, 1fr) auto !important;
+  align-items: start !important;
+  gap: 18px !important;
+}
+
+.workflow-page .hero > div:first-child {
+  min-width: 0 !important;
+}
+
+.workflow-page .hero-strip-rebuilt {
+  display: grid !important;
+  grid-template-columns: 290px 100px 240px 90px 110px 136px !important;
+  gap: 10px !important;
+  align-items: stretch !important;
+  justify-content: end !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.workflow-page .hero-strip-rebuilt > .hero-badge {
+  min-width: 0 !important;
+  max-width: none !important;
+  width: auto !important;
+  height: 104px !important;
+  min-height: 104px !important;
+  max-height: 104px !important;
+  margin: 0 !important;
+  padding: 10px 12px !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
+  align-self: stretch !important;
+}
+
+.workflow-page .hero-strip-rebuilt > .hero-card-user {
+  padding: 10px 12px !important;
+}
+
+.workflow-page .hero-strip-rebuilt > .hero-card-date,
+.workflow-page .hero-strip-rebuilt > .hero-card-qty {
+  padding: 10px 12px !important;
+}
+
+.workflow-page .hero-strip-rebuilt > .hero-card-uph {
+  padding: 10px 12px !important;
+}
+
+.workflow-page .hero-strip-rebuilt > .hero-card-language {
+  padding: 10px 12px !important;
+}
+
+.workflow-page .hero-strip-rebuilt > .hero-card-pace {
+  padding: 8px 8px 10px !important;
+  justify-content: space-between !important;
+}
+
+.workflow-page .hero-strip-rebuilt span {
+  font-size: 12px !important;
+}
+
+.workflow-page .hero-strip-rebuilt strong {
+  font-size: 15px !important;
+  line-height: 1.15 !important;
+}
+
+.workflow-page .hero-strip-rebuilt .current-user-avatar {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 12px !important;
+  font-size: 15px !important;
+  flex: 0 0 auto !important;
+}
+
+.workflow-page .hero-strip-rebuilt .current-user-card {
+  display: flex !important;
+  gap: 8px !important;
+  align-items: flex-start !important;
+}
+
+.workflow-page .hero-strip-rebuilt .current-user-meta {
+  display: grid !important;
+  gap: 6px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.workflow-page .hero-strip-rebuilt .current-user-meta strong {
+  font-size: 14px !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.workflow-page .hero-strip-rebuilt .current-user-controls {
+  display: grid !important;
+  grid-template-columns: minmax(0,1fr) auto auto !important;
+  gap: 6px !important;
+  align-items: center !important;
+}
+
+.workflow-page .hero-strip-rebuilt .current-user-controls select,
+.workflow-page .hero-strip-rebuilt .current-user-controls button {
+  height: 32px !important;
+}
+
+.workflow-page .hero-strip-rebuilt .current-user-controls select {
+  min-width: 0 !important;
+}
+
+.workflow-page .hero-strip-rebuilt .hero-card-uph small,
+.workflow-page .hero-strip-rebuilt #currentDeptUphMeta {
+  display: block !important;
+  margin-top: 4px !important;
+  color: var(--muted) !important;
+  font-size: 11px !important;
+  line-height: 1.2 !important;
+  white-space: normal !important;
+}
+
+.workflow-page .hero-strip-rebuilt .lang-switch {
+  display: flex !important;
+  gap: 6px !important;
+  align-items: center !important;
+  margin-top: 8px !important;
+}
+
+.workflow-page .hero-strip-rebuilt .lang-btn {
+  padding: 7px 10px !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
+}
+
+.workflow-page .hero-strip-rebuilt .hero-card-pace img,
+.workflow-page .hero-strip-rebuilt #uphPaceIcon {
+  display: block !important;
+  width: 100% !important;
+  height: 62px !important;
+  min-height: 62px !important;
+  max-height: 62px !important;
+  object-fit: contain !important;
+  margin: 0 auto !important;
+}
+
+.workflow-page .hero-strip-rebuilt .uph-pace-card-meta {
+  display: grid !important;
+  gap: 2px !important;
+  min-width: 0 !important;
+}
+
+.workflow-page .hero-strip-rebuilt .uph-pace-card-meta strong,
+.workflow-page .hero-strip-rebuilt #uphPaceLabel {
+  font-size: 10px !important;
+  line-height: 1.05 !important;
+  margin: 0 !important;
+}
+
+.workflow-page .hero-strip-rebuilt .uph-pace-card-meta span,
+.workflow-page .hero-strip-rebuilt #uphPaceText {
+  font-size: 9px !important;
+  line-height: 1.15 !important;
+  margin: 0 !important;
+  color: var(--muted) !important;
+}
+
+@media (max-width: 1460px) {
+  .workflow-page .hero {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .workflow-page .hero-strip-rebuilt {
+    width: 100% !important;
+    min-width: 976px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    padding-bottom: 2px !important;
+  }
+}
