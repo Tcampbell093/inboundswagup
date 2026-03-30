@@ -446,7 +446,7 @@ async function importRevenueReferenceFromFile(file,{silent=false}={}){
           if(!salesOrder) return;
           const originalSubtotal=Number(raw['Original Subtotal']||raw['Subtotal']||raw['OriginalSubtotal']||0)||0;
           const ihd=String(raw['In Hands Date']||raw['IHD']||raw['In-Hands Date']||raw['Complete Date']||'').trim();
-          const account=String(raw['Account']||raw['Account Name']||'').trim();
+          const account=String(raw['Account']||raw['Account Name']||raw['Account: Account Name']||'').trim();
           mapped.push({id:Date.now()+Math.random(),salesOrder,originalSubtotal,ihd,account});
         });
         revenueReferenceRows=normalizeRevenueReferenceRows(mapped);
@@ -905,3 +905,13 @@ if(issueHoldStartDateInput && !issueHoldStartDateInput.value) issueHoldStartDate
 
 window.importQueueReportFromFile = importQueueReportFromFile;
 window.importRevenueReferenceFromFile = importRevenueReferenceFromFile;
+window.clearQueueSilent = function(){
+  availableQueueRows=[];incompleteQueueRows=[];queueRawRowCount=0;
+  saveQueue();saveIncompleteQueue();renderQueue();
+};
+window.clearRevenueReferenceSilent = function(){
+  revenueReferenceRows=[];
+  saveRevenueReference();
+  renderRevenueReferenceStats();
+  setRevenueImportStatus('Revenue reference cleared.');
+};

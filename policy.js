@@ -3,11 +3,73 @@
 // =============================
 const POLICY_STORAGE_KEY = "ops_hub_policy_entries_v1";
 const POLICY_DOC_STORAGE_KEY = "ops_hub_policy_docs_v1";
+const POLICY_API_BASE='/.netlify/functions/policy-sync';
+let policySyncEnabled=false;
+let policySyncLoaded=false;
+let policySyncInFlight=false;
+let policySyncQueued=false;
+let policySyncTimer=null;
 
 let policyEntries = loadPolicyEntries();
 let policyDocs = loadPolicyDocs();
 let policyEditingId = null;
 let policyPreviewState = { type: "", id: "" };
+
+
+function persistPolicyStateLocal(){
+  localStorage.setItem(POLICY_STORAGE_KEY, JSON.stringify(policyEntries));
+  localStorage.setItem(POLICY_DOC_STORAGE_KEY, JSON.stringify(policyDocs));
+}
+function schedulePolicySync(){
+  if(!policySyncEnabled||!policySyncLoaded) return;
+  if(policySyncTimer) clearTimeout(policySyncTimer);
+  policySyncTimer=setTimeout(()=>{policySyncTimer=null;syncPolicyState();},250);
+}
+async function policyApiRequest(method='GET',body){
+  const options={method,headers:{'Accept':'application/json'}};
+  if(body!==undefined){options.headers['Content-Type']='application/json';options.body=JSON.stringify(body);}
+  const response=await fetch(POLICY_API_BASE,options);
+  const raw=await response.text();
+  let data={};
+  try{data=raw?JSON.parse(raw):{}}catch{data={raw}}
+  if(!response.ok) throw new Error(data?.error||`Policy sync failed (${response.status})`);
+  return data;
+}
+async function loadPolicyFromBackend(){
+  try{
+    const data=await policyApiRequest('GET');
+    if(data){
+      if(Array.isArray(data.entries)) policyEntries = data.entries;
+      if(Array.isArray(data.docs)) policyDocs = data.docs;
+      persistPolicyStateLocal();
+    }
+    policySyncEnabled=true;
+  }catch(err){
+    console.warn('Policy sync unavailable, using browser storage.',err);
+    policySyncEnabled=false;
+  }finally{
+    policySyncLoaded=true;
+  }
+}
+async function syncPolicyState(){
+  if(!policySyncEnabled||!policySyncLoaded) return;
+  if(policySyncInFlight){policySyncQueued=true;return;}
+  policySyncInFlight=true;
+  try{
+    const data=await policyApiRequest('POST',{entries:policyEntries,docs:policyDocs});
+    if(data){
+      if(Array.isArray(data.entries)) policyEntries = data.entries;
+      if(Array.isArray(data.docs)) policyDocs = data.docs;
+      persistPolicyStateLocal();
+    }
+  }catch(err){
+    console.warn('Policy sync save failed; keeping local copy.',err);
+    policySyncEnabled=false;
+  }finally{
+    policySyncInFlight=false;
+    if(policySyncQueued){policySyncQueued=false;syncPolicyState();}
+  }
+}
 
 function uid(prefix="id"){
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
@@ -31,7 +93,8 @@ function loadPolicyEntries(){
   }
 }
 function savePolicyEntries(){
-  localStorage.setItem(POLICY_STORAGE_KEY, JSON.stringify(policyEntries));
+  persistPolicyStateLocal();
+  schedulePolicySync();
 }
 function loadPolicyDocs(){
   try{
@@ -43,7 +106,8 @@ function loadPolicyDocs(){
   }
 }
 function savePolicyDocs(){
-  localStorage.setItem(POLICY_DOC_STORAGE_KEY, JSON.stringify(policyDocs));
+  persistPolicyStateLocal();
+  schedulePolicySync();
 }
 function getPolicyEls(){
   return {
@@ -378,5 +442,9 @@ function bindPolicyModule(){
 
 
 setTimeout(() => {
-  try { bindPolicyModule(); } catch (error) { console.warn("Policy module init skipped", error); }
+  Promise.resolve(loadPolicyFromBackend())
+    .catch(error => console.warn('Policy sync preload skipped', error))
+    .finally(() => {
+      try { bindPolicyModule(); } catch (error) { console.warn("Policy module init skipped", error); }
+    });
 }, 0);

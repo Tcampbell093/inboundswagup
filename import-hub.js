@@ -5,25 +5,27 @@
     queue: document.getElementById('importHubQueueFile'),
     revenue: document.getElementById('importHubRevenueFile'),
     eom: document.getElementById('importHubEomFile'),
+    revTracker: document.getElementById('importHubRevTrackerFile'),
     run: document.getElementById('importHubRunBtn'),
     clear: document.getElementById('importHubClearBtn'),
     status: document.getElementById('importHubStatus')
   };
   if(!els.page) return;
 
-  function text(v){ return String(v || '').trim(); }
   function setStatus(message, isError){
     if(!els.status) return;
-    els.status.textContent = message;
+    els.status.innerHTML = message;
     els.status.classList.toggle('error', !!isError);
   }
   function summarizeSavedImports(){
     const parts = [];
     const queueStorage = (typeof loadJson === 'function') ? loadJson('ops_hub_sord_imports_v1', null) : null;
     const revRows = (typeof loadJson === 'function') ? loadJson('ops_hub_revenue_reference_v1', []) : [];
+    const revTracker = (typeof loadJson === 'function') ? loadJson('ops_hub_rev_tracker_v1', null) : null;
     if(queueStorage?.fileNames?.queue) parts.push(`Queue: ${queueStorage.fileNames.queue}`);
     if(queueStorage?.fileNames?.revenue) parts.push(`Revenue: ${queueStorage.fileNames.revenue}`);
     if(queueStorage?.fileNames?.eom) parts.push(`SORD / PO: ${queueStorage.fileNames.eom}`);
+    if(revTracker?.fileName) parts.push(`Rev Tracker: ${revTracker.fileName}`);
     if(!parts.length && Array.isArray(revRows) && revRows.length) parts.push(`<a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BE2jMAG/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Revenue report</a> rows: ${revRows.length}`);
     return parts.length ? parts.join(' • ') : 'No shared imports have been loaded yet.';
   }
@@ -31,7 +33,8 @@
     const queueFile = els.queue.files?.[0] || null;
     const revenueFile = els.revenue.files?.[0] || null;
     const eomFile = els.eom.files?.[0] || null;
-    if(!queueFile && !revenueFile && !eomFile){
+    const revTrackerFile = els.revTracker?.files?.[0] || null;
+    if(!queueFile && !revenueFile && !eomFile && !revTrackerFile){
       setStatus('Choose at least one file to import.', true);
       return;
     }
@@ -48,25 +51,31 @@
         await window.importRevenueReferenceFromFile(revenueFile, { silent: true });
       }
       await window.importSordSharedFiles({ queueFile, revenueFile, eomFile }, { silent: true });
+      if(revTrackerFile && typeof window.importRevTrackerFile === 'function'){
+        await window.importRevTrackerFile(revTrackerFile, { silent: true });
+      }
       setStatus(`Shared imports updated. ${summarizeSavedImports()}`);
       els.queue.value = '';
       els.revenue.value = '';
       els.eom.value = '';
+      if(els.revTracker) els.revTracker.value = '';
     } catch(error){
       console.error(error);
       setStatus(error?.message || 'Import failed.', true);
     }
   }
   function clearImports(){
-    const confirmed = confirm('Clear the shared Queue, Revenue, and Daily Tools imports?');
+    const confirmed = confirm('Clear the shared Queue, Revenue, Daily Tools, and Month Revenue Tracker imports?');
     if(!confirmed) return;
     try{
-      if(typeof clearQueue === 'function') clearQueue();
-      if(typeof clearRevenueReference === 'function') clearRevenueReference();
+      if(typeof window.clearQueueSilent === 'function') window.clearQueueSilent();
+      if(typeof window.clearRevenueReferenceSilent === 'function') window.clearRevenueReferenceSilent();
       if(typeof window.clearSordSharedImports === 'function') window.clearSordSharedImports({ silent: true });
+      if(typeof window.clearRevTrackerSilent === 'function') window.clearRevTrackerSilent();
       els.queue.value = '';
       els.revenue.value = '';
       els.eom.value = '';
+      if(els.revTracker) els.revTracker.value = '';
       setStatus('Shared imports cleared.');
     } catch(error){
       console.error(error);

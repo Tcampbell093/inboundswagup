@@ -134,6 +134,18 @@ const queueStorageKey="ops_hub_available_queue_v1";
 const scheduledQueueStorageKey="ops_hub_scheduled_queue_v1";
 const incompleteQueueStorageKey="ops_hub_incomplete_queue_v1";
 const revenueReferenceStorageKey="ops_hub_revenue_reference_v1";
+const attendanceApiBase='/.netlify/functions/attendance';
+const employeesApiBase='/.netlify/functions/employees';
+let attendanceSyncEnabled=false;
+let attendanceSyncLoaded=false;
+let attendanceSyncInFlight=false;
+let attendanceSyncQueued=false;
+let attendanceSyncTimer=null;
+let employeesSyncEnabled=false;
+let employeesSyncLoaded=false;
+let employeesSyncInFlight=false;
+let employeesSyncQueued=false;
+let employeesSyncTimer=null;
 const assemblyApiBase='/.netlify/functions/assembly';
 const assemblySyncKeys=new Set([assemblyBoardStorageKey,queueStorageKey,scheduledQueueStorageKey,incompleteQueueStorageKey,revenueReferenceStorageKey]);
 let assemblySyncEnabled=false;
@@ -183,6 +195,304 @@ let incompleteQueueRows=normalizeQueueRows(loadJson(incompleteQueueStorageKey,[]
 let queueRawRowCount=0;
 let revenueReferenceRows=normalizeRevenueReferenceRows(loadJson(revenueReferenceStorageKey,[]));
 
+
+const returnsStorageKey="ops_hub_returns_records_v1";
+const defaultReturnsRecords=[{"id": "seed_return_1", "date": "2026-01-02", "company": "HealthPlan One", "returnType": "Pack", "notes": "", "tracking": "420327149400136000000000000000", "barcode": "630459_9", "size": "One Size", "clientName": "n/A", "createdAt": 1735689600000, "updatedAt": 1735689600000, "source": "seed"}, {"id": "seed_return_2", "date": "2026-01-02", "company": "Arm Institute", "returnType": "Pack", "notes": "", "tracking": "94346362084162700000000", "barcode": "555099_9/D-1891392", "size": "One Size", "clientName": "Leese & co.", "createdAt": 1735689600001, "updatedAt": 1735689600001, "source": "seed"}, {"id": "seed_return_3", "date": "2026-01-02", "company": "EnrollInsurance.com", "returnType": "Pack", "notes": "", "tracking": "9261290318406410000000", "barcode": "495565_9/D-1705122", "size": "One Size", "clientName": "Phyllis McIntyre", "createdAt": 1735689600002, "updatedAt": 1735689600002, "source": "seed"}, {"id": "seed_return_4", "date": "2026-01-02", "company": "One", "returnType": "Pack", "notes": "", "tracking": "420078349434636000000000000000", "barcode": "646326_5/D-1902698", "size": "XL", "clientName": "Sean Chambers", "createdAt": 1735689600003, "updatedAt": 1735689600003, "source": "seed"}, {"id": "seed_return_5", "date": "2026-01-02", "company": "Harmonic Security", "returnType": "Pack", "notes": "", "tracking": "9434636208416270000000", "barcode": "641099_4/D-189462", "size": "L", "clientName": "Yi Chen", "createdAt": 1735689600004, "updatedAt": 1735689600004, "source": "seed"}, {"id": "seed_return_6", "date": "2026-01-02", "company": "One", "returnType": "Pack", "notes": "", "tracking": "420100249434636000000000000000", "barcode": "646326_3/D- 1902369", "size": "M", "clientName": "Bridget Doran", "createdAt": 1735689600005, "updatedAt": 1735689600005, "source": "seed"}, {"id": "seed_return_7", "date": "2026-01-02", "company": "One", "returnType": "Pack", "notes": "", "tracking": "1z81r3y30315042471", "barcode": "646326_1/D-1902386", "size": "XS", "clientName": "Celeste Ma", "createdAt": 1735689600006, "updatedAt": 1735689600006, "source": "seed"}, {"id": "seed_return_8", "date": "2026-01-02", "company": "EnrollInsurance.com", "returnType": "Pack", "notes": "", "tracking": "420750249400136000000000000000", "barcode": "625709_9/D-1907147", "size": "One Size", "clientName": "Cathy Sun", "createdAt": 1735689600007, "updatedAt": 1735689600007, "source": "seed"}, {"id": "seed_return_9", "date": "2026-01-02", "company": "HealthPlan One", "returnType": "Pack", "notes": "", "tracking": "9400136208416270000000", "barcode": "630459_9/D-1834711", "size": "One Size", "clientName": "Will Lanier", "createdAt": 1735689600008, "updatedAt": 1735689600008, "source": "seed"}, {"id": "seed_return_10", "date": "2026-01-02", "company": "HealthPlan One", "returnType": "Pack", "notes": "", "tracking": "420321149400136000000000000000", "barcode": "630459_9/D-1835752", "size": "One Size", "clientName": "Jonathan Sparkman", "createdAt": 1735689600009, "updatedAt": 1735689600009, "source": "seed"}, {"id": "seed_return_11", "date": "2026-01-02", "company": "HealthPlan One", "returnType": "Pack", "notes": "", "tracking": "9400136208416270000000", "barcode": "630459_9/D-1835409", "size": "One Size", "clientName": "Odelia Jarrett", "createdAt": 1735689600010, "updatedAt": 1735689600010, "source": "seed"}, {"id": "seed_return_12", "date": "2026-01-02", "company": "Resolution Economics", "returnType": "Pack", "notes": "", "tracking": "420088540000", "barcode": "646633_9/D-1898162", "size": "One Size", "clientName": "Matthew Shorr", "createdAt": 1735689600011, "updatedAt": 1735689600011, "source": "seed"}, {"id": "seed_return_13", "date": "2026-01-02", "company": "Resolution Economics", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y31210320788", "barcode": "646634_9/D-1908828", "size": "One Size", "clientName": "Christina Briesacher", "createdAt": 1735689600012, "updatedAt": 1735689600012, "source": "seed"}, {"id": "seed_return_14", "date": "2026-01-02", "company": "Resolution Economics", "returnType": "Pack", "notes": "", "tracking": "420100199434636000000000000000", "barcode": "646631_9/D-1898023", "size": "One Size", "clientName": "Angela Tricari", "createdAt": 1735689600013, "updatedAt": 1735689600013, "source": "seed"}, {"id": "seed_return_15", "date": "2026-01-02", "company": "National Assocaition of B", "returnType": "Bulk", "notes": "", "tracking": "9400136208416270000000", "barcode": "WOG-038513/138567", "size": "M", "clientName": "Connie Ortiz", "createdAt": 1735689600014, "updatedAt": 1735689600014, "source": "seed"}, {"id": "seed_return_16", "date": "2026-01-02", "company": "Care Options", "returnType": "Bulk", "notes": "", "tracking": "9400136208416270000000", "barcode": "WOG-042862/148312", "size": "One Size", "clientName": "Ellie Lewis", "createdAt": 1735689600015, "updatedAt": 1735689600015, "source": "seed"}, {"id": "seed_return_17", "date": "2026-01-02", "company": "Biolumina", "returnType": "Bulk", "notes": "", "tracking": "9400136208416270000000", "barcode": "WOG-043647/150113", "size": "XL", "clientName": "Mariah Branum", "createdAt": 1735689600016, "updatedAt": 1735689600016, "source": "seed"}, {"id": "seed_return_18", "date": "2026-01-02", "company": "Biolumina", "returnType": "Bulk", "notes": "", "tracking": "420100399434636000000000000000", "barcode": "WOG-043661/150224", "size": "One Size", "clientName": "Nancy Davis", "createdAt": 1735689600017, "updatedAt": 1735689600017, "source": "seed"}, {"id": "seed_return_19", "date": "2026-01-05", "company": "Senior Solutions", "returnType": "Bulk/Pack", "notes": "", "tracking": "1Z81R3Y30335945226", "barcode": "WOG-043555/149858", "size": "One Size", "clientName": "Marsha Null", "createdAt": 1735689600018, "updatedAt": 1735689600018, "source": "seed"}, {"id": "seed_return_20", "date": "2026-01-05", "company": "Equipment Share", "returnType": "Pack", "notes": "Without Ornament", "tracking": "420786659400136000000000000000", "barcode": "646712_9", "size": "One Size", "clientName": "Amount Counted- 1", "createdAt": 1735689600019, "updatedAt": 1735689600019, "source": "seed"}, {"id": "seed_return_21", "date": "2026-01-05", "company": "Equipment Share", "returnType": "Pack", "notes": "With Ornament", "tracking": "420633689400136000000000000000", "barcode": "621954_9", "size": "One Size", "clientName": "Amount Counted- 30", "createdAt": 1735689600020, "updatedAt": 1735689600020, "source": "seed"}, {"id": "seed_return_22", "date": "2026-01-05", "company": "Equipment Share", "returnType": "Bulk/Pack", "notes": "Total 23", "tracking": "1Z81R3Y30315907251", "barcode": "WOG-044065/151027", "size": "One Size", "clientName": "Aztec Bolting Services", "createdAt": 1735689600021, "updatedAt": 1735689600021, "source": "seed"}, {"id": "seed_return_23", "date": "2026-01-05", "company": "Equipment Share", "returnType": "Bulk/Pack", "notes": "Total   4", "tracking": "1Z81R3Y30315907251", "barcode": "WOG-044065/151028", "size": "One Size", "clientName": "Aztec Bolting Services", "createdAt": 1735689600022, "updatedAt": 1735689600022, "source": "seed"}, {"id": "seed_return_24", "date": "2026-01-05", "company": "Equipment Share", "returnType": "Bulk/Pack", "notes": "Total   2", "tracking": "1Z81R3Y30315907251", "barcode": "WOG-044066/151029", "size": "One Size", "clientName": "n/A", "createdAt": 1735689600023, "updatedAt": 1735689600023, "source": "seed"}, {"id": "seed_return_25", "date": "2026-01-05", "company": "Fcm Travel", "returnType": "Bulk", "notes": "", "tracking": "1Z999A9R0366342695", "barcode": "WOG-044348/151812", "size": "One Size", "clientName": "Corinna Disanto", "createdAt": 1735689600024, "updatedAt": 1735689600024, "source": "seed"}, {"id": "seed_return_26", "date": "2026-01-05", "company": "Hospitable", "returnType": "Bulk", "notes": "", "tracking": "1Z81R3Y30339418655", "barcode": "WOG-043941/150672", "size": "One Size", "clientName": "Jeff Greenblatt", "createdAt": 1735689600025, "updatedAt": 1735689600025, "source": "seed"}, {"id": "seed_return_27", "date": "2026-01-05", "company": "Amazee.io", "returnType": "Bulk/Pack", "notes": "", "tracking": "1Z81R3Y30337678851", "barcode": "WOG-043628/149999", "size": "One Size", "clientName": "Robert Neshovski", "createdAt": 1735689600026, "updatedAt": 1735689600026, "source": "seed"}, {"id": "seed_return_28", "date": "2026-01-06", "company": "Equipment Share", "returnType": "Pack", "notes": "With Ornament", "tracking": "420851429400136000000000000000", "barcode": "621954_9", "size": "One Size", "clientName": "Total Amount:21", "createdAt": 1735689600027, "updatedAt": 1735689600027, "source": "seed"}, {"id": "seed_return_29", "date": "2026-01-06", "company": "Arm Institute", "returnType": "Pack", "notes": "", "tracking": "420153179434636000000000000000", "barcode": "555099_9/D-1891392", "size": "One Size", "clientName": "Pennsylvania Transformer Technology", "createdAt": 1735689600028, "updatedAt": 1735689600028, "source": "seed"}, {"id": "seed_return_30", "date": "2026-01-06", "company": "Zero Hash", "returnType": "Pack", "notes": "", "tracking": "9434636208416270000000", "barcode": "631027_9", "size": "M", "clientName": "", "createdAt": 1735689600029, "updatedAt": 1735689600029, "source": "seed"}, {"id": "seed_return_31", "date": "2026-01-06", "company": "HealthPlan One", "returnType": "Pack", "notes": "", "tracking": "9400136208416270000000", "barcode": "630459_9", "size": "One Size", "clientName": "", "createdAt": 1735689600030, "updatedAt": 1735689600030, "source": "seed"}, {"id": "seed_return_32", "date": "2026-01-06", "company": "HealthPlan One", "returnType": "Pack", "notes": "", "tracking": "420334289400136000000000000000", "barcode": "630459_9/D-1835130", "size": "One Size", "clientName": "Audrey Rendontroia", "createdAt": 1735689600031, "updatedAt": 1735689600031, "source": "seed"}, {"id": "seed_return_33", "date": "2026-01-06", "company": "Performance Contracting Gp.", "returnType": "Bulk/Pack", "notes": "", "tracking": "1Z81R3Y30300918124", "barcode": "WOG-043626/149995", "size": "One Size", "clientName": "Justin Moreno", "createdAt": 1735689600032, "updatedAt": 1735689600032, "source": "seed"}, {"id": "seed_return_34", "date": "2026-01-06", "company": "Performance Contracting Gp.", "returnType": "Bulk/Pack", "notes": "", "tracking": "1Z81R3Y30303302033", "barcode": "WOG-043626/149997", "size": "One Size", "clientName": "Andrew Broussard", "createdAt": 1735689600033, "updatedAt": 1735689600033, "source": "seed"}, {"id": "seed_return_35", "date": "2026-01-06", "company": "Performance Contracting Gp.", "returnType": "Bulk/Pack", "notes": "", "tracking": "1Z81R3Y30321022954", "barcode": "WOG-043581/149909", "size": "One Size", "clientName": "n/A", "createdAt": 1735689600034, "updatedAt": 1735689600034, "source": "seed"}, {"id": "seed_return_36", "date": "2026-01-06", "company": "Resolution Economics", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30304271520", "barcode": "646632_9/D-1898094", "size": "One Size", "clientName": "Renee Noy", "createdAt": 1735689600035, "updatedAt": 1735689600035, "source": "seed"}, {"id": "seed_return_37", "date": "2026-01-06", "company": "Green Key Resources", "returnType": "Pack", "notes": "", "tracking": "420100169434636000000000000000", "barcode": "628754_9/D-1903646", "size": "One Size", "clientName": "Brian Cheng", "createdAt": 1735689600036, "updatedAt": 1735689600036, "source": "seed"}, {"id": "seed_return_38", "date": "2026-01-06", "company": "Green Key Resources", "returnType": "Pack", "notes": "", "tracking": "420100209434636000000000000000", "barcode": "628754_9/D-1903534", "size": "One Size", "clientName": "Rica Araneta-Rodriguez", "createdAt": 1735689600037, "updatedAt": 1735689600037, "source": "seed"}, {"id": "seed_return_39", "date": "2026-01-06", "company": "Green Key Resources", "returnType": "Pack", "notes": "", "tracking": "420100109434636000000000000000", "barcode": "628754_9/D-1903509", "size": "One Size", "clientName": "Reetika Vijay", "createdAt": 1735689600038, "updatedAt": 1735689600038, "source": "seed"}, {"id": "seed_return_40", "date": "2026-01-06", "company": "Green Key Resources", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30335643552", "barcode": "628754_9/D-1903477", "size": "One Size", "clientName": "Cristina Minella", "createdAt": 1735689600039, "updatedAt": 1735689600039, "source": "seed"}, {"id": "seed_return_41", "date": "2026-01-06", "company": "Green Key Resources", "returnType": "Pack", "notes": "", "tracking": "420100179434636000000000000000", "barcode": "628754_9/D-1903404", "size": "One Size", "clientName": "Rebecca Stern", "createdAt": 1735689600040, "updatedAt": 1735689600040, "source": "seed"}, {"id": "seed_return_42", "date": "2026-01-06", "company": "Green Key Resources", "returnType": "Pack", "notes": "", "tracking": "420021109434636000000000000000", "barcode": "628754_9/D-1903514", "size": "One Size", "clientName": "Matthew Marotta", "createdAt": 1735689600041, "updatedAt": 1735689600041, "source": "seed"}, {"id": "seed_return_43", "date": "2026-01-06", "company": "Green Key Resources", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30336803789", "barcode": "628754_9/D-1903664", "size": "One Size", "clientName": "Lynn Norris", "createdAt": 1735689600042, "updatedAt": 1735689600042, "source": "seed"}, {"id": "seed_return_44", "date": "2026-01-06", "company": "Jobsity", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30330681501", "barcode": "641935_9/D-1866617", "size": "One Size", "clientName": "Peter Bjordahl", "createdAt": 1735689600043, "updatedAt": 1735689600043, "source": "seed"}, {"id": "seed_return_45", "date": "2026-01-06", "company": "CollegeVine", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30338342292", "barcode": "641958_9/D-1903001", "size": "One Size", "clientName": "Zack Perkins", "createdAt": 1735689600044, "updatedAt": 1735689600044, "source": "seed"}, {"id": "seed_return_46", "date": "2026-01-06", "company": "Nourish", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y31205635798", "barcode": "642175_9/D-1907931", "size": "One Size", "clientName": "Christine Li", "createdAt": 1735689600045, "updatedAt": 1735689600045, "source": "seed"}, {"id": "seed_return_47", "date": "2026-01-06", "company": "Equipment Share", "returnType": "Pack", "notes": "With Ornament", "tracking": "420790659400136000000000000000", "barcode": "621954_9", "size": "One Size", "clientName": "Total Amount:5", "createdAt": 1735689600046, "updatedAt": 1735689600046, "source": "seed"}, {"id": "seed_return_48", "date": "2026-01-06", "company": "Nourish", "returnType": "Pack", "notes": "", "tracking": "9434636208416270000000", "barcode": "635545_1/D-1867917", "size": "XS", "clientName": "Keyri Corona", "createdAt": 1735689600047, "updatedAt": 1735689600047, "source": "seed"}, {"id": "seed_return_49", "date": "2026-01-06", "company": "American Kennel Club", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y31209270844", "barcode": "643911_9/D-1876908", "size": "One Size", "clientName": "John Havrilla", "createdAt": 1735689600048, "updatedAt": 1735689600048, "source": "seed"}, {"id": "seed_return_50", "date": "2026-01-06", "company": "Fourtune Brands Innovation", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30310981528", "barcode": "566197_9/D-1901305", "size": "One Size", "clientName": "Izaiah Estrella", "createdAt": 1735689600049, "updatedAt": 1735689600049, "source": "seed"}, {"id": "seed_return_51", "date": "2026-01-06", "company": "Andiamo", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30339099303", "barcode": "642842_9/D-1895335", "size": "One Size", "clientName": "Stephen Sorrow", "createdAt": 1735689600050, "updatedAt": 1735689600050, "source": "seed"}, {"id": "seed_return_52", "date": "2026-01-06", "company": "Amazon Delivery", "returnType": "Pack", "notes": "", "tracking": "9400136208416270000000", "barcode": "626151_3/D-1911713", "size": "M", "clientName": "Olyver Yau", "createdAt": 1735689600051, "updatedAt": 1735689600051, "source": "seed"}, {"id": "seed_return_53", "date": "2026-01-06", "company": "Amazon Delivery", "returnType": "Pack", "notes": "", "tracking": "420372089400136000000000000000", "barcode": "626151_4/D-1911996", "size": "L", "clientName": "YOO JIN HAN", "createdAt": 1735689600052, "updatedAt": 1735689600052, "source": "seed"}, {"id": "seed_return_54", "date": "2026-01-06", "company": "Cambium", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30309611948", "barcode": "594869_9/D-1909211", "size": "One Size", "clientName": "Adrianna Barazotti", "createdAt": 1735689600053, "updatedAt": 1735689600053, "source": "seed"}, {"id": "seed_return_55", "date": "2026-01-06", "company": "Neon One", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30314420822", "barcode": "637913_9/D-1896562", "size": "One Size", "clientName": "Carlos Desroses", "createdAt": 1735689600054, "updatedAt": 1735689600054, "source": "seed"}, {"id": "seed_return_56", "date": "2026-01-06", "company": "Northrop Gruman", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30334428617", "barcode": "501217_9/D-1900339", "size": "One Size", "clientName": "Wiiliam Harrison", "createdAt": 1735689600055, "updatedAt": 1735689600055, "source": "seed"}, {"id": "seed_return_57", "date": "2026-01-07", "company": "Balfour Betty Investments", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30323806158", "barcode": "638950_9/D-1911604", "size": "One Size", "clientName": "Alexandra Hicks", "createdAt": 1735689600056, "updatedAt": 1735689600056, "source": "seed"}, {"id": "seed_return_58", "date": "2026-01-07", "company": "Rockbot", "returnType": "Pack", "notes": "", "tracking": "420112219434636000000000000000", "barcode": "522581_9/D-1907884", "size": "XS", "clientName": "Lhanzi Giambrone", "createdAt": 1735689600057, "updatedAt": 1735689600057, "source": "seed"}, {"id": "seed_return_59", "date": "2026-01-07", "company": "Willow Bridge", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30327321049", "barcode": "637906_9/D-1865868", "size": "One Size", "clientName": "Ronald Gonzalez", "createdAt": 1735689600058, "updatedAt": 1735689600058, "source": "seed"}, {"id": "seed_return_60", "date": "2026-01-07", "company": "Willow Bridge", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30333415114", "barcode": "637906_9/D-1907277", "size": "One Size", "clientName": "Ambrosio Luna", "createdAt": 1735689600059, "updatedAt": 1735689600059, "source": "seed"}, {"id": "seed_return_61", "date": "2026-01-12", "company": "Northrop Gruman", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30304325856", "barcode": "501217_9/D-1895699", "size": "One Size", "clientName": "Robert henderickson", "createdAt": 1735689600060, "updatedAt": 1735689600060, "source": "seed"}, {"id": "seed_return_62", "date": "2026-01-12", "company": "Green Key Resources", "returnType": "Pack", "notes": "", "tracking": "420100119434636000000000000000", "barcode": "628754_9/D-1903812", "size": "One Size", "clientName": "Alyssa Placa", "createdAt": 1735689600061, "updatedAt": 1735689600061, "source": "seed"}, {"id": "seed_return_63", "date": "2026-01-12", "company": "Green Key Resources", "returnType": "Pack", "notes": "", "tracking": "420100189434636000000000000000", "barcode": "628754_9/D-1903450", "size": "One Size", "clientName": "Cynthia Martin", "createdAt": 1735689600062, "updatedAt": 1735689600062, "source": "seed"}, {"id": "seed_return_64", "date": "2026-01-12", "company": "Amazon Delivery", "returnType": "Pack", "notes": "", "tracking": "9400136208416270000000", "barcode": "626151_3/D-1911833", "size": "M", "clientName": "Ram Prudhvi", "createdAt": 1735689600063, "updatedAt": 1735689600063, "source": "seed"}, {"id": "seed_return_65", "date": "2026-01-12", "company": "Amazon Delivery", "returnType": "Pack", "notes": "", "tracking": "9400136208416270000000", "barcode": "625496_3/D-1851885", "size": "M", "clientName": "Ricardo Gonzalez", "createdAt": 1735689600064, "updatedAt": 1735689600064, "source": "seed"}, {"id": "seed_return_66", "date": "2026-01-12", "company": "Amazon Delivery", "returnType": "Pack", "notes": "NAME ON PACKAGE WAS DAMAGED", "tracking": "483972298462", "barcode": "626151_4", "size": "L", "clientName": "", "createdAt": 1735689600065, "updatedAt": 1735689600065, "source": "seed"}, {"id": "seed_return_67", "date": "2026-01-12", "company": "Sydecar", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30330823778", "barcode": "633083_9/D-1894555", "size": "One Size", "clientName": "David Chitester", "createdAt": 1735689600066, "updatedAt": 1735689600066, "source": "seed"}, {"id": "seed_return_68", "date": "2026-01-12", "company": "Nasdaq", "returnType": "Pack", "notes": "", "tracking": "1Z999A9R0319279469", "barcode": "328233_2/D-1915416", "size": "S", "clientName": "Renata Aidukiene", "createdAt": 1735689600067, "updatedAt": 1735689600067, "source": "seed"}, {"id": "seed_return_69", "date": "2026-01-12", "company": "The B Strong Grp.", "returnType": "Pack", "notes": "", "tracking": "1Z999A9R0358992436", "barcode": "645613_3", "size": "M", "clientName": "", "createdAt": 1735689600068, "updatedAt": 1735689600068, "source": "seed"}, {"id": "seed_return_70", "date": "2026-01-12", "company": "Willow Bridge", "returnType": "Pack", "notes": "", "tracking": "420275379434636000000000000000", "barcode": "637906_9/D-1907359", "size": "One Size", "clientName": "Angelica West", "createdAt": 1735689600069, "updatedAt": 1735689600069, "source": "seed"}, {"id": "seed_return_71", "date": "2026-01-12", "company": "Willow Bridge", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30339904094", "barcode": "637906_9/D-1907274", "size": "One Size", "clientName": "Milly Mejia", "createdAt": 1735689600070, "updatedAt": 1735689600070, "source": "seed"}, {"id": "seed_return_72", "date": "2026-01-12", "company": "Equipment Share", "returnType": "Pack", "notes": "", "tracking": "420776139400136000000000000000", "barcode": "621954_9", "size": "One Size", "clientName": "Total:24", "createdAt": 1735689600071, "updatedAt": 1735689600071, "source": "seed"}, {"id": "seed_return_73", "date": "2026-01-12", "company": "Equipment Share", "returnType": "Pack", "notes": "", "tracking": "420760319400136000000000000000", "barcode": "646712_9", "size": "One Size", "clientName": "Total:5", "createdAt": 1735689600072, "updatedAt": 1735689600072, "source": "seed"}, {"id": "seed_return_74", "date": "2026-01-13", "company": "Everflow", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30302275673", "barcode": "639026_9/D-1874056", "size": "One Size", "clientName": "Andrew Lekhraj", "createdAt": 1735689600073, "updatedAt": 1735689600073, "source": "seed"}, {"id": "seed_return_75", "date": "2026-01-13", "company": "Labelbox", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30311853003", "barcode": "643124_9/D-1897880", "size": "One Size", "clientName": "Adam Tisdale", "createdAt": 1735689600074, "updatedAt": 1735689600074, "source": "seed"}, {"id": "seed_return_76", "date": "2026-01-13", "company": "Senior Solutions", "returnType": "Pack", "notes": "", "tracking": "420379209434636000000000000000", "barcode": "615099_5/D-1913485", "size": "XL", "clientName": "Shirley Roach", "createdAt": 1735689600075, "updatedAt": 1735689600075, "source": "seed"}, {"id": "seed_return_77", "date": "2026-01-13", "company": "Nerdery", "returnType": "Bulk", "notes": "", "tracking": "1Z10010V0457454417", "barcode": "WOG-043202/149001", "size": "M", "clientName": "Jorge Viveros", "createdAt": 1735689600076, "updatedAt": 1735689600076, "source": "seed"}, {"id": "seed_return_78", "date": "2026-01-13", "company": "CruxOCM", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30321490556", "barcode": "645241_9/D-1901353", "size": "One Size", "clientName": "Jay Hum", "createdAt": 1735689600077, "updatedAt": 1735689600077, "source": "seed"}, {"id": "seed_return_79", "date": "2026-01-13", "company": "Enrollment Insurance", "returnType": "Pack", "notes": "", "tracking": "420751819400136000000000000000", "barcode": "625709_9/D-1907166", "size": "One Size", "clientName": "Kelvin White", "createdAt": 1735689600078, "updatedAt": 1735689600078, "source": "seed"}, {"id": "seed_return_80", "date": "2026-01-13", "company": "Bella&Canvas", "returnType": "Bulk", "notes": "", "tracking": "9400136208416270000000", "barcode": "WOG-039382/141260", "size": "XL", "clientName": "Alvaro Lamadrid", "createdAt": 1735689600079, "updatedAt": 1735689600079, "source": "seed"}, {"id": "seed_return_81", "date": "2026-01-13", "company": "Equipment Share", "returnType": "Pack", "notes": "", "tracking": "420350169400136000000000000000", "barcode": "621954_9", "size": "One Size", "clientName": "Total:3", "createdAt": 1735689600080, "updatedAt": 1735689600080, "source": "seed"}, {"id": "seed_return_82", "date": "2026-01-13", "company": "Repush", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30318345488", "barcode": "606395_9/D-1916059", "size": "One Size", "clientName": "Israel Cruz", "createdAt": 1735689600081, "updatedAt": 1735689600081, "source": "seed"}, {"id": "seed_return_83", "date": "2026-01-13", "company": "Zero Hash", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y36789705916", "barcode": "631027_3/D-1896527", "size": "M", "clientName": "Tiganetea Claudiu", "createdAt": 1735689600082, "updatedAt": 1735689600082, "source": "seed"}, {"id": "seed_return_84", "date": "2026-01-13", "company": "One", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30308192199", "barcode": "646326_3/D-1902613", "size": "M", "clientName": "Mikey Chapman", "createdAt": 1735689600083, "updatedAt": 1735689600083, "source": "seed"}, {"id": "seed_return_85", "date": "2026-01-13", "company": "Northone", "returnType": "Pack", "notes": "", "tracking": "420328259400136000000000000000", "barcode": "101479_3/D-785062", "size": "M", "clientName": "Kalista Levang", "createdAt": 1735689600084, "updatedAt": 1735689600084, "source": "seed"}, {"id": "seed_return_86", "date": "2026-01-14", "company": "HealthPlan One", "returnType": "Pack", "notes": "", "tracking": "9400136208416270000000", "barcode": "630459_9/D-1835963", "size": "One Size", "clientName": "Michael Corti", "createdAt": 1735689600085, "updatedAt": 1735689600085, "source": "seed"}, {"id": "seed_return_87", "date": "2026-01-14", "company": "One", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30332326329", "barcode": "646326_4/D-1902482", "size": "L", "clientName": "Holly Thomas", "createdAt": 1735689600086, "updatedAt": 1735689600086, "source": "seed"}, {"id": "seed_return_88", "date": "2026-01-14", "company": "One", "returnType": "Pack", "notes": "", "tracking": "420112119434636000000000000000", "barcode": "646326_3/D-1902328", "size": "M", "clientName": "Annie Song", "createdAt": 1735689600087, "updatedAt": 1735689600087, "source": "seed"}, {"id": "seed_return_89", "date": "2026-01-14", "company": "Cursor", "returnType": "Pack", "notes": "", "tracking": "420805219400136000000000000000", "barcode": "637020_9/D-1901634", "size": "One Size", "clientName": "Quang Dao", "createdAt": 1735689600088, "updatedAt": 1735689600088, "source": "seed"}, {"id": "seed_return_90", "date": "2026-01-14", "company": "Attain", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30337140832", "barcode": "636491_9/D-1898777", "size": "One Size", "clientName": "Maxime Theokritoff", "createdAt": 1735689600089, "updatedAt": 1735689600089, "source": "seed"}, {"id": "seed_return_91", "date": "2026-01-14", "company": "ConcertA.I.", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30330789137", "barcode": "622611_9/D-1901124", "size": "One Size", "clientName": "Ned Bement", "createdAt": 1735689600090, "updatedAt": 1735689600090, "source": "seed"}, {"id": "seed_return_92", "date": "2026-01-16", "company": "Equipment Share", "returnType": "Pack", "notes": "", "tracking": "420776139400136000000000000000", "barcode": "621954_9", "size": "One Size", "clientName": "11", "createdAt": 1735689600091, "updatedAt": 1735689600091, "source": "seed"}, {"id": "seed_return_93", "date": "2026-01-16", "company": "OnTap Consulting", "returnType": "Bulk/Pack", "notes": "204/220", "tracking": "1Z81R3Y30320317218", "barcode": "WOG-044410/152016", "size": "One Size", "clientName": "Liz Alstott", "createdAt": 1735689600092, "updatedAt": 1735689600092, "source": "seed"}, {"id": "seed_return_94", "date": "2026-01-21", "company": "HealthPlan One", "returnType": "Pack", "notes": "NAME ON PACKAGE WAS DAMAGED", "tracking": "1Z81R3Y30316250995", "barcode": "630459_9", "size": "One Size", "clientName": "", "createdAt": 1735689600093, "updatedAt": 1735689600093, "source": "seed"}, {"id": "seed_return_95", "date": "2026-01-21", "company": "Enrollment Insurance", "returnType": "Pack", "notes": "", "tracking": "420328099400136000000000000000", "barcode": "625709_9/D-1915133", "size": "One Size", "clientName": "Edgar Rincon", "createdAt": 1735689600094, "updatedAt": 1735689600094, "source": "seed"}, {"id": "seed_return_96", "date": "2026-01-21", "company": "Enrollment Insurance", "returnType": "Pack", "notes": "", "tracking": "420774949400136000000000000000", "barcode": "625709_9/D-1907173", "size": "One Size", "clientName": "Heidy Larreal", "createdAt": 1735689600095, "updatedAt": 1735689600095, "source": "seed"}, {"id": "seed_return_97", "date": "2026-01-21", "company": "Circle", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y36707549061", "barcode": "553156_3/D-1873022", "size": "M", "clientName": "Caroline Chaves", "createdAt": 1735689600096, "updatedAt": 1735689600096, "source": "seed"}, {"id": "seed_return_98", "date": "2026-01-21", "company": "Equipment Share", "returnType": "Pack", "notes": "", "tracking": "420852499400136000000000000000", "barcode": "621954_9", "size": "One Size", "clientName": "Total:8", "createdAt": 1735689600097, "updatedAt": 1735689600097, "source": "seed"}, {"id": "seed_return_99", "date": "2026-01-21", "company": "Team Raft", "returnType": "Bulk", "notes": "", "tracking": "9434636208416270000000", "barcode": "WOG-042674/147887", "size": "2XL", "clientName": "David Fatokun", "createdAt": 1735689600098, "updatedAt": 1735689600098, "source": "seed"}, {"id": "seed_return_100", "date": "2026-01-21", "company": "Enrollment Insurance", "returnType": "Pack", "notes": "", "tracking": "420752549400136000000000000000", "barcode": "625709_9/D-1915120", "size": "One Size", "clientName": "Luis Gonzalez", "createdAt": 1735689600099, "updatedAt": 1735689600099, "source": "seed"}, {"id": "seed_return_101", "date": "2026-01-21", "company": "Constellation West", "returnType": "Bulk", "notes": "", "tracking": "9434636208416270000000", "barcode": "WOG-044759/152806", "size": "L", "clientName": "Michelle Johnson", "createdAt": 1735689600100, "updatedAt": 1735689600100, "source": "seed"}, {"id": "seed_return_102", "date": "2026-01-21", "company": "CollegeVine", "returnType": "Pack", "notes": "", "tracking": "420112229434636000000000000000", "barcode": "641958_9/D-1902962", "size": "One Size", "clientName": "Christina Tan", "createdAt": 1735689600101, "updatedAt": 1735689600101, "source": "seed"}, {"id": "seed_return_103", "date": "2026-01-21", "company": "NFP", "returnType": "Pack", "notes": "", "tracking": "9434636208416270000000", "barcode": "571096_9/D-1919479", "size": "One Size", "clientName": "Jake Blumencranz", "createdAt": 1735689600102, "updatedAt": 1735689600102, "source": "seed"}, {"id": "seed_return_104", "date": "2026-01-21", "company": "Blueprint to Automation", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30302059700", "barcode": "559410_9/D-1913872", "size": "One Size", "clientName": "Benji Benas", "createdAt": 1735689600103, "updatedAt": 1735689600103, "source": "seed"}, {"id": "seed_return_105", "date": "2026-01-21", "company": "Willow Bridge", "returnType": "Pack", "notes": "", "tracking": "420019059434636000000000000000", "barcode": "637906_9/D-1907352", "size": "One Size", "clientName": "Luis Gonzalez", "createdAt": 1735689600104, "updatedAt": 1735689600104, "source": "seed"}, {"id": "seed_return_106", "date": "2026-01-21", "company": "Resprop Management", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30332272182", "barcode": "592194_9/D-1859930", "size": "One Size", "clientName": "Jackeline Gaytan", "createdAt": 1735689600105, "updatedAt": 1735689600105, "source": "seed"}, {"id": "seed_return_107", "date": "2026-01-21", "company": "Hospitable", "returnType": "Pack", "notes": "", "tracking": "420197139434636000000000000000", "barcode": "645303_9/D-1918476", "size": "One Size", "clientName": "Castle Host", "createdAt": 1735689600106, "updatedAt": 1735689600106, "source": "seed"}, {"id": "seed_return_108", "date": "2026-01-21", "company": "Inclined", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30307682545", "barcode": "641486_9/D-1893002", "size": "One Size", "clientName": "Barbara Bernstein", "createdAt": 1735689600107, "updatedAt": 1735689600107, "source": "seed"}, {"id": "seed_return_109", "date": "2026-01-21", "company": "Space and Time Labs", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y36780234389", "barcode": "592930_5/D-1874703", "size": "XL", "clientName": "Yang Junyi", "createdAt": 1735689600108, "updatedAt": 1735689600108, "source": "seed"}, {"id": "seed_return_110", "date": "2026-01-21", "company": "Inclined", "returnType": "Pack", "notes": "", "tracking": "420265479434636000000000000000", "barcode": "641486_9/D-1915846", "size": "One Size", "clientName": "Zebulon Lewis", "createdAt": 1735689600109, "updatedAt": 1735689600109, "source": "seed"}, {"id": "seed_return_111", "date": "2026-01-21", "company": "FurtherED", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30319101293", "barcode": "644428_9/D-1872317", "size": "One Size", "clientName": "Rachel Atencio", "createdAt": 1735689600110, "updatedAt": 1735689600110, "source": "seed"}, {"id": "seed_return_112", "date": "2026-01-21", "company": "Boundless Imigration", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30330282586", "barcode": "641159_9/D-1878128", "size": "One Size", "clientName": "Tahmina Parvin", "createdAt": 1735689600111, "updatedAt": 1735689600111, "source": "seed"}, {"id": "seed_return_113", "date": "2026-01-21", "company": "Wpromote", "returnType": "Pack", "notes": "", "tracking": "420804979434636000000000000000", "barcode": "626265_2/D-1910866", "size": "S", "clientName": "Noah Stulberg", "createdAt": 1735689600112, "updatedAt": 1735689600112, "source": "seed"}, {"id": "seed_return_114", "date": "2026-01-21", "company": "Amazon Delivery", "returnType": "Pack", "notes": "API-695509 missing from pack", "tracking": "420100199400136000000000000000", "barcode": "625494_1/D-1842115", "size": "XS", "clientName": "Ranjini Musuvathy", "createdAt": 1735689600113, "updatedAt": 1735689600113, "source": "seed"}, {"id": "seed_return_115", "date": "2026-01-21", "company": "Amazon Delivery", "returnType": "Pack", "notes": "API-695509 missing from pack", "tracking": "9400136208416270000000", "barcode": "626090_2/D-1841218", "size": "S", "clientName": "Kathy Jessica Paul", "createdAt": 1735689600114, "updatedAt": 1735689600114, "source": "seed"}, {"id": "seed_return_116", "date": "2026-01-21", "company": "Amazon Delivery", "returnType": "Pack", "notes": "API-695499 missing from pack", "tracking": "420980059400136000000000000000", "barcode": "625493_4/D-1845676", "size": "L", "clientName": "Joshua Muehring", "createdAt": 1735689600115, "updatedAt": 1735689600115, "source": "seed"}, {"id": "seed_return_117", "date": "2026-01-21", "company": "Amazon Delivery", "returnType": "Pack", "notes": "API-695961 missing from pack", "tracking": "420980379400136000000000000000", "barcode": "626089_3/D-1912478", "size": "M", "clientName": "Thanujhaa Danasekaran", "createdAt": 1735689600116, "updatedAt": 1735689600116, "source": "seed"}, {"id": "seed_return_118", "date": "2026-01-21", "company": "Amazon Delivery", "returnType": "Pack", "notes": "API-696032 missing from pack", "tracking": "9400136208416270000000", "barcode": "626151_5/D-1912021", "size": "XL", "clientName": "Han Yoo Jin", "createdAt": 1735689600117, "updatedAt": 1735689600117, "source": "seed"}, {"id": "seed_return_119", "date": "2026-01-21", "company": "Amazon Delivery", "returnType": "Pack", "notes": "API-695499 missing from pack", "tracking": "420981079400136000000000000000", "barcode": "625493_3/D-1844736", "size": "M", "clientName": "Arvind Chhikara", "createdAt": 1735689600118, "updatedAt": 1735689600118, "source": "seed"}, {"id": "seed_return_120", "date": "2026-01-21", "company": "Amazon Delivery", "returnType": "Pack", "notes": "API-695971 missing from pack", "tracking": "9400136208416270000000", "barcode": "626090_3/D-1840607", "size": "M", "clientName": "Jiaming Wang", "createdAt": 1735689600119, "updatedAt": 1735689600119, "source": "seed"}, {"id": "seed_return_121", "date": "2026-01-21", "company": "Amazon Delivery", "returnType": "Pack", "notes": "API-695519 missing from pack", "tracking": "420306839400136000000000000000", "barcode": "625496_3/D-1851885", "size": "M", "clientName": "Ricardo Gonzalez", "createdAt": 1735689600120, "updatedAt": 1735689600120, "source": "seed"}, {"id": "seed_return_122", "date": "2026-01-21", "company": "Amazon Delivery", "returnType": "Pack", "notes": "API-696032 missing from pack", "tracking": "420787599400136000000000000000", "barcode": "626151_4/D-1849949", "size": "L", "clientName": "Ujjwal Arora", "createdAt": 1735689600121, "updatedAt": 1735689600121, "source": "seed"}, {"id": "seed_return_123", "date": "2026-01-21", "company": "Amazon Delivery", "returnType": "Pack", "notes": "API-695499 missing from pack", "tracking": "420024539400136000000000000000", "barcode": "625493_5/D-1846539", "size": "XL", "clientName": "Erik Elliott", "createdAt": 1735689600122, "updatedAt": 1735689600122, "source": "seed"}, {"id": "seed_return_124", "date": "2026-01-22", "company": "Blockchain.com", "returnType": "Pack", "notes": "", "tracking": "Tracking Number Damaged", "barcode": "557813_4/D-1757221", "size": "L", "clientName": "William Smith", "createdAt": 1735689600123, "updatedAt": 1735689600123, "source": "seed"}, {"id": "seed_return_125", "date": "2026-01-22", "company": "CPMStar", "returnType": "Pack", "notes": "", "tracking": "420100179434636000000000000000", "barcode": "648383_9/D-1915544", "size": "One Size", "clientName": "Katie Beaule", "createdAt": 1735689600124, "updatedAt": 1735689600124, "source": "seed"}, {"id": "seed_return_126", "date": "2026-01-22", "company": "CPMStar", "returnType": "Pack", "notes": "", "tracking": "420100179434636000000000000000", "barcode": "648383_9/D-1915521", "size": "One Size", "clientName": "Deepthi Prakash", "createdAt": 1735689600125, "updatedAt": 1735689600125, "source": "seed"}, {"id": "seed_return_127", "date": "2026-01-22", "company": "CPMStar", "returnType": "Pack", "notes": "", "tracking": "420100179434636000000000000000", "barcode": "648383_9/D-1915539", "size": "One Size", "clientName": "Alexandra Bernal", "createdAt": 1735689600126, "updatedAt": 1735689600126, "source": "seed"}, {"id": "seed_return_128", "date": "2026-01-22", "company": "CPMStar", "returnType": "Pack", "notes": "", "tracking": "420100179434636000000000000000", "barcode": "648383_9/D-1915546", "size": "One Size", "clientName": "Duncan Smith", "createdAt": 1735689600127, "updatedAt": 1735689600127, "source": "seed"}, {"id": "seed_return_129", "date": "2026-01-22", "company": "EquipmentShare", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30337907200", "barcode": "637234_9/D-1860845", "size": "One Size", "clientName": "Bryce Larkin", "createdAt": 1735689600128, "updatedAt": 1735689600128, "source": "seed"}, {"id": "seed_return_130", "date": "2026-01-22", "company": "eMoney Advisor", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30320080698", "barcode": "639414_2/D-1875416", "size": "S", "clientName": "Elena Demidionok", "createdAt": 1735689600129, "updatedAt": 1735689600129, "source": "seed"}, {"id": "seed_return_131", "date": "2026-01-22", "company": "Blockworks", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30322152679", "barcode": "648609_9/D-1913892", "size": "One Size", "clientName": "Alexander Hanbury", "createdAt": 1735689600130, "updatedAt": 1735689600130, "source": "seed"}, {"id": "seed_return_132", "date": "2026-01-22", "company": "Sydecar", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30306446427", "barcode": "640023_9/D-1894560", "size": "One Size", "clientName": "Marissa Pulido", "createdAt": 1735689600131, "updatedAt": 1735689600131, "source": "seed"}, {"id": "seed_return_133", "date": "2026-01-23", "company": "Inclined", "returnType": "Pack", "notes": "", "tracking": "1Z81R3Y30321804823", "barcode": "641486_9/D-1915814", "size": "One Size", "clientName": "Garrett Leusink", "createdAt": 1735689600132, "updatedAt": 1735689600132, "source": "seed"}, {"id": "seed_return_134", "date": "2026-01-23", "company": "Amazon Delivery", "returnType": "Pack", "notes": "", "tracking": "420945389400136000000000000000", "barcode": "626090_3/D-1840732", "size": "M", "clientName": "Swarnalatha Srenigarajan", "createdAt": 1735689600133, "updatedAt": 1735689600133, "source": "seed"}, {"id": "seed_return_135", "date": "2026-01-23", "company": "Amazon Delivery", "returnType": "Pack", "notes": "", "tracking": "9400136208416270000000", "barcode": "625494_1/D-1842315", "size": "XS", "clientName": "Yasmeen Manghat", "createdAt": 1735689600134, "updatedAt": 1735689600134, "source": "seed"}, {"id": "seed_return_136", "date": "2026-01-23", "company": "Rula", "returnType": "Pack", "notes": "", "tracking": "9434636208416270000000", "barcode": "641707_9/D-1879398", "size": "One Size", "clientName": "Joshua Stevens-Stein", "createdAt": 1735689600135, "updatedAt": 1735689600135, "source": "seed"}, {"id": "seed_return_137", "date": "2026-01-27", "company": "Taymar", "returnType": "Pack", "notes": "", "tracking": "420640939400136000000000000000", "barcode": "642434_4/D-1915762", "size": "L", "clientName": "Kyle Voelker", "createdAt": 1735689600136, "updatedAt": 1735689600136, "source": "seed"}, {"id": "seed_return_138", "date": "2026-01-27", "company": "Equipment Share", "returnType": "Pack", "notes": "", "tracking": "9400136208416270000000", "barcode": "621954_9", "size": "One Size", "clientName": "total:3", "createdAt": 1735689600137, "updatedAt": 1735689600137, "source": "seed"}, {"id": "seed_return_139", "date": "2026-01-27", "company": "Green Key Resources", "returnType": "Pack", "notes": "", "tracking": "420191039434636000000000000000", "barcode": "628754_9/D-1903795", "size": "One Size", "clientName": "Nancy Landy", "createdAt": 1735689600138, "updatedAt": 1735689600138, "source": "seed"}, {"id": "seed_return_140", "date": "2026-01-27", "company": "Ontap Consulting", "returnType": "Bulk/Pack", "notes": "Total:7", "tracking": "1Z81R3Y30329345887", "barcode": "WOG-044410/152016", "size": "One Size", "clientName": "Liz Alstott", "createdAt": 1735689600139, "updatedAt": 1735689600139, "source": "seed"}, {"id": "seed_return_141", "date": "2026-01-28", "company": "Equipment Share", "returnType": "Pack", "notes": "", "tracking": "420795639400136000000000000000", "barcode": "621954_9", "size": "One Size", "clientName": "total:2", "createdAt": 1735689600140, "updatedAt": 1735689600140, "source": "seed"}, {"id": "seed_return_142", "date": "2026-01-28", "company": "Enrollment Insurance", "returnType": "Pack", "notes": "", "tracking": "420333099400136000000000000000", "barcode": "625709_9/D-1920236", "size": "One Size", "clientName": "Chentel Garcia", "createdAt": 1735689600141, "updatedAt": 1735689600141, "source": "seed"}, {"id": "seed_return_143", "date": "2026-01-28", "company": "HealthPlan One", "returnType": "Pack", "notes": "", "tracking": "9400136208416270000000", "barcode": "630459_9/D-1835023", "size": "One Size", "clientName": "Lesley Gonzales", "createdAt": 1735689600142, "updatedAt": 1735689600142, "source": "seed"}, {"id": "seed_return_144", "date": "2026-01-28", "company": "HealthPlan One", "returnType": "Pack", "notes": "", "tracking": "9400136208416270000000", "barcode": "630459_9", "size": "One Size", "clientName": "", "createdAt": 1735689600143, "updatedAt": 1735689600143, "source": "seed"}, {"id": "seed_return_145", "date": "2026-01-28", "company": "Amazon Delivery", "returnType": "Pack", "notes": "", "tracking": "9400136208416270000000", "barcode": "626089_2/D-1912330", "size": "One Size", "clientName": "Alekhya Maddila", "createdAt": 1735689600144, "updatedAt": 1735689600144, "source": "seed"}, {"id": "seed_return_146", "date": "2026-01-28", "company": "TechCXO", "returnType": "Pack", "notes": "", "tracking": "420100239434636000000000000000", "barcode": "601856_9/D-1918073", "size": "One Size", "clientName": "Tracey Martin", "createdAt": 1735689600145, "updatedAt": 1735689600145, "source": "seed"}, {"id": "seed_return_147", "date": "2026-01-28", "company": "Equipment Share", "returnType": "Pack", "notes": "", "tracking": "420493489434636000000000000000", "barcode": "620918_9/D-1913134", "size": "One Size", "clientName": "Thomas Himmelright", "createdAt": 1735689600146, "updatedAt": 1735689600146, "source": "seed"}, {"id": "seed_return_148", "date": "2026-01-28", "company": "Cypfer", "returnType": "Bulk", "notes": "", "tracking": "1Z4Y6R500346761138", "barcode": "WOG-044351/151815", "size": "One Size", "clientName": "", "createdAt": 1735689600147, "updatedAt": 1735689600147, "source": "seed"}, {"id": "seed_return_149", "date": "2026-01-28", "company": "Pelco", "returnType": "Bulk", "notes": "", "tracking": "1Z999A9R0368403615", "barcode": "WOG-044918/153164", "size": "One Size", "clientName": "", "createdAt": 1735689600148, "updatedAt": 1735689600148, "source": "seed"}, {"id": "seed_return_150", "date": "2026-01-28", "company": "Relatient Pack", "returnType": "Pack", "notes": "", "tracking": "Tracking Number Damaged/Covered", "barcode": "647795_9/D-1920804", "size": "One Size", "clientName": "Arianna Trejo", "createdAt": 1735689600149, "updatedAt": 1735689600149, "source": "seed"}, {"id": "seed_return_151", "date": "2026-01-29", "company": "TechCXO", "returnType": "Pack", "notes": "", "tracking": "420068209434636000000000000000", "barcode": "601856_9/D-1918074", "size": "One Size", "clientName": "Lehua Sparrow", "createdAt": 1735689600150, "updatedAt": 1735689600150, "source": "seed"}, {"id": "seed_return_152", "date": "2026-01-29", "company": "Equipment Share", "returnType": "Pack", "notes": "", "tracking": "9400136208416270000000", "barcode": "646712_9", "size": "One Size", "clientName": "total:1", "createdAt": 1735689600151, "updatedAt": 1735689600151, "source": "seed"}, {"id": "seed_return_153", "date": "2026-01-29", "company": "Equipment Share", "returnType": "Pack", "notes": "", "tracking": "9400136208416270000000", "barcode": "621954_9", "size": "One Size", "clientName": "total:1", "createdAt": 1735689600152, "updatedAt": 1735689600152, "source": "seed"}, {"id": "seed_return_154", "date": "2026-01-29", "company": "Equipment Share", "returnType": "Pack", "notes": "", "tracking": "9400136208416270000000", "barcode": "621954_9", "size": "One Size", "clientName": "total:1", "createdAt": 1735689600153, "updatedAt": 1735689600153, "source": "seed"}, {"id": "seed_return_155", "date": "2026-01-29", "company": "Equipment Share", "returnType": "Pack", "notes": "", "tracking": "9400136208416270000000", "barcode": "646712_9", "size": "One Size", "clientName": "total:1", "createdAt": 1735689600154, "updatedAt": 1735689600154, "source": "seed"}, {"id": "seed_return_156", "date": "2026-01-29", "company": "HealthPlan One", "returnType": "Pack", "notes": "", "tracking": "420349829400136000000000000000", "barcode": "630459_9/D-1836341", "size": "One Size", "clientName": "Desiree Serrano", "createdAt": 1735689600155, "updatedAt": 1735689600155, "source": "seed"}, {"id": "seed_return_157", "date": "2026-01-29", "company": "Amazon Delivery", "returnType": "Pack", "notes": "", "tracking": "420112219400136000000000000000", "barcode": "626150_4/D-1856818", "size": "L", "clientName": "Gabby Soares", "createdAt": 1735689600156, "updatedAt": 1735689600156, "source": "seed"}, {"id": "seed_return_158", "date": "2026-01-29", "company": "Everbridge", "returnType": "Pack", "notes": "", "tracking": "420101679434636000000000000000", "barcode": "482715_9/D-1919249", "size": "One Size", "clientName": "Colin Kelly", "createdAt": 1735689600157, "updatedAt": 1735689600157, "source": "seed"}, {"id": "seed_return_159", "date": "2026-01-29", "company": "Dark Wolf", "returnType": "Bulk", "notes": "", "tracking": "1Z81R3Y30339099518", "barcode": "WOG-045452/154368", "size": "One Size", "clientName": "Sam Sapienza", "createdAt": 1735689600158, "updatedAt": 1735689600158, "source": "seed"}, {"id": "seed_return_160", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600159, "updatedAt": 1735689600159, "source": "seed"}, {"id": "seed_return_161", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600160, "updatedAt": 1735689600160, "source": "seed"}, {"id": "seed_return_162", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600161, "updatedAt": 1735689600161, "source": "seed"}, {"id": "seed_return_163", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600162, "updatedAt": 1735689600162, "source": "seed"}, {"id": "seed_return_164", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600163, "updatedAt": 1735689600163, "source": "seed"}, {"id": "seed_return_165", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600164, "updatedAt": 1735689600164, "source": "seed"}, {"id": "seed_return_166", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600165, "updatedAt": 1735689600165, "source": "seed"}, {"id": "seed_return_167", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600166, "updatedAt": 1735689600166, "source": "seed"}, {"id": "seed_return_168", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600167, "updatedAt": 1735689600167, "source": "seed"}, {"id": "seed_return_169", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600168, "updatedAt": 1735689600168, "source": "seed"}, {"id": "seed_return_170", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600169, "updatedAt": 1735689600169, "source": "seed"}, {"id": "seed_return_171", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600170, "updatedAt": 1735689600170, "source": "seed"}, {"id": "seed_return_172", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600171, "updatedAt": 1735689600171, "source": "seed"}, {"id": "seed_return_173", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600172, "updatedAt": 1735689600172, "source": "seed"}, {"id": "seed_return_174", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600173, "updatedAt": 1735689600173, "source": "seed"}, {"id": "seed_return_175", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600174, "updatedAt": 1735689600174, "source": "seed"}, {"id": "seed_return_176", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600175, "updatedAt": 1735689600175, "source": "seed"}, {"id": "seed_return_177", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600176, "updatedAt": 1735689600176, "source": "seed"}, {"id": "seed_return_178", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600177, "updatedAt": 1735689600177, "source": "seed"}, {"id": "seed_return_179", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600178, "updatedAt": 1735689600178, "source": "seed"}, {"id": "seed_return_180", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600179, "updatedAt": 1735689600179, "source": "seed"}, {"id": "seed_return_181", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600180, "updatedAt": 1735689600180, "source": "seed"}, {"id": "seed_return_182", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600181, "updatedAt": 1735689600181, "source": "seed"}, {"id": "seed_return_183", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600182, "updatedAt": 1735689600182, "source": "seed"}, {"id": "seed_return_184", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600183, "updatedAt": 1735689600183, "source": "seed"}, {"id": "seed_return_185", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600184, "updatedAt": 1735689600184, "source": "seed"}, {"id": "seed_return_186", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600185, "updatedAt": 1735689600185, "source": "seed"}, {"id": "seed_return_187", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600186, "updatedAt": 1735689600186, "source": "seed"}, {"id": "seed_return_188", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600187, "updatedAt": 1735689600187, "source": "seed"}, {"id": "seed_return_189", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600188, "updatedAt": 1735689600188, "source": "seed"}, {"id": "seed_return_190", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600189, "updatedAt": 1735689600189, "source": "seed"}, {"id": "seed_return_191", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600190, "updatedAt": 1735689600190, "source": "seed"}, {"id": "seed_return_192", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600191, "updatedAt": 1735689600191, "source": "seed"}, {"id": "seed_return_193", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600192, "updatedAt": 1735689600192, "source": "seed"}, {"id": "seed_return_194", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600193, "updatedAt": 1735689600193, "source": "seed"}, {"id": "seed_return_195", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600194, "updatedAt": 1735689600194, "source": "seed"}, {"id": "seed_return_196", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600195, "updatedAt": 1735689600195, "source": "seed"}, {"id": "seed_return_197", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600196, "updatedAt": 1735689600196, "source": "seed"}, {"id": "seed_return_198", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600197, "updatedAt": 1735689600197, "source": "seed"}, {"id": "seed_return_199", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600198, "updatedAt": 1735689600198, "source": "seed"}, {"id": "seed_return_200", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600199, "updatedAt": 1735689600199, "source": "seed"}, {"id": "seed_return_201", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600200, "updatedAt": 1735689600200, "source": "seed"}, {"id": "seed_return_202", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600201, "updatedAt": 1735689600201, "source": "seed"}, {"id": "seed_return_203", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600202, "updatedAt": 1735689600202, "source": "seed"}, {"id": "seed_return_204", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600203, "updatedAt": 1735689600203, "source": "seed"}, {"id": "seed_return_205", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600204, "updatedAt": 1735689600204, "source": "seed"}, {"id": "seed_return_206", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600205, "updatedAt": 1735689600205, "source": "seed"}, {"id": "seed_return_207", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600206, "updatedAt": 1735689600206, "source": "seed"}, {"id": "seed_return_208", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600207, "updatedAt": 1735689600207, "source": "seed"}, {"id": "seed_return_209", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600208, "updatedAt": 1735689600208, "source": "seed"}, {"id": "seed_return_210", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600209, "updatedAt": 1735689600209, "source": "seed"}, {"id": "seed_return_211", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600210, "updatedAt": 1735689600210, "source": "seed"}, {"id": "seed_return_212", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600211, "updatedAt": 1735689600211, "source": "seed"}, {"id": "seed_return_213", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600212, "updatedAt": 1735689600212, "source": "seed"}, {"id": "seed_return_214", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600213, "updatedAt": 1735689600213, "source": "seed"}, {"id": "seed_return_215", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600214, "updatedAt": 1735689600214, "source": "seed"}, {"id": "seed_return_216", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600215, "updatedAt": 1735689600215, "source": "seed"}, {"id": "seed_return_217", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600216, "updatedAt": 1735689600216, "source": "seed"}, {"id": "seed_return_218", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600217, "updatedAt": 1735689600217, "source": "seed"}, {"id": "seed_return_219", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600218, "updatedAt": 1735689600218, "source": "seed"}, {"id": "seed_return_220", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600219, "updatedAt": 1735689600219, "source": "seed"}, {"id": "seed_return_221", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600220, "updatedAt": 1735689600220, "source": "seed"}, {"id": "seed_return_222", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600221, "updatedAt": 1735689600221, "source": "seed"}, {"id": "seed_return_223", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600222, "updatedAt": 1735689600222, "source": "seed"}, {"id": "seed_return_224", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600223, "updatedAt": 1735689600223, "source": "seed"}, {"id": "seed_return_225", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600224, "updatedAt": 1735689600224, "source": "seed"}, {"id": "seed_return_226", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600225, "updatedAt": 1735689600225, "source": "seed"}, {"id": "seed_return_227", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600226, "updatedAt": 1735689600226, "source": "seed"}, {"id": "seed_return_228", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600227, "updatedAt": 1735689600227, "source": "seed"}, {"id": "seed_return_229", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600228, "updatedAt": 1735689600228, "source": "seed"}, {"id": "seed_return_230", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600229, "updatedAt": 1735689600229, "source": "seed"}, {"id": "seed_return_231", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600230, "updatedAt": 1735689600230, "source": "seed"}, {"id": "seed_return_232", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600231, "updatedAt": 1735689600231, "source": "seed"}, {"id": "seed_return_233", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600232, "updatedAt": 1735689600232, "source": "seed"}, {"id": "seed_return_234", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600233, "updatedAt": 1735689600233, "source": "seed"}, {"id": "seed_return_235", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600234, "updatedAt": 1735689600234, "source": "seed"}, {"id": "seed_return_236", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600235, "updatedAt": 1735689600235, "source": "seed"}, {"id": "seed_return_237", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600236, "updatedAt": 1735689600236, "source": "seed"}, {"id": "seed_return_238", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600237, "updatedAt": 1735689600237, "source": "seed"}, {"id": "seed_return_239", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600238, "updatedAt": 1735689600238, "source": "seed"}, {"id": "seed_return_240", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600239, "updatedAt": 1735689600239, "source": "seed"}, {"id": "seed_return_241", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600240, "updatedAt": 1735689600240, "source": "seed"}, {"id": "seed_return_242", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600241, "updatedAt": 1735689600241, "source": "seed"}, {"id": "seed_return_243", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600242, "updatedAt": 1735689600242, "source": "seed"}, {"id": "seed_return_244", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600243, "updatedAt": 1735689600243, "source": "seed"}, {"id": "seed_return_245", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600244, "updatedAt": 1735689600244, "source": "seed"}, {"id": "seed_return_246", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600245, "updatedAt": 1735689600245, "source": "seed"}, {"id": "seed_return_247", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600246, "updatedAt": 1735689600246, "source": "seed"}, {"id": "seed_return_248", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600247, "updatedAt": 1735689600247, "source": "seed"}, {"id": "seed_return_249", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600248, "updatedAt": 1735689600248, "source": "seed"}, {"id": "seed_return_250", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600249, "updatedAt": 1735689600249, "source": "seed"}, {"id": "seed_return_251", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600250, "updatedAt": 1735689600250, "source": "seed"}, {"id": "seed_return_252", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600251, "updatedAt": 1735689600251, "source": "seed"}, {"id": "seed_return_253", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600252, "updatedAt": 1735689600252, "source": "seed"}, {"id": "seed_return_254", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600253, "updatedAt": 1735689600253, "source": "seed"}, {"id": "seed_return_255", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600254, "updatedAt": 1735689600254, "source": "seed"}, {"id": "seed_return_256", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600255, "updatedAt": 1735689600255, "source": "seed"}, {"id": "seed_return_257", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600256, "updatedAt": 1735689600256, "source": "seed"}, {"id": "seed_return_258", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600257, "updatedAt": 1735689600257, "source": "seed"}, {"id": "seed_return_259", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600258, "updatedAt": 1735689600258, "source": "seed"}, {"id": "seed_return_260", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600259, "updatedAt": 1735689600259, "source": "seed"}, {"id": "seed_return_261", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600260, "updatedAt": 1735689600260, "source": "seed"}, {"id": "seed_return_262", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600261, "updatedAt": 1735689600261, "source": "seed"}, {"id": "seed_return_263", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600262, "updatedAt": 1735689600262, "source": "seed"}, {"id": "seed_return_264", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600263, "updatedAt": 1735689600263, "source": "seed"}, {"id": "seed_return_265", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600264, "updatedAt": 1735689600264, "source": "seed"}, {"id": "seed_return_266", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600265, "updatedAt": 1735689600265, "source": "seed"}, {"id": "seed_return_267", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600266, "updatedAt": 1735689600266, "source": "seed"}, {"id": "seed_return_268", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600267, "updatedAt": 1735689600267, "source": "seed"}, {"id": "seed_return_269", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600268, "updatedAt": 1735689600268, "source": "seed"}, {"id": "seed_return_270", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600269, "updatedAt": 1735689600269, "source": "seed"}, {"id": "seed_return_271", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600270, "updatedAt": 1735689600270, "source": "seed"}, {"id": "seed_return_272", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600271, "updatedAt": 1735689600271, "source": "seed"}, {"id": "seed_return_273", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600272, "updatedAt": 1735689600272, "source": "seed"}, {"id": "seed_return_274", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600273, "updatedAt": 1735689600273, "source": "seed"}, {"id": "seed_return_275", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600274, "updatedAt": 1735689600274, "source": "seed"}, {"id": "seed_return_276", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600275, "updatedAt": 1735689600275, "source": "seed"}, {"id": "seed_return_277", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600276, "updatedAt": 1735689600276, "source": "seed"}, {"id": "seed_return_278", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600277, "updatedAt": 1735689600277, "source": "seed"}, {"id": "seed_return_279", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600278, "updatedAt": 1735689600278, "source": "seed"}, {"id": "seed_return_280", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600279, "updatedAt": 1735689600279, "source": "seed"}, {"id": "seed_return_281", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600280, "updatedAt": 1735689600280, "source": "seed"}, {"id": "seed_return_282", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600281, "updatedAt": 1735689600281, "source": "seed"}, {"id": "seed_return_283", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600282, "updatedAt": 1735689600282, "source": "seed"}, {"id": "seed_return_284", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600283, "updatedAt": 1735689600283, "source": "seed"}, {"id": "seed_return_285", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600284, "updatedAt": 1735689600284, "source": "seed"}, {"id": "seed_return_286", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600285, "updatedAt": 1735689600285, "source": "seed"}, {"id": "seed_return_287", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600286, "updatedAt": 1735689600286, "source": "seed"}, {"id": "seed_return_288", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600287, "updatedAt": 1735689600287, "source": "seed"}, {"id": "seed_return_289", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600288, "updatedAt": 1735689600288, "source": "seed"}, {"id": "seed_return_290", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600289, "updatedAt": 1735689600289, "source": "seed"}, {"id": "seed_return_291", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600290, "updatedAt": 1735689600290, "source": "seed"}, {"id": "seed_return_292", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600291, "updatedAt": 1735689600291, "source": "seed"}, {"id": "seed_return_293", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600292, "updatedAt": 1735689600292, "source": "seed"}, {"id": "seed_return_294", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600293, "updatedAt": 1735689600293, "source": "seed"}, {"id": "seed_return_295", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600294, "updatedAt": 1735689600294, "source": "seed"}, {"id": "seed_return_296", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600295, "updatedAt": 1735689600295, "source": "seed"}, {"id": "seed_return_297", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600296, "updatedAt": 1735689600296, "source": "seed"}, {"id": "seed_return_298", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600297, "updatedAt": 1735689600297, "source": "seed"}, {"id": "seed_return_299", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600298, "updatedAt": 1735689600298, "source": "seed"}, {"id": "seed_return_300", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600299, "updatedAt": 1735689600299, "source": "seed"}, {"id": "seed_return_301", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600300, "updatedAt": 1735689600300, "source": "seed"}, {"id": "seed_return_302", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600301, "updatedAt": 1735689600301, "source": "seed"}, {"id": "seed_return_303", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600302, "updatedAt": 1735689600302, "source": "seed"}, {"id": "seed_return_304", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600303, "updatedAt": 1735689600303, "source": "seed"}, {"id": "seed_return_305", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600304, "updatedAt": 1735689600304, "source": "seed"}, {"id": "seed_return_306", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600305, "updatedAt": 1735689600305, "source": "seed"}, {"id": "seed_return_307", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600306, "updatedAt": 1735689600306, "source": "seed"}, {"id": "seed_return_308", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600307, "updatedAt": 1735689600307, "source": "seed"}, {"id": "seed_return_309", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600308, "updatedAt": 1735689600308, "source": "seed"}, {"id": "seed_return_310", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600309, "updatedAt": 1735689600309, "source": "seed"}, {"id": "seed_return_311", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600310, "updatedAt": 1735689600310, "source": "seed"}, {"id": "seed_return_312", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600311, "updatedAt": 1735689600311, "source": "seed"}, {"id": "seed_return_313", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600312, "updatedAt": 1735689600312, "source": "seed"}, {"id": "seed_return_314", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600313, "updatedAt": 1735689600313, "source": "seed"}, {"id": "seed_return_315", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600314, "updatedAt": 1735689600314, "source": "seed"}, {"id": "seed_return_316", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600315, "updatedAt": 1735689600315, "source": "seed"}, {"id": "seed_return_317", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600316, "updatedAt": 1735689600316, "source": "seed"}, {"id": "seed_return_318", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600317, "updatedAt": 1735689600317, "source": "seed"}, {"id": "seed_return_319", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600318, "updatedAt": 1735689600318, "source": "seed"}, {"id": "seed_return_320", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600319, "updatedAt": 1735689600319, "source": "seed"}, {"id": "seed_return_321", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600320, "updatedAt": 1735689600320, "source": "seed"}, {"id": "seed_return_322", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600321, "updatedAt": 1735689600321, "source": "seed"}, {"id": "seed_return_323", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600322, "updatedAt": 1735689600322, "source": "seed"}, {"id": "seed_return_324", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600323, "updatedAt": 1735689600323, "source": "seed"}, {"id": "seed_return_325", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600324, "updatedAt": 1735689600324, "source": "seed"}, {"id": "seed_return_326", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600325, "updatedAt": 1735689600325, "source": "seed"}, {"id": "seed_return_327", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600326, "updatedAt": 1735689600326, "source": "seed"}, {"id": "seed_return_328", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600327, "updatedAt": 1735689600327, "source": "seed"}, {"id": "seed_return_329", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600328, "updatedAt": 1735689600328, "source": "seed"}, {"id": "seed_return_330", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600329, "updatedAt": 1735689600329, "source": "seed"}, {"id": "seed_return_331", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600330, "updatedAt": 1735689600330, "source": "seed"}, {"id": "seed_return_332", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600331, "updatedAt": 1735689600331, "source": "seed"}, {"id": "seed_return_333", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600332, "updatedAt": 1735689600332, "source": "seed"}, {"id": "seed_return_334", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600333, "updatedAt": 1735689600333, "source": "seed"}, {"id": "seed_return_335", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600334, "updatedAt": 1735689600334, "source": "seed"}, {"id": "seed_return_336", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600335, "updatedAt": 1735689600335, "source": "seed"}, {"id": "seed_return_337", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600336, "updatedAt": 1735689600336, "source": "seed"}, {"id": "seed_return_338", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600337, "updatedAt": 1735689600337, "source": "seed"}, {"id": "seed_return_339", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600338, "updatedAt": 1735689600338, "source": "seed"}, {"id": "seed_return_340", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600339, "updatedAt": 1735689600339, "source": "seed"}, {"id": "seed_return_341", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600340, "updatedAt": 1735689600340, "source": "seed"}, {"id": "seed_return_342", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600341, "updatedAt": 1735689600341, "source": "seed"}, {"id": "seed_return_343", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600342, "updatedAt": 1735689600342, "source": "seed"}, {"id": "seed_return_344", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600343, "updatedAt": 1735689600343, "source": "seed"}, {"id": "seed_return_345", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600344, "updatedAt": 1735689600344, "source": "seed"}, {"id": "seed_return_346", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600345, "updatedAt": 1735689600345, "source": "seed"}, {"id": "seed_return_347", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600346, "updatedAt": 1735689600346, "source": "seed"}, {"id": "seed_return_348", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600347, "updatedAt": 1735689600347, "source": "seed"}, {"id": "seed_return_349", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600348, "updatedAt": 1735689600348, "source": "seed"}, {"id": "seed_return_350", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600349, "updatedAt": 1735689600349, "source": "seed"}, {"id": "seed_return_351", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600350, "updatedAt": 1735689600350, "source": "seed"}, {"id": "seed_return_352", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600351, "updatedAt": 1735689600351, "source": "seed"}, {"id": "seed_return_353", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600352, "updatedAt": 1735689600352, "source": "seed"}, {"id": "seed_return_354", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600353, "updatedAt": 1735689600353, "source": "seed"}, {"id": "seed_return_355", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600354, "updatedAt": 1735689600354, "source": "seed"}, {"id": "seed_return_356", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600355, "updatedAt": 1735689600355, "source": "seed"}, {"id": "seed_return_357", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600356, "updatedAt": 1735689600356, "source": "seed"}, {"id": "seed_return_358", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600357, "updatedAt": 1735689600357, "source": "seed"}, {"id": "seed_return_359", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600358, "updatedAt": 1735689600358, "source": "seed"}, {"id": "seed_return_360", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600359, "updatedAt": 1735689600359, "source": "seed"}, {"id": "seed_return_361", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600360, "updatedAt": 1735689600360, "source": "seed"}, {"id": "seed_return_362", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600361, "updatedAt": 1735689600361, "source": "seed"}, {"id": "seed_return_363", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600362, "updatedAt": 1735689600362, "source": "seed"}, {"id": "seed_return_364", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600363, "updatedAt": 1735689600363, "source": "seed"}, {"id": "seed_return_365", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600364, "updatedAt": 1735689600364, "source": "seed"}, {"id": "seed_return_366", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600365, "updatedAt": 1735689600365, "source": "seed"}, {"id": "seed_return_367", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600366, "updatedAt": 1735689600366, "source": "seed"}, {"id": "seed_return_368", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600367, "updatedAt": 1735689600367, "source": "seed"}, {"id": "seed_return_369", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600368, "updatedAt": 1735689600368, "source": "seed"}, {"id": "seed_return_370", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600369, "updatedAt": 1735689600369, "source": "seed"}, {"id": "seed_return_371", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600370, "updatedAt": 1735689600370, "source": "seed"}, {"id": "seed_return_372", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600371, "updatedAt": 1735689600371, "source": "seed"}, {"id": "seed_return_373", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600372, "updatedAt": 1735689600372, "source": "seed"}, {"id": "seed_return_374", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600373, "updatedAt": 1735689600373, "source": "seed"}, {"id": "seed_return_375", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600374, "updatedAt": 1735689600374, "source": "seed"}, {"id": "seed_return_376", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600375, "updatedAt": 1735689600375, "source": "seed"}, {"id": "seed_return_377", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600376, "updatedAt": 1735689600376, "source": "seed"}, {"id": "seed_return_378", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600377, "updatedAt": 1735689600377, "source": "seed"}, {"id": "seed_return_379", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600378, "updatedAt": 1735689600378, "source": "seed"}, {"id": "seed_return_380", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600379, "updatedAt": 1735689600379, "source": "seed"}, {"id": "seed_return_381", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600380, "updatedAt": 1735689600380, "source": "seed"}, {"id": "seed_return_382", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600381, "updatedAt": 1735689600381, "source": "seed"}, {"id": "seed_return_383", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600382, "updatedAt": 1735689600382, "source": "seed"}, {"id": "seed_return_384", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600383, "updatedAt": 1735689600383, "source": "seed"}, {"id": "seed_return_385", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600384, "updatedAt": 1735689600384, "source": "seed"}, {"id": "seed_return_386", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600385, "updatedAt": 1735689600385, "source": "seed"}, {"id": "seed_return_387", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600386, "updatedAt": 1735689600386, "source": "seed"}, {"id": "seed_return_388", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600387, "updatedAt": 1735689600387, "source": "seed"}, {"id": "seed_return_389", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600388, "updatedAt": 1735689600388, "source": "seed"}, {"id": "seed_return_390", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600389, "updatedAt": 1735689600389, "source": "seed"}, {"id": "seed_return_391", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600390, "updatedAt": 1735689600390, "source": "seed"}, {"id": "seed_return_392", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600391, "updatedAt": 1735689600391, "source": "seed"}, {"id": "seed_return_393", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600392, "updatedAt": 1735689600392, "source": "seed"}, {"id": "seed_return_394", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600393, "updatedAt": 1735689600393, "source": "seed"}, {"id": "seed_return_395", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600394, "updatedAt": 1735689600394, "source": "seed"}, {"id": "seed_return_396", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600395, "updatedAt": 1735689600395, "source": "seed"}, {"id": "seed_return_397", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600396, "updatedAt": 1735689600396, "source": "seed"}, {"id": "seed_return_398", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600397, "updatedAt": 1735689600397, "source": "seed"}, {"id": "seed_return_399", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600398, "updatedAt": 1735689600398, "source": "seed"}, {"id": "seed_return_400", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600399, "updatedAt": 1735689600399, "source": "seed"}, {"id": "seed_return_401", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600400, "updatedAt": 1735689600400, "source": "seed"}, {"id": "seed_return_402", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600401, "updatedAt": 1735689600401, "source": "seed"}, {"id": "seed_return_403", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600402, "updatedAt": 1735689600402, "source": "seed"}, {"id": "seed_return_404", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600403, "updatedAt": 1735689600403, "source": "seed"}, {"id": "seed_return_405", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600404, "updatedAt": 1735689600404, "source": "seed"}, {"id": "seed_return_406", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600405, "updatedAt": 1735689600405, "source": "seed"}, {"id": "seed_return_407", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600406, "updatedAt": 1735689600406, "source": "seed"}, {"id": "seed_return_408", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600407, "updatedAt": 1735689600407, "source": "seed"}, {"id": "seed_return_409", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600408, "updatedAt": 1735689600408, "source": "seed"}, {"id": "seed_return_410", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600409, "updatedAt": 1735689600409, "source": "seed"}, {"id": "seed_return_411", "date": "2026-01-29", "company": "", "returnType": "Pack", "notes": "", "tracking": "", "barcode": "", "size": "", "clientName": "", "createdAt": 1735689600410, "updatedAt": 1735689600410, "source": "seed"}];
+let returnsRecords=normalizeReturnsRecords(loadJson(returnsStorageKey,defaultReturnsRecords));
+
+function normalizeReturnsDate(value){
+  if(!value) return '';
+  const raw=String(value).trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const d=new Date(raw);
+  if(!Number.isNaN(d.getTime())) return d.toISOString().slice(0,10);
+  return raw;
+}
+function normalizeReturnsRecords(records){
+  return (Array.isArray(records)?records:[]).map((item,idx)=>({
+    id:String(item.id||`return_${Date.now()}_${idx}`),
+    date:normalizeReturnsDate(item.date||''),
+    company:String(item.company||'').trim(),
+    returnType:(String(item.returnType||'Pack').trim()||'Pack'),
+    notes:String(item.notes||'').trim(),
+    tracking:String(item.tracking||'').trim(),
+    barcode:String(item.barcode||'').trim(),
+    size:String(item.size||'').trim(),
+    clientName:String(item.clientName||'').trim(),
+    createdAt:Number(item.createdAt||Date.now())||Date.now(),
+    updatedAt:Number(item.updatedAt||item.createdAt||Date.now())||Date.now(),
+    source:String(item.source||'manual').trim()||'manual'
+  })).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+}
+function persistReturns(){
+  returnsRecords=normalizeReturnsRecords(returnsRecords);
+  localStorage.setItem(returnsStorageKey,JSON.stringify(returnsRecords));
+}
+
+function getReturnsFiltered(){
+  const q=(document.getElementById('returnsSearchInput')?.value||'').trim().toLowerCase();
+  const type=(document.getElementById('returnsTypeFilter')?.value||'All');
+  const company=(document.getElementById('returnsCompanyFilter')?.value||'All');
+  const date=(document.getElementById('returnsDateFilter')?.value||'');
+  return returnsRecords.filter(row=>{
+    if(type!=='All' && row.returnType!==type) return false;
+    if(company!=='All' && row.company!==company) return false;
+    if(date && row.date!==date) return false;
+    if(!q) return true;
+    const hay=[row.date,row.company,row.returnType,row.tracking,row.barcode,row.clientName,row.size,row.notes].join(' ').toLowerCase();
+    return hay.includes(q);
+  });
+}
+
+function renderReturnsFilters(){
+  const companyFilter=document.getElementById('returnsCompanyFilter');
+  const companyOptions=document.getElementById('returnsCompanyOptions');
+  if(!companyFilter || !companyOptions) return;
+  const companies=[...new Set(returnsRecords.map(r=>r.company).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const current=companyFilter.value||'All';
+  companyFilter.innerHTML=['<option value="All">All</option>'].concat(companies.map(name=>`<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)).join('');
+  companyFilter.value=companies.includes(current)?current:'All';
+  companyOptions.innerHTML=companies.map(name=>`<option value="${escapeHtml(name)}"></option>`).join('');
+}
+
+function renderReturnsStats(){
+  const today=new Date().toISOString().slice(0,10);
+  const todayRows=returnsRecords.filter(r=>r.date===today);
+  const totalPill=document.getElementById('returnsTotalPill');
+  const todayPill=document.getElementById('returnsTodayPill');
+  const todayCount=document.getElementById('returnsTodayCount');
+  const packCount=document.getElementById('returnsPackCount');
+  const bulkCount=document.getElementById('returnsBulkCount');
+  const companyCount=document.getElementById('returnsCompanyCount');
+  if(totalPill) totalPill.textContent=`${returnsRecords.length} returns`;
+  if(todayPill) todayPill.textContent=`${todayRows.length} today`;
+  if(todayCount) todayCount.textContent=todayRows.length;
+  if(packCount) packCount.textContent=todayRows.filter(r=>String(r.returnType).toLowerCase()==='pack').length;
+  if(bulkCount) bulkCount.textContent=todayRows.filter(r=>String(r.returnType).toLowerCase()==='bulk').length;
+  if(companyCount) companyCount.textContent=new Set(todayRows.map(r=>r.company).filter(Boolean)).size;
+}
+
+function renderReturnsRecent(){
+  const el=document.getElementById('returnsRecentList');
+  if(!el) return;
+  const rows=returnsRecords.slice(0,5);
+  el.innerHTML=rows.length ? rows.map(row=>`
+    <article class="mc-update-item returns-log-item">
+      <div class="mc-priority-title">${escapeHtml(row.company||'Unknown company')}</div>
+      <div class="mc-update-copy">${escapeHtml(row.clientName||'No client')} • ${escapeHtml(row.returnType||'Return')} • ${escapeHtml(row.date||'No date')}</div>
+      <div class="mc-update-copy">${escapeHtml(row.tracking||'No tracking')}${row.barcode ? ` • ${escapeHtml(row.barcode)}` : ''}</div>
+    </article>
+  `).join('') : '<div class="returns-empty">No returns logged yet.</div>';
+}
+
+function renderReturnsTable(){
+  const tbody=document.getElementById('returnsTableBody');
+  if(!tbody) return;
+  const rows=getReturnsFiltered();
+  tbody.innerHTML=rows.length ? rows.map(row=>`
+    <tr>
+      <td>${escapeHtml(row.date||'—')}</td>
+      <td>${escapeHtml(row.company||'—')}</td>
+      <td>${escapeHtml(row.returnType||'—')}</td>
+      <td>${escapeHtml(row.tracking||'—')}</td>
+      <td>${escapeHtml(row.barcode||'—')}</td>
+      <td>${escapeHtml(row.clientName||'—')}</td>
+      <td>${escapeHtml(row.size||'—')}</td>
+      <td>${escapeHtml(row.notes||'—')}</td>
+      <td><button class="btn secondary returns-delete-btn" data-id="${escapeHtml(row.id)}" type="button">Delete</button></td>
+    </tr>
+  `).join('') : '<tr><td colspan="9" class="returns-empty">No returns match the current filters.</td></tr>';
+  tbody.querySelectorAll('.returns-delete-btn').forEach(btn=>btn.addEventListener('click',()=>{
+    const id=btn.dataset.id;
+    returnsRecords=returnsRecords.filter(r=>r.id!==id);
+    persistReturns();
+    renderReturns();
+  }));
+}
+
+function setReturnsType(value){
+  const input=document.getElementById('returnsTypeInput');
+  if(input) input.value=value;
+  document.querySelectorAll('#returnsTypeToggle .returns-type-btn').forEach(btn=>btn.classList.toggle('active',btn.dataset.value===value));
+}
+
+function clearReturnsForm(){
+  const today=new Date().toISOString().slice(0,10);
+  const dateInput=document.getElementById('returnsDateInput');
+  const companyInput=document.getElementById('returnsCompanyInput');
+  const trackingInput=document.getElementById('returnsTrackingInput');
+  const barcodeInput=document.getElementById('returnsBarcodeInput');
+  const clientNameInput=document.getElementById('returnsClientNameInput');
+  const sizeInput=document.getElementById('returnsSizeInput');
+  const notesInput=document.getElementById('returnsNotesInput');
+  if(dateInput) dateInput.value=today;
+  if(companyInput) companyInput.value='';
+  if(trackingInput) trackingInput.value='';
+  if(barcodeInput) barcodeInput.value='';
+  if(clientNameInput) clientNameInput.value='';
+  if(sizeInput) sizeInput.value='';
+  if(notesInput) notesInput.value='';
+  setReturnsType('Pack');
+}
+
+function saveReturnRecord(resetAfter=false){
+  const date=(document.getElementById('returnsDateInput')?.value||'').trim();
+  const company=(document.getElementById('returnsCompanyInput')?.value||'').trim();
+  const returnType=(document.getElementById('returnsTypeInput')?.value||'Pack').trim() || 'Pack';
+  const tracking=(document.getElementById('returnsTrackingInput')?.value||'').trim();
+  const barcode=(document.getElementById('returnsBarcodeInput')?.value||'').trim();
+  const clientName=(document.getElementById('returnsClientNameInput')?.value||'').trim();
+  const size=(document.getElementById('returnsSizeInput')?.value||'').trim();
+  const notes=(document.getElementById('returnsNotesInput')?.value||'').trim();
+
+  if(!date){ alert('Add a date first.'); return; }
+  if(!company){ alert('Add a company first.'); return; }
+  if(!tracking && !barcode){ alert('Add a tracking number or a barcode.'); return; }
+
+  returnsRecords.unshift({
+    id:`return_${Date.now()}`,
+    date, company, returnType, tracking, barcode, clientName, size, notes,
+    createdAt:Date.now(),
+    updatedAt:Date.now(),
+    source:'manual'
+  });
+  persistReturns();
+  renderReturns();
+  if(resetAfter) clearReturnsForm();
+}
+
+function exportReturnsCsv(){
+  const rows=getReturnsFiltered();
+  const header=['Date','Company','Return Type','Tracking','Barcode','Client Full Name','Size','Notes'];
+  const lines=[header.join(',')];
+  rows.forEach(row=>{
+    const vals=[row.date,row.company,row.returnType,row.tracking,row.barcode,row.clientName,row.size,row.notes].map(v=>`"${String(v||'').replace(/"/g,'""')}"`);
+    lines.push(vals.join(','));
+  });
+  const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=`returns-log-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+function renderReturns(){
+  renderReturnsFilters();
+  renderReturnsStats();
+  renderReturnsRecent();
+  renderReturnsTable();
+}
+
+function bindReturnsEvents(){
+  if(document.body.dataset.returnsBound==='1') return;
+  document.body.dataset.returnsBound='1';
+
+  document.querySelectorAll('#returnsTypeToggle .returns-type-btn').forEach(btn=>btn.addEventListener('click',()=>setReturnsType(btn.dataset.value)));
+  document.getElementById('returnsClearBtn')?.addEventListener('click',clearReturnsForm);
+  document.getElementById('returnsSaveBtn')?.addEventListener('click',()=>saveReturnRecord(false));
+  document.getElementById('returnsSaveNewBtn')?.addEventListener('click',()=>saveReturnRecord(true));
+  document.getElementById('returnsExportCsvBtn')?.addEventListener('click',exportReturnsCsv);
+  ['returnsSearchInput','returnsTypeFilter','returnsCompanyFilter','returnsDateFilter'].forEach(id=>{
+    document.getElementById(id)?.addEventListener('input',renderReturnsTable);
+    document.getElementById(id)?.addEventListener('change',renderReturnsTable);
+  });
+}
+
+function scheduleAttendanceSync(){
+  if(!attendanceSyncEnabled || !attendanceSyncLoaded) return;
+  if(attendanceSyncTimer) clearTimeout(attendanceSyncTimer);
+  attendanceSyncTimer=setTimeout(()=>{attendanceSyncTimer=null;syncAttendanceState();},250);
+}
+function scheduleEmployeesSync(){
+  if(!employeesSyncEnabled || !employeesSyncLoaded) return;
+  if(employeesSyncTimer) clearTimeout(employeesSyncTimer);
+  employeesSyncTimer=setTimeout(()=>{employeesSyncTimer=null;syncEmployeesState();},250);
+}
+async function recordsApiRequest(base, method='GET', body){
+  const options={method,headers:{'Accept':'application/json'}};
+  if(body!==undefined){
+    options.headers['Content-Type']='application/json';
+    options.body=JSON.stringify(body);
+  }
+  const response=await fetch(base,options);
+  const raw=await response.text();
+  let data={};
+  try{data=raw?JSON.parse(raw):{}}catch{data={raw}}
+  if(!response.ok) throw new Error(data?.error || `Sync failed (${response.status})`);
+  return data;
+}
+async function loadAttendanceFromBackend(){
+  try{
+    const data=await recordsApiRequest(attendanceApiBase,'GET');
+    if(data && Array.isArray(data.records) && (data.records.length || !attendanceRecords.length)){
+      attendanceRecords=normalizeAttendanceRecords(data.records);
+      localStorage.setItem(attendanceStorageKey,JSON.stringify(attendanceRecords));
+    }
+    attendanceSyncEnabled=true;
+  }catch(err){
+    console.warn('Attendance sync unavailable, using browser storage.',err);
+    attendanceSyncEnabled=false;
+  }finally{
+    attendanceSyncLoaded=true;
+  }
+}
+async function syncAttendanceState(){
+  if(!attendanceSyncEnabled || !attendanceSyncLoaded) return;
+  if(attendanceSyncInFlight){attendanceSyncQueued=true;return;}
+  attendanceSyncInFlight=true;
+  try{
+    const data=await recordsApiRequest(attendanceApiBase,'POST',{records:attendanceRecords});
+    if(data && Array.isArray(data.records)){
+      attendanceRecords=normalizeAttendanceRecords(data.records);
+      localStorage.setItem(attendanceStorageKey,JSON.stringify(attendanceRecords));
+    }
+  }catch(err){
+    console.warn('Attendance sync save failed; keeping local copy.',err);
+    attendanceSyncEnabled=false;
+  }finally{
+    attendanceSyncInFlight=false;
+    if(attendanceSyncQueued){attendanceSyncQueued=false;syncAttendanceState();}
+  }
+}
+async function loadEmployeesFromBackend(){
+  try{
+    const data=await recordsApiRequest(employeesApiBase,'GET');
+    if(data && Array.isArray(data.employees) && (data.employees.length || !employees.length)){
+      employees=normalizeEmployees(data.employees);
+      localStorage.setItem(employeesStorageKey,JSON.stringify(employees));
+    }
+    employeesSyncEnabled=true;
+  }catch(err){
+    console.warn('Employee sync unavailable, using browser storage.',err);
+    employeesSyncEnabled=false;
+  }finally{
+    employeesSyncLoaded=true;
+  }
+}
+async function syncEmployeesState(){
+  if(!employeesSyncEnabled || !employeesSyncLoaded) return;
+  if(employeesSyncInFlight){employeesSyncQueued=true;return;}
+  employeesSyncInFlight=true;
+  try{
+    const data=await recordsApiRequest(employeesApiBase,'POST',{employees});
+    if(data && Array.isArray(data.employees)){
+      employees=normalizeEmployees(data.employees);
+      localStorage.setItem(employeesStorageKey,JSON.stringify(employees));
+    }
+  }catch(err){
+    console.warn('Employee sync save failed; keeping local copy.',err);
+    employeesSyncEnabled=false;
+  }finally{
+    employeesSyncInFlight=false;
+    if(employeesSyncQueued){employeesSyncQueued=false;syncEmployeesState();}
+  }
+}
+
+
 function normalizeEmployeeNames(list){return Array.from(new Set((list||[]).map(v=>String(v).trim()).filter(Boolean))).sort((a,b)=>a.localeCompare(b))}
 function normalizeEmployees(list){
   const mapped=(list||[]).map(item=>{
@@ -194,7 +504,7 @@ function normalizeEmployees(list){
   mapped.forEach(item=>{const key=item.name.toLowerCase(); if(!seen.has(key)){seen.add(key); deduped.push(item)}});
   return deduped.sort((a,b)=>a.name.localeCompare(b.name));
 }
-function saveEmployees(){saveJson(employeesStorageKey,employees)}
+function saveEmployees(){saveJson(employeesStorageKey,employees);scheduleEmployeesSync()}
 function getActiveEmployees(){return employees.filter(emp=>emp.active)}
 function getEmployeeByName(name){return employees.find(emp=>emp.name===name)}
 function formatBirthdayDisplay(value){if(!value) return '—'; const d=new Date(value+'T00:00:00'); return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}
@@ -403,18 +713,18 @@ function renderAttendanceSummary(filtered){const names=Array.from(new Set(filter
 function renderAttendanceStats(filtered){const uniqueNames=Array.from(new Set(filtered.map(r=>r.employeeName)));const totals=filtered.reduce((acc,r)=>{acc.entries+=1;if(r.mark==='Present')acc.present+=1;if(r.mark==='Late')acc.late+=1;if(r.mark==='Absent'||r.mark==='Call Out'||r.mark==='No Call No Show')acc.absent+=1;return acc},{entries:0,present:0,late:0,absent:0});const net=uniqueNames.reduce((sum,name)=>sum+getAttendanceEmployeeStats(name).netDemerits,0);attendanceTotalEntries.textContent=totals.entries;attendancePresentCount.textContent=totals.present;attendanceLateAbsentCount.textContent=`${totals.late} / ${totals.absent}`;attendanceNetDemerits.textContent=net;attendanceCurrentDepartmentPill.textContent=activeAttendanceDepartment}
 function updateAttendanceUndoButton(){attendanceUndoBtn.disabled=!localStorage.getItem(attendanceBackupKey)}
 function renderAttendance(){renderAttendanceDepartmentTabs();renderAttendanceEmployeeOptions(attendanceEmployeeInput.value);const filtered=renderAttendanceRecords();renderAttendanceSummary(filtered);renderAttendanceStats(filtered);renderAttendanceRoster();renderAttendanceMoveLog();updateAttendanceUndoButton()}
-function addAttendanceRecord(){const employeeName=attendanceEmployeeInput.value.trim();const department=attendanceDepartmentInput.value;const date=attendanceDateInput.value;const mark=attendanceMarkInput.value;const demerits=getDemeritForMark(mark);if(!employeeName){alert('Select an employee first.');attendanceEmployeeInput.focus();return}const duplicate=attendanceRecords.find(r=>r.employeeName===employeeName&&r.department===department&&r.date===date);if(duplicate){const replace=confirm('That employee already has a record for that department and date. Replace it?');if(!replace)return;attendanceRecords=attendanceRecords.filter(r=>!(r.employeeName===employeeName&&r.department===department&&r.date===date))}attendanceRecords.push({id:Date.now(),employeeName,department,date,mark,demerits});saveJson(attendanceStorageKey,attendanceRecords);attendanceEmployeeInput.value='';attendanceMarkInput.value='Present';updateAttendanceAutoDemerit();activeAttendanceDepartment=department;attendanceBatchDateInput.value=date;renderAttendance()}
+function addAttendanceRecord(){const employeeName=attendanceEmployeeInput.value.trim();const department=attendanceDepartmentInput.value;const date=attendanceDateInput.value;const mark=attendanceMarkInput.value;const demerits=getDemeritForMark(mark);if(!employeeName){alert('Select an employee first.');attendanceEmployeeInput.focus();return}const duplicate=attendanceRecords.find(r=>r.employeeName===employeeName&&r.department===department&&r.date===date);if(duplicate){const replace=confirm('That employee already has a record for that department and date. Replace it?');if(!replace)return;attendanceRecords=attendanceRecords.filter(r=>!(r.employeeName===employeeName&&r.department===department&&r.date===date))}attendanceRecords.push({id:Date.now(),employeeName,department,date,mark,demerits});saveJson(attendanceStorageKey,attendanceRecords);scheduleAttendanceSync();attendanceEmployeeInput.value='';attendanceMarkInput.value='Present';updateAttendanceAutoDemerit();activeAttendanceDepartment=department;attendanceBatchDateInput.value=date;renderAttendance()}
 function selectAllAttendanceRoster(){getRosterEmployees().forEach(emp=>attendanceRosterSelection.add(emp.name));renderAttendanceRoster();}
 function clearAttendanceSelection(){attendanceRosterSelection.clear();renderAttendanceRoster();}
-function applyBatchAttendance(markOverride=''){const selected=[...attendanceRosterSelection];if(!selected.length){alert('Select at least one employee first.');return}const date=attendanceBatchDateInput.value||new Date().toISOString().slice(0,10);const mark=markOverride||attendanceBatchMarkInput.value||'Present';selected.forEach(employeeName=>{attendanceRecords=attendanceRecords.filter(r=>!(r.employeeName===employeeName&&r.department===activeAttendanceDepartment&&r.date===date));attendanceRecords.push({id:Date.now()+Math.random(),employeeName,department:activeAttendanceDepartment,date,mark,demerits:getDemeritForMark(mark)});});saveJson(attendanceStorageKey,attendanceRecords);renderAttendance();}
+function applyBatchAttendance(markOverride=''){const selected=[...attendanceRosterSelection];if(!selected.length){alert('Select at least one employee first.');return}const date=attendanceBatchDateInput.value||new Date().toISOString().slice(0,10);const mark=markOverride||attendanceBatchMarkInput.value||'Present';selected.forEach(employeeName=>{attendanceRecords=attendanceRecords.filter(r=>!(r.employeeName===employeeName&&r.department===activeAttendanceDepartment&&r.date===date));attendanceRecords.push({id:Date.now()+Math.random(),employeeName,department:activeAttendanceDepartment,date,mark,demerits:getDemeritForMark(mark)});});saveJson(attendanceStorageKey,attendanceRecords);scheduleAttendanceSync();renderAttendance();}
 function logAttendanceDepartmentMove(){const selected=[...attendanceRosterSelection];if(!selected.length){alert('Select at least one employee first.');return}const toDepartment=attendanceMoveToDepartmentInput.value;if(!toDepartment){alert('Choose where the selected employees moved to.');return}const date=attendanceBatchDateInput.value||new Date().toISOString().slice(0,10);const startTime=attendanceMoveStartTimeInput.value;const endTime=attendanceMoveEndTimeInput.value;const note=attendanceMoveNoteInput.value.trim();selected.forEach(employeeName=>attendanceMoveRecords.unshift({id:Date.now()+Math.random(),employeeName,date,fromDepartment:activeAttendanceDepartment,toDepartment,startTime,endTime,note}));saveJson(attendanceMovesStorageKey,attendanceMoveRecords);attendanceMoveNoteInput.value='';renderAttendanceMoveLog();}
 function manageAttendanceEmployees(){document.querySelector('[data-page="employeesPage"]').click();}
-function deleteAttendanceRecord(id){attendanceRecords=attendanceRecords.filter(r=>r.id!==id);saveJson(attendanceStorageKey,attendanceRecords);if(selectedProfileName)openAttendanceProfile(selectedProfileName);renderAttendance()}
+function deleteAttendanceRecord(id){attendanceRecords=attendanceRecords.filter(r=>r.id!==id);saveJson(attendanceStorageKey,attendanceRecords);scheduleAttendanceSync();if(selectedProfileName)openAttendanceProfile(selectedProfileName);renderAttendance()}
 function deleteAttendanceMoveRecord(id){attendanceMoveRecords=attendanceMoveRecords.filter(r=>r.id!==id);saveJson(attendanceMovesStorageKey,attendanceMoveRecords);renderAttendanceMoveLog()}
 window.deleteAttendanceMoveRecord=deleteAttendanceMoveRecord;
-function clearAttendanceData(){const confirmed=confirm('Delete all attendance data from this browser? You can undo this once.');if(!confirmed)return;saveJson(attendanceBackupKey,attendanceRecords);attendanceRecords=[];saveJson(attendanceStorageKey,attendanceRecords);renderAttendance();alert('Attendance data cleared. Use Undo clear if needed.');}
-function undoAttendanceClear(){const backup=loadJson(attendanceBackupKey,null);if(!backup){alert('No attendance backup found.');return}attendanceRecords=normalizeAttendanceRecords(backup);saveJson(attendanceStorageKey,attendanceRecords);localStorage.removeItem(attendanceBackupKey);renderAttendance()}
-function loadAttendanceSampleData(){attendanceRecords=normalizeAttendanceRecords(attendanceSampleData.map(item=>({...item,demerits:getDemeritForMark(item.mark)})));employees=normalizeEmployees(defaultEmployees);saveJson(attendanceStorageKey,attendanceRecords);saveEmployees();localStorage.removeItem(attendanceBackupKey);renderAttendance();renderEmployees()}
+function clearAttendanceData(){const confirmed=confirm('Delete all attendance data from this browser? You can undo this once.');if(!confirmed)return;saveJson(attendanceBackupKey,attendanceRecords);attendanceRecords=[];saveJson(attendanceStorageKey,attendanceRecords);scheduleAttendanceSync();renderAttendance();alert('Attendance data cleared. Use Undo clear if needed.');}
+function undoAttendanceClear(){const backup=loadJson(attendanceBackupKey,null);if(!backup){alert('No attendance backup found.');return}attendanceRecords=normalizeAttendanceRecords(backup);saveJson(attendanceStorageKey,attendanceRecords);scheduleAttendanceSync();localStorage.removeItem(attendanceBackupKey);renderAttendance()}
+function loadAttendanceSampleData(){attendanceRecords=normalizeAttendanceRecords(attendanceSampleData.map(item=>({...item,demerits:getDemeritForMark(item.mark)})));employees=normalizeEmployees(defaultEmployees);saveJson(attendanceStorageKey,attendanceRecords);scheduleAttendanceSync();saveEmployees();localStorage.removeItem(attendanceBackupKey);renderAttendance();renderEmployees()}
 function exportAttendanceCsv(){const filtered=getFilteredAttendanceRecords();const rows=[["Employee Name","Department","Date","Mark","Demerits"],...filtered.map(r=>[r.employeeName,r.department,r.date,r.mark,r.demerits])];const csv=rows.map(row=>row.map(cell=>`"${String(cell).replace(/"/g,'""')}"`).join(',')).join('\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`${activeAttendanceDepartment.toLowerCase()}_attendance.csv`;a.click();URL.revokeObjectURL(url)}
 function openAttendanceProfile(name){selectedProfileName=name;const stats=getAttendanceEmployeeStats(name);const latestDepartment=stats.records.length?stats.records[stats.records.length-1].department:'No department yet';profileName.textContent=name;profileSubtitle.textContent=`${latestDepartment} • ${stats.totalDays} total records • ${stats.currentStreak} day current present streak`;profileStats.innerHTML=[{label:'Net Demerits',value:stats.netDemerits},{label:'30-Day Credits',value:stats.credits},{label:'Best Streak',value:stats.bestStreak},{label:'Present Days',value:stats.present}].map(card=>`<div class="mini-card"><div class="mini-label">${card.label}</div><div class="mini-value">${card.value}</div></div>`).join('');if(!stats.records.length){profileHistoryBody.innerHTML='<tr><td colspan="4" class="empty">No history found for this employee.</td></tr>'}else{profileHistoryBody.innerHTML=[...stats.records].sort((a,b)=>String(b.date).localeCompare(String(a.date))).map(r=>`<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.department)}</td><td><span class="badge ${toBadgeClass(r.mark)}">${escapeHtml(r.mark)}</span></td><td>${Number(r.demerits||0)}</td></tr>`).join('')}profileModalBackdrop.classList.add('show')}
 function closeAttendanceProfile(){profileModalBackdrop.classList.remove('show');selectedProfileName=''}
@@ -667,108 +977,705 @@ function renderCalendar(){
 document.getElementById('calendarPrevBtn').addEventListener('click',()=>{calendarCursor.setMonth(calendarCursor.getMonth()-1);renderCalendar();});
 document.getElementById('calendarNextBtn').addEventListener('click',()=>{calendarCursor.setMonth(calendarCursor.getMonth()+1);renderCalendar();});
 
-function renderHome(){
-  const snap = getExecutiveSnapshot();
-  const today=new Date().toISOString().slice(0,10);
+
+
+
+function getHomeSnapshotData(){
+  const today = new Date().toISOString().slice(0,10);
+  const safeReadLocalJson=(key,fallback)=>{
+    try{
+      const raw=localStorage.getItem(key);
+      return raw?JSON.parse(raw):fallback;
+    }catch{return fallback}
+  };
+  const safeNum=v=>Number(v||0)||0;
+  const bestDate=(rows)=>{
+    const dates=[...new Set((rows||[]).map(r=>String(r.date||'').trim()).filter(Boolean))].sort();
+    if(!dates.length) return '';
+    return dates.includes(today) ? today : dates[dates.length-1];
+  };
+
+  const workflowData=safeReadLocalJson('qaV5SeparatedWorkflowData_v4fixed',{})||{};
+  const policyEntryFeed=(typeof policyEntries!=='undefined' && Array.isArray(policyEntries)) ? policyEntries : safeReadLocalJson('ops_hub_policy_entries_v1',[]);
+  const policyDocFeed=(typeof policyDocs!=='undefined' && Array.isArray(policyDocs)) ? policyDocs : safeReadLocalJson('ops_hub_policy_docs_v1',[]);
+  const sordImportMeta=safeReadLocalJson('ops_hub_sord_imports_v1',null);
+
   const activeEmployees=getActiveEmployees();
-  const currentMonth=new Date().getMonth();
-  const birthdaysThisMonth=activeEmployees.filter(emp=>emp.birthday && new Date(emp.birthday+'T00:00:00').getMonth()===currentMonth);
   const todayAttendance=attendanceRecords.filter(r=>r.date===today);
-  const presentToday=todayAttendance.filter(r=>r.mark==='Present').length;
+  const presentToday=todayAttendance.filter(r=>r.mark==='Present' || r.mark==='Late').length;
   const lateToday=todayAttendance.filter(r=>r.mark==='Late').length;
-  const absentToday=todayAttendance.filter(r=>r.mark==='Absent' || r.mark==='Call Out').length;
+  const absentToday=todayAttendance.filter(r=>r.mark==='Absent' || r.mark==='Call Out' || r.mark==='No Call No Show').length;
 
-  const selectedAssemblyRows = snap.rows;
-  const fmtCurrency=v=>Number(v||0).toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2});
+  const byDept=(deptNames)=>{
+    const set=new Set(deptNames.map(v=>String(v).toLowerCase()));
+    return todayAttendance.filter(r=>set.has(String(r.department||'').toLowerCase()) && (r.mark==='Present' || r.mark==='Late')).length;
+  };
+  const receivingHeadcount=byDept(['Receiving','QA Receiving']);
+  const prepHeadcount=byDept(['Prepping','Prep','QA Prep']);
+  const assemblyHeadcountToday=byDept(['Assembly']);
 
-  // Alert banner
-  const alertEl=document.getElementById('homeAlertBanner');
-  if(alertEl){
-    const parts=[];
-    if(snap.overdueCount>0) parts.push(`<span class="home-alert-pill home-alert-overdue">🔴 ${snap.overdueCount} overdue</span>`);
-    if(snap.atRiskCount>0) parts.push(`<span class="home-alert-pill home-alert-atrisk">🟡 ${snap.atRiskCount} at risk</span>`);
-    if(snap.revenueAtRisk>0) parts.push(`<span class="home-alert-pill home-alert-revenue">💰 ${fmtCurrency(snap.revenueAtRisk)} revenue at risk</span>`);
-    if(parts.length){
-      alertEl.innerHTML=parts.join(' ');
-      alertEl.hidden=false;
-    } else {
-      alertEl.innerHTML='<span class="home-alert-pill home-alert-ok">✅ No urgent issues today</span>';
-      alertEl.hidden=false;
+  const flattenWorkflowSections=(sections,label,mode)=>{
+    const out=[];
+    (sections||[]).forEach(section=>{
+      (section.rows||[]).forEach(row=>{
+        out.push({
+          source:label,
+          date:section.date||'',
+          associate:section.name||'',
+          location:section.location||'',
+          po:row.po||'',
+          boxes:safeNum(row.boxes),
+          ordered:safeNum(row.orderedQty||row.qty),
+          received:safeNum(row.receivedQty||row.qty),
+          extras:safeNum(row.extras),
+          category:row.category||'',
+          notes:row.notes||'',
+          editHistory:Array.isArray(row.editHistory)?row.editHistory:[],
+          createdAt:safeNum(row.createdAt||section.updatedAt||section.createdAt),
+          mode
+        });
+      });
+    });
+    return out;
+  };
+
+  const allDock=flattenWorkflowSections(workflowData.dockSections,'Dock','simple');
+  const allReceiving=flattenWorkflowSections(workflowData.receivingSections,'Receiving','counting');
+  const allPrep=flattenWorkflowSections(workflowData.prepSections,'Prep','counting');
+  const dockDate=bestDate(allDock);
+  const receivingDate=bestDate(allReceiving);
+  const prepDate=bestDate(allPrep);
+  const dockRows=allDock.filter(r=>r.date===dockDate);
+  const receivingRows=allReceiving.filter(r=>r.date===receivingDate);
+  const prepRows=allPrep.filter(r=>r.date===prepDate);
+
+  const allOverstock=(workflowData.overstockEntries||[]).map(r=>({
+    source:'Overstock', date:r.date||'', associate:r.associate||'', location:r.location||'', po:r.po||'', quantity:safeNum(r.quantity), status:r.status||'', action:r.action||'', notes:r.notes||'', createdAt:safeNum(r.updatedAt||r.createdAt), editHistory:Array.isArray(r.editHistory)?r.editHistory:[]
+  }));
+  const allPutaway=(workflowData.putawayEntries||[]).map(r=>({
+    source:'Putaway', date:r.date||'', associate:r.associate||'', location:r.location||'', po:r.po||'', status:r.status||'', notes:r.notes||'', createdAt:safeNum(r.updatedAt||r.createdAt), editHistory:Array.isArray(r.editHistory)?r.editHistory:[]
+  }));
+  const overstockDate=bestDate(allOverstock);
+  const putawayDate=bestDate(allPutaway);
+  const overstockRows=allOverstock.filter(r=>r.date===overstockDate);
+  const putawayRows=allPutaway.filter(r=>r.date===putawayDate);
+
+  const snap=getExecutiveSnapshot();
+  const assemblyRows=snap.rows||[];
+  const assemblyUnits=safeNum(snap.totalUnits);
+  const assemblyDoneUnits=safeNum(snap.doneUnits);
+  const assemblyUph=assemblyHeadcountToday>0 ? +(assemblyUnits/(assemblyHeadcountToday*8)).toFixed(1) : 0;
+  const receivingUnits=receivingRows.reduce((s,r)=>s+r.received,0);
+  const prepUnits=prepRows.reduce((s,r)=>s+r.received,0);
+  const dockUnits=dockRows.reduce((s,r)=>s+(r.received||r.ordered||0),0);
+  const receivingUph=receivingHeadcount>0 ? +(receivingUnits/(receivingHeadcount*8)).toFixed(1) : 0;
+  const prepUph=prepHeadcount>0 ? +(prepUnits/(prepHeadcount*8)).toFixed(1) : 0;
+  const inboundUnits=dockUnits+receivingUnits+prepUnits;
+  const todayOutput=inboundUnits+assemblyUnits;
+
+  const allTraceRows=[...dockRows,...receivingRows,...prepRows,...overstockRows,...putawayRows];
+  const poMap=new Map();
+  allTraceRows.forEach(r=>{
+    const po=String(r.po||'').trim();
+    if(!po) return;
+    if(!poMap.has(po)) poMap.set(po,[]);
+    poMap.get(po).push(r);
+  });
+  const poSummaries=[...poMap.entries()].map(([po,rows])=>{
+    const touches=rows.length;
+    const edits=rows.reduce((s,r)=>s+((r.editHistory||[]).length),0);
+    const sources=[...new Set(rows.map(r=>r.source))];
+    const latest=[...rows].sort((a,b)=>b.createdAt-a.createdAt)[0]||{};
+    return {po,rows,touches,edits,sources,lastBy:latest.associate||'Unknown',lastAt:latest.createdAt||0};
+  });
+  const multiTouch=poSummaries.filter(item=>item.touches>1).sort((a,b)=>b.touches-a.touches);
+  const editedTrace=poSummaries.filter(item=>item.edits>0).sort((a,b)=>b.edits-a.edits);
+
+  const latestTimes=[];
+  const pushLatest=(label,items,fieldNames=['updatedAt','createdAt'])=>{
+    (items||[]).forEach(item=>{
+      for(const field of fieldNames){
+        const raw=item?.[field];
+        const t=Number(raw)||new Date(String(raw||'')).getTime()||0;
+        if(t){ latestTimes.push({label,time:t}); break; }
+      }
+    });
+  };
+  pushLatest('Assembly',assemblyBoardRows);
+  pushLatest('Errors',errorRecords,['id']);
+  pushLatest('Inbound',allTraceRows,['createdAt']);
+  pushLatest('Policy',policyEntryFeed);
+  pushLatest('Policy Docs',policyDocFeed);
+  latestTimes.sort((a,b)=>b.time-a.time);
+  const freshest=latestTimes.find(item=>item.time>0);
+
+  const recentPolicies=[...(policyEntryFeed||[])].sort((a,b)=>(safeNum(b.updatedAt||b.createdAt)-safeNum(a.updatedAt||a.createdAt))).slice(0,3);
+  const mostCommonError=[...errorRecords.reduce((m,r)=>m.set(r.errorType,(m.get(r.errorType)||0)+1), new Map()).entries()].sort((a,b)=>b[1]-a[1])[0];
+
+  return {
+    generatedAt: Date.now(),
+    today,
+    activeEmployees: activeEmployees.length,
+    presentToday,
+    lateToday,
+    absentToday,
+    inboundUnits,
+    dockUnits,
+    receivingUnits,
+    prepUnits,
+    receivingUph,
+    prepUph,
+    assemblyUph,
+    assemblyUnits,
+    assemblyDoneUnits,
+    assemblyScheduled: assemblyRows.length,
+    atRiskCount: safeNum(snap.atRiskCount),
+    overdueCount: safeNum(snap.overdueCount),
+    todayOutput,
+    scheduledRevenue: safeNum(snap.scheduledRevenue),
+    doneRevenue: safeNum(snap.doneRevenue),
+    remainingRevenue: safeNum(snap.remainingRevenue),
+    overstockCount: overstockRows.length,
+    putawayCount: putawayRows.length,
+    requiredExtras: overstockRows.filter(r=>r.action==='Required').length,
+    errorCount: errorRecords.length,
+    mostCommonError: mostCommonError ? `${mostCommonError[0]} (${mostCommonError[1]})` : 'None',
+    multiTouchCount: multiTouch.length,
+    editedTraceCount: editedTrace.length,
+    topTimeline: poSummaries
+      .filter(item=>item.touches>1 || item.edits>0)
+      .sort((a,b)=>(b.edits*100+b.touches)-(a.edits*100+a.touches))
+      .slice(0,6),
+    recentPolicies: recentPolicies.map(item=>({
+      title:item.title||item.name||'Untitled',
+      category:item.category||'Policy',
+      time:Number(item.updatedAt||item.createdAt)||0
+    })),
+    policyDocCount: policyDocFeed?.length||0,
+    freshestLabel: freshest?.label || 'None',
+    freshestTime: freshest?.time || 0,
+    importSummary: sordImportMeta?.fileNames || null,
+    dates:{dockDate, receivingDate, prepDate, overstockDate, putawayDate}
+  };
+}
+
+function getHomeSnapshotDocumentHtml(snapshot){
+  const fmtCurrency=v=>Number(v||0).toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0,maximumFractionDigits:0});
+  const fmtDateTime=(ts)=> ts ? new Date(ts).toLocaleString() : '—';
+  const tl = snapshot.topTimeline || [];
+  const pol = snapshot.recentPolicies || [];
+  const importParts = snapshot.importSummary
+    ? [snapshot.importSummary.queue && `Queue: ${snapshot.importSummary.queue}`, snapshot.importSummary.revenue && `Revenue: ${snapshot.importSummary.revenue}`, snapshot.importSummary.eom && `SORD: ${snapshot.importSummary.eom}`].filter(Boolean)
+    : [];
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mission Control Snapshot</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;color:#16344c;margin:24px;background:#fff}
+  h1,h2,h3,p{margin:0}
+  .top{display:flex;justify-content:space-between;gap:16px;align-items:flex-end;margin-bottom:18px}
+  .sub{color:#5b7892;font-size:13px}
+  .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0 20px}
+  .card{border:1px solid #d6e5f2;border-radius:16px;padding:12px;background:#fafdff;break-inside:avoid}
+  .label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#64829c;font-weight:700}
+  .value{font-size:24px;font-weight:800;color:#103a60;margin-top:6px}
+  .hint{margin-top:6px;font-size:12px;color:#5f7a93;line-height:1.35}
+  .section{margin-top:22px}
+  .section h2{font-size:20px;margin-bottom:10px}
+  table{width:100%;border-collapse:collapse}
+  th,td{border:1px solid #d6e5f2;padding:8px 10px;text-align:left;font-size:12px;vertical-align:top}
+  th{background:#eef6fd}
+  .list{display:grid;gap:8px}
+  .item{border:1px solid #d6e5f2;border-radius:12px;padding:10px;background:#fff}
+  .item-title{font-weight:700}
+  .foot{margin-top:22px;font-size:12px;color:#6a859d}
+  @media print{body{margin:12px}.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <div class="label">Mission Control Snapshot</div>
+      <h1>Warehouse Summary</h1>
+      <p class="sub">Generated ${fmtDateTime(snapshot.generatedAt)}</p>
+    </div>
+    <div class="sub">Prepared from Home / Mission Control</div>
+  </div>
+
+  <div class="grid">
+    <div class="card"><div class="label">Attendance Health</div><div class="value">${snapshot.presentToday}/${snapshot.activeEmployees}</div><div class="hint">${snapshot.lateToday} late • ${snapshot.absentToday} absent/call out</div></div>
+    <div class="card"><div class="label">Inbound Health</div><div class="value">${snapshot.inboundUnits.toLocaleString()}</div><div class="hint">Dock ${snapshot.dockUnits.toLocaleString()} • Receiving ${snapshot.receivingUnits.toLocaleString()} • Prep ${snapshot.prepUnits.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Assembly Health</div><div class="value">${snapshot.assemblyUph || '—'} UPH</div><div class="hint">${snapshot.assemblyScheduled} scheduled • ${snapshot.atRiskCount} at risk • ${snapshot.overdueCount} overdue</div></div>
+    <div class="card"><div class="label">Today's Output</div><div class="value">${snapshot.todayOutput.toLocaleString()}</div><div class="hint">${snapshot.assemblyUnits.toLocaleString()} assembly • ${snapshot.inboundUnits.toLocaleString()} inbound</div></div>
+    <div class="card"><div class="label">Revenue</div><div class="value">${fmtCurrency(snapshot.scheduledRevenue)}</div><div class="hint">Done ${fmtCurrency(snapshot.doneRevenue)} • Remaining ${fmtCurrency(snapshot.remainingRevenue)}</div></div>
+    <div class="card"><div class="label">Issue Health</div><div class="value">${snapshot.errorCount + snapshot.requiredExtras + snapshot.editedTraceCount}</div><div class="hint">${snapshot.errorCount} errors • ${snapshot.requiredExtras} required extras • ${snapshot.editedTraceCount} edited PO(s)</div></div>
+    <div class="card"><div class="label">Timeline Pressure</div><div class="value">${snapshot.multiTouchCount}</div><div class="hint">PO(s) with multiple touches</div></div>
+    <div class="card"><div class="label">Data Freshness</div><div class="value">${snapshot.freshestLabel}</div><div class="hint">${fmtDateTime(snapshot.freshestTime)}</div></div>
+  </div>
+
+  <div class="section">
+    <h2>Department summary</h2>
+    <table>
+      <thead><tr><th>Department</th><th>Key metric</th><th>Support detail</th></tr></thead>
+      <tbody>
+        <tr><td>Dock</td><td>${snapshot.dockUnits.toLocaleString()} units</td><td>Date ${snapshot.dates.dockDate || '—'}</td></tr>
+        <tr><td>QA Receiving</td><td>${snapshot.receivingUph || '—'} UPH</td><td>${snapshot.receivingUnits.toLocaleString()} units • Date ${snapshot.dates.receivingDate || '—'}</td></tr>
+        <tr><td>Prep</td><td>${snapshot.prepUph || '—'} UPH</td><td>${snapshot.prepUnits.toLocaleString()} units • Date ${snapshot.dates.prepDate || '—'}</td></tr>
+        <tr><td>Overstock</td><td>${snapshot.overstockCount} row(s)</td><td>${snapshot.requiredExtras} required • Date ${snapshot.dates.overstockDate || '—'}</td></tr>
+        <tr><td>Putaway</td><td>${snapshot.putawayCount} row(s)</td><td>Date ${snapshot.dates.putawayDate || '—'}</td></tr>
+        <tr><td>Assembly</td><td>${snapshot.assemblyUph || '—'} UPH</td><td>${snapshot.assemblyScheduled} scheduled • ${snapshot.assemblyUnits.toLocaleString()} units</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Exception and traceability summary</h2>
+    <table>
+      <thead><tr><th>Signal</th><th>Value</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Warehouse errors</td><td>${snapshot.errorCount}</td><td>${snapshot.mostCommonError}</td></tr>
+        <tr><td>Required extras</td><td>${snapshot.requiredExtras}</td><td>Rows currently marked Required in Extras</td></tr>
+        <tr><td>Edited PO activity</td><td>${snapshot.editedTraceCount}</td><td>POs with audit-tracked edits</td></tr>
+        <tr><td>Multi-touch PO activity</td><td>${snapshot.multiTouchCount}</td><td>POs with multiple timeline entries</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Top timeline activity</h2>
+    ${tl.length ? `<table>
+      <thead><tr><th>PO</th><th>Timeline entries</th><th>Edits</th><th>Sources</th><th>Last touched</th></tr></thead>
+      <tbody>
+        ${tl.map(item=>`<tr><td>${item.po}</td><td>${item.touches}</td><td>${item.edits}</td><td>${item.sources.join(' → ')}</td><td>${item.lastBy} • ${fmtDateTime(item.lastAt)}</td></tr>`).join('')}
+      </tbody>
+    </table>` : `<div class="item">No multi-touch or edited POs are standing out in the current visible data.</div>`}
+  </div>
+
+  <div class="section">
+    <h2>Recent changes</h2>
+    <div class="list">
+      ${pol.length ? pol.map(item=>`<div class="item"><div class="item-title">${item.title}</div><div class="sub">${item.category} • ${fmtDateTime(item.time)}</div></div>`).join('') : `<div class="item">No recent policy changes detected.</div>`}
+      <div class="item"><div class="item-title">Policy documents</div><div class="sub">${snapshot.policyDocCount} supporting document(s) saved.</div></div>
+      <div class="item"><div class="item-title">Import summary</div><div class="sub">${importParts.length ? importParts.join(' • ') : 'No shared import filenames detected.'}</div></div>
+    </div>
+  </div>
+
+  <div class="foot">This snapshot is designed for Home / Mission Control review and print distribution.</div>
+</body>
+</html>`;
+}
+
+function exportHomeSnapshotFile(){
+  const snapshot=getHomeSnapshotData();
+  const html=getHomeSnapshotDocumentHtml(snapshot);
+  const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  const stamp=new Date(snapshot.generatedAt).toISOString().slice(0,16).replace(/[:T]/g,'-');
+  a.download=`mission-control-snapshot-${stamp}.html`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+
+function printHomeSnapshot(){
+  const snapshot=getHomeSnapshotData();
+  const html=getHomeSnapshotDocumentHtml(snapshot);
+  const win=window.open('','_blank','noopener,noreferrer,width=1100,height=900');
+  if(!win) return;
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  setTimeout(()=>{ try{ win.focus(); win.print(); }catch{} }, 250);
+}
+
+function renderHome(){
+  const today = new Date().toISOString().slice(0,10);
+  const nowTs = Date.now();
+  const fmtCurrency=v=>Number(v||0).toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0,maximumFractionDigits:0});
+
+  const safeReadLocalJson=(key,fallback)=>{
+    try{
+      const raw=localStorage.getItem(key);
+      return raw?JSON.parse(raw):fallback;
+    }catch{return fallback}
+  };
+  const safeNum=v=>Number(v||0)||0;
+  const bestDate=(rows)=>{
+    const dates=[...new Set((rows||[]).map(r=>String(r.date||'').trim()).filter(Boolean))].sort();
+    if(!dates.length) return '';
+    return dates.includes(today) ? today : dates[dates.length-1];
+  };
+  const hoursSince=(ts)=>{
+    const n=Number(ts||0);
+    if(!n) return Infinity;
+    return (nowTs - n) / 36e5;
+  };
+  const healthStatus=(value,{goodIf=()=>false,watchIf=()=>false}={})=>{
+    if(goodIf(value)) return 'good';
+    if(watchIf(value)) return 'watch';
+    return 'risk';
+  };
+
+  const workflowData=safeReadLocalJson('qaV5SeparatedWorkflowData_v4fixed',{})||{};
+  const policyEntryFeed=(typeof policyEntries!=='undefined' && Array.isArray(policyEntries)) ? policyEntries : safeReadLocalJson('ops_hub_policy_entries_v1',[]);
+  const policyDocFeed=(typeof policyDocs!=='undefined' && Array.isArray(policyDocs)) ? policyDocs : safeReadLocalJson('ops_hub_policy_docs_v1',[]);
+  const sordImportMeta=safeReadLocalJson('ops_hub_sord_imports_v1',null);
+
+  const activeEmployees=getActiveEmployees();
+  const todayAttendance=attendanceRecords.filter(r=>r.date===today);
+  const presentToday=todayAttendance.filter(r=>r.mark==='Present' || r.mark==='Late').length;
+  const lateToday=todayAttendance.filter(r=>r.mark==='Late').length;
+  const absentToday=todayAttendance.filter(r=>r.mark==='Absent' || r.mark==='Call Out' || r.mark==='No Call No Show').length;
+
+  const byDept=(deptNames)=>{
+    const set=new Set(deptNames.map(v=>String(v).toLowerCase()));
+    return todayAttendance.filter(r=>set.has(String(r.department||'').toLowerCase()) && (r.mark==='Present' || r.mark==='Late')).length;
+  };
+  const receivingHeadcount=byDept(['Receiving','QA Receiving']);
+  const prepHeadcount=byDept(['Prepping','Prep','QA Prep']);
+  const assemblyHeadcountToday=byDept(['Assembly']);
+
+  const flattenWorkflowSections=(sections,label,mode)=>{
+    const out=[];
+    (sections||[]).forEach(section=>{
+      (section.rows||[]).forEach(row=>{
+        out.push({
+          source:label,
+          date:section.date||'',
+          associate:section.name||'',
+          location:section.location||'',
+          po:row.po||'',
+          boxes:safeNum(row.boxes),
+          ordered:safeNum(row.orderedQty||row.qty),
+          received:safeNum(row.receivedQty||row.qty),
+          extras:safeNum(row.extras),
+          category:row.category||'',
+          notes:row.notes||'',
+          editHistory:Array.isArray(row.editHistory)?row.editHistory:[],
+          createdAt:safeNum(row.createdAt||section.updatedAt||section.createdAt),
+          mode
+        });
+      });
+    });
+    return out;
+  };
+
+  const allDock=flattenWorkflowSections(workflowData.dockSections,'Dock','simple');
+  const allReceiving=flattenWorkflowSections(workflowData.receivingSections,'Receiving','counting');
+  const allPrep=flattenWorkflowSections(workflowData.prepSections,'Prep','counting');
+  const dockDate=bestDate(allDock);
+  const receivingDate=bestDate(allReceiving);
+  const prepDate=bestDate(allPrep);
+  const dockRows=allDock.filter(r=>r.date===dockDate);
+  const receivingRows=allReceiving.filter(r=>r.date===receivingDate);
+  const prepRows=allPrep.filter(r=>r.date===prepDate);
+
+  const allOverstock=(workflowData.overstockEntries||[]).map(r=>({
+    source:'Overstock', date:r.date||'', associate:r.associate||'', location:r.location||'', po:r.po||'', quantity:safeNum(r.quantity), status:r.status||'', action:r.action||'', notes:r.notes||'', createdAt:safeNum(r.updatedAt||r.createdAt), editHistory:Array.isArray(r.editHistory)?r.editHistory:[]
+  }));
+  const allPutaway=(workflowData.putawayEntries||[]).map(r=>({
+    source:'Putaway', date:r.date||'', associate:r.associate||'', location:r.location||'', po:r.po||'', status:r.status||'', notes:r.notes||'', createdAt:safeNum(r.updatedAt||r.createdAt), editHistory:Array.isArray(r.editHistory)?r.editHistory:[]
+  }));
+  const overstockDate=bestDate(allOverstock);
+  const putawayDate=bestDate(allPutaway);
+  const overstockRows=allOverstock.filter(r=>r.date===overstockDate);
+  const putawayRows=allPutaway.filter(r=>r.date===putawayDate);
+
+  const snap=getExecutiveSnapshot();
+  const assemblyRows=snap.rows||[];
+  const assemblyUnits=safeNum(snap.totalUnits);
+  const assemblyDoneUnits=safeNum(snap.doneUnits);
+  const assemblyUph=assemblyHeadcountToday>0 ? +(assemblyUnits/(assemblyHeadcountToday*8)).toFixed(1) : 0;
+  const receivingUnits=receivingRows.reduce((s,r)=>s+r.received,0);
+  const prepUnits=prepRows.reduce((s,r)=>s+r.received,0);
+  const dockUnits=dockRows.reduce((s,r)=>s+(r.received||r.ordered||0),0);
+  const receivingUph=receivingHeadcount>0 ? +(receivingUnits/(receivingHeadcount*8)).toFixed(1) : 0;
+  const prepUph=prepHeadcount>0 ? +(prepUnits/(prepHeadcount*8)).toFixed(1) : 0;
+
+  const inboundUnits=dockUnits+receivingUnits+prepUnits;
+  const todayOutput=inboundUnits+assemblyUnits;
+
+  const allTraceRows=[...dockRows,...receivingRows,...prepRows,...overstockRows,...putawayRows];
+  const poMap=new Map();
+  allTraceRows.forEach(r=>{
+    const po=String(r.po||'').trim();
+    if(!po) return;
+    if(!poMap.has(po)) poMap.set(po,[]);
+    poMap.get(po).push(r);
+  });
+  const poSummaries=[...poMap.entries()].map(([po,rows])=>{
+    const touches=rows.length;
+    const edits=rows.reduce((s,r)=>s+((r.editHistory||[]).length),0);
+    const sources=[...new Set(rows.map(r=>r.source))];
+    const latest=[...rows].sort((a,b)=>b.createdAt-a.createdAt)[0]||{};
+    return {po,rows,touches,edits,sources,lastBy:latest.associate||'Unknown',lastAt:latest.createdAt||0};
+  });
+  const multiTouch=poSummaries.filter(item=>item.touches>1).sort((a,b)=>b.touches-a.touches);
+  const editedTrace=poSummaries.filter(item=>item.edits>0).sort((a,b)=>b.edits-a.edits);
+
+  const latestTimes=[];
+  const pushLatest=(label,items,fieldNames=['updatedAt','createdAt'])=>{
+    (items||[]).forEach(item=>{
+      for(const field of fieldNames){
+        const raw=item?.[field];
+        const t=Number(raw)||new Date(String(raw||'')).getTime()||0;
+        if(t){ latestTimes.push({label,time:t}); break; }
+      }
+    });
+  };
+  pushLatest('Assembly',assemblyBoardRows);
+  pushLatest('Errors',errorRecords,['id']);
+  pushLatest('Inbound',allTraceRows,['createdAt']);
+  pushLatest('Policy',policyEntryFeed);
+  pushLatest('Policy Docs',policyDocFeed);
+  latestTimes.sort((a,b)=>b.time-a.time);
+  const freshest=latestTimes.find(item=>item.time>0);
+  const freshestHours=hoursSince(freshest?.time||0);
+
+  const setCard=(prefix, value, sub, status='watch')=>{
+    const v=document.getElementById(prefix);
+    const s=document.getElementById(prefix+'Sub');
+    const card=document.getElementById(prefix+'Card');
+    if(v) v.textContent=value;
+    if(s) s.textContent=sub;
+    if(card){
+      card.classList.remove('is-good','is-watch','is-risk');
+      card.classList.add(status==='good'?'is-good':status==='risk'?'is-risk':'is-watch');
     }
+  };
+
+  const attendanceRatio = activeEmployees.length ? presentToday/activeEmployees.length : 0;
+  setCard('mcAttendanceHealth', `${presentToday}/${activeEmployees.length||0}`, `${lateToday} late • ${absentToday} absent/call out`, attendanceRatio>=0.9 && absentToday===0 ? 'good' : attendanceRatio>=0.75 ? 'watch' : 'risk');
+  const inboundDateLabel = dockDate||receivingDate||prepDate||today;
+  setCard('mcInboundHealth', inboundUnits.toLocaleString(), `Dock ${dockUnits.toLocaleString()} • Receiving ${receivingUnits.toLocaleString()} • Prep ${prepUnits.toLocaleString()} • ${inboundDateLabel===today?'today':'latest date'}`, inboundUnits>1500?'good':inboundUnits>0?'watch':'risk');
+  setCard('mcAssemblyHealth', assemblyUph?`${assemblyUph} UPH`:'—', `${assemblyRows.length} scheduled • ${snap.atRiskCount||0} at risk • ${snap.overdueCount||0} overdue`, assemblyUph>=220?'good':assemblyUph>=180?'watch':'risk');
+  const openIssues=errorRecords.length + overstockRows.filter(r=>r.action==='Required').length + editedTrace.length;
+  setCard('mcIssueHealth', String(openIssues), `${errorRecords.length} warehouse errors • ${overstockRows.filter(r=>r.action==='Required').length} required extras • ${editedTrace.length} edited PO(s)`, openIssues===0?'good':openIssues<=8?'watch':'risk');
+  setCard('mcDataFreshness', freshest?new Date(freshest.time).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):'—', freshest?`${freshest.label} updated most recently • ${freshestHours<1?'fresh':freshestHours<8?'today':'stale'}`:'No recent timestamps found', freshestHours<2?'good':freshestHours<12?'watch':'risk');
+  setCard('mcTodayOutput', todayOutput.toLocaleString(), `${assemblyUnits.toLocaleString()} assembly • ${inboundUnits.toLocaleString()} inbound • ${fmtCurrency(snap.scheduledRevenue||0)} scheduled`, todayOutput>3000?'good':todayOutput>0?'watch':'risk');
+
+  const healthBanner=document.getElementById('homeAlertBanner');
+  if(healthBanner){
+    const alerts=[];
+    if((snap.overdueCount||0)>0) alerts.push(`<span class="home-alert-pill home-alert-overdue">🔴 ${snap.overdueCount} overdue</span>`);
+    if((snap.atRiskCount||0)>0) alerts.push(`<span class="home-alert-pill home-alert-atrisk">🟡 ${snap.atRiskCount} at risk</span>`);
+    if(absentToday>0) alerts.push(`<span class="home-alert-pill home-alert-overdue">👥 ${absentToday} attendance gaps</span>`);
+    if(editedTrace.length>0) alerts.push(`<span class="home-alert-pill home-alert-revenue">📝 ${editedTrace.length} edited PO(s)</span>`);
+    if(freshestHours>=12) alerts.push(`<span class="home-alert-pill home-alert-overdue">⏱️ Data may be stale</span>`);
+    if(!alerts.length) alerts.push('<span class="home-alert-pill home-alert-ok">✅ No urgent issues right now</span>');
+    healthBanner.innerHTML=alerts.join(' ');
+    healthBanner.hidden=false;
   }
 
-  homeEmployeesCount.textContent=activeEmployees.length;
-  homeBirthdaysCount.textContent=birthdaysThisMonth.length;
-  homeErrorsCount.textContent=errorRecords.length;
-  homeAssemblyPbCount.textContent=selectedAssemblyRows.length;
-  homePresentToday.textContent=presentToday;
-  homeLateToday.textContent=lateToday;
-  homeAbsentToday.textContent=absentToday;
-  homeAssemblyUnits.textContent=snap.totalUnits.toLocaleString();
-  homeAssemblyDoneUnits.textContent=snap.doneUnits.toLocaleString();
-  homeAssemblyCapacity.textContent=snap.capacity.toLocaleString();
-  homeAssemblyCompletion.textContent=`${snap.completion.toFixed(0)}%`;
-  homeAssemblyCompletion.style.color = snap.completion > 0 ? '#16a34a' : '';
+  const deptCards=[
+    {
+      title:'Dock',
+      metric:dockUnits.toLocaleString(),
+      sub:`${new Set(dockRows.map(r=>r.po).filter(Boolean)).size} active POs • ${dockDate===today?'today':'latest date'}`,
+      status:dockRows.length>0 ? 'good' : (allDock.length>0 ? 'watch' : 'risk'),
+      copy:dockRows.length? 'Inbound is landing and being logged.' : (allDock.length? 'No dock work on today; showing latest available dock activity.' : 'No dock activity logged yet.'),
+      pills:[`${dockRows.length} lines`,`Timeline ${multiTouch.filter(item=>item.sources.includes('Dock')).length}`],
+      jump:'workflowInboundPage'
+    },
+    {
+      title:'QA Receiving',
+      metric: receivingUph?`${receivingUph} UPH`:'—',
+      sub:`${receivingUnits.toLocaleString()} units • ${new Set(receivingRows.map(r=>r.po).filter(Boolean)).size} POs`,
+      status: receivingUph>=180?'good':receivingUph>=150?'watch':'risk',
+      copy: receivingRows.length? 'Receiving is actively processing work.' : (allReceiving.length? 'No receiving lines on today; latest activity is shown.' : 'No receiving lines logged yet.'),
+      pills:[`${receivingHeadcount} present`,`Edits ${editedTrace.filter(item=>item.sources.includes('Receiving')).length}`],
+      jump:'workflowInboundPage'
+    },
+    {
+      title:'Prep',
+      metric: prepUph?`${prepUph} UPH`:'—',
+      sub:`${prepUnits.toLocaleString()} units • ${new Set(prepRows.map(r=>r.po).filter(Boolean)).size} POs`,
+      status: prepUph>=275?'good':prepUph>=220?'watch':'risk',
+      copy: prepRows.length? 'Prep is moving but should be watched for variance.' : (allPrep.length? 'No prep lines on today; latest activity is shown.' : 'No prep lines logged yet.'),
+      pills:[`${prepHeadcount} present`,`Multi-touch ${multiTouch.filter(item=>item.sources.includes('Prep')).length}`],
+      jump:'workflowInboundPage'
+    },
+    {
+      title:'Overstock',
+      metric: String(overstockRows.length),
+      sub:`${overstockRows.filter(r=>r.action==='Required').length} required • ${overstockRows.filter(r=>r.status==='Donation').length} donation`,
+      status: overstockRows.filter(r=>r.action==='Required').length===0 ? (overstockRows.length?'watch':'good') : 'risk',
+      copy: overstockRows.length? 'Extras need review before they compound.' : (allOverstock.length? 'No extras on today; latest overstock activity is available.' : 'No extras logged yet.'),
+      pills:[`${new Set(overstockRows.map(r=>r.po).filter(Boolean)).size} POs`,`Edited ${editedTrace.filter(item=>item.sources.includes('Overstock')).length}`],
+      jump:'workflowInboundPage'
+    },
+    {
+      title:'Putaway',
+      metric: String(putawayRows.length),
+      sub:`${new Set(putawayRows.map(r=>r.location).filter(Boolean)).size} locations in use`,
+      status: putawayRows.length>0?'good':(allPutaway.length?'watch':'risk'),
+      copy: putawayRows.length? 'Putaway has staged material available to trace.' : (allPutaway.length? 'No putaway on today; latest activity is shown.' : 'No putaway entries logged yet.'),
+      pills:[`${new Set(putawayRows.map(r=>r.po).filter(Boolean)).size} POs`,`Timeline ${multiTouch.filter(item=>item.sources.includes('Putaway')).length}`],
+      jump:'workflowInboundPage'
+    },
+    {
+      title:'Assembly',
+      metric: assemblyUph?`${assemblyUph} UPH`:'—',
+      sub:`${assemblyRows.length} scheduled • ${assemblyUnits.toLocaleString()} units`,
+      status: assemblyUph>=220?'good':assemblyUph>=180?'watch':'risk',
+      copy: assemblyRows.length? 'Assembly is the live execution pressure point.' : 'No assembly schedule rows for today.',
+      pills:[`Done ${assemblyDoneUnits.toLocaleString()}`,`At risk ${snap.atRiskCount||0}`],
+      jump:'assemblyPage'
+    },
+  ];
 
-  // Revenue snapshot
-  const elScheduledRev=document.getElementById('homeScheduledRevenue');
-  const elDoneRev=document.getElementById('homeDoneRevenue');
-  const elRemainingRev=document.getElementById('homeRemainingRevenue');
-  const elRevCompletion=document.getElementById('homeRevenueCompletion');
-  if(elScheduledRev) elScheduledRev.textContent=fmtCurrency(snap.scheduledRevenue);
-  if(elDoneRev) elDoneRev.textContent=fmtCurrency(snap.doneRevenue);
-  if(elRemainingRev) elRemainingRev.textContent=fmtCurrency(snap.remainingRevenue);
-  if(elRevCompletion) elRevCompletion.textContent=`${snap.revenueCompletion.toFixed(0)}%`;
+  const deptRadar=document.getElementById('mcDeptRadar');
+  if(deptRadar){
+    deptRadar.innerHTML=deptCards.map(card=>{
+      const cls=card.status==='good'?'mc-status-good':card.status==='risk'?'mc-status-risk':'mc-status-watch';
+      const txt=card.status==='good'?'Stable':card.status==='risk'?'Risk':'Watch';
+      return `<article class="mc-dept-card">
+        <div class="mc-dept-top"><div class="eyebrow">${card.title}</div><span class="mc-status-chip ${cls}">${txt}</span></div>
+        <div class="mc-dept-metric">${card.metric}</div>
+        <div class="mc-dept-sub">${card.sub}</div>
+        <div class="mc-dept-copy">${card.copy}</div>
+        <div class="mc-mini-list">${card.pills.map(p=>`<span class="mc-mini-pill">${p}</span>`).join('')}</div>
+        <button class="btn secondary" type="button" data-home-jump="${card.jump}">Open ${card.title}</button>
+      </article>`;
+    }).join('');
+  }
 
-  const stageSummary=[
-    {label:'A.A.', key:'aa'},
-    {label:'Print', key:'print'},
-    {label:'Picked', key:'picked'},
-    {label:'Line', key:'line'},
-    {label:'DPMO', key:'dpmo'},
-    {label:'Done', key:'done'}
-  ].map(stage=>{
-    const rows=selectedAssemblyRows.filter(row=>row.stage===stage.key);
-    return {label:stage.label, units:rows.reduce((sum,row)=>sum+getAssemblyUnits(row),0), pbs:rows.length};
+  const priorities=[];
+  const pushPriority=(score,level,title,copy,target)=> priorities.push({score,level,title,copy,target});
+  if((snap.overdueCount||0)>0) pushPriority(100+safeNum(snap.overdueCount),'high','Overdue assembly work',`${snap.overdueCount} item(s) are overdue in assembly and need immediate review.`, 'assemblyPage');
+  if(absentToday>0) pushPriority(95+absentToday,'high','Attendance coverage gap',`${absentToday} associate(s) are absent or called out today.`, 'attendancePage');
+  if((snap.atRiskCount||0)>0) pushPriority(85+safeNum(snap.atRiskCount),'high','Assembly risk detected',`${snap.atRiskCount} assembly item(s) are currently at risk.`, 'assemblyPage');
+  if(overstockRows.filter(r=>r.action==='Required').length>0) pushPriority(70+overstockRows.filter(r=>r.action==='Required').length,'med','Extras require disposition',`${overstockRows.filter(r=>r.action==='Required').length} overstock row(s) are marked Required.`, 'workflowInboundPage');
+  if(errorRecords.length>0) pushPriority(60+errorRecords.length,'med','Warehouse errors need review',`${errorRecords.length} error record(s) are open in the system.`, 'errorsPage');
+  if(editedTrace.length>0) pushPriority(50+editedTrace.length,'med','Edited PO activity detected',`${editedTrace.length} PO(s) have audit-tracked edits.`, 'workflowInboundPage');
+  if(multiTouch.length>0) pushPriority(40+multiTouch.length,'med','Multi-touch PO activity',`${multiTouch.length} PO(s) have multiple timeline entries.`, 'workflowInboundPage');
+  if(freshestHours>=12) pushPriority(30+Math.floor(freshestHours),'low','Data freshness is slipping',`Latest meaningful update was ${Math.floor(freshestHours)} hour(s) ago.`, 'importHubPage');
+  if((policyEntryFeed||[]).length>0) {
+    const rp=[...(policyEntryFeed||[])].sort((a,b)=>(safeNum(b.updatedAt||b.createdAt)-safeNum(a.updatedAt||a.createdAt)))[0];
+    if(rp) pushPriority(20,'low','Recent policy changes available',`Latest policy update: ${rp.title||rp.name||'Untitled policy'}.`, 'policyPage');
+  }
+  if(!priorities.length) pushPriority(1,'low','Operation stable','No urgent exceptions are standing out right now.','homePage');
+
+  priorities.sort((a,b)=>b.score-a.score);
+  const radar=document.getElementById('mcPriorityRadar');
+  if(radar){
+    radar.innerHTML=priorities.slice(0,6).map(item=>{
+      const cls=item.level==='high'?'mc-priority-high':item.level==='med'?'mc-priority-med':'mc-priority-low';
+      const label=item.level==='high'?'High':item.level==='med'?'Medium':'Low';
+      return `<article class="mc-priority-item">
+        <div class="mc-priority-top"><div class="mc-priority-title">${item.title}</div><span class="mc-priority-badge ${cls}">${label}</span></div>
+        <div class="mc-priority-copy">${item.copy}</div>
+        <button class="btn secondary" type="button" data-home-jump="${item.target}">Open</button>
+      </article>`;
+    }).join('');
+  }
+
+  const exceptionCenter=document.getElementById('mcExceptionCenter');
+  if(exceptionCenter){
+    const mostCommonError=[...errorRecords.reduce((m,r)=>m.set(r.errorType,(m.get(r.errorType)||0)+1), new Map()).entries()].sort((a,b)=>b[1]-a[1])[0];
+    const mostEdited=editedTrace[0];
+    const mostTouched=multiTouch[0];
+    const exceptionCards=[
+      {title:'Warehouse Errors',value:errorRecords.length,copy:errorRecords.length?(mostCommonError?`${mostCommonError[0]} is repeating most.`:`${errorRecords.length} active error record(s).`):'No active error records'},
+      {title:'Holds / Extras',value:overstockRows.length,copy:overstockRows.filter(r=>r.action==='Required').length?`${overstockRows.filter(r=>r.action==='Required').length} need action right now.`:'No urgent extras right now'},
+      {title:'Audit Alerts',value:editedTrace.length,copy:mostEdited?`${mostEdited.po} has ${mostEdited.edits} edit(s).`:'No edited POs in current visible data'},
+      {title:'Repeat PO Activity',value:multiTouch.length,copy:mostTouched?`${mostTouched.po} has ${mostTouched.touches} touches.`:'No repeated PO activity detected'},
+    ];
+    exceptionCenter.innerHTML=exceptionCards.map(card=>`<article class="mc-exception-card"><div class="mc-exception-title">${card.title}</div><strong>${card.value}</strong><div class="mc-priority-copy">${card.copy}</div></article>`).join('');
+  }
+
+  const timeline=document.getElementById('mcTimelinePulse');
+  if(timeline){
+    const items=poSummaries
+      .filter(item=>item.touches>1 || item.edits>0)
+      .sort((a,b)=>(b.edits*100+b.touches)-(a.edits*100+a.touches))
+      .slice(0,8);
+    timeline.innerHTML=items.length?items.map(item=>`
+      <article class="mc-timeline-item">
+        <div class="mc-timeline-top"><div class="mc-timeline-title">${item.po}</div><span class="mc-mini-pill">${item.touches} timeline entries</span></div>
+        <div class="mc-timeline-copy"><strong>${item.sources.join(' → ')}</strong> • ${item.edits} edit(s) • last by ${item.lastBy}${item.lastAt?` at ${new Date(item.lastAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`:''}</div>
+      </article>
+    `).join(''):`<div class="mc-empty">No multi-touch or edited POs are standing out in the current visible data.</div>`;
+  }
+
+  const urgency=document.getElementById('mcUrgencyRail');
+  if(urgency){
+    const urgencyItems=[];
+    if(assemblyRows.length) urgencyItems.push({title:'Assembly schedule pressure',copy:`${assemblyRows.length} scheduled item(s), ${snap.atRiskCount||0} at risk, ${snap.overdueCount||0} overdue.`,target:'assemblyPage'});
+    if(receivingRows.length||prepRows.length||dockRows.length) urgencyItems.push({title:'Inbound movement',copy:`Dock ${dockRows.length} • Receiving ${receivingRows.length} • Prep ${prepRows.length} lines on the most recent visible dates.`,target:'workflowInboundPage'});
+    if(lateToday>0 || absentToday>0) urgencyItems.push({title:'People coverage',copy:`${presentToday} present, ${lateToday} late, ${absentToday} absent/call out.`,target:'attendancePage'});
+    const upcomingAssemblyDays=[];
+    if(typeof getAssemblyDaySummary==='function'){
+      for(let i=0;i<5;i++){
+        const d=new Date();
+        d.setDate(d.getDate()+i);
+        const iso=d.toISOString().slice(0,10);
+        const summary=getAssemblyDaySummary(iso);
+        if(summary && summary.pbCount>0) upcomingAssemblyDays.push({date:iso, pbCount:summary.pbCount, units:summary.units});
+      }
+    }
+    if(upcomingAssemblyDays.length){
+      const soon=upcomingAssemblyDays[0];
+      urgencyItems.push({title:'Upcoming assembly load',copy:`${soon.date} has ${soon.pbCount} PB(s) and ${Number(soon.units||0).toLocaleString()} units on the board.`,target:'calendarPage'});
+    }
+    if(!urgencyItems.length) urgencyItems.push({title:'No urgent time pressure found',copy:'Current modules do not show a strong time-sensitive signal.',target:'homePage'});
+    urgency.innerHTML=urgencyItems.slice(0,5).map(item=>`<article class="mc-urgency-item"><div class="mc-priority-title">${item.title}</div><div class="mc-urgency-copy">${item.copy}</div><button class="btn secondary" type="button" data-home-jump="${item.target}">Open</button></article>`).join('');
+  }
+
+  const recent=document.getElementById('mcRecentChanges');
+  if(recent){
+    const updates=[];
+    const recentPolicies=[...(policyEntryFeed||[])].sort((a,b)=>(safeNum(b.updatedAt||b.createdAt)-safeNum(a.updatedAt||a.createdAt))).slice(0,3);
+    recentPolicies.forEach(item=>updates.push({title:`Policy: ${item.title||item.name||'Untitled'}`,copy:`${item.category||'Policy'} • ${safeNum(item.updatedAt||item.createdAt)?new Date(safeNum(item.updatedAt||item.createdAt)).toLocaleString(): 'No timestamp'}`,target:'policyPage'}));
+    if(sordImportMeta?.fileNames){
+      const f=sordImportMeta.fileNames;
+      const label=[f.queue&&`Queue: ${f.queue}`, f.revenue&&`Revenue: ${f.revenue}`, f.eom&&`SORD: ${f.eom}`].filter(Boolean).join(' • ');
+      if(label) updates.push({title:'Latest shared imports',copy:label,target:'importHubPage'});
+    }
+    if(revenueReferenceRows.length) updates.push({title:'Revenue reference loaded',copy:`${revenueReferenceRows.length} revenue row(s) currently available for summaries.`,target:'importHubPage'});
+    if(policyDocFeed?.length) updates.push({title:'Policy documents available',copy:`${policyDocFeed.length} supporting document(s) are saved in Policy.`,target:'policyPage'});
+    if(activeEmployees.filter(emp=>emp.birthday).length) {
+      const upcoming=[...activeEmployees].filter(emp=>emp.birthday).map(emp=>({name:emp.name, date:new Date(emp.birthday+'T00:00:00')})).sort((a,b)=>a.date-b.date)[0];
+      if(upcoming) updates.push({title:'Upcoming birthday on file',copy:`${upcoming.name} • ${upcoming.date.toLocaleDateString('en-US',{month:'long',day:'numeric'})}`,target:'attendancePage'});
+    }
+    if(!updates.length) updates.push({title:'No recent system updates',copy:'Imports and policy changes will appear here as they happen.',target:'importHubPage'});
+    recent.innerHTML=updates.slice(0,6).map(item=>`<article class="mc-update-item"><div class="mc-priority-title">${item.title}</div><div class="mc-update-copy">${item.copy}</div><button class="btn secondary" type="button" data-home-jump="${item.target}">Open</button></article>`).join('');
+  }
+
+  document.querySelectorAll('[data-home-jump]').forEach(btn=>{
+    if(btn.dataset.boundHomeJump==='1') return;
+    const handler=()=>{ if(typeof goToPage==='function') goToPage(btn.dataset.homeJump); };
+    btn.addEventListener('click',handler);
+    if(btn.classList.contains('mc-clickable-card')){
+      btn.addEventListener('keydown',(event)=>{ if(event.key==='Enter' || event.key===' '){ event.preventDefault(); handler(); }});
+    }
+    btn.dataset.boundHomeJump='1';
   });
-
-  homeAssemblyStageSummary.innerHTML=stageSummary.map(item=>`<tr><td>${item.label}</td><td>${item.units.toLocaleString()}</td><td>${item.pbs}</td></tr>`).join('');
-
-  const sorted=prioritySortRows(selectedAssemblyRows);
-  homeAssemblyScheduleBody.innerHTML=sorted.length ? sorted.map(({row,priority})=>{
-    const pLabel=priority.label?`<span class="mini-label ${priority.cls}">${priority.label}</span> `:'';
-    return `<tr class="${priority.cls}"><td>${pLabel}${escapeHtml(getAssemblyWorkTypeLabel(row.workType)+(row.isPartial?' • Partial':''))}</td><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.so||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${getAssemblyUnits(row).toLocaleString()} <span class="mini-label" style="display:block;margin-top:4px">${escapeHtml(formatAssemblyQty(row))}</span></td><td>${escapeHtml((row.stage||'').toUpperCase()==='AA'?'A.A.':(row.stage==='aa'?'A.A.':row.stage==='dpmo'?'DPMO':String(row.stage||'—').charAt(0).toUpperCase()+String(row.stage||'').slice(1)))}</td><td>${escapeHtml(row.status||'—')}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${getAssemblyOpenLink(row)?`<a class="queue-link" href="${escapeHtml(getAssemblyOpenLink(row))}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td>${escapeHtml(row.rescheduleNote||'—')}</td><td>$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`;
-  }).join('') : '<tr><td colspan="11" class="empty">No assembly schedule rows for today.</td></tr>';
-
-  const upcomingBirthdays=[...activeEmployees]
-    .filter(emp=>emp.birthday)
-    .map(emp=>{
-      const date=new Date(emp.birthday+'T00:00:00');
-      return {name:emp.name, birthday:date};
-    })
-    .sort((a,b)=>a.birthday.getMonth()-b.birthday.getMonth() || a.birthday.getDate()-b.birthday.getDate())
-    .slice(0,6);
-  homeBirthdaysList.innerHTML=upcomingBirthdays.length ? upcomingBirthdays.map(item=>`<div class="module-item"><h3>${escapeHtml(item.name)}</h3><p>${item.birthday.toLocaleDateString('en-US',{month:'long',day:'numeric'})}</p></div>`).join('') : '<div class="module-item"><h3>No birthdays yet</h3><p>Add birthdays in the Employees tab to see them here.</p></div>';
-
-  const recentErrors=[...errorRecords].sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,5);
-  homeErrorsList.innerHTML=recentErrors.length ? recentErrors.map(item=>`<div class="module-item"><h3>${escapeHtml(item.errorType)} — ${escapeHtml(item.associate||'Unknown')}</h3><p>${escapeHtml(item.date)} • ${escapeHtml(item.department)} • PO ${escapeHtml(item.poNumber||'—')}</p></div>`).join('') : '<div class="module-item"><h3>No errors logged</h3><p>Recent warehouse issues will appear here.</p></div>';
 }
+
+
 
 clearErrorForm();
 renderAttendanceEmployeeOptions();
 renderErrorAssociateOptions();
+clearReturnsForm();
+bindReturnsEvents();
+renderReturns();
 restoreActivePage();
 
-// Print Snapshot button
+// Home Snapshot actions
 const printSnapshotBtn=document.getElementById('printSnapshotBtn');
 if(printSnapshotBtn){
-  printSnapshotBtn.addEventListener('click',()=>{
-    if(typeof exportStakeholderDashboardDocx==='function'){
-      exportStakeholderDashboardDocx();
-    } else {
-      window.print();
-    }
-  });
+  printSnapshotBtn.addEventListener('click',()=>{ printHomeSnapshot(); });
+}
+const exportSnapshotBtn=document.getElementById('exportSnapshotBtn');
+if(exportSnapshotBtn){
+  exportSnapshotBtn.addEventListener('click',()=>{ exportHomeSnapshotFile(); });
 }
 
 
@@ -832,7 +1739,9 @@ function updateAssemblyData() {
   safeRun(() => saveJson(assemblyBoardStorageKey, assemblyBoardRows), 'saveAssembly');
   safeRun(() => renderAssembly(), 'renderAssembly');
   safeRun(() => renderHome(), 'renderHome');
+  safeRun(() => renderReturns(), 'renderReturns');
   safeRun(() => renderCalendar(), 'renderCalendar');
+  safeRun(() => { if(typeof window.renderRevTracker === 'function') window.renderRevTracker(); }, 'renderRevTracker');
   if (typeof updateDebugStrip === 'function') {
     updateDebugStrip('ok', 'Assembly synced', 'updateAssemblyData');
   }
@@ -856,6 +1765,7 @@ function updateAllData() {
   safeRun(() => renderQueue(), 'renderQueue');
   safeRun(() => renderAssembly(), 'renderAssembly');
   safeRun(() => renderHome(), 'renderHome');
+  safeRun(() => renderReturns(), 'renderReturns');
   safeRun(() => renderCalendar(), 'renderCalendar');
   if (typeof updateDebugStrip === 'function') {
     updateDebugStrip('ok', 'Safe full sync complete', 'updateAllData');
@@ -868,7 +1778,7 @@ window.updateAllData = updateAllData;
 
 
 async function bootstrapWarehouseHub(){
-  await loadAssemblyFromBackend();
+  await Promise.all([loadEmployeesFromBackend(),loadAttendanceFromBackend(),loadAssemblyFromBackend()]);
   renderAttendance();
   renderErrors();
   renderEmployees();
@@ -877,6 +1787,7 @@ async function bootstrapWarehouseHub(){
   renderQueue();
   renderRevenueReferenceStats();
   renderHome();
+  renderReturns();
   if (typeof updateDebugStrip === 'function') {
     updateDebugStrip('ok', 'App loaded successfully', 'bootstrapWarehouseHub');
   }

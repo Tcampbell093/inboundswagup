@@ -34,6 +34,7 @@
       <button class="nav-btn" data-page="errorsPage">Warehouse Errors</button>
       <button class="nav-btn" data-page="calendarPage">Calendar</button>
       <button class="nav-btn" data-page="policyPage">Policy</button>
+      <button class="nav-btn" data-page="returnsPage">Returns</button>
     </div>
     <div class="nav-title">Assembly Workflow</div>
     <div class="nav-list">
@@ -53,91 +54,155 @@
   </aside>
 
   <main class="main">
+    
     <!-- Home -->
     <section id="homePage" class="page active">
-      <div class="hero">
-        <div>
-          <div class="eyebrow">Operations Dashboard</div>
-          <h2>Warehouse command center</h2>
-          <p class="subtitle">Read-only overview of the current operation. This dashboard summarizes what is already scheduled, tracked, or logged in the other tabs without letting anyone edit from here.</p>
+      <div class="mc-shell">
+        <div class="mc-hero">
+          <div>
+            <div class="eyebrow">Mission Control</div>
+            <h2>Warehouse mission control</h2>
+            <p class="subtitle">Whole-warehouse operational view across people, inbound, assembly, exceptions, timelines, and system freshness.</p>
+          </div>
+          <div class="toolbar right">
+            <button class="btn secondary" id="exportSnapshotBtn" type="button">Export Snapshot</button>
+            <button class="btn secondary" id="printSnapshotBtn" type="button">Print Snapshot</button>
+          </div>
         </div>
-        <div class="toolbar right">
-          <button class="btn secondary" id="printSnapshotBtn" type="button">Print Snapshot</button>
-        </div>
+
+        <div id="homeAlertBanner" class="home-alert-banner" hidden></div>
+
+        <section class="mc-health-strip">
+          <article class="mc-health-card mc-clickable-card" id="mcAttendanceHealthCard" data-home-jump="attendancePage" role="button" tabindex="0"><span class="mc-label">Attendance Health</span><strong id="mcAttendanceHealth">—</strong><p id="mcAttendanceHealthSub">No data</p></article>
+          <article class="mc-health-card mc-clickable-card" id="mcInboundHealthCard" data-home-jump="workflowInboundPage" role="button" tabindex="0"><span class="mc-label">Inbound Health</span><strong id="mcInboundHealth">—</strong><p id="mcInboundHealthSub">No data</p></article>
+          <article class="mc-health-card mc-clickable-card" id="mcAssemblyHealthCard" data-home-jump="assemblyPage" role="button" tabindex="0"><span class="mc-label">Assembly Health</span><strong id="mcAssemblyHealth">—</strong><p id="mcAssemblyHealthSub">No data</p></article>
+          <article class="mc-health-card mc-clickable-card" id="mcIssueHealthCard" data-home-jump="errorsPage" role="button" tabindex="0"><span class="mc-label">Issue Health</span><strong id="mcIssueHealth">—</strong><p id="mcIssueHealthSub">No data</p></article>
+          <article class="mc-health-card mc-clickable-card" id="mcDataFreshnessCard" data-home-jump="importHubPage" role="button" tabindex="0"><span class="mc-label">Data Freshness</span><strong id="mcDataFreshness">—</strong><p id="mcDataFreshnessSub">No data</p></article>
+          <article class="mc-health-card mc-clickable-card" id="mcTodayOutputCard" data-home-jump="homePage" role="button" tabindex="0"><span class="mc-label">Today's Output</span><strong id="mcTodayOutput">—</strong><p id="mcTodayOutputSub">No data</p></article>
+          <article class="mc-health-card mc-clickable-card" id="mcMonthRevenueCard" role="button" tabindex="0" onclick="document.getElementById('revTrackerPanel').scrollIntoView({behavior:'smooth'})"><span class="mc-label">Month Revenue</span><strong id="mcMonthRevenue">—</strong><p id="mcMonthRevenueSub">No goal set</p></article>
+        </section>
+
+        <section class="mc-panel">
+          <div class="mc-panel-head">
+            <div>
+              <div class="eyebrow">Department Radar</div>
+              <h3>Live warehouse status</h3>
+            </div>
+          </div>
+          <div class="mc-radar-grid" id="mcDeptRadar"></div>
+        </section>
+
+        <section class="mc-split-grid">
+          <div class="mc-panel">
+            <div class="mc-panel-head">
+              <div>
+                <div class="eyebrow">Priority Radar</div>
+                <h3>What needs attention now</h3>
+              </div>
+            </div>
+            <div class="mc-list" id="mcPriorityRadar"></div>
+          </div>
+          <div class="mc-panel">
+            <div class="mc-panel-head">
+              <div>
+                <div class="eyebrow">Exception Center</div>
+                <h3>Pressure points</h3>
+              </div>
+            </div>
+            <div class="mc-exception-grid" id="mcExceptionCenter"></div>
+          </div>
+        </section>
+
+        <section class="mc-panel">
+          <div class="mc-panel-head">
+            <div>
+              <div class="eyebrow">Timeline Pulse</div>
+              <h3>PO traceability and edit activity</h3>
+            </div>
+          </div>
+          <div class="mc-timeline-list" id="mcTimelinePulse"></div>
+        </section>
+
+        <section class="mc-split-grid mc-bottom-grid">
+          <div class="mc-panel">
+            <div class="mc-panel-head">
+              <div>
+                <div class="eyebrow">Calendar + Urgency</div>
+                <h3>Time-sensitive pressure</h3>
+              </div>
+            </div>
+            <div class="mc-list" id="mcUrgencyRail"></div>
+          </div>
+          <div class="mc-panel">
+            <div class="mc-panel-head">
+              <div>
+                <div class="eyebrow">Recent Changes</div>
+                <h3>Policies, imports, and system updates</h3>
+              </div>
+            </div>
+            <div class="mc-list" id="mcRecentChanges"></div>
+          </div>
+        </section>
+
+        <section class="mc-panel" id="revTrackerPanel">
+          <div class="mc-panel-head">
+            <div>
+              <div class="eyebrow">Monthly Revenue Tracker</div>
+              <h3>Month-to-date revenue vs goal</h3>
+            </div>
+            <div class="rev-goal-form">
+              <input id="revGoalInput" type="text" placeholder="Set monthly goal e.g. 2500000" class="rev-goal-input" />
+              <button id="revSaveGoalBtn" class="btn secondary" type="button">Set Goal</button>
+            </div>
+          </div>
+
+          <div class="rev-total-row">
+            <span class="rev-grand-total" id="revGrandTotal">$0.00</span>
+            <span class="rev-goal-display">Goal: <strong id="revGoalDisplay">No goal set</strong></span>
+            <span class="rev-pct-badge" id="revPctDisplay">—</span>
+            <span class="rev-remaining" id="revRemainingDisplay">—</span>
+          </div>
+
+          <div class="rev-progress-bar" id="revProgressBar">
+            <div class="rev-progress-fill" id="revProgressFill" style="width:0%"></div>
+          </div>
+
+          <div class="rev-breakdown">
+            <div class="rev-line" id="revImportedLine">No monthly revenue report imported yet.</div>
+            <div class="rev-line rev-line-asm" id="revAssemblyLine">+ $0.00 from 0 assembly-completed SORDs</div>
+          </div>
+
+          <div class="rev-import-meta" id="revImportMeta">Import a monthly revenue estimate report via the Import Hub below.</div>
+
+          <div class="rev-asm-section">
+            <div class="rev-asm-header">Assembly-completed SORDs not yet in report</div>
+            <div id="revAssemblyDetail"><p class="rev-empty">No assembly-completed SORDs to add yet.</p></div>
+          </div>
+        </section>
+
+        <section class="mc-panel">
+          <div class="mc-panel-head">
+            <div>
+              <div class="eyebrow">Quick Actions</div>
+              <h3>Jump where you need to work</h3>
+            </div>
+          </div>
+          <div class="mc-actions" id="mcQuickActions">
+            <button class="btn" data-home-jump="importHubPage" type="button">Import Reports</button>
+            <button class="btn secondary" data-home-jump="attendancePage" type="button">Open Attendance</button>
+            <button class="btn secondary" data-home-jump="workflowInboundPage" type="button">Open Inbound</button>
+            <button class="btn secondary" data-home-jump="assemblyPage" type="button">Open Assembly</button>
+            <button class="btn secondary" data-home-jump="errorsPage" type="button">Open Errors</button>
+            <button class="btn secondary" data-home-jump="policyPage" type="button">Open Policies</button>
+            <button class="btn secondary" data-home-jump="sordPage" type="button">Open SORD Summary</button>
+            <button class="btn secondary" data-home-jump="calendarPage" type="button">Open Calendar</button>
+          </div>
+        </section>
       </div>
-
-      <div id="homeAlertBanner" class="home-alert-banner" hidden></div>
-
-      <div class="stats">
-        <div class="card"><div class="stat-label">Employees</div><div class="stat-value" id="homeEmployeesCount">0</div><div class="stat-hint">Active employees in the shared source</div></div>
-        <div class="card"><div class="stat-label">Birthdays This Month</div><div class="stat-value" id="homeBirthdaysCount">0</div><div class="stat-hint">Pulled from the Employees tab</div></div>
-        <div class="card"><div class="stat-label">Open Error Logs</div><div class="stat-value" id="homeErrorsCount">0</div><div class="stat-hint">Current warehouse error records</div></div>
-        <div class="card"><div class="stat-label">Assembly PBs Today</div><div class="stat-value" id="homeAssemblyPbCount">0</div><div class="stat-hint">Pack builders on the selected Assembly day</div></div>
-      </div>
-
-      <div class="grid-2">
-        <div style="display:grid;gap:20px">
-          <div class="card">
-            <div class="eyebrow">Attendance Snapshot</div>
-            <h3 style="margin:6px 0 14px;font-size:24px">Today’s attendance signals</h3>
-            <div class="stats" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:0">
-              <div class="card" style="padding:16px"><div class="stat-label">Present</div><div class="stat-value" id="homePresentToday">0</div><div class="stat-hint">Marked present today</div></div>
-              <div class="card" style="padding:16px"><div class="stat-label">Late</div><div class="stat-value" id="homeLateToday">0</div><div class="stat-hint">Late marks today</div></div>
-              <div class="card" style="padding:16px"><div class="stat-label">Absent / Call Out</div><div class="stat-value" id="homeAbsentToday">0</div><div class="stat-hint">Missed attendance today</div></div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="eyebrow">Assembly Snapshot</div>
-            <h3 style="margin:6px 0 14px;font-size:24px">What’s scheduled in assembly</h3>
-            <div class="stats" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:14px">
-              <div class="card" style="padding:16px"><div class="stat-label">Scheduled Units</div><div class="stat-value" id="homeAssemblyUnits">0</div><div class="stat-hint">Qty × Total Products</div></div>
-              <div class="card" style="padding:16px"><div class="stat-label">Done Units</div><div class="stat-value" id="homeAssemblyDoneUnits">0</div><div class="stat-hint">Current completed units</div></div>
-              <div class="card" style="padding:16px"><div class="stat-label">Capacity</div><div class="stat-value" id="homeAssemblyCapacity">0</div><div class="stat-hint">Current assembly capacity</div></div>
-              <div class="card" style="padding:16px"><div class="stat-label">Completion</div><div class="stat-value" id="homeAssemblyCompletion">0%</div><div class="stat-hint">Done units / scheduled units</div></div>
-            </div>
-            <div class="table-wrap" style="margin-bottom:14px">
-              <table>
-                <thead><tr><th>Work Type</th><th>Pack Builder</th><th>Sales Order</th><th>Owner</th><th>Units</th><th>Stage</th><th>Status</th><th>IHD</th><th>Open</th><th>Reschedule Note</th><th>Subtotal</th></tr></thead>
-                <tbody id="homeAssemblyScheduleBody"></tbody>
-              </table>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>Stage</th><th>Units</th><th>PBs</th></tr></thead>
-                <tbody id="homeAssemblyStageSummary"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="eyebrow">Revenue Snapshot</div>
-            <h3 style="margin:6px 0 14px;font-size:24px">Revenue dashboard</h3>
-            <div class="stats" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:0">
-              <div class="card" style="padding:16px"><div class="stat-label">Scheduled Revenue</div><div class="stat-value" id="homeScheduledRevenue">$0.00</div><div class="stat-hint">Revenue value currently scheduled on the selected Assembly day</div></div>
-              <div class="card" style="padding:16px"><div class="stat-label">Done Revenue</div><div class="stat-value" id="homeDoneRevenue">$0.00</div><div class="stat-hint">Revenue value already completed on the selected Assembly day</div></div>
-              <div class="card" style="padding:16px"><div class="stat-label">Remaining Revenue</div><div class="stat-value" id="homeRemainingRevenue">$0.00</div><div class="stat-hint">Scheduled revenue still left to finish</div></div>
-              <div class="card" style="padding:16px"><div class="stat-label">Revenue Completion %</div><div class="stat-value" id="homeRevenueCompletion">0%</div><div class="stat-hint">Done revenue divided by scheduled revenue</div></div>
-            </div>
-          </div>
-        </div>
-
-        <div style="display:grid;gap:20px">
-          <div class="card">
-            <div class="eyebrow">Calendar Snapshot</div>
-            <h3 style="margin:6px 0 14px;font-size:24px">Upcoming birthdays</h3>
-            <div id="homeBirthdaysList" class="module-list"></div>
-          </div>
-
-          <div class="card">
-            <div class="eyebrow">Error Snapshot</div>
-            <h3 style="margin:6px 0 14px;font-size:24px">Recent warehouse issues</h3>
-            <div id="homeErrorsList" class="module-list"></div>
-          </div>
-        </div>
-      </div>
-
     </section>
+
+
+    
 
     <section id="importHubPage" class="page">
       <div class="hero">
@@ -164,6 +229,11 @@
             <label for="importHubEomFile"><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BDbJMAW/view" target="_blank" rel="noopener noreferrer">SORD / PO detail report</a></label>
             <input id="importHubEomFile" type="file" accept=".xlsx,.xls,.csv,text/csv" />
             <div class="import-hub-hint">Updates Daily Tools dossier detail only.</div>
+          </div>
+          <div class="field">
+            <label for="importHubRevTrackerFile">Monthly Revenue Estimate</label>
+            <input id="importHubRevTrackerFile" type="file" accept=".xlsx,.xls,.csv,text/csv" />
+            <div class="import-hub-hint">Updates the Month Revenue tracker on Home.</div>
           </div>
           <div class="field">
             <label>&nbsp;</label>
@@ -453,6 +523,159 @@
     
     
     <!-- Policy -->
+    
+    <section id="returnsPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Returns Desk</div>
+          <h2>Returns intake</h2>
+          <p class="subtitle">A cleaner, scanner-friendly version of Henry’s daily returns sheet. Log returns fast, then search and review them below.</p>
+        </div>
+        <div class="toolbar right">
+          <span class="pill" id="returnsTotalPill">0 returns</span>
+          <span class="pill" id="returnsTodayPill">0 today</span>
+        </div>
+      </div>
+
+      <div class="returns-grid">
+        <div class="card returns-intake-card">
+          <div class="toolbar">
+            <div class="left">
+              <div>
+                <div class="eyebrow">New Return</div>
+                <h3 style="margin:6px 0 0">Scanner-first intake</h3>
+              </div>
+            </div>
+            <div class="right">
+              <button class="btn secondary" id="returnsClearBtn" type="button">Clear</button>
+            </div>
+          </div>
+
+          <div class="returns-type-toggle" id="returnsTypeToggle">
+            <button class="returns-type-btn active" data-value="Pack" type="button">Pack</button>
+            <button class="returns-type-btn" data-value="Bulk" type="button">Bulk</button>
+          </div>
+          <input id="returnsTypeInput" type="hidden" value="Pack" />
+
+          <div class="returns-form-grid">
+            <div class="field">
+              <label for="returnsDateInput">Date</label>
+              <input id="returnsDateInput" type="date" />
+            </div>
+            <div class="field">
+              <label for="returnsCompanyInput">Company</label>
+              <input id="returnsCompanyInput" type="text" list="returnsCompanyOptions" placeholder="Type or select company" />
+              <datalist id="returnsCompanyOptions"></datalist>
+            </div>
+            <div class="field field-span-2">
+              <label for="returnsTrackingInput">Tracking Number</label>
+              <input id="returnsTrackingInput" class="returns-scan-input" type="text" placeholder="Scan or paste tracking number" />
+            </div>
+            <div class="field field-span-2">
+              <label for="returnsBarcodeInput">Barcode</label>
+              <input id="returnsBarcodeInput" class="returns-scan-input" type="text" placeholder="Scan or paste barcode" />
+              <div class="hint">For now, barcode is logged exactly as entered.</div>
+            </div>
+            <div class="field">
+              <label for="returnsClientNameInput">Client Full Name</label>
+              <input id="returnsClientNameInput" type="text" placeholder="Enter client full name" />
+            </div>
+            <div class="field">
+              <label for="returnsSizeInput">Size</label>
+              <input id="returnsSizeInput" type="text" placeholder="Ex: One Size, M, XL" />
+            </div>
+            <div class="field field-span-2">
+              <label for="returnsNotesInput">Notes / Returned Items</label>
+              <textarea id="returnsNotesInput" rows="4" placeholder="Add notes or item details if needed"></textarea>
+            </div>
+          </div>
+
+          <div class="toolbar returns-form-actions">
+            <div class="left">
+              <button class="btn" id="returnsSaveBtn" type="button">Save Return</button>
+              <button class="btn secondary" id="returnsSaveNewBtn" type="button">Save + New</button>
+            </div>
+            <div class="right">
+              <span class="mc-snapshot-note">Tracking or barcode is enough to save.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card returns-side-card">
+          <div class="eyebrow">Today</div>
+          <h3 style="margin:6px 0 14px;font-size:24px">Quick returns pulse</h3>
+          <div class="stats returns-side-stats">
+            <div class="card"><div class="stat-label">Today</div><div class="stat-value" id="returnsTodayCount">0</div><div class="stat-hint">Returns logged today</div></div>
+            <div class="card"><div class="stat-label">Pack</div><div class="stat-value" id="returnsPackCount">0</div><div class="stat-hint">Pack returns</div></div>
+            <div class="card"><div class="stat-label">Bulk</div><div class="stat-value" id="returnsBulkCount">0</div><div class="stat-hint">Bulk returns</div></div>
+            <div class="card"><div class="stat-label">Companies</div><div class="stat-value" id="returnsCompanyCount">0</div><div class="stat-hint">Unique companies today</div></div>
+          </div>
+
+          <div class="eyebrow" style="margin-top:18px">Recent Entries</div>
+          <div id="returnsRecentList" class="mc-list"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <div class="toolbar">
+          <div class="left">
+            <div>
+              <div class="eyebrow">Returns Log</div>
+              <h3 style="margin:6px 0 0">Searchable history</h3>
+            </div>
+          </div>
+          <div class="right">
+            <button class="btn secondary" id="returnsExportCsvBtn" type="button">Export CSV</button>
+          </div>
+        </div>
+
+        <div class="returns-filter-grid">
+          <div class="field">
+            <label for="returnsSearchInput">Search</label>
+            <input id="returnsSearchInput" type="text" placeholder="Tracking, barcode, company, client..." />
+          </div>
+          <div class="field">
+            <label for="returnsTypeFilter">Return Type</label>
+            <select id="returnsTypeFilter">
+              <option value="All">All</option>
+              <option value="Pack">Pack</option>
+              <option value="Bulk">Bulk</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="returnsCompanyFilter">Company</label>
+            <select id="returnsCompanyFilter">
+              <option value="All">All</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="returnsDateFilter">Date</label>
+            <input id="returnsDateFilter" type="date" />
+          </div>
+        </div>
+
+        <div class="table-wrap" style="margin-top:16px">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Company</th>
+                <th>Type</th>
+                <th>Tracking</th>
+                <th>Barcode</th>
+                <th>Client Full Name</th>
+                <th>Size</th>
+                <th>Notes</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="returnsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+
     <section id="policyPage" class="page">
       <div class="hero">
         <div>
@@ -1054,6 +1277,10 @@
               <label for="sordRiskFilter">Risk</label>
               <select id="sordRiskFilter"><option value="">All</option><option value="none">No Flags</option><option value="flagged">Flagged</option></select>
             </div>
+            <div class="field">
+              <label for="sordConfirmedFilter">Confirmed Revenue</label>
+              <select id="sordConfirmedFilter"><option value="">All SORDs</option><option value="confirmed">Confirmed This Month</option></select>
+            </div>
           </div>
           <div class="right">
             <button class="btn secondary" id="sordResetFiltersBtn" type="button">Reset Filters</button>
@@ -1393,6 +1620,7 @@
 <script src="script.js"></script>
 <script src="sord.js"></script>
 <script src="import-hub.js"></script>
+<script src="revenue-tracker.js"></script>
 <script src="attendance-remix.js"></script>
 
 <script src="policy.js"></script>

@@ -1,6 +1,9 @@
 (function(){
   const STORAGE_KEY='ops_hub_sord_imports_v1';
   const OWNER_MAP_KEY='ops_hub_sord_owner_map_v1';
+  const LARGE_IMPORT_DB='ops_hub_large_imports_db';
+  const LARGE_IMPORT_STORE='imports';
+  const LARGE_IMPORT_RECORD_KEY='sord_imports_v1';
   const SEARCH_LIMIT_DEFAULT = 250;
   const SALESFORCE_BASE = 'https://swagup.lightning.force.com';
   const PURCHASE_ORDER_OBJECT = 'Purchase_Order__c';
@@ -20,6 +23,7 @@
     readinessFilter: document.getElementById('sordReadinessFilter'),
     complexityFilter: document.getElementById('sordComplexityFilter'),
     riskFilter: document.getElementById('sordRiskFilter'),
+    confirmedFilter: document.getElementById('sordConfirmedFilter'),
     resetFiltersBtn: document.getElementById('sordResetFiltersBtn'),
     explorerBody: document.getElementById('sordExplorerBody'),
     explorerCount: document.getElementById('sordExplorerCount'),
@@ -61,22 +65,168 @@
 
   if (!els.page) return;
 
-  const state = {
-    poCategoryFilter: 'all',
-    imports: loadJson(STORAGE_KEY, {
+  function emptyImports(){
+    return {
       queueRows: [],
       revenueRows: [],
       eomRows: [],
       importedAt: '',
-      fileNames: { queue: '', revenue: '', eom: '' }
-    }),
+      fileNames: { queue: '', revenue: '', eom: '' },
+      counts: { queue: 0, revenue: 0, eom: 0 }
+    };
+  }
+
+  function buildImportMeta(imports){
+    const base = emptyImports();
+    const fileNames = imports?.fileNames || {};
+    return {
+      importedAt: safeText(imports?.importedAt),
+      fileNames: {
+        queue: safeText(fileNames.queue),
+        revenue: safeText(fileNames.revenue),
+        eom: safeText(fileNames.eom)
+      },
+      counts: {
+        queue: Array.isArray(imports?.queueRows) ? imports.queueRows.length : Number(imports?.counts?.queue || 0),
+        revenue: Array.isArray(imports?.revenueRows) ? imports.revenueRows.length : Number(imports?.counts?.revenue || 0),
+        eom: Array.isArray(imports?.eomRows) ? imports.eomRows.length : Number(imports?.counts?.eom || 0)
+      },
+      queueRows: [],
+      revenueRows: [],
+      eomRows: []
+    };
+  }
+
+  function openLargeImportDb(){
+    return new Promise((resolve, reject) => {
+      if(typeof indexedDB === 'undefined'){
+        reject(new Error('IndexedDB is not available.'));
+        return;
+      }
+      const request = indexedDB.open(LARGE_IMPORT_DB, 1);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if(!db.objectStoreNames.contains(LARGE_IMPORT_STORE)){
+          db.createObjectStore(LARGE_IMPORT_STORE);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('IndexedDB open failed.'));
+    });
+  }
+
+  async function readLargeImportRecord(){
+    try{
+      const db = await openLargeImportDb();
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(LARGE_IMPORT_STORE, 'readonly');
+        const store = tx.objectStore(LARGE_IMPORT_STORE);
+        const request = store.get(LARGE_IMPORT_RECORD_KEY);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error || new Error('IndexedDB read failed.'));
+        tx.oncomplete = () => db.close();
+        tx.onabort = () => db.close();
+        tx.onerror = () => db.close();
+      });
+    }catch(error){
+      console.warn('Could not read large SORD import cache.', error);
+      return null;
+    }
+  }
+
+  async function writeLargeImportRecord(value){
+    const db = await openLargeImportDb();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(LARGE_IMPORT_STORE, 'readwrite');
+      const store = tx.objectStore(LARGE_IMPORT_STORE);
+      store.put(value, LARGE_IMPORT_RECORD_KEY);
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onabort = () => { db.close(); reject(tx.error || new Error('IndexedDB write aborted.')); };
+      tx.onerror = () => { db.close(); reject(tx.error || new Error('IndexedDB write failed.')); };
+    });
+  }
+
+  async function deleteLargeImportRecord(){
+    try{
+      const db = await openLargeImportDb();
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(LARGE_IMPORT_STORE, 'readwrite');
+        const store = tx.objectStore(LARGE_IMPORT_STORE);
+        store.delete(LARGE_IMPORT_RECORD_KEY);
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onabort = () => { db.close(); reject(tx.error || new Error('IndexedDB delete aborted.')); };
+        tx.onerror = () => { db.close(); reject(tx.error || new Error('IndexedDB delete failed.')); };
+      });
+    }catch(error){
+      console.warn('Could not clear large SORD import cache.', error);
+    }
+  }
+
+  function normalizeImportedPayload(imports){
+    const base = emptyImports();
+    const incoming = imports || {};
+    return {
+      queueRows: Array.isArray(incoming.queueRows) ? incoming.queueRows : [],
+      revenueRows: Array.isArray(incoming.revenueRows) ? incoming.revenueRows : [],
+      eomRows: Array.isArray(incoming.eomRows) ? incoming.eomRows : [],
+      importedAt: safeText(incoming.importedAt),
+      fileNames: {
+        queue: safeText(incoming.fileNames?.queue),
+        revenue: safeText(incoming.fileNames?.revenue),
+        eom: safeText(incoming.fileNames?.eom)
+      },
+      counts: {
+        queue: Array.isArray(incoming.queueRows) ? incoming.queueRows.length : Number(incoming.counts?.queue || 0),
+        revenue: Array.isArray(incoming.revenueRows) ? incoming.revenueRows.length : Number(incoming.counts?.revenue || 0),
+        eom: Array.isArray(incoming.eomRows) ? incoming.eomRows.length : Number(incoming.counts?.eom || 0)
+      }
+    };
+  }
+
+  async function loadPersistedImports(){
+    const meta = loadJson(STORAGE_KEY, null);
+    if(meta && (Array.isArray(meta.queueRows) || Array.isArray(meta.revenueRows) || Array.isArray(meta.eomRows)) && ((meta.queueRows||[]).length || (meta.revenueRows||[]).length || (meta.eomRows||[]).length)){
+      const migrated = normalizeImportedPayload(meta);
+      await writeLargeImportRecord(migrated);
+      saveJson(STORAGE_KEY, buildImportMeta(migrated));
+      return migrated;
+    }
+    const large = await readLargeImportRecord();
+    if(large){
+      const normalized = normalizeImportedPayload(large);
+      const metaCounts = meta?.counts || {};
+      if(meta && (!normalized.importedAt || !normalized.fileNames.queue && !normalized.fileNames.revenue && !normalized.fileNames.eom)){
+        normalized.importedAt = normalized.importedAt || safeText(meta.importedAt);
+        normalized.fileNames = {
+          queue: normalized.fileNames.queue || safeText(meta.fileNames?.queue),
+          revenue: normalized.fileNames.revenue || safeText(meta.fileNames?.revenue),
+          eom: normalized.fileNames.eom || safeText(meta.fileNames?.eom)
+        };
+      }
+      normalized.counts = {
+        queue: normalized.queueRows.length || Number(metaCounts.queue || 0),
+        revenue: normalized.revenueRows.length || Number(metaCounts.revenue || 0),
+        eom: normalized.eomRows.length || Number(metaCounts.eom || 0)
+      };
+      return normalized;
+    }
+    return normalizeImportedPayload(meta || emptyImports());
+  }
+
+  const state = {
+    poCategoryFilter: 'all',
+    imports: emptyImports(),
     dataset: [],
     selectedKey: '',
     ownerMap: loadJson(OWNER_MAP_KEY, DEFAULT_OWNER_MAP)
   };
 window.__sordState = state;
 
-  function saveState(){ saveJson(STORAGE_KEY, state.imports); }
+  async function saveState(){
+    state.imports = normalizeImportedPayload(state.imports);
+    await writeLargeImportRecord(state.imports);
+    saveJson(STORAGE_KEY, buildImportMeta(state.imports));
+  }
   function safeText(v){ return String(v ?? '').trim(); }
   function norm(v){ return safeText(v).toLowerCase(); }
   function num(v){ const n = Number(String(v ?? '').replace(/[$,]/g,'')); return Number.isFinite(n) ? n : 0; }
@@ -335,7 +485,6 @@ window.__sordState = state;
         externalId: safeText(r.external_id),
         quantity: num(r.quantity),
         quantityReceived: num(r.quantity_received),
-        status: safeText(r.status || r.purchase_order_status || r.po_status),
         image: safeText(r.image || r.image_url || r.thumbnail || r.po_image)
       };
     }).filter(r => r.sord || r.salesOrderId || r.purchaseOrderId || r.purchaseOrderName);
@@ -766,6 +915,7 @@ function finalizeOrder(order){
       accountProducts,
       timeline: buildTimeline(order, earliestEta, latestEta, earliestIhd, latestIhd, dueDate, salesOrderCreatedDate),
       ownerMapping: getOwnerMapping(order.accountOwner || order.orderOwner || order.createdBy),
+      confirmedThisMonth: deriveConfirmedThisMonth(order.eomRows, poRows),
       raw: order
     };
   }
@@ -790,6 +940,55 @@ function finalizeOrder(order){
     if(score >= 7) return 'High';
     if(score >= 3) return 'Medium';
     return 'Low';
+  }
+
+  function deriveConfirmedThisMonth(eomRows, poRows){
+    // Conservative filter: every item line must be in a confirmed-completable state.
+    // When in doubt, leave the SORD out.
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth(); // 0-indexed
+
+    function isThisMonth(dateStr){
+      if(!dateStr) return false;
+      const iso = dateToIso(dateStr);
+      if(!iso) return false;
+      const d = new Date(iso + 'T00:00:00');
+      if(isNaN(d.getTime())) return false;
+      return d.getFullYear() === curYear && d.getMonth() === curMonth;
+    }
+
+    // Use granular eomRows if available; fall back to consolidated poRows
+    const rows = (Array.isArray(eomRows) && eomRows.length) ? eomRows : (poRows || []);
+    if(!rows.length) return false;
+
+    for(const row of rows){
+      const s = safeText(row.status).toLowerCase();
+
+      // ✅ Always pass — item is done or physically in-house
+      if(
+        s === 'qa approved' ||
+        s === 'qa complete' ||
+        s === 'po complete' ||
+        s === 'item fully received at warehouse' ||
+        s === 'delivered direct to client' ||
+        s === 'mission complete'
+      ) continue;
+
+      // ✅ Pass — partially received; item is in-house and can still finish
+      if(s === 'item partially received at warehouse') continue;
+
+      // ✅ Conditional pass — confirmed ship/arrival must be within this calendar month
+      if(s === 'ship date confirmed' || s === 'item shipped from supplier'){
+        if(isThisMonth(row.estimatedShipDate)) continue;
+        return false; // date missing, unparseable, or outside this month
+      }
+
+      // ❌ Everything else is uncertain — Supplier Acknowledged, Client Approved,
+      //    PO Sent, Pending Ship Date, Production Delay, QA Case, Shipping Delay, etc.
+      return false;
+    }
+    return true;
   }
 
   function deriveFlags(order, metrics){
@@ -855,6 +1054,8 @@ function finalizeOrder(order){
       if(complexityFilter && item.complexity !== complexityFilter) return false;
       if(riskFilter === 'none' && item.flagCount) return false;
       if(riskFilter === 'flagged' && !item.flagCount) return false;
+      const confirmedFilter = safeText(els.confirmedFilter?.value);
+      if(confirmedFilter === 'confirmed' && !item.confirmedThisMonth) return false;
       return true;
     });
   }
@@ -864,17 +1065,27 @@ function finalizeOrder(order){
     const totalFlags = list.reduce((sum,r)=>sum + num(r.flagCount),0);
     const blocked = list.filter(r=>r.readiness==='Blocked').length;
     const highComplexity = list.filter(r=>r.complexity==='High').length;
+    const confirmedList = list.filter(r=>r.confirmedThisMonth);
+    const confirmedRevenue = confirmedList.reduce((sum,r)=>sum + num(r.subtotal),0);
+    const confirmedCount = confirmedList.length;
+    const isConfirmedFilterActive = safeText(els.confirmedFilter?.value) === 'confirmed';
     els.topStats.innerHTML = [
       statCard('SORDs', fmtInt(list.length), 'Orders visible in explorer'),
       statCard('Revenue', fmtMoney(totalRevenue), 'Subtotal from imported revenue / EOM data'),
+      statCard('Confirmed This Month', fmtMoney(confirmedRevenue),
+        isConfirmedFilterActive
+          ? `${fmtInt(confirmedCount)} SORD${confirmedCount===1?'':'s'} — all items confirmed completable`
+          : `${fmtInt(confirmedCount)} of ${fmtInt(list.length)} SORDs fully confirmed for this month`,
+        'confirmed'),
       statCard('Blocked', fmtInt(blocked), 'Orders with blocked readiness'),
       statCard('High Complexity', fmtInt(highComplexity), 'Orders with higher operational complexity'),
       statCard('Risk Flags', fmtInt(totalFlags), 'Total active flags across visible SORDs')
     ].join('');
   }
 
-  function statCard(label, value, hint){
-    return `<div class="card"><div class="stat-label">${escape(label)}</div><div class="stat-value">${escape(value)}</div><div class="stat-hint">${escape(hint)}</div></div>`;
+  function statCard(label, value, hint, tone=''){
+    const toneClass = tone ? ` stat-card-${escape(tone)}` : '';
+    return `<div class="card${toneClass}"><div class="stat-label">${escape(label)}</div><div class="stat-value">${escape(value)}</div><div class="stat-hint">${escape(hint)}</div></div>`;
   }
 
   
@@ -993,6 +1204,7 @@ function renderExplorer(){
     els.dossierBadges.innerHTML = [
       renderBadge(item.readiness, badgeToneForReadiness(item.readiness)),
       renderBadge(item.complexity, badgeToneForComplexity(item.complexity)),
+      item.confirmedThisMonth ? renderBadge('Confirmed This Month', 'confirmed') : renderBadge('Not Confirmed', 'neutral'),
       item.flagCount ? renderBadge(`${item.flagCount} flags`, 'bad') : renderBadge('No active flags','good')
     ].join('');
 
@@ -1120,8 +1332,8 @@ function renderExplorer(){
     }
   }
 
-  function clearImports(){
-    clearSharedImports();
+  async function clearImports(){
+    await clearSharedImports();
   }
 
   function setStatus(text, isError=false){
@@ -1160,7 +1372,12 @@ function renderExplorer(){
         state.imports.fileNames.eom = eomFile.name;
       }
       state.imports.importedAt = new Date().toISOString();
-      saveState();
+      state.imports.counts = {
+        queue: state.imports.queueRows.length,
+        revenue: state.imports.revenueRows.length,
+        eom: state.imports.eomRows.length
+      };
+      await saveState();
       rebuildAndRender();
       const text = `SORD data imported. Queue rows: ${fmtInt(state.imports.queueRows.length)} • Revenue rows: ${fmtInt(state.imports.revenueRows.length)} • EOM rows: ${fmtInt(state.imports.eomRows.length)}${summarizeFileNames() ? ' • ' + summarizeFileNames() : ''}`;
       setStatus(text);
@@ -1173,9 +1390,10 @@ function renderExplorer(){
     }
   }
 
-  function clearSharedImports({silent=false}={}){
-    state.imports = { queueRows: [], revenueRows: [], eomRows: [], importedAt: '', fileNames: { queue:'', revenue:'', eom:'' } };
-    saveState();
+  async function clearSharedImports({silent=false}={}){
+    state.imports = emptyImports();
+    await deleteLargeImportRecord();
+    saveJson(STORAGE_KEY, buildImportMeta(state.imports));
     rebuildAndRender();
     if (els.queueInput) els.queueInput.value='';
     if (els.revenueInput) els.revenueInput.value='';
@@ -1189,13 +1407,14 @@ function renderExplorer(){
     els.importBtn.addEventListener('click', importFiles);
     els.clearBtn.addEventListener('click', clearImports);
     els.refreshBtn.addEventListener('click', ()=>{ rebuildAndRender(); setStatus(`Refreshed SORD explorer from imported reports and live app data${summarizeFileNames() ? ' • ' + summarizeFileNames() : ''}.`); });
-    [els.searchInput, els.statusFilter, els.readinessFilter, els.complexityFilter, els.riskFilter].forEach(el=>el.addEventListener('input', renderExplorer));
+    [els.searchInput, els.statusFilter, els.readinessFilter, els.complexityFilter, els.riskFilter, els.confirmedFilter].filter(Boolean).forEach(el=>el.addEventListener('input', renderExplorer));
     els.resetFiltersBtn.addEventListener('click', ()=>{
       els.searchInput.value='';
       els.statusFilter.value='';
       els.readinessFilter.value='';
       els.complexityFilter.value='';
       els.riskFilter.value='';
+      if(els.confirmedFilter) els.confirmedFilter.value='';
       renderExplorer();
     });
     if(els.addOwnerRowBtn){
@@ -1217,15 +1436,36 @@ function renderExplorer(){
     window.selectSordRecord = (key)=>{ state.selectedKey = key; renderExplorer(); };
   }
 
-  normalizeOwnerMap();
-  bind();
-  renderOwnerMapTable();
-  rebuildAndRender();
-  if(state.imports.importedAt){
-    setStatus(`Loaded saved SORD imports from ${fmtDate(state.imports.importedAt)}${summarizeFileNames() ? ' • ' + summarizeFileNames() : ''}.`);
-  } else {
-    setStatus('No SORD imports loaded yet. You can still see live queue / assembly matches after importing at least one report.');
+  async function initialize(){
+    normalizeOwnerMap();
+    bind();
+    renderOwnerMapTable();
+    setStatus('Loading saved SORD imports...');
+    state.imports = await loadPersistedImports();
+    rebuildAndRender();
+    if(state.imports.importedAt){
+      const counts = state.imports.counts || {};
+      setStatus(`Loaded saved SORD imports from ${fmtDate(state.imports.importedAt)} • Queue rows: ${fmtInt(counts.queue || state.imports.queueRows.length)} • Revenue rows: ${fmtInt(counts.revenue || state.imports.revenueRows.length)} • EOM rows: ${fmtInt(counts.eom || state.imports.eomRows.length)}${summarizeFileNames() ? ' • ' + summarizeFileNames() : ''}.`);
+    } else {
+      setStatus('No SORD imports loaded yet. You can still see live queue / assembly matches after importing at least one report.');
+    }
   }
+
+  initialize().catch(error => {
+    console.error(error);
+    rebuildAndRender();
+    setStatus(error?.message || 'Could not load saved SORD imports.', true);
+  });
+
+  document.addEventListener('click', (event) => {
+    const filterBtn = event.target.closest('[data-po-filter]');
+    if (!filterBtn) return;
+    state.poCategoryFilter = filterBtn.getAttribute('data-po-filter') || 'all';
+    renderExplorer();
+  });
+
+  window.importSordSharedFiles = importSharedFiles;
+  window.clearSordSharedImports = clearSharedImports;
 })();
 
 
@@ -1323,12 +1563,4 @@ function parseSalesforceImageUrl(value) {
     return '';
   }
 
-document.addEventListener('click', (event) => {
-  const filterBtn = event.target.closest('[data-po-filter]');
-  if (!filterBtn) return;
-  state.poCategoryFilter = filterBtn.getAttribute('data-po-filter') || 'all';
-  renderExplorer();
-});
 
-window.importSordSharedFiles = importSharedFiles;
-window.clearSordSharedImports = clearSharedImports;
