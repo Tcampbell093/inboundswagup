@@ -7,6 +7,7 @@
   const ATTENDANCE_KEYS = ['ops_hub_attendance_records_v2','ops_hub_attendance_records_v1'];
   const WORKFLOW_KEY = 'qaV5SeparatedWorkflowData_v4fixed';
   const ASSEMBLY_KEY = 'ops_hub_assembly_board_v2';
+  const PRODUCTIVITY_API_BASE = '/.netlify/functions/productivity-sync';
 
   const DEFAULT_SHOW_SENSITIVE_FINANCIALS = false;
   const FINANCE_UNLOCK_CODE = '2025';
@@ -20,6 +21,12 @@
     inventoryRate: 20,
     otMultiplier: 1.5
   };
+
+  let productivitySyncEnabled = false;
+  let productivitySyncLoaded = false;
+  let productivitySyncInFlight = false;
+  let productivitySyncQueued = false;
+  let productivitySyncTimer = null;
 
   const state = {
     activeTab: 'week',
@@ -485,11 +492,86 @@
     return { ...entry, payout: round(payout) };
   }
 
+  function scheduleProductivitySync(){
+    if(!productivitySyncEnabled || !productivitySyncLoaded) return;
+    if(productivitySyncTimer) clearTimeout(productivitySyncTimer);
+    productivitySyncTimer = setTimeout(()=>{ productivitySyncTimer = null; syncProductivityState(); }, 250);
+  }
+
+  async function productivityApiRequest(method='GET', body){
+    const options = { method, headers: { 'Accept':'application/json' } };
+    if(body !== undefined){
+      options.headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(body);
+    }
+    const response = await fetch(PRODUCTIVITY_API_BASE, options);
+    const raw = await response.text();
+    let data = {};
+    try{ data = raw ? JSON.parse(raw) : {}; }catch{ data = { raw }; }
+    if(!response.ok) throw new Error(data?.error || `Productivity sync failed (${response.status})`);
+    return data;
+  }
+
+  function applyProductivityPayload(data={}){
+    if(data && typeof data.settings === 'object' && data.settings){
+      state.settings = { ...defaultSettings, ...data.settings };
+      save(SETTINGS_KEY, state.settings);
+    }
+    if(Array.isArray(data.dailyRecords)){
+      state.dailyRecords = data.dailyRecords;
+      save(DAILY_KEY, state.dailyRecords);
+    }
+    if(Array.isArray(data.laborEntries)){
+      state.laborEntries = data.laborEntries;
+      save(LABOR_KEY, state.laborEntries);
+    }
+    if(Array.isArray(data.importBatches)){
+      state.importBatches = data.importBatches;
+      save(IMPORT_BATCHES_KEY, state.importBatches);
+    }
+  }
+
+  async function loadProductivityFromBackend(){
+    try{
+      const data = await productivityApiRequest('GET');
+      applyProductivityPayload(data);
+      productivitySyncEnabled = true;
+      render();
+    }catch(err){
+      console.warn('Productivity sync unavailable, using browser storage.', err);
+      productivitySyncEnabled = false;
+    }finally{
+      productivitySyncLoaded = true;
+    }
+  }
+
+  async function syncProductivityState(){
+    if(!productivitySyncEnabled || !productivitySyncLoaded) return;
+    if(productivitySyncInFlight){ productivitySyncQueued = true; return; }
+    productivitySyncInFlight = true;
+    try{
+      const data = await productivityApiRequest('POST', {
+        settings: state.settings,
+        dailyRecords: state.dailyRecords,
+        laborEntries: state.laborEntries,
+        importBatches: state.importBatches
+      });
+      applyProductivityPayload(data);
+    }catch(err){
+      console.warn('Productivity sync save failed; keeping local copy.', err);
+      productivitySyncEnabled = false;
+    }finally{
+      productivitySyncInFlight = false;
+      if(productivitySyncQueued){ productivitySyncQueued = false; syncProductivityState(); }
+    }
+  }
+
   function persist(){
     save(DAILY_KEY, state.dailyRecords);
     save(LABOR_KEY, state.laborEntries);
     save(SETTINGS_KEY, state.settings);
     save(IMPORT_BATCHES_KEY, state.importBatches);
+    scheduleProductivitySync();
   }
 
   function getMonthStats(month){
@@ -1049,4 +1131,5 @@
   }
 
   render();
+  loadProductivityFromBackend();
 })();

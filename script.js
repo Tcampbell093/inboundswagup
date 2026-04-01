@@ -432,6 +432,10 @@ async function loadAttendanceFromBackend(){
       attendanceRecords=normalizeAttendanceRecords(data.records);
       localStorage.setItem(attendanceStorageKey,JSON.stringify(attendanceRecords));
     }
+    if(data && Array.isArray(data.moves) && (data.moves.length || !attendanceMoveRecords.length)){
+      attendanceMoveRecords=normalizeAttendanceMoveRecords(data.moves);
+      localStorage.setItem(attendanceMovesStorageKey,JSON.stringify(attendanceMoveRecords));
+    }
     attendanceSyncEnabled=true;
   }catch(err){
     console.warn('Attendance sync unavailable, using browser storage.',err);
@@ -445,10 +449,14 @@ async function syncAttendanceState(){
   if(attendanceSyncInFlight){attendanceSyncQueued=true;return;}
   attendanceSyncInFlight=true;
   try{
-    const data=await recordsApiRequest(attendanceApiBase,'POST',{records:attendanceRecords});
+    const data=await recordsApiRequest(attendanceApiBase,'POST',{records:attendanceRecords,moves:attendanceMoveRecords});
     if(data && Array.isArray(data.records)){
       attendanceRecords=normalizeAttendanceRecords(data.records);
       localStorage.setItem(attendanceStorageKey,JSON.stringify(attendanceRecords));
+    }
+    if(data && Array.isArray(data.moves)){
+      attendanceMoveRecords=normalizeAttendanceMoveRecords(data.moves);
+      localStorage.setItem(attendanceMovesStorageKey,JSON.stringify(attendanceMoveRecords));
     }
   }catch(err){
     console.warn('Attendance sync save failed; keeping local copy.',err);
@@ -717,10 +725,10 @@ function addAttendanceRecord(){const employeeName=attendanceEmployeeInput.value.
 function selectAllAttendanceRoster(){getRosterEmployees().forEach(emp=>attendanceRosterSelection.add(emp.name));renderAttendanceRoster();}
 function clearAttendanceSelection(){attendanceRosterSelection.clear();renderAttendanceRoster();}
 function applyBatchAttendance(markOverride=''){const selected=[...attendanceRosterSelection];if(!selected.length){alert('Select at least one employee first.');return}const date=attendanceBatchDateInput.value||new Date().toISOString().slice(0,10);const mark=markOverride||attendanceBatchMarkInput.value||'Present';selected.forEach(employeeName=>{attendanceRecords=attendanceRecords.filter(r=>!(r.employeeName===employeeName&&r.department===activeAttendanceDepartment&&r.date===date));attendanceRecords.push({id:Date.now()+Math.random(),employeeName,department:activeAttendanceDepartment,date,mark,demerits:getDemeritForMark(mark)});});saveJson(attendanceStorageKey,attendanceRecords);scheduleAttendanceSync();renderAttendance();}
-function logAttendanceDepartmentMove(){const selected=[...attendanceRosterSelection];if(!selected.length){alert('Select at least one employee first.');return}const toDepartment=attendanceMoveToDepartmentInput.value;if(!toDepartment){alert('Choose where the selected employees moved to.');return}const date=attendanceBatchDateInput.value||new Date().toISOString().slice(0,10);const startTime=attendanceMoveStartTimeInput.value;const endTime=attendanceMoveEndTimeInput.value;const note=attendanceMoveNoteInput.value.trim();selected.forEach(employeeName=>attendanceMoveRecords.unshift({id:Date.now()+Math.random(),employeeName,date,fromDepartment:activeAttendanceDepartment,toDepartment,startTime,endTime,note}));saveJson(attendanceMovesStorageKey,attendanceMoveRecords);attendanceMoveNoteInput.value='';renderAttendanceMoveLog();}
+function logAttendanceDepartmentMove(){const selected=[...attendanceRosterSelection];if(!selected.length){alert('Select at least one employee first.');return}const toDepartment=attendanceMoveToDepartmentInput.value;if(!toDepartment){alert('Choose where the selected employees moved to.');return}const date=attendanceBatchDateInput.value||new Date().toISOString().slice(0,10);const startTime=attendanceMoveStartTimeInput.value;const endTime=attendanceMoveEndTimeInput.value;const note=attendanceMoveNoteInput.value.trim();selected.forEach(employeeName=>attendanceMoveRecords.unshift({id:Date.now()+Math.random(),employeeName,date,fromDepartment:activeAttendanceDepartment,toDepartment,startTime,endTime,note}));saveJson(attendanceMovesStorageKey,attendanceMoveRecords);scheduleAttendanceSync();attendanceMoveNoteInput.value='';renderAttendanceMoveLog();}
 function manageAttendanceEmployees(){document.querySelector('[data-page="employeesPage"]').click();}
 function deleteAttendanceRecord(id){attendanceRecords=attendanceRecords.filter(r=>r.id!==id);saveJson(attendanceStorageKey,attendanceRecords);scheduleAttendanceSync();if(selectedProfileName)openAttendanceProfile(selectedProfileName);renderAttendance()}
-function deleteAttendanceMoveRecord(id){attendanceMoveRecords=attendanceMoveRecords.filter(r=>r.id!==id);saveJson(attendanceMovesStorageKey,attendanceMoveRecords);renderAttendanceMoveLog()}
+function deleteAttendanceMoveRecord(id){attendanceMoveRecords=attendanceMoveRecords.filter(r=>r.id!==id);saveJson(attendanceMovesStorageKey,attendanceMoveRecords);scheduleAttendanceSync();renderAttendanceMoveLog()}
 window.deleteAttendanceMoveRecord=deleteAttendanceMoveRecord;
 function clearAttendanceData(){const confirmed=confirm('Delete all attendance data from this browser? You can undo this once.');if(!confirmed)return;saveJson(attendanceBackupKey,attendanceRecords);attendanceRecords=[];saveJson(attendanceStorageKey,attendanceRecords);scheduleAttendanceSync();renderAttendance();alert('Attendance data cleared. Use Undo clear if needed.');}
 function undoAttendanceClear(){const backup=loadJson(attendanceBackupKey,null);if(!backup){alert('No attendance backup found.');return}attendanceRecords=normalizeAttendanceRecords(backup);saveJson(attendanceStorageKey,attendanceRecords);scheduleAttendanceSync();localStorage.removeItem(attendanceBackupKey);renderAttendance()}
