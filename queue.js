@@ -76,6 +76,8 @@ let pendingScheduleQueueId='';
 let pendingScheduleSource='ready';
 let pendingRescheduleAssemblyId='';
 const issueHoldQueueStorageKey='ops_hub_issue_hold_queue_v1';
+const queueImportMetaKey='ops_hub_queue_import_meta_v1';
+const revenueImportMetaKey='ops_hub_revenue_import_meta_v1';
 let issueHoldQueueRows=normalizeIssueHoldQueueRows(loadJson(issueHoldQueueStorageKey,[]));
 let pendingIssueHoldId='';
 let pendingIssueHoldSource='ready';
@@ -455,6 +457,7 @@ async function importRevenueReferenceFromFile(file,{silent=false}={}){
         const message=`<a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BE2jMAG/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Revenue reference</a> imported: ${revenueReferenceRows.length} rows stored.`;
         setRevenueImportStatus(message);
         if(!silent) alert(message);
+        try { localStorage.setItem(revenueImportMetaKey, JSON.stringify({ fileName: file.name, importedAt: new Date().toISOString(), rows: revenueReferenceRows.length })); } catch(_){}
         resolve({rows:revenueReferenceRows.length,message});
       } catch(error){
         console.error(error);
@@ -630,6 +633,7 @@ async function importQueueReportFromFile(file,{silent=false}={}){
         const successMsg=`Import complete: ${addedCount} new pack builders added, ${updatedCount} existing pack builders updated, from ${queueRawRowCount} raw rows.`;
         setQueueImportStatus(successMsg);
         if(!silent) alert(successMsg);
+        try { localStorage.setItem(queueImportMetaKey, JSON.stringify({ fileName: file.name, importedAt: new Date().toISOString(), rows: queueRawRowCount })); } catch(_){}
         resolve({rows: queueRawRowCount, addedCount, updatedCount, message: successMsg});
       } catch(error){
         console.error(error);

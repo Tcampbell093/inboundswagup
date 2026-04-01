@@ -43,7 +43,14 @@
     poCategoryChips: document.getElementById('sordPoCategoryChips'),
     poCategorySummary: document.getElementById('sordPoCategorySummary'),
     addOwnerRowBtn: document.getElementById('sordAddOwnerRowBtn'),
-    saveOwnerMapBtn: document.getElementById('sordSaveOwnerMapBtn')
+    saveOwnerMapBtn: document.getElementById('sordSaveOwnerMapBtn'),
+    priorityPanel: document.getElementById('priorityBuilderPanel'),
+    pbSelectedChips: document.getElementById('pbSelectedChips'),
+    pbGenerateBtn: document.getElementById('pbGenerateBtn'),
+    pbClearSelBtn: document.getElementById('pbClearSelBtn'),
+    pbCopyBtn: document.getElementById('pbCopyBtn'),
+    pbPostWrap: document.getElementById('pbPostWrap'),
+    pbPostContent: document.getElementById('pbPostContent')
   };
 
 
@@ -213,13 +220,20 @@
     return normalizeImportedPayload(meta || emptyImports());
   }
 
+  const PRIORITY_KEY = 'ops_hub_sord_priority_v1';
+
   const state = {
     poCategoryFilter: 'all',
     imports: emptyImports(),
     dataset: [],
     selectedKey: '',
-    ownerMap: loadJson(OWNER_MAP_KEY, DEFAULT_OWNER_MAP)
+    ownerMap: loadJson(OWNER_MAP_KEY, DEFAULT_OWNER_MAP),
+    prioritySords: new Set(JSON.parse(localStorage.getItem(PRIORITY_KEY) || '[]'))
   };
+
+  function savePriority() {
+    try { localStorage.setItem(PRIORITY_KEY, JSON.stringify([...state.prioritySords])); } catch {}
+  }
 window.__sordState = state;
 
   async function saveState(){
@@ -1141,7 +1155,7 @@ function renderExplorer(){
     renderTopStats(list);
     els.explorerCount.textContent = `${list.length} result${list.length===1?'':'s'}`;
     if(!list.length){
-      els.explorerBody.innerHTML = '<tr><td colspan="9" class="empty">No SORDs match the current filters.</td></tr>';
+      els.explorerBody.innerHTML = '<tr><td colspan="10" class="empty">No SORDs match the current filters.</td></tr>';
       renderDossier(null);
       return;
     }
@@ -1154,7 +1168,11 @@ function renderExplorer(){
         : `<strong>${escape(item.sord)}</strong>`;
       const ownerLabel = item.ownerMapping?.accountManager || item.accountOwner || item.orderOwner || '—';
       const ownerHint = item.ownerMapping?.projectManager ? `PM: ${item.ownerMapping.projectManager}` : (item.salesOrderId || '—');
-      return `<tr${selected} onclick="window.selectSordRecord('${escJs(item.key)}')">`+
+      const isPinned = state.prioritySords.has(item.key);
+      const pinnedClass = isPinned ? ' class="sord-selected-row pb-pinned-row"' : (item.key === state.selectedKey ? ' class="sord-selected-row"' : '');
+      const starBtn = `<button class="pb-star-btn${isPinned ? ' pb-star-active' : ''}" type="button" title="${isPinned ? 'Remove from priority' : 'Add to priority'}" onclick="event.stopPropagation();window.pbToggleSord('${escJs(item.key)}')">★</button>`;
+      return `<tr${pinnedClass} onclick="window.selectSordRecord('${escJs(item.key)}')">`+
+        `<td class="pb-select-col">${starBtn}</td>`+
         `<td>${sordLabel}<div class="sord-subline">${escape(item.account || '—')}</div></td>`+
         `<td>${escape(ownerLabel)}<div class="sord-subline">${escape(ownerHint)}</div></td>`+
         `<td>${escape(item.status || item.poStatus || '—')}</td>`+
@@ -1403,8 +1421,181 @@ function renderExplorer(){
     return { message: text };
   }
 
+  // ════════════════════════════════════════════════════════════════
+  // PRIORITY BUILDER — select SORDs, surface open POs, generate Slack post
+  // ════════════════════════════════════════════════════════════════
+
+  const PO_PASS_STATUSES = new Set([
+    'qa approved', 'qa complete', 'po complete',
+    'item fully received at warehouse', 'delivered direct to client', 'mission complete'
+  ]);
+
+  function poNeedsWork(po) {
+    const s = safeText(po.status).toLowerCase();
+    return !PO_PASS_STATUSES.has(s);
+  }
+
+  function renderPriorityChips() {
+    if (!els.pbSelectedChips) return;
+    const keys = [...state.prioritySords];
+    if (!keys.length) {
+      els.pbSelectedChips.innerHTML = '<span class="pb-empty-hint">Click ★ on any SORD in the list below to add it here.</span>';
+      return;
+    }
+    els.pbSelectedChips.innerHTML = keys.map(key => {
+      const item = state.dataset.find(x => x.key === key);
+      const label = item ? (item.sord || item.account || key) : key;
+      const account = item ? (item.account || '') : '';
+      return `<span class="pb-chip">
+        <span class="pb-chip-sord">${escape(label)}</span>
+        ${account ? `<span class="pb-chip-account">${escape(account)}</span>` : ''}
+        <button class="pb-chip-remove" type="button" title="Remove" onclick="window.pbToggleSord('${escJs(key)}')">×</button>
+      </span>`;
+    }).join('');
+  }
+
+  function generateSlackPost() {
+    const keys = [...state.prioritySords];
+    if (!keys.length) return '';
+
+    const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+    const lines = [];
+    lines.push(`🚨 *PRIORITY ORDER LIST — ${today}*`);
+    lines.push(`The following SORDs need same-day attention across Inbound and Assembly. Please prioritize accordingly.`);
+    lines.push('');
+
+    let hasAssemblyItems = false;
+
+    keys.forEach((key, idx) => {
+      const item = state.dataset.find(x => x.key === key);
+      if (!item) return;
+
+      const revenue = fmtMoney(item.subtotal || item.originalSubtotal);
+      const ihd = item.earliestIhd ? `IHD: ${fmtDate(item.earliestIhd)}` : (item.dueDate ? `Due: ${fmtDate(item.dueDate)}` : 'No date set');
+      const account = item.account || '—';
+      const orderStatus = item.status || item.poStatus || '—';
+
+      lines.push(`*${idx + 1}. ${item.sord}* — ${account}`);
+      lines.push(`   📦 Revenue: ${revenue}   |   ${ihd}   |   Status: ${orderStatus}`);
+
+      // POs that still need work
+      const openPos = (item.poRows || []).filter(poNeedsWork);
+      const donePos  = (item.poRows || []).filter(po => !poNeedsWork(po));
+
+      if (openPos.length) {
+        lines.push(`   ⚠️ *${openPos.length} PO${openPos.length > 1 ? 's' : ''} need inbound attention:*`);
+        openPos.forEach(po => {
+          const poName = po.purchaseOrderName || po.purchaseOrderId || '(unnamed)';
+          const poStatus = po.status || '—';
+          const eta = po.estimatedShipDate ? `ETA: ${fmtDate(po.estimatedShipDate)}` : '';
+          const supplier = po.supplier ? `• ${po.supplier}` : '';
+          const product = po.accountProductName ? `(${po.accountProductName})` : '';
+          lines.push(`      • *${poName}* — ${poStatus}${eta ? '  ' + eta : ''}${supplier ? '  ' + supplier : ''}${product ? ' ' + product : ''}`);
+        });
+      }
+      if (donePos.length) {
+        lines.push(`   ✅ ${donePos.length} PO${donePos.length > 1 ? 's' : ''} already QA Approved / Complete`);
+      }
+
+      // Pack builders
+      const pbs = item.packBuilders || [];
+      if (pbs.length) {
+        hasAssemblyItems = true;
+        lines.push(`   📋 *Pack Builder${pbs.length > 1 ? 's' : ''} (Assembly):*`);
+        pbs.forEach(pb => {
+          const pbStage = pb.stage ? ` — Stage: ${pb.stage}` : '';
+          const pbIhd = pb.ihd ? ` | IHD: ${fmtDate(pb.ihd)}` : '';
+          const pbLink = pb.link ? ` → ${pb.link}` : '';
+          lines.push(`      • ${pb.pb || '(unnamed)'}${pbStage}${pbIhd}${pbLink}`);
+        });
+      }
+
+      lines.push('');
+    });
+
+    if (hasAssemblyItems) {
+      lines.push(`_@assembly-lead please prioritize the pack builders listed above so these orders can complete today._`);
+    }
+    lines.push(`_@inbound-team please process the open POs listed above as soon as possible._`);
+
+    return lines.join('\n');
+  }
+
+  function renderPriorityPost() {
+    if (!els.pbPostWrap || !els.pbPostContent) return;
+    const post = generateSlackPost();
+    if (!post) {
+      els.pbPostWrap.hidden = true;
+      return;
+    }
+    els.pbPostContent.textContent = post;
+    els.pbPostWrap.hidden = false;
+  }
+
+  function bindPriorityBuilder() {
+    if (!els.priorityPanel) return;
+
+    els.pbGenerateBtn?.addEventListener('click', () => {
+      renderPriorityPost();
+      if (!els.pbPostWrap?.hidden) {
+        els.pbPostWrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
+
+    els.pbClearSelBtn?.addEventListener('click', () => {
+      state.prioritySords.clear();
+      savePriority();
+      renderPriorityChips();
+      els.pbPostWrap && (els.pbPostWrap.hidden = true);
+      renderExplorer();
+    });
+
+    els.pbCopyBtn?.addEventListener('click', () => {
+      const text = els.pbPostContent?.textContent || '';
+      if (!text) return;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = els.pbCopyBtn;
+        const orig = btn.textContent;
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 2000);
+      }).catch(() => {
+        // Fallback for older browsers
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        const btn = els.pbCopyBtn;
+        const orig = btn.textContent;
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 2000);
+      });
+    });
+
+    // Init chips on load
+    renderPriorityChips();
+  }
+
+  window.pbToggleSord = function(key) {
+    if (state.prioritySords.has(key)) {
+      state.prioritySords.delete(key);
+    } else {
+      state.prioritySords.add(key);
+    }
+    savePriority();
+    renderPriorityChips();
+    // Refresh post if it's currently visible
+    if (els.pbPostWrap && !els.pbPostWrap.hidden) renderPriorityPost();
+    renderExplorer();
+  };
+
+
   function bind(){
     els.importBtn.addEventListener('click', importFiles);
+    bindPriorityBuilder();
     els.clearBtn.addEventListener('click', clearImports);
     els.refreshBtn.addEventListener('click', ()=>{ rebuildAndRender(); setStatus(`Refreshed SORD explorer from imported reports and live app data${summarizeFileNames() ? ' • ' + summarizeFileNames() : ''}.`); });
     [els.searchInput, els.statusFilter, els.readinessFilter, els.complexityFilter, els.riskFilter, els.confirmedFilter].filter(Boolean).forEach(el=>el.addEventListener('input', renderExplorer));
@@ -1464,103 +1655,100 @@ function renderExplorer(){
     renderExplorer();
   });
 
+
+  // ── Helper functions (moved inside IIFE for scope) ──────────────
+  function numberFromLoose(value) {
+      if (value === null || value === undefined || value === '') return 0;
+      const n = Number(String(value).replace(/[^0-9.-]/g, ''));
+      return Number.isFinite(n) ? n : 0;
+    }
+  
+    function classifyPoCategory(po) {
+      const statusText = String(po.status || '').toLowerCase();
+      const descText = [
+        po.purchaseOrderName,
+        po.accountProductName,
+        po.notes,
+        po.clientName,
+        po.supplier
+      ].filter(Boolean).join(' ').toLowerCase();
+  
+      const packCount =
+        numberFromLoose(po.totalPackItems) +
+        numberFromLoose(po.packItems) +
+        numberFromLoose(po.packCount);
+  
+      const bulkCount =
+        numberFromLoose(po.totalBulkProducts) +
+        numberFromLoose(po.bulkProducts) +
+        numberFromLoose(po.bulkCount);
+  
+      const hintsPack = /pack item|pack items|packbuilder|pack builder|kitting|kit/i.test(statusText + ' ' + descText);
+      const hintsBulk = /bulk|loose item|loose items|individual/i.test(statusText + ' ' + descText);
+  
+      const hasPack = packCount > 0 || hintsPack;
+      const hasBulk = bulkCount > 0 || hintsBulk;
+  
+      if (hasPack && hasBulk) return 'mix';
+      if (hasPack) return 'pack';
+      if (hasBulk) return 'bulk';
+      return 'mix';
+    }
+  
+    function getFilteredPurchaseOrders(purchaseOrders, filterValue) {
+      const tagged = (purchaseOrders || []).map(po => ({
+        ...po,
+        categoryTag: po.categoryTag || classifyPoCategory(po)
+      }));
+      if (!filterValue || filterValue === 'all') return tagged;
+      return tagged.filter(po => po.categoryTag === filterValue);
+    }
+  
+    function purchaseOrderCategoryCounts(purchaseOrders) {
+      const counts = { all: 0, pack: 0, bulk: 0, mix: 0 };
+      (purchaseOrders || []).forEach(po => {
+        const tag = po.categoryTag || classifyPoCategory(po);
+        counts.all += 1;
+        if (counts[tag] !== undefined) counts[tag] += 1;
+      });
+      return counts;
+    }
+  
+  function parseSalesforceImageUrl(value) {
+      if (!value) return '';
+      const raw = String(value).trim();
+      if (!raw) return '';
+  
+      // Full URL already present
+      const directUrlMatch = raw.match(/https?:\/\/[^\s"'<>]+/i);
+      if (directUrlMatch) {
+        return directUrlMatch[0];
+      }
+  
+      // HTML img tag snippet
+      const imgSrcMatch = raw.match(/<img[^>]+src=["']([^"']+)["']/i);
+      if (imgSrcMatch && imgSrcMatch[1]) {
+        let src = imgSrcMatch[1].trim();
+        if (/^https?:\/\//i.test(src)) return src;
+        if (src.startsWith('/')) return `https://swagup.file.force.com${src}`;
+        return `https://swagup.file.force.com/${src.replace(/^\/+/, '')}`;
+      }
+  
+      // Relative servlet path copied without the img tag
+      if (/^\/?servlet\/servlet\.FileDownload\?file=/i.test(raw)) {
+        const normalized = raw.startsWith('/') ? raw : `/${raw}`;
+        return `https://swagup.file.force.com${normalized}`;
+      }
+  
+      // Bare Salesforce file id fallback
+      const fileIdMatch = raw.match(/\b00P[A-Za-z0-9]{12,15}\b/);
+      if (fileIdMatch) {
+        return `https://swagup.file.force.com/servlet/servlet.FileDownload?file=${fileIdMatch[0]}`;
+      }
+  
+      return '';
+    }
+
   window.importSordSharedFiles = importSharedFiles;
   window.clearSordSharedImports = clearSharedImports;
-})();
-
-
-
-  
-  function numberFromLoose(value) {
-    if (value === null || value === undefined || value === '') return 0;
-    const n = Number(String(value).replace(/[^0-9.-]/g, ''));
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  function classifyPoCategory(po) {
-    const statusText = String(po.status || '').toLowerCase();
-    const descText = [
-      po.purchaseOrderName,
-      po.accountProductName,
-      po.notes,
-      po.clientName,
-      po.supplier
-    ].filter(Boolean).join(' ').toLowerCase();
-
-    const packCount =
-      numberFromLoose(po.totalPackItems) +
-      numberFromLoose(po.packItems) +
-      numberFromLoose(po.packCount);
-
-    const bulkCount =
-      numberFromLoose(po.totalBulkProducts) +
-      numberFromLoose(po.bulkProducts) +
-      numberFromLoose(po.bulkCount);
-
-    const hintsPack = /pack item|pack items|packbuilder|pack builder|kitting|kit/i.test(statusText + ' ' + descText);
-    const hintsBulk = /bulk|loose item|loose items|individual/i.test(statusText + ' ' + descText);
-
-    const hasPack = packCount > 0 || hintsPack;
-    const hasBulk = bulkCount > 0 || hintsBulk;
-
-    if (hasPack && hasBulk) return 'mix';
-    if (hasPack) return 'pack';
-    if (hasBulk) return 'bulk';
-    return 'mix';
-  }
-
-  function getFilteredPurchaseOrders(purchaseOrders, filterValue) {
-    const tagged = (purchaseOrders || []).map(po => ({
-      ...po,
-      categoryTag: po.categoryTag || classifyPoCategory(po)
-    }));
-    if (!filterValue || filterValue === 'all') return tagged;
-    return tagged.filter(po => po.categoryTag === filterValue);
-  }
-
-  function purchaseOrderCategoryCounts(purchaseOrders) {
-    const counts = { all: 0, pack: 0, bulk: 0, mix: 0 };
-    (purchaseOrders || []).forEach(po => {
-      const tag = po.categoryTag || classifyPoCategory(po);
-      counts.all += 1;
-      if (counts[tag] !== undefined) counts[tag] += 1;
-    });
-    return counts;
-  }
-
-function parseSalesforceImageUrl(value) {
-    if (!value) return '';
-    const raw = String(value).trim();
-    if (!raw) return '';
-
-    // Full URL already present
-    const directUrlMatch = raw.match(/https?:\/\/[^\s"'<>]+/i);
-    if (directUrlMatch) {
-      return directUrlMatch[0];
-    }
-
-    // HTML img tag snippet
-    const imgSrcMatch = raw.match(/<img[^>]+src=["']([^"']+)["']/i);
-    if (imgSrcMatch && imgSrcMatch[1]) {
-      let src = imgSrcMatch[1].trim();
-      if (/^https?:\/\//i.test(src)) return src;
-      if (src.startsWith('/')) return `https://swagup.file.force.com${src}`;
-      return `https://swagup.file.force.com/${src.replace(/^\/+/, '')}`;
-    }
-
-    // Relative servlet path copied without the img tag
-    if (/^\/?servlet\/servlet\.FileDownload\?file=/i.test(raw)) {
-      const normalized = raw.startsWith('/') ? raw : `/${raw}`;
-      return `https://swagup.file.force.com${normalized}`;
-    }
-
-    // Bare Salesforce file id fallback
-    const fileIdMatch = raw.match(/\b00P[A-Za-z0-9]{12,15}\b/);
-    if (fileIdMatch) {
-      return `https://swagup.file.force.com/servlet/servlet.FileDownload?file=${fileIdMatch[0]}`;
-    }
-
-    return '';
-  }
-
-
+})()

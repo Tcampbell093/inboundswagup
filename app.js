@@ -167,9 +167,39 @@ const translations = {
     selectAssociate: "Select associate", selectLocation: "Select location", selectCategory: "Select category", everyone: "Everyone",
     placeholderOverstock: "This page is reserved for overflow / extras handling.", placeholderPutaway: "This page is reserved for stockers and long-term storage work.",
     noRows: "No PO lines match the current view.",
-    sizeBreakdown: "Apparel size breakdown", sizesInExtras: "Extras by size",
+    sizeBreakdown: "Apparel size breakdown", sizesInExtras: "Apparel",
     addAssociatePlaceholder: "Add associate", addCategoryPlaceholder: "Add category", addLocationPlaceholder: "Add location",
-    searchPlaceholder: "PO, category, note, location..."
+    searchPlaceholder: "PO, category, note, location...",
+    // Overstock status/action values
+    donation: "Donation", notDonation: "Not Donation", pendingPb: "Pending PB",
+    donated: "Donated", required: "Required", replaced: "Replaced", missingFromBox: "Missing from Box",
+    // User controls
+    myItemsOnly: "My Items Only", noUserSelected: "No user selected",
+    clearUser: "Clear User", setUser: "Set User", currentUser: "Current User",
+    notYourEntry: "Not your entry", actionNeeded: "Select action",
+    // Timeline modal headers
+    stage: "Stage", variance: "Variance", editTrail: "Edit Trail",
+    orderedTotal: "Ordered Total", receivedTotal: "Received Total",
+    boxesTotal: "Boxes Total", varianceTotal: "Variance Total",
+    timelineEntries: "Timeline Entries", monthlyTotal: "Monthly Total",
+    noHistoryFound: "No history found for this PO.",
+    // Filter / UI
+    viewTimeline: "View Timeline", filterResults: "Filter",
+    status: "Status", edit: "Edit", delete: "Delete", close: "Close",
+    poTimeline: "PO Timeline", resetPace: "Reset Pace Images", performance: "Performance", settings: "Settings",
+    hideFilter: "Hide Filter", showFilter: "Show Filter",
+    // Performance / misc
+    refreshView: "Refresh View", showSummary: "Show Summary", hideSummary: "Hide Summary",
+    loadingDemo: "Loading demo data...", noSections: "No sections yet.",
+    deleteConfirm: "Delete this row?", clearConfirm: "Clear all data?",
+    required_field: "Required", poRequired: "PO# and Category are required.",
+    selectUserFirst: "Select a current user first.",
+    leadershipCode: "Enter Leadership code", incorrectCode: "Incorrect code.",
+    // Putaway
+    putawayControls: "Putaway Controls", putawayDesc: "Track what Prep handed off, where it was staged, and make it easy to find later for Assembly.",
+    // Batch history stat pills
+    associates: "Associates", locations: "Locations",
+    matchingLines: "Matching Lines", monthsHit: "Months Hit", units: "Units"
   },
   es: {
     tabDock: "Descarga", tabReceiving: "Recepción QA", tabPrep: "Preparación", tabOverstock: "Exceso", tabPutaway: "Ubicación", tabSettings: "Configuración",
@@ -190,9 +220,32 @@ const translations = {
     selectAssociate: "Seleccionar asociado", selectLocation: "Seleccionar ubicación", selectCategory: "Seleccionar categoría", everyone: "Todos",
     placeholderOverstock: "Esta página está reservada para manejar exceso / extras.", placeholderPutaway: "Esta página está reservada para almacenistas y ubicaciones finales.",
     noRows: "Ninguna línea PO coincide con la vista actual.",
-    sizeBreakdown: "Desglose de tallas de ropa", sizesInExtras: "Extras por talla",
+    sizeBreakdown: "Desglose de tallas de ropa", sizesInExtras: "Ropa",
     addAssociatePlaceholder: "Agregar asociado", addCategoryPlaceholder: "Agregar categoría", addLocationPlaceholder: "Agregar ubicación",
-    searchPlaceholder: "PO, categoría, nota, ubicación..."
+    searchPlaceholder: "PO, categoría, nota, ubicación...",
+    donation: "Donación", notDonation: "No donación", pendingPb: "Pendiente PB",
+    donated: "Donado", required: "Requerido", replaced: "Reemplazado", missingFromBox: "Falta de caja",
+    myItemsOnly: "Solo mis artículos", noUserSelected: "Sin usuario",
+    clearUser: "Limpiar usuario", setUser: "Establecer usuario", currentUser: "Usuario actual",
+    notYourEntry: "No es tu entrada", actionNeeded: "Seleccionar acción",
+    stage: "Etapa", variance: "Diferencia", editTrail: "Historial de edición",
+    orderedTotal: "Total pedido", receivedTotal: "Total recibido",
+    boxesTotal: "Total cajas", varianceTotal: "Total diferencia",
+    timelineEntries: "Entradas de historial", monthlyTotal: "Total mensual",
+    noHistoryFound: "No se encontró historial para este PO.",
+    viewTimeline: "Ver historial", filterResults: "Filtrar",
+    status: "Estado", edit: "Editar", delete: "Eliminar", close: "Cerrar",
+    poTimeline: "Historial de PO", resetPace: "Restablecer imágenes", performance: "Rendimiento", settings: "Configuración",
+    hideFilter: "Ocultar filtro", showFilter: "Mostrar filtro",
+    refreshView: "Actualizar vista", showSummary: "Mostrar resumen", hideSummary: "Ocultar resumen",
+    loadingDemo: "Cargando datos de demostración...", noSections: "No hay secciones aún.",
+    deleteConfirm: "¿Eliminar esta fila?", clearConfirm: "¿Borrar todos los datos?",
+    required_field: "Requerido", poRequired: "PO# y Categoría son obligatorios.",
+    selectUserFirst: "Primero selecciona un usuario actual.",
+    leadershipCode: "Ingresa el código de liderazgo", incorrectCode: "Código incorrecto.",
+    putawayControls: "Controles de ubicación", putawayDesc: "Seguimiento de lo que Prep entregó, dónde fue almacenado, y fácil de encontrar para Assembly.",
+    associates: "Asociados", locations: "Ubicaciones",
+    matchingLines: "Líneas coincidentes", monthsHit: "Meses", units: "Unidades"
   }
 };
 
@@ -2277,6 +2330,7 @@ async function init() {
   bindImportControls();
   bindRoleTabs();
   bindLanguageSwitch();
+  bindFilterToggles();
   bindCurrentUserControls();
   await Promise.all([loadWorkflowFromBackend(), refreshImportedLibraryCache()]);
   applyLanguage();
@@ -2302,34 +2356,113 @@ function bindLanguageSwitch() {
   });
 }
 
+function bindFilterToggles() {
+  document.querySelectorAll(".filter-toggle-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const panelId = btn.getAttribute("data-target");
+      const panel = panelId ? document.getElementById(panelId) : null;
+      if (!panel) return;
+      const isOpen = !panel.classList.contains("hidden");
+      panel.classList.toggle("hidden", isOpen);
+      btn.setAttribute("aria-expanded", String(!isOpen));
+      const labelEl = btn.querySelector("span");
+      if (labelEl) labelEl.textContent = isOpen ? t("filterResults") : t("hideFilter");
+    });
+  });
+}
+
 function applyLanguage() {
+  // 1. data-i18n attributes (declarative, always up to date)
   document.querySelectorAll("[data-i18n]").forEach((el) => {
     el.textContent = t(el.dataset.i18n);
   });
-  document.getElementById("todayLabelText").textContent = t("today");
-  document.getElementById("totalQtyLabel").textContent = t("totalQty");
-  document.getElementById("languageLabel").textContent = t("language");
+  // 2. data-i18n-placeholder attributes
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+    el.placeholder = t(el.dataset.i18nPlaceholder);
+  });
+  // 3. Specific elements updated by ID
+  const byId = {
+    todayLabelText: "today", totalQtyLabel: "totalQty", languageLabel: "language",
+  };
+  Object.entries(byId).forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = t(key);
+  });
+  // 4. Placeholders
   if (associateInput) associateInput.placeholder = t("addAssociatePlaceholder");
-  categoryInput.placeholder = t("addCategoryPlaceholder");
-  locationInput.placeholder = t("addLocationPlaceholder");
-  document.querySelectorAll(".search-field input").forEach((input) => input.placeholder = t("searchPlaceholder"));
+  if (categoryInput) categoryInput.placeholder = t("addCategoryPlaceholder");
+  if (locationInput) locationInput.placeholder = t("addLocationPlaceholder");
+  document.querySelectorAll(".search-field input").forEach((el) => el.placeholder = t("searchPlaceholder"));
   const overstockPo = document.getElementById("overstockEntryPo");
   if (overstockPo) overstockPo.placeholder = t("po");
-  document.querySelectorAll(".edit-section").forEach((el) => el.textContent = t("editSection"));
-  document.querySelectorAll(".add-inline-row").forEach((el) => el.textContent = t("addRow"));
-  document.querySelectorAll(".delete-section").forEach((el) => el.textContent = t("deleteSection"));
-  document.querySelectorAll(".save-section-edit").forEach((el) => el.textContent = t("save"));
-  document.querySelectorAll(".cancel-section-edit").forEach((el) => el.textContent = t("cancel"));
+  // 5. Dynamically rendered button text (class-based)
+  const classBtnMap = {
+    ".edit-section":            "editSection",
+    ".add-inline-row":          "addRow",
+    ".delete-section":          "deleteSection",
+    ".save-section-edit":       "save",
+    ".cancel-section-edit":     "cancel",
+    ".save-inline-edit":        "save",
+    ".cancel-inline-edit":      "cancel",
+    ".history-row":             "viewTimeline",
+    ".filter-toggle-btn span":  "filterResults",
+    ".overstock-edit-btn":      "edit",
+    ".overstock-delete-btn":    "delete",
+    ".lock-note":               "notYourEntry",
+    ".batch-history-close":     "close",
+    ".putaway-expand-btn":      "viewTimeline",
+  };
+  // data-i18n-btn: a general-purpose attribute for any button needing translation
+  // Works automatically for any new button that sets data-i18n-btn="keyName"
+  document.querySelectorAll("[data-i18n-btn]").forEach((el) => {
+    const key = el.dataset.i18nBtn;
+    if (key) el.textContent = t(key);
+  });
+  Object.entries(classBtnMap).forEach(([sel, key]) => {
+    document.querySelectorAll(sel).forEach((el) => { el.textContent = t(key); });
+  });
+  // 6. Filter toggle buttons — update label based on open/closed state
+  document.querySelectorAll(".filter-toggle-btn").forEach((btn) => {
+    const panelId = btn.getAttribute("data-target");
+    const panel = panelId ? document.getElementById(panelId) : null;
+    if (panel) {
+      const isOpen = !panel.classList.contains("hidden");
+      const labelEl = btn.querySelector("span");
+      if (labelEl) labelEl.textContent = isOpen ? t("hideFilter") : t("filterResults");
+    }
+  });
+  // 7. Language toggle buttons
   langEnBtn.classList.toggle("active", state.language === "en");
   langEsBtn.classList.toggle("active", state.language === "es");
+  // 8. User display
   renderCurrentUser();
+  // 9. Performance / summary buttons
   const perfBtn = document.getElementById("performanceTodayBtn");
-  if (perfBtn) perfBtn.textContent = state.language === "es" ? "Actualizar vista" : "Refresh View";
+  if (perfBtn) perfBtn.textContent = t("refreshView");
   const summaryBtn = document.getElementById("toggleSummaryBtn");
-  if (summaryBtn) {
-    summaryBtn.textContent = summaryVisible
-      ? (state.language === "es" ? "Ocultar resumen" : "Hide Summary")
-      : (state.language === "es" ? "Mostrar resumen" : "Show Summary");
+  if (summaryBtn) summaryBtn.textContent = summaryVisible ? t("hideSummary") : t("showSummary");
+  // 10. My Items Only buttons (populated dynamically)
+  document.querySelectorAll("[id$='MyItemsBtn']").forEach((btn) => {
+    btn.textContent = t("myItemsOnly");
+  });
+  // 11. Clear Filters buttons
+  document.querySelectorAll("[id$='ClearFiltersBtn']").forEach((btn) => {
+    btn.textContent = t("clearFilters");
+  });
+  // 12. Re-render pages that have inline translated content
+  // (called after full renderAll, so just refresh stat pills in timeline modal if open)
+  const batchBackdrop = document.getElementById("batchHistoryBackdrop");
+  if (batchBackdrop && !batchBackdrop.hidden) {
+    // Modal is open — update its TH headers
+    const head = document.getElementById("batchHistoryHead");
+    if (head && head.innerHTML.trim()) {
+      head.innerHTML = `<tr>
+        <th>${t("stage")}</th><th>${t("date")}</th><th>${t("associate")}</th>
+        <th>${t("location")}</th><th>${t("boxes")}</th><th>${t("orderedQty")}</th>
+        <th>${t("receivedQty")}</th><th>${t("variance")}</th><th>${t("status")}</th>
+        <th>${t("notes")}</th><th>${t("editTrail")}</th>
+      </tr>`;
+    }
   }
 }
 
@@ -2604,8 +2737,8 @@ function renderOverstockPage() {
     const ownerLocked = !!(state.currentUser && state.currentUser !== LEADERSHIP_USER && row.associate && row.associate !== state.currentUser);
     const tr = document.createElement("tr");
     const batchCount = getPoHistoryCount("overstock", row.po);
-    const batchBtn = batchCount > 1
-      ? `<button class="tiny-btn history-row" type="button">View Timeline</button>`
+    const batchBtn = batchCount >= 1
+      ? `<button class="tiny-btn history-row" type="button">${t("viewTimeline")}</button>`
       : `<span class="lock-note">—</span>`;
     tr.innerHTML = `
       <td><span class="day-pill ${getDayClass(formatDayCode(row.date))}">${formatDate(row.date)}</span></td>
@@ -2908,8 +3041,8 @@ function renderSectionRows(pageKey, tbody, section) {
   rowsToShow.forEach((row) => {
     const tr = document.createElement("tr");
     const batchCount = getPoHistoryCount(pageKey, row.po);
-    const batchBtn = batchCount > 1
-      ? `<button class="tiny-btn history-row" type="button">View Timeline</button>`
+    const batchBtn = batchCount >= 1
+      ? `<button class="tiny-btn history-row" type="button">${t("viewTimeline")}</button>`
       : `<span class="lock-note">—</span>`;
 
     const cells = cfg.mode === "simple"
@@ -3014,8 +3147,8 @@ function getFilteredRows(pageKey, section) {
 function stripSizeBreakdownFromNotes(notes) {
   const text = String(notes || "");
   return text
-    .replace(/\s*\|\s*(Extras by size|Extras por talla):\s*[^|]*$/i, "")
-    .replace(/^(Extras by size|Extras por talla):\s*[^|]*$/i, "")
+    .replace(/\s*\|\s*(Apparel|Ropa|Tallas|Extras by size|Extras por talla):\s*[^|]*$/i, "")
+    .replace(/^(Apparel|Ropa|Tallas|Extras by size|Extras por talla):\s*[^|]*$/i, "")
     .trim();
 }
 
@@ -3029,61 +3162,120 @@ function appendSizeBreakdownToNotes(notes, sizeData) {
 
 
 function collectPoHistoryEntries(pageKey, po) {
+  // Always collect the full cross-stage lifecycle for this PO
   const targetPo = String(po || "").trim();
   if (!targetPo) return [];
   const entries = [];
+  const lang = state.language;
 
-  const sectionMap = {
-    dock: state.data.dockSections || [],
-    receiving: state.data.receivingSections || [],
-    prep: state.data.prepSections || [],
-  };
-
-  if (pageKey === "overstock") {
-    (state.data.overstockEntries || []).forEach((row) => {
-      if (String(row.po || "").trim() !== targetPo) return;
-      entries.push({
-        sourcePage: "overstock",
-        sourceLabel: "Extras / Overstock",
-        createdAt: row.updatedAt || row.createdAt || 0,
-        date: row.date || "",
-        associate: row.associate || "",
-        location: row.location || "",
-        status: row.status || "",
-        action: row.action || "",
-        quantity: Number(row.quantity || 0) || 0,
-        notes: row.notes || "",
-        originalDate: row.originalDate || section.date || row.date || "",
-        editHistory: Array.isArray(row.editHistory) ? row.editHistory : [],
-      });
-    });
-    return entries.sort((a,b)=> (b.createdAt||0) - (a.createdAt||0));
-  }
-
-  (sectionMap[pageKey] || []).forEach((section) => {
+  // Dock stage
+  (state.data.dockSections || []).forEach((section) => {
     (section.rows || []).forEach((row) => {
       if (String(row.po || "").trim() !== targetPo) return;
       entries.push({
-        sourcePage: pageKey,
-        sourceLabel: pageKey === "dock" ? "Docker" : (pageKey === "receiving" ? "QA Receiving" : "Prep"),
+        sourcePage: "dock",
+        sourceLabel: lang === "es" ? "Descarga" : "Docker",
         createdAt: row.createdAt || section.updatedAt || section.createdAt || 0,
         date: section.date || "",
         associate: section.name || "",
         location: section.location || "",
         boxes: Number(row.boxes || 0) || 0,
         qty: Number(row.qty || 0) || 0,
-        orderedQty: Number(row.orderedQty || 0) || 0,
-        receivedQty: Number(row.receivedQty || 0) || 0,
-        extras: Number(row.extras || 0) || 0,
+        orderedQty: 0, receivedQty: 0, extras: 0,
         category: row.category || "",
         notes: row.notes || "",
-        originalDate: row.originalDate || section.date || row.date || "",
+        originalDate: row.originalDate || section.date || "",
         editHistory: Array.isArray(row.editHistory) ? row.editHistory : [],
       });
     });
   });
 
-  return entries.sort((a,b)=> (b.createdAt||0) - (a.createdAt||0));
+  // QA Receiving stage
+  (state.data.receivingSections || []).forEach((section) => {
+    (section.rows || []).forEach((row) => {
+      if (String(row.po || "").trim() !== targetPo) return;
+      entries.push({
+        sourcePage: "receiving",
+        sourceLabel: lang === "es" ? "Recepción QA" : "QA Receiving",
+        createdAt: row.createdAt || section.updatedAt || section.createdAt || 0,
+        date: section.date || "",
+        associate: section.name || "",
+        location: section.location || "",
+        boxes: Number(row.boxes || 0) || 0,
+        qty: 0,
+        orderedQty: Number(row.orderedQty || 0) || 0,
+        receivedQty: Number(row.receivedQty || 0) || 0,
+        extras: Number(row.extras || 0) || 0,
+        category: row.category || "",
+        notes: row.notes || "",
+        originalDate: row.originalDate || section.date || "",
+        editHistory: Array.isArray(row.editHistory) ? row.editHistory : [],
+      });
+    });
+  });
+
+  // Prep stage
+  (state.data.prepSections || []).forEach((section) => {
+    (section.rows || []).forEach((row) => {
+      if (String(row.po || "").trim() !== targetPo) return;
+      entries.push({
+        sourcePage: "prep",
+        sourceLabel: lang === "es" ? "Preparación" : "Prep",
+        createdAt: row.createdAt || section.updatedAt || section.createdAt || 0,
+        date: section.date || "",
+        associate: section.name || "",
+        location: section.location || "",
+        boxes: Number(row.boxes || 0) || 0,
+        qty: 0,
+        orderedQty: Number(row.orderedQty || 0) || 0,
+        receivedQty: Number(row.receivedQty || 0) || 0,
+        extras: Number(row.extras || 0) || 0,
+        category: row.category || "",
+        notes: row.notes || "",
+        originalDate: row.originalDate || section.date || "",
+        editHistory: Array.isArray(row.editHistory) ? row.editHistory : [],
+      });
+    });
+  });
+
+  // Overstock stage
+  (state.data.overstockEntries || []).forEach((row) => {
+    if (String(row.po || "").trim() !== targetPo) return;
+    entries.push({
+      sourcePage: "overstock",
+      sourceLabel: lang === "es" ? "Exceso / Sobrante" : "Overstock",
+      createdAt: row.updatedAt || row.createdAt || 0,
+      date: row.date || "",
+      associate: row.associate || "",
+      location: row.location || "",
+      status: row.status || "",
+      action: row.action || "",
+      quantity: Number(row.quantity || 0) || 0,
+      notes: row.notes || "",
+      originalDate: row.originalDate || row.date || "",
+      editHistory: Array.isArray(row.editHistory) ? row.editHistory : [],
+    });
+  });
+
+  // Putaway stage
+  (state.data.putawayEntries || []).forEach((row) => {
+    if (String(row.po || "").trim() !== targetPo) return;
+    entries.push({
+      sourcePage: "putaway",
+      sourceLabel: lang === "es" ? "Ubicación" : "Putaway",
+      createdAt: row.updatedAt || row.createdAt || 0,
+      date: row.date || "",
+      associate: row.associate || "",
+      location: row.location || "",
+      status: row.status || "",
+      notes: row.notes || "",
+      originalDate: row.originalDate || row.date || "",
+      editHistory: Array.isArray(row.editHistory) ? row.editHistory : [],
+    });
+  });
+
+  // Sort oldest first so lifecycle reads chronologically top → bottom
+  return entries.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
 }
 
 function getPoHistoryCount(pageKey, po) {
@@ -3118,63 +3310,53 @@ function openBatchHistoryModal(pageKey, po) {
   const totalExtras = rows.reduce((sum, r) => sum + (Number(r.extras || 0) || 0), 0);
 
   stats.innerHTML = `
-    <span class="batch-history-pill">Timeline Entries <strong>${rows.length}</strong></span>
-    <span class="batch-history-pill">Monthly Total <strong>${totalReceived}</strong></span>
-    <span class="batch-history-pill">Boxes Total <strong>${totalBoxes}</strong></span>
-    <span class="batch-history-pill">Ordered Total <strong>${totalOrdered}</strong></span>
-    <span class="batch-history-pill">Extras Total <strong>${totalExtras}</strong></span>
-    <span class="batch-history-pill">Associates <strong>${uniqueAssociates.length}</strong></span>
-    <span class="batch-history-pill">Locations <strong>${uniqueLocations.length}</strong></span>
+    <span class="batch-history-pill">${t("timelineEntries")} <strong>${rows.length}</strong></span>
+    <span class="batch-history-pill">${t("monthlyTotal")} <strong>${totalReceived}</strong></span>
+    <span class="batch-history-pill">${t("boxesTotal")} <strong>${totalBoxes}</strong></span>
+    <span class="batch-history-pill">${t("orderedTotal")} <strong>${totalOrdered}</strong></span>
+    <span class="batch-history-pill">${t("varianceTotal")} <strong>${totalExtras}</strong></span>
+    <span class="batch-history-pill">${t("associates")} <strong>${uniqueAssociates.length}</strong></span>
+    <span class="batch-history-pill">${t("locations")} <strong>${uniqueLocations.length}</strong></span>
   `;
 
-  if (pageKey === "dock") {
-    head.innerHTML = `<tr><th>Created</th><th>Original Work Date</th><th>Associate</th><th>Location</th><th>Boxes</th><th>Qty</th><th>Category</th><th>Notes</th><th>Edit Trail</th></tr>`;
-    body.innerHTML = rows.length ? rows.map(r => `
-      <tr>
-        <td>${formatDateTimeShort(r.createdAt)}</td>
-        <td>${formatDate(r.originalDate || r.date)}</td>
-        <td>${escapeHtml(r.associate || "—")}</td>
-        <td>${escapeHtml(r.location || "—")}</td>
-        <td>${r.boxes}</td>
-        <td>${r.qty}</td>
-        <td>${escapeHtml(r.category || "")}</td>
-        <td>${renderNotesCell(r)}</td>
-        <td>${renderEditHistoryList(r)}</td>
-      </tr>
-    `).join("") : `<tr><td colspan="9" class="batch-history-empty">No history found.</td></tr>`;
-  } else if (pageKey === "receiving" || pageKey === "prep") {
-    head.innerHTML = `<tr><th>Created</th><th>Original Work Date</th><th>Associate</th><th>Location</th><th>Boxes</th><th>Ordered</th><th>Received</th><th>Extras</th><th>Category</th><th>Notes</th><th>Edit Trail</th></tr>`;
-    body.innerHTML = rows.length ? rows.map(r => `
-      <tr>
-        <td>${formatDateTimeShort(r.createdAt)}</td>
-        <td>${formatDate(r.originalDate || r.date)}</td>
-        <td>${escapeHtml(r.associate || "—")}</td>
-        <td>${escapeHtml(r.location || "—")}</td>
-        <td>${r.boxes}</td>
-        <td>${r.orderedQty}</td>
-        <td>${r.receivedQty}</td>
-        <td>${renderExtras(r.extras)}</td>
-        <td>${escapeHtml(r.category || "")}</td>
-        <td>${renderNotesCell(r)}</td>
-        <td>${renderEditHistoryList(r)}</td>
-      </tr>
-    `).join("") : `<tr><td colspan="11" class="batch-history-empty">No history found.</td></tr>`;
-  } else {
-    head.innerHTML = `<tr><th>Created</th><th>Original Work Date</th><th>Associate</th><th>Location</th><th>Qty</th><th>Status</th><th>Action</th><th>Notes</th><th>Edit Trail</th></tr>`;
-    body.innerHTML = rows.length ? rows.map(r => `
-      <tr>
-        <td>${formatDateTimeShort(r.createdAt)}</td>
-        <td>${formatDate(r.originalDate || r.date)}</td>
-        <td>${escapeHtml(r.associate || "—")}</td>
-        <td>${escapeHtml(r.location || "—")}</td>
-        <td>${r.quantity}</td>
-        <td>${translateStatus(r.status || "")}</td>
-        <td>${translateStatus(r.action || "")}</td>
-        <td>${escapeHtml(r.notes || "")}</td>
-        <td>${renderEditHistoryList(r)}</td>
-      </tr>
-    `).join("") : `<tr><td colspan="9" class="batch-history-empty">No history found.</td></tr>`;
-  }
+  // Universal cross-stage timeline — one table for all stages
+  const stageBadgeClass = {
+    dock: "stage-badge-dock", receiving: "stage-badge-receiving", prep: "stage-badge-prep",
+    overstock: "stage-badge-overstock", putaway: "stage-badge-putaway"
+  };
+  head.innerHTML = `<tr>
+    <th>${t("stage")}</th>
+    <th>${t("date")}</th>
+    <th>${t("associate")}</th>
+    <th>${t("location")}</th>
+    <th>${t("boxes")}</th>
+    <th>${t("orderedQty")}</th>
+    <th>${t("receivedQty")}</th>
+    <th>${t("variance")}</th>
+    <th>${t("status")}</th>
+    <th>${t("notes")}</th>
+    <th>${t("editTrail")}</th>
+  </tr>`;
+  body.innerHTML = rows.length ? rows.map(r => {
+    const sc = stageBadgeClass[r.sourcePage] || "stage-badge-dock";
+    const received = r.receivedQty || r.qty || r.quantity || 0;
+    const variance = (r.sourcePage === "receiving" || r.sourcePage === "prep")
+      ? renderExtras(r.extras) : "—";
+    const statusAction = [r.status, r.action].filter(Boolean).map(v => translateStatus(v)).join(" / ") || "—";
+    return `<tr>
+      <td><span class="stage-badge ${sc}">${escapeHtml(r.sourceLabel)}</span></td>
+      <td>${escapeHtml(formatDate(r.originalDate || r.date))}</td>
+      <td><strong>${escapeHtml(r.associate || "—")}</strong></td>
+      <td>${escapeHtml(r.location || "—")}</td>
+      <td>${r.boxes || "—"}</td>
+      <td>${r.orderedQty || "—"}</td>
+      <td>${received || "—"}</td>
+      <td>${variance}</td>
+      <td>${escapeHtml(statusAction)}</td>
+      <td>${renderNotesCell(r)}</td>
+      <td>${renderEditHistoryList(r)}</td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="11" class="batch-history-empty">${t("noHistoryFound")}</td></tr>`;
 
   backdrop.hidden = false;
 }
@@ -3332,9 +3514,27 @@ function setupCategoryResponsiveLayout(editor, existingSizeValues = {}, allowSiz
   toggle();
 }
 
+function hasUnsavedContent(el) {
+  if (!el) return false;
+  for (const inp of el.querySelectorAll('input[type="text"], input[type="number"]')) {
+    const v = String(inp.value || "").trim();
+    if (v && v !== "0") return true;
+  }
+  return false;
+}
+
 function toggleInlineAddRow(pageKey, sectionRoot, sectionId) {
   const existing = sectionRoot.querySelector(".inline-row-editor");
   if (existing) {
+    if (hasUnsavedContent(existing)) {
+      const msg = state.language === "es"
+        ? "Tienes datos sin guardar. ¿Guardar antes de cerrar?"
+        : "You have unsaved data. Save before closing?";
+      if (window.confirm(msg)) {
+        const saveBtn = existing.querySelector("button:not(.ghost-btn)");
+        if (saveBtn) { saveBtn.click(); return; }
+      }
+    }
     existing.remove();
     return;
   }
@@ -3422,7 +3622,18 @@ function toggleInlineAddRow(pageKey, sectionRoot, sectionId) {
 function toggleInlineEditRow(pageKey, tableRow, sectionId, rowId) {
   const tbody = tableRow.parentElement;
   const existing = tbody.querySelector(".row-editing");
-  if (existing && existing !== tableRow.nextElementSibling) existing.remove();
+  if (existing && existing !== tableRow.nextElementSibling) {
+    if (hasUnsavedContent(existing)) {
+      const msg = state.language === "es"
+        ? "Otra fila tiene datos sin guardar. ¿Guardar antes de abrir esta?"
+        : "Another row has unsaved changes. Save before opening this one?";
+      if (window.confirm(msg)) {
+        const saveBtn = existing.querySelector(".save-inline-edit");
+        if (saveBtn) { saveBtn.click(); return; }
+      }
+    }
+    existing.remove();
+  }
   const alreadyOpen = tableRow.nextElementSibling && tableRow.nextElementSibling.classList.contains("row-editing");
   if (alreadyOpen) return tableRow.nextElementSibling.remove();
 
