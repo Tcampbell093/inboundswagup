@@ -1,4 +1,3 @@
-
 const { Pool } = require('pg');
 
 const pool = new Pool({
@@ -22,16 +21,84 @@ function json(statusCode, body) {
 async function ensureSchema() {
   if (schemaReady) return;
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS attendance_records (
-      id BIGSERIAL PRIMARY KEY,
-      employee_name TEXT NOT NULL,
-      department TEXT NOT NULL,
-      date DATE NOT NULL,
-      mark TEXT NOT NULL,
-      demerits NUMERIC NOT NULL DEFAULT 0
+    CREATE TABLE IF NOT EXISTS attendance_sync_state (
+      state_key TEXT PRIMARY KEY,
+      records_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      moves_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(`
+    INSERT INTO attendance_sync_state (state_key, records_json, moves_json)
+    VALUES ('default', '[]'::jsonb, '[]'::jsonb)
+    ON CONFLICT (state_key) DO NOTHING;
+  `);
   schemaReady = true;
+}
+
+function normalizeRecord(item = {}) {
+  return {
+    id: String(item.id || '').trim(),
+    employeeName: String(item.employeeName || '').trim(),
+    department: String(item.department || item.defaultDepartment || 'Receiving').trim(),
+    date: String(item.date || item.attendanceDate || '').trim(),
+    mark: String(item.mark || '').trim(),
+    demerits: Number(item.demerits || 0),
+  };
+}
+
+function normalizeMove(item = {}) {
+  return {
+    id: String(item.id || '').trim(),
+    employeeName: String(item.employeeName || '').trim(),
+    date: String(item.date || item.moveDate || '').trim(),
+    fromDepartment: String(item.fromDepartment || '').trim(),
+    toDepartment: String(item.toDepartment || '').trim(),
+    startTime: String(item.startTime || '').trim(),
+    endTime: String(item.endTime || '').trim(),
+    note: String(item.note || '').trim(),
+    createdAt: String(item.createdAt || '').trim(),
+  };
+}
+
+function normalizeRecords(list = []) {
+  const out = [];
+  const seen = new Map();
+  for (const item of Array.isArray(list) ? list : []) {
+    const normalized = normalizeRecord(item);
+    if (!normalized.employeeName || !normalized.department || !normalized.date || !normalized.mark) continue;
+    const key = `${normalized.employeeName.toLowerCase()}|${normalized.department.toLowerCase()}|${normalized.date}`;
+    seen.set(key, normalized);
+  }
+  for (const value of seen.values()) out.push(value);
+  out.sort((a, b) => String(b.date).localeCompare(String(a.date)) || a.employeeName.localeCompare(b.employeeName) || a.department.localeCompare(b.department));
+  return out;
+}
+
+function normalizeMoves(list = []) {
+  const out = [];
+  const seen = new Set();
+  for (const item of Array.isArray(list) ? list : []) {
+    const normalized = normalizeMove(item);
+    if (!normalized.employeeName || !normalized.date || !normalized.toDepartment) continue;
+    const key = normalized.id || `${normalized.employeeName.toLowerCase()}|${normalized.date}|${normalized.toDepartment.toLowerCase()}|${normalized.startTime}|${normalized.endTime}|${normalized.note}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (!normalized.createdAt) normalized.createdAt = new Date().toISOString();
+    out.push(normalized);
+  }
+  out.sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  return out;
+}
+
+async function readAll() {
+  const result = await pool.query(`SELECT records_json, moves_json, updated_at FROM attendance_sync_state WHERE state_key='default' LIMIT 1;`);
+  const row = result.rows[0] || { records_json: [], moves_json: [], updated_at: null };
+  return {
+    records: normalizeRecords(row.records_json || []),
+    moves: normalizeMoves(row.moves_json || []),
+    updated_at: row.updated_at,
+  };
 }
 
 exports.handler = async function handler(event) {
@@ -43,104 +110,31 @@ exports.handler = async function handler(event) {
     await ensureSchema();
 
     if (event.httpMethod === 'GET') {
-      const result = await pool.query(`
-        SELECT id, employee_name, department, date, mark, demerits
-        FROM attendance_records
-        ORDER BY date DESC, id DESC;
-      `);
-      return json(200, {
-        records: result.rows.map(row => ({
-          id: row.id,
-          employeeName: row.employee_name,
-          department: row.department,
-          date: row.date,
-          mark: row.mark,
-          demerits: Number(row.demerits || 0),
-        })),
-      });
+      return json(200, await readAll());
     }
 
     if (event.httpMethod === 'POST') {
       const body = JSON.parse(event.body || '{}');
-
-      // Full replace sync path
-      if (Array.isArray(body.records)) {
-        const records = body.records
-          .map(item => ({
-            employeeName: String(item.employeeName || '').trim(),
-            department: String(item.department || 'Receiving').trim(),
-            date: String(item.date || '').trim(),
-            mark: String(item.mark || '').trim(),
-            demerits: Number(item.demerits || 0),
-          }))
-          .filter(item => item.employeeName && item.department && item.date && item.mark);
-
-        await pool.query('BEGIN');
-        await pool.query('TRUNCATE TABLE attendance_records RESTART IDENTITY;');
-        for (const item of records) {
-          await pool.query(
-            `INSERT INTO attendance_records (employee_name, department, date, mark, demerits)
-             VALUES ($1, $2, $3, $4, $5);`,
-            [item.employeeName, item.department, item.date, item.mark, item.demerits]
-          );
-        }
-        await pool.query('COMMIT');
-
-        const result = await pool.query(`
-          SELECT id, employee_name, department, date, mark, demerits
-          FROM attendance_records
-          ORDER BY date DESC, id DESC;
-        `);
-        return json(200, {
-          ok: true,
-          records: result.rows.map(row => ({
-            id: row.id,
-            employeeName: row.employee_name,
-            department: row.department,
-            date: row.date,
-            mark: row.mark,
-            demerits: Number(row.demerits || 0),
-          })),
-        });
-      }
-
-      // Legacy single-record path
-      const employeeName = String(body.employeeName || '').trim();
-      const department = String(body.department || '').trim();
-      const date = String(body.date || '').trim();
-      const mark = String(body.mark || '').trim();
-      const demerits = Number(body.demerits || 0);
-
-      if (!employeeName || !department || !date || !mark) {
-        return json(400, { error: 'Missing required attendance fields' });
-      }
-
+      const records = normalizeRecords(Array.isArray(body.records) ? body.records : []);
+      const moves = normalizeMoves(Array.isArray(body.moves) ? body.moves : []);
       const result = await pool.query(
-        `
-        INSERT INTO attendance_records (employee_name, department, date, mark, demerits)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, employee_name, department, date, mark, demerits;
-        `,
-        [employeeName, department, date, mark, demerits]
+        `INSERT INTO attendance_sync_state (state_key, records_json, moves_json, updated_at)
+         VALUES ('default', $1::jsonb, $2::jsonb, NOW())
+         ON CONFLICT (state_key)
+         DO UPDATE SET records_json = EXCLUDED.records_json, moves_json = EXCLUDED.moves_json, updated_at = NOW()
+         RETURNING records_json, moves_json, updated_at;`,
+        [JSON.stringify(records), JSON.stringify(moves)]
       );
-
-      const row = result.rows[0];
       return json(200, {
         ok: true,
-        record: {
-          id: row.id,
-          employeeName: row.employee_name,
-          department: row.department,
-          date: row.date,
-          mark: row.mark,
-          demerits: Number(row.demerits || 0),
-        },
+        records: normalizeRecords(result.rows[0]?.records_json || []),
+        moves: normalizeMoves(result.rows[0]?.moves_json || []),
+        updated_at: result.rows[0]?.updated_at || null,
       });
     }
 
     return json(405, { error: 'Method not allowed' });
   } catch (error) {
-    try { await pool.query('ROLLBACK'); } catch {}
     return json(500, { error: error.message || 'Unknown attendance sync error' });
   }
 };
