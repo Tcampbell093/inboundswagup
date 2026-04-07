@@ -470,8 +470,18 @@ async function syncAttendanceState(){
 async function loadEmployeesFromBackend(){
   try{
     const data=await recordsApiRequest(employeesApiBase,'GET');
-    if(data && Array.isArray(data.employees) && (data.employees.length || !employees.length)){
-      employees=normalizeEmployees(data.employees);
+    const backendEmployees=(data && Array.isArray(data.employees)) ? normalizeEmployees(data.employees) : [];
+    if(backendEmployees.length){
+      employees=backendEmployees;
+      localStorage.setItem(employeesStorageKey,JSON.stringify(employees));
+    } else if(employees.length){
+      // Seed the shared backend once from existing local data when the backend is empty.
+      const seeded=await recordsApiRequest(employeesApiBase,'POST',{employees});
+      if(seeded && Array.isArray(seeded.employees)){
+        employees=normalizeEmployees(seeded.employees);
+        localStorage.setItem(employeesStorageKey,JSON.stringify(employees));
+      }
+    } else {
       localStorage.setItem(employeesStorageKey,JSON.stringify(employees));
     }
     employeesSyncEnabled=true;
