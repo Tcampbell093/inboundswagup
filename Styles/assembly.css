@@ -169,3 +169,45 @@
 
 /* Assembly hold additions */
 .queue-hold-note{line-height:1.45}
+
+
+.assembly-add-modal-backdrop{
+  position:fixed;
+  inset:0;
+  z-index:1000;
+  background:rgba(23,50,74,.45);
+  padding:18px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.assembly-add-modal-card{
+  width:min(1120px,100%);
+  max-height:90vh;
+  overflow:auto;
+  background:#fff;
+  border-radius:24px;
+  box-shadow:0 22px 60px rgba(23,50,74,.22);
+  padding:22px;
+  border:1px solid var(--line);
+}
+.assembly-add-modal-header{margin-bottom:16px}
+.assembly-dual-metric{display:grid;gap:2px;line-height:1.15}
+.assembly-dual-metric strong{font-size:16px;font-weight:900}
+.assembly-dual-metric span{font-size:12px;color:var(--muted);font-weight:800;letter-spacing:.03em}
+#assemblyScheduledUnitsStat,
+#assemblyDoneUnitsStat2,
+#assemblyRemainingUnitsStat,
+#assemblyAaUnits,
+#assemblyPrintUnits,
+#assemblyPickedUnits,
+#assemblyLineUnits,
+#assemblyDpmoUnits,
+#assemblyDoneUnits{
+  font-size:18px;
+  line-height:1.35;
+}
+@media (max-width:700px){
+  .assembly-add-modal-backdrop{padding:12px}
+  .assembly-add-modal-card{padding:16px;border-radius:18px}
+}
