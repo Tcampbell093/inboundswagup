@@ -132,7 +132,7 @@
     }
     saveJson(attendanceStorageKey, attendanceRecords);
     // PATCH: propagate to Neon via the shared sync path
-    if (typeof scheduleAttendanceSync === 'function') scheduleAttendanceSync();
+    if (typeof flushAttendanceSync === 'function') flushAttendanceSync(); else if (typeof scheduleAttendanceSync === 'function') scheduleAttendanceSync();
   }
 
   function formatDateLabel(dateStr){
@@ -390,7 +390,7 @@
     attendanceRecords = attendanceRecords.filter(r => !(r.department === activeAttendanceDepartment && r.date === selectedDate && roster.includes(r.employeeName)));
     saveJson(attendanceStorageKey, attendanceRecords);
     // PATCH: propagate to Neon via the shared sync path
-    if (typeof scheduleAttendanceSync === 'function') scheduleAttendanceSync();
+    if (typeof flushAttendanceSync === 'function') flushAttendanceSync(); else if (typeof scheduleAttendanceSync === 'function') scheduleAttendanceSync();
     if (editorDraft){ Object.keys(editorDraft).forEach(name => editorDraft[name] = ''); renderEditorTable(); }
     afterRosterChange();
   }
