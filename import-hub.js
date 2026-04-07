@@ -147,6 +147,11 @@
     } else {
       renderImportStatus();
     }
+
+    // Keep Daily Brief cards in sync when imports are triggered from the Import Hub
+    if(typeof window.huddleRefresh === 'function'){
+      try { window.huddleRefresh(); } catch(_) {}
+    }
   }
 
   // ── Clear ──────────────────────────────────────────────────────────────────
@@ -166,6 +171,9 @@
       if(els.eom)        els.eom.value        = '';
       if(els.revTracker) els.revTracker.value = '';
       setStatus('All imports cleared.');
+      if(typeof window.huddleRefresh === 'function'){
+        try { window.huddleRefresh(); } catch(_) {}
+      }
     } catch(e){
       setStatus(e?.message || 'Clear failed.', true);
     }

@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fulfillment Scan-Out</title>
+  <link rel="stylesheet" href="fulfillment-scan-prototype.css">
+</head>
+<body class="fsp-standalone-body">
+<section id="fulfillmentScanPage" class="page is-standalone">
+  <div class="fsp-shell fsp-embedded">
+    <header class="fsp-hero">
+      <div class="fsp-brand">
+        <img src="assets/houston-control-logo-left.png" alt="Houston Control logo">
+        <div>
+          <div class="fsp-eyebrow">Fulfillment module</div>
+          <h1>Fulfillment Scan-Out</h1>
+          <p>Scanner-first shipment confirmation with pallet tracking, duplicate protection, traffic visibility, and shipment lookup for investigations.</p>
+        </div>
+      </div>
+      <div class="fsp-hero-actions">
+        <button id="fspExportBtn" class="fsp-btn secondary" type="button">Export day JSON</button>
+        <a class="fsp-btn secondary" href="fulfillment-scan-out.html" target="_blank" rel="noopener">Open standalone page</a>
+        <button id="fspResetBtn" class="fsp-btn danger" type="button">Clear fulfillment data</button>
+      </div>
+    </header>
+
+    <section class="fsp-grid-top">
+      <article class="fsp-card fsp-card-operator">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Session</div>
+            <h2>Operator & day</h2>
+          </div>
+        </div>
+        <div class="fsp-form-grid two">
+          <label>
+            <span>Operator</span>
+            <input id="fspOperatorInput" type="text" list="fspOperatorOptions" autocomplete="off" spellcheck="false" placeholder="Select or type operator name">
+            <datalist id="fspOperatorOptions"></datalist>
+          </label>
+          <div class="fsp-info-card">
+            <span>Station</span>
+            <strong>Main scan station</strong>
+            <small>Names come from Attendance so you can type to narrow the list or pick a name fast.</small>
+          </div>
+          <label>
+            <span>View date</span>
+            <input id="fspDateInput" type="date">
+          </label>
+          <label>
+            <span>Shift note</span>
+            <input id="fspSessionNoteInput" type="text" placeholder="Optional shift note">
+          </label>
+        </div>
+      </article>
+
+      <article class="fsp-card fsp-card-status">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Live status</div>
+            <h2>Current pallet</h2>
+          </div>
+          <span id="fspStatusPill" class="fsp-status-pill idle">No pallet open</span>
+        </div>
+        <div class="fsp-open-pallet" id="fspOpenPalletSummary">
+          <div class="fsp-empty-state">Pick a carrier below, start a pallet, then scan box after box.</div>
+        </div>
+        <div class="fsp-summary-strip" id="fspLiveStrip"></div>
+      </article>
+    </section>
+
+    <section class="fsp-grid-main">
+      <article class="fsp-card fsp-scan-card">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Scanner lane</div>
+            <h2>Scan intake</h2>
+          </div>
+          <div class="fsp-inline-actions">
+            <span class="fsp-helper-copy" style="margin:0;">Use the carrier popup to open the next pallet.</span>
+          </div>
+        </div>
+
+        <div class="fsp-scan-box">
+          <div class="fsp-start-toolbar">
+            <div class="fsp-info-card">
+              <span>Carrier for next pallet</span>
+              <strong id="fspSelectedCarrierText">—</strong>
+              <small>Keep this tucked away in a popup so the main scan page stays clean.</small>
+            </div>
+            <div class="fsp-inline-actions">
+              <button id="fspOpenCarrierPickerBtn" class="fsp-btn secondary" type="button">Choose carrier</button>
+              <button id="fspOpenCarrierSetupBtn" class="fsp-btn secondary" type="button">Carrier setup</button>
+              <button id="fspStartSelectedBtn" class="fsp-btn primary" type="button">Start selected carrier</button>
+            </div>
+          </div>
+
+          <label for="fspScanInput"><span>Scan barcode value</span></label>
+          <p class="fsp-helper-copy">Operator must be selected before a pallet can be opened or any scan can be accepted.</p>
+          <div class="fsp-scan-row">
+            <input id="fspScanInput" type="text" autocomplete="off" spellcheck="false" placeholder="Scanner waits for Enter suffix after each scan">
+            <button id="fspProcessScanBtn" class="fsp-btn primary" type="button">Submit</button>
+          </div>
+          <div class="fsp-command-list">
+            <span>Scanner command:</span>
+            <button type="button" class="fsp-chip" data-command="PALLET_END">PALLET_END</button>
+          </div>
+        </div>
+
+        <div id="fspAlertArea" class="fsp-alert-area"></div>
+
+        <div class="fsp-card-subsection">
+          <div class="fsp-subhead-row">
+            <h3>Current pallet scans</h3>
+            <div class="fsp-inline-actions">
+              <button id="fspUndoBtn" class="fsp-btn secondary" type="button">Delete last accepted scan</button>
+            </div>
+          </div>
+          <div class="fsp-table-wrap">
+            <table class="fsp-table fsp-compact-table">
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Tracking</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="fspCurrentScanBody"></tbody>
+            </table>
+          </div>
+          <p class="fsp-helper-copy">If the wrong box gets scanned onto the pallet, remove it here before closing the pallet.</p>
+        </div>
+
+        <div class="fsp-card-subsection">
+          <div class="fsp-subhead-row">
+            <h3>Last events</h3>
+          </div>
+          <div class="fsp-table-wrap">
+            <table class="fsp-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Type</th>
+                  <th>Value</th>
+                  <th>Carrier</th>
+                  <th>Result</th>
+                  <th>Pallet</th>
+                </tr>
+              </thead>
+              <tbody id="fspEventLogBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </article>
+
+      <aside class="fsp-side-stack">
+        <article class="fsp-card">
+          <div class="fsp-card-head">
+            <div>
+              <div class="fsp-eyebrow">Shipment lookup</div>
+              <h2>Find a scanned label</h2>
+            </div>
+          </div>
+          <div class="fsp-form-grid">
+            <label for="fspLookupInput">
+              <span>Scan or paste tracking number</span>
+              <input id="fspLookupInput" type="text" autocomplete="off" spellcheck="false" placeholder="Scan label here to search full history">
+            </label>
+            <div class="fsp-inline-actions">
+              <button id="fspLookupBtn" class="fsp-btn primary" type="button">Search shipment</button>
+              <button id="fspLookupClearBtn" class="fsp-btn secondary" type="button">Clear</button>
+            </div>
+          </div>
+          <div id="fspLookupResult" class="fsp-lookup-result"></div>
+        </article>
+
+        <article class="fsp-card">
+          <div class="fsp-card-head">
+            <div>
+              <div class="fsp-eyebrow">Daily snapshot</div>
+              <h2>Today’s numbers</h2>
+            </div>
+          </div>
+          <div class="fsp-stat-grid" id="fspStatsGrid"></div>
+        </article>
+      </aside>
+    </section>
+
+    <section class="fsp-grid-bottom">
+      <article class="fsp-card">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Traffic through the day</div>
+            <h2>Volume by time block</h2>
+          </div>
+          <label class="fsp-traffic-control">
+            <span>Bucket size</span>
+            <select id="fspBucketSizeSelect">
+              <option value="15">15 min</option>
+              <option value="30">30 min</option>
+              <option value="60">60 min</option>
+            </select>
+          </label>
+        </div>
+        <div class="fsp-traffic-summary" id="fspTrafficSummary"></div>
+        <div class="fsp-chart-wrap" id="fspTrafficChart"></div>
+        <div class="fsp-table-wrap">
+          <table class="fsp-table">
+            <thead>
+              <tr>
+                <th>Time block</th>
+                <th>Accepted scans</th>
+                <th>Pallets closed</th>
+                <th>Rejected scans</th>
+              </tr>
+            </thead>
+            <tbody id="fspTrafficBody"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="fsp-card">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Closed pallets</div>
+            <h2>Pallet history for selected date</h2>
+          </div>
+        </div>
+        <div class="fsp-table-wrap">
+          <table class="fsp-table">
+            <thead>
+              <tr>
+                <th>Pallet ID</th>
+                <th>Carrier</th>
+                <th>Boxes</th>
+                <th>Opened</th>
+                <th>Closed</th>
+                <th>Operator</th>
+              </tr>
+            </thead>
+            <tbody id="fspPalletHistoryBody"></tbody>
+          </table>
+        </div>
+
+        <div class="fsp-card-subsection">
+          <div class="fsp-subhead-row">
+            <h3>Rejected lane</h3>
+          </div>
+          <div class="fsp-table-wrap">
+            <table class="fsp-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Value</th>
+                  <th>Result</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody id="fspRejectedBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <div id="fspCarrierPickerModal" class="fsp-modal-backdrop" hidden>
+      <div class="fsp-modal">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Carrier for next pallet</div>
+            <h2>Choose carrier for the next pallet</h2>
+          </div>
+          <button class="fsp-btn secondary" type="button" data-close-modal="carrier-picker">Close</button>
+        </div>
+        <div id="fspQuickStartArea" class="fsp-quick-start-grid"></div>
+      </div>
+    </div>
+
+    <div id="fspCarrierSetupModal" class="fsp-modal-backdrop" hidden>
+      <div class="fsp-modal">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Carrier setup</div>
+            <h2>Add or remove carriers</h2>
+          </div>
+          <button class="fsp-btn secondary" type="button" data-close-modal="carrier-setup">Close</button>
+        </div>
+        <div class="fsp-form-grid carrier-admin-grid">
+          <label>
+            <span>New carrier name</span>
+            <input id="fspNewCarrierInput" type="text" placeholder="Example: DHL">
+          </label>
+          <button id="fspAddCarrierBtn" class="fsp-btn primary" type="button">Add carrier</button>
+        </div>
+        <div id="fspCarrierList" class="fsp-carrier-list"></div>
+      </div>
+    </div>
+  </div>
+</section>
+<script src="fulfillment-scan-prototype.js"></script>
+</body>
+</html>

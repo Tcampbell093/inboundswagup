@@ -472,6 +472,30 @@ window.__sordState = state;
   function parseEomImportRows(rawRows){
     return rawRows.map(raw=>{
       const r=objectWithNormalizedKeys(raw);
+
+      // The "Products Received" column is a JSON array with per-size breakdowns.
+      // Each element has OriginalQuantity (ordered) and ProductsReceived (received).
+      // This is the only reliable source of unit counts in the SORD Summary report.
+      let jsonOrdered = 0;
+      let jsonReceived = 0;
+      const productsReceivedRaw = r.products_received || r.products_received_description || r.received_products || '';
+      if (productsReceivedRaw) {
+        try {
+          const parsed = JSON.parse(String(productsReceivedRaw));
+          if (Array.isArray(parsed)) {
+            parsed.forEach(item => {
+              jsonOrdered   += num(item.OriginalQuantity   || item.originalQuantity   || item.ordered_quantity  || 0);
+              jsonReceived  += num(item.ProductsReceived   || item.productsReceived   || item.received_quantity || 0);
+            });
+          }
+        } catch (_) { /* non-JSON value — ignore */ }
+      }
+
+      const quantity         = jsonOrdered  || num(r.quantity || r.original_quantity || r.ordered_quantity);
+      const quantityReceived = jsonReceived || num(r.quantity_received || r.received_quantity || r.products_received_quantity || r.original_received_quantity);
+      const itemTotalCost = num(r.item_total_cost || r.total_item_cost || r.item_cost);
+      const lineItemPrice = num(r.line_item_price || r.item_price || r.unit_price || r.opportunity_quote_product_total_price || r.opportunity_quote_p_item_opportunity_quote_product_total_price);
+      const unitPrice = lineItemPrice > 0 && quantity > 0 ? (lineItemPrice / quantity) : 0;
       return {
         sord: safeText(r.opportunity_quote_sales_order_sales_order_name || r.sales_order_name || r.sales_order || r.sord),
         salesOrderId: safeText(r.sales_order_id),
@@ -484,8 +508,9 @@ window.__sordState = state;
         estimatedShipDate: safeText(r.estimated_ship_date || r.requested_in_hands_date_from_supplier || r.ship_date),
         createdDate: safeText(r.created_date),
         ihd: safeText(r.opportunity_quote_sales_order_in_hands_date || r.in_hands_date),
-        itemTotalCost: num(r.item_total_cost || r.total_item_cost || r.item_cost),
-        lineItemPrice: num(r.line_item_price || r.item_price || r.unit_price || r.opportunity_quote_product_total_price || r.opportunity_quote_p_item_opportunity_quote_product_total_price),
+        itemTotalCost,
+        lineItemPrice,
+        unitPrice,
         invoiceTotal: num(r.opportunity_quote_invoice_total || r.invoice_total),
         subtotal: num(r.subtotal || r.invoice_subtotal || r.opportunity_quote_invoice_subtotal),
         originalSubtotal: num(r.original_subtotal || r.originalsubtotal || r.opportunity_quote_invoice_original_subtotal),
@@ -497,8 +522,11 @@ window.__sordState = state;
         accountProductName: safeText(r.account_product_account_product_name || r.account_product || r.account_product_name),
         accountProductExternalId: safeText(r.account_product_external_id),
         externalId: safeText(r.external_id),
-        quantity: num(r.quantity),
-        quantityReceived: num(r.quantity_received),
+        quantity,
+        quantityReceived,
+        itemReceivedAtWarehouseDate: safeText(r.item_received_at_warehouse_date || r.received_at_warehouse_date || r.item_received_date),
+        productsReceived: safeText(r.products_received || r.products_received_description || r.received_products),
+        floorValue: quantityReceived > 0 && unitPrice > 0 ? quantityReceived * unitPrice : 0,
         image: safeText(r.image || r.image_url || r.thumbnail || r.po_image)
       };
     }).filter(r => r.sord || r.salesOrderId || r.purchaseOrderId || r.purchaseOrderName);
@@ -1397,6 +1425,14 @@ function renderExplorer(){
       };
       await saveState();
       rebuildAndRender();
+      // PATCH: Save a daily SORD status snapshot for historical analysis
+      if (typeof window.huddleSaveSordSnapshot === 'function') {
+        window.huddleSaveSordSnapshot(state.dataset, state.imports.importedAt);
+      }
+      // PATCH: force Daily Brief / Huddle Dashboard to repaint immediately after SORD imports
+      if (typeof window.huddleRefresh === 'function') {
+        try { window.huddleRefresh(); } catch (_) {}
+      }
       const text = `SORD data imported. Queue rows: ${fmtInt(state.imports.queueRows.length)} • Revenue rows: ${fmtInt(state.imports.revenueRows.length)} • EOM rows: ${fmtInt(state.imports.eomRows.length)}${summarizeFileNames() ? ' • ' + summarizeFileNames() : ''}`;
       setStatus(text);
       return { message: text, counts: { queue: state.imports.queueRows.length, revenue: state.imports.revenueRows.length, eom: state.imports.eomRows.length } };
@@ -1418,6 +1454,9 @@ function renderExplorer(){
     if (els.eomInput) els.eomInput.value='';
     const text='Imported <a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BDbJMAW/view" target="_blank" rel="noopener noreferrer">SORD report</a> data cleared. Live queue / assembly data is still visible when it can be matched.';
     setStatus(text);
+    if (typeof window.huddleRefresh === 'function') {
+      try { window.huddleRefresh(); } catch (_) {}
+    }
     return { message: text };
   }
 

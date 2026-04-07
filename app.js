@@ -66,6 +66,7 @@ function applyWorkflowSyncPayload(payload={}){
     state.data = {
       ...defaults,
       ...parsed,
+      pallets: Array.isArray(parsed.pallets) ? parsed.pallets : defaults.pallets,
       dockFilters: { ...defaults.dockFilters, ...(parsed.dockFilters || {}) },
       receivingFilters: { ...defaults.receivingFilters, ...(parsed.receivingFilters || {}) },
       prepFilters: { ...defaults.prepFilters, ...(parsed.prepFilters || {}) },
@@ -184,7 +185,7 @@ const translations = {
     timelineEntries: "Timeline Entries", monthlyTotal: "Monthly Total",
     noHistoryFound: "No history found for this PO.",
     // Filter / UI
-    viewTimeline: "View Timeline", filterResults: "Filter",
+    viewTimeline: "View Timeline", fullPoHistory: "Full PO History", viewPutawayEntries: "View Putaway Entries", hidePutawayEntries: "Hide Putaway Entries", filterResults: "Filter",
     status: "Status", edit: "Edit", delete: "Delete", close: "Close",
     poTimeline: "PO Timeline", resetPace: "Reset Pace Images", performance: "Performance", settings: "Settings",
     hideFilter: "Hide Filter", showFilter: "Show Filter",
@@ -233,7 +234,7 @@ const translations = {
     boxesTotal: "Total cajas", varianceTotal: "Total diferencia",
     timelineEntries: "Entradas de historial", monthlyTotal: "Total mensual",
     noHistoryFound: "No se encontró historial para este PO.",
-    viewTimeline: "Ver historial", filterResults: "Filtrar",
+    viewTimeline: "Ver historial", fullPoHistory: "Historial completo del PO", viewPutawayEntries: "Ver entradas de ubicación", hidePutawayEntries: "Ocultar entradas de ubicación", filterResults: "Filtrar",
     status: "Estado", edit: "Editar", delete: "Eliminar", close: "Cerrar",
     poTimeline: "Historial de PO", resetPace: "Restablecer imágenes", performance: "Rendimiento", settings: "Configuración",
     hideFilter: "Ocultar filtro", showFilter: "Mostrar filtro",
@@ -377,6 +378,21 @@ function getSectionUnitsForHero(section, deptKey) {
   }, 0);
 }
 
+function getPulseUphSummary(context, flatRows) {
+  const rows = Array.isArray(flatRows) ? flatRows : getPalletRowsForPulse(context || getHeroPulseContext());
+  const totalUnits = rows.reduce((sum, row) => sum + (Number(row.units || 0) || 0), 0);
+  const uniquePeople = new Set(
+    rows
+      .map(row => String(row.associate || '').trim())
+      .filter(Boolean)
+      .filter(name => name.toLowerCase() !== 'unknown')
+  );
+  const headcount = uniquePeople.size;
+  const hours = 8;
+  const uph = headcount > 0 && hours > 0 ? +(totalUnits / (headcount * hours)).toFixed(1) : 0;
+  return { totalUnits, headcount, hours, uph };
+}
+
 
 
 const UPH_PACE_CUSTOM_KEY = "qaWorkflowUphPaceCustomImagesV1";
@@ -495,19 +511,27 @@ function renderCurrentDeptUphBadge() {
   }
 
   const today = new Date().toISOString().slice(0, 10);
+  const pulseContext = getHeroPulseContext();
+  const pulseRows = pulseContext && pulseContext.key === context.key ? getPalletRowsForPulse(pulseContext) : [];
+  const pulseSummary = pulseRows.length ? getPulseUphSummary(pulseContext, pulseRows) : null;
   const todaysSections = context.rows.filter(section => String(section.date || "").slice(0,10) === today);
-  const usingSections = todaysSections.length ? todaysSections : context.rows;
-  const headcount = Math.max(1, usingSections.length);
-  const hours = 8;
-  const totalUnits = usingSections.reduce((sum, section) => sum + getSectionUnitsForHero(section, context.key), 0);
+  const fallbackHeadcount = todaysSections.length;
+  const fallbackHours = 8;
+  const fallbackUnits = todaysSections.reduce((sum, section) => sum + getSectionUnitsForHero(section, context.key), 0);
+  const headcount = pulseSummary ? pulseSummary.headcount : fallbackHeadcount;
+  const hours = pulseSummary ? pulseSummary.hours : fallbackHours;
+  const totalUnits = pulseSummary ? pulseSummary.totalUnits : fallbackUnits;
   const uph = headcount > 0 && hours > 0 ? +(totalUnits / (headcount * hours)).toFixed(1) : 0;
   const ratio = context.goal > 0 ? uph / context.goal : 0;
 
   labelEl.textContent = `${context.label} UPH`;
   valueEl.textContent = String(uph);
-  metaEl.textContent = `${totalUnits} units • goal ${context.goal} • ${headcount} people`;
+  metaEl.textContent = headcount
+    ? `${totalUnits} units today • goal ${context.goal} • ${headcount} people`
+    : `0 units today • goal ${context.goal} • 0 people`;
 
-  if (ratio >= 1) badge.classList.add("uph-state-green");
+  if (!headcount) badge.classList.add("uph-state-neutral");
+  else if (ratio >= 1) badge.classList.add("uph-state-green");
   else if (ratio >= 0.7) badge.classList.add("uph-state-yellow");
   else badge.classList.add("uph-state-red");
 
@@ -1823,53 +1847,45 @@ function getAllWorkflowRows() {
   const rows = [];
   const importedRows = getImportedRowsForPerformance();
   importedRows.forEach(r => rows.push(r));
-  (state.data.dockSections || []).forEach(section => {
-    (section.rows || []).forEach(row => {
-      rows.push({
-        department: "Docker",
-        associate: section.name || "",
-        date: section.date || "",
-        units: Number(row.qty || 0),
-        boxes: Number(row.boxes || 0),
-        extras: 0,
-        missing: 0,
-        po: row.po || "",
-        category: row.category || "",
-      });
+
+  const pallets = Array.isArray(state.data.pallets) ? state.data.pallets : [];
+  pallets.forEach(pallet => {
+    const date = String(pallet.date || (pallet.updatedAt ? new Date(pallet.updatedAt).toISOString().slice(0,10) : '') || '');
+    (pallet.pos || []).forEach(row => {
+      const po = row.po || '';
+      const category = row.category || '';
+      const boxes = Number(row.boxes || 0) || 0;
+      const ordered = Number(row.orderedQty || 0) || 0;
+      const received = Number(row.receivedQty || 0) || 0;
+      const prepReceived = Number(row.prepReceivedQty || 0) || 0;
+      const extras = Math.max(0, received - ordered);
+      const missing = Math.max(0, ordered - received);
+      rows.push({ department: 'Docker', associate: pallet.createdBy || '', date, units: ordered, boxes, extras: 0, missing: 0, po, category });
+      if (row.receivingDone === true || received > 0) {
+        rows.push({ department: 'QA Receiving', associate: (pallet.events || []).slice().reverse().find(evt => String(evt.type || '').includes('recv'))?.by || '', date, units: received, boxes, extras, missing, po, category });
+      }
+      if (row.prepVerified === true || prepReceived > 0) {
+        rows.push({ department: 'Prep', associate: (pallet.events || []).slice().reverse().find(evt => String(evt.type || '').includes('prep'))?.by || '', date, units: prepReceived, boxes, extras: Math.max(0, prepReceived - received), missing: Math.max(0, received - prepReceived), po, category });
+      }
     });
   });
-  (state.data.receivingSections || []).forEach(section => {
-    (section.rows || []).forEach(row => {
-      const extras = Number(row.extras || 0);
-      rows.push({
-        department: "QA Receiving",
-        associate: section.name || "",
-        date: section.date || "",
-        units: Number(row.receivedQty || row.orderedQty || 0),
-        boxes: Number(row.boxes || 0),
-        extras: extras > 0 ? extras : 0,
-        missing: extras < 0 ? Math.abs(extras) : 0,
-        po: row.po || "",
-        category: row.category || "",
+
+  if (!rows.some(r => r.department === 'QA Receiving')) {
+    (state.data.receivingSections || []).forEach(section => {
+      (section.rows || []).forEach(row => {
+        const extras = Number(row.extras || 0);
+        rows.push({ department: 'QA Receiving', associate: section.name || '', date: section.date || '', units: Number(row.receivedQty || row.orderedQty || 0), boxes: Number(row.boxes || 0), extras: extras > 0 ? extras : 0, missing: extras < 0 ? Math.abs(extras) : 0, po: row.po || '', category: row.category || '' });
       });
     });
-  });
-  (state.data.prepSections || []).forEach(section => {
-    (section.rows || []).forEach(row => {
-      const extras = Number(row.extras || 0);
-      rows.push({
-        department: "Prep",
-        associate: section.name || "",
-        date: section.date || "",
-        units: Number(row.receivedQty || row.orderedQty || 0),
-        boxes: Number(row.boxes || 0),
-        extras: extras > 0 ? extras : 0,
-        missing: extras < 0 ? Math.abs(extras) : 0,
-        po: row.po || "",
-        category: row.category || "",
+  }
+  if (!rows.some(r => r.department === 'Prep')) {
+    (state.data.prepSections || []).forEach(section => {
+      (section.rows || []).forEach(row => {
+        const extras = Number(row.extras || 0);
+        rows.push({ department: 'Prep', associate: section.name || '', date: section.date || '', units: Number(row.receivedQty || row.orderedQty || 0), boxes: Number(row.boxes || 0), extras: extras > 0 ? extras : 0, missing: extras < 0 ? Math.abs(extras) : 0, po: row.po || '', category: row.category || '' });
       });
     });
-  });
+  }
   return rows;
 }
 
@@ -2467,61 +2483,44 @@ function applyLanguage() {
 }
 
 function bindPageEvents() {
+  // The old section forms and filter controls have been removed from the DOM
+  // (replaced by the pallet module). Guard every getElementById so the init
+  // chain does not throw and kill tab-switching and other unrelated features.
   Object.entries(pageConfig).forEach(([pageKey, cfg]) => {
-    document.getElementById(cfg.sectionForm).addEventListener("submit", (event) => {
-      event.preventDefault();
-      const date = document.getElementById(cfg.sectionDate).value;
-      const name = state.currentUser || "";
-      const location = document.getElementById(cfg.sectionLocation).value;
-      if (!location) return window.alert("Location is required.");
-      if (!name) return window.alert(state.language === "es" ? "Primero selecciona un usuario actual." : "Select a current user first.");
-
-      state.data[cfg.sectionKey].unshift({
-        id: makeId(),
-        date,
-        name,
-        location,
-        rows: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
+    const sectionForm = document.getElementById(cfg.sectionForm);
+    if (sectionForm) {
+      sectionForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const date = document.getElementById(cfg.sectionDate).value;
+        const name = state.currentUser || "";
+        const location = document.getElementById(cfg.sectionLocation).value;
+        if (!location) return window.alert("Location is required.");
+        if (!name) return window.alert(state.language === "es" ? "Primero selecciona un usuario actual." : "Select a current user first.");
+        state.data[cfg.sectionKey].unshift({ id: makeId(), date, name, location, rows: [], createdAt: Date.now(), updatedAt: Date.now() });
+        persistData();
+        sectionForm.reset();
+        renderPage(pageKey);
       });
+    }
 
-      persistData();
-      document.getElementById(cfg.sectionForm).reset();
-      renderPage(pageKey);
-    });
+    const personFilter = document.getElementById(cfg.personFilter);
+    if (personFilter) personFilter.addEventListener("change", (e) => { state.data[cfg.filterKey].person = e.target.value; renderPage(pageKey); });
 
-    document.getElementById(cfg.personFilter).addEventListener("change", (e) => {
-      state.data[cfg.filterKey].person = e.target.value;
-      renderPage(pageKey);
-    });
+    const dayFilter = document.getElementById(cfg.dayFilter);
+    if (dayFilter) dayFilter.addEventListener("change", (e) => { state.data[cfg.filterKey].day = e.target.value; renderPage(pageKey); });
 
-    document.getElementById(cfg.dayFilter).addEventListener("change", (e) => {
-      state.data[cfg.filterKey].day = e.target.value;
-      renderPage(pageKey);
-    });
-
-    document.getElementById(cfg.searchInput).addEventListener("input", (e) => {
-      state.data[cfg.filterKey].search = e.target.value.trim().toLowerCase();
-      renderPage(pageKey);
-    });
+    const searchInput = document.getElementById(cfg.searchInput);
+    if (searchInput) searchInput.addEventListener("input", (e) => { state.data[cfg.filterKey].search = e.target.value.trim().toLowerCase(); renderPage(pageKey); });
 
     const mineBtnId = pageKey === "dock" ? "myItemsBtn" : pageKey === "receiving" ? "receivingMyItemsBtn" : "prepMyItemsBtn";
-    document.getElementById(mineBtnId).addEventListener("click", () => {
-      state.data[cfg.filterKey].mineOnly = !state.data[cfg.filterKey].mineOnly;
-      renderPage(pageKey);
-    });
+    const mineBtn = document.getElementById(mineBtnId);
+    if (mineBtn) mineBtn.addEventListener("click", () => { state.data[cfg.filterKey].mineOnly = !state.data[cfg.filterKey].mineOnly; renderPage(pageKey); });
 
-    document.getElementById(cfg.clearFiltersBtn).addEventListener("click", () => {
-      state.data[cfg.filterKey] = { person: "All", day: "", search: "", mineOnly: false };
-      renderPage(pageKey);
-    });
+    const clearBtn = document.getElementById(cfg.clearFiltersBtn);
+    if (clearBtn) clearBtn.addEventListener("click", () => { state.data[cfg.filterKey] = { person: "All", day: "", search: "", mineOnly: false }; renderPage(pageKey); });
 
-    document.getElementById(cfg.seedBtn).addEventListener("click", () => {
-      state.data[cfg.sectionKey] = demoSections(pageKey);
-      persistData();
-      renderPage(pageKey);
-    });
+    const seedBtn = document.getElementById(cfg.seedBtn);
+    if (seedBtn) seedBtn.addEventListener("click", () => { state.data[cfg.sectionKey] = demoSections(pageKey); persistData(); renderPage(pageKey); });
   });
 }
 
@@ -2653,10 +2652,27 @@ function populateOverstockFormSelects() {
     const prepMap = getPrepPoReferenceMap();
     const previous = poSelect.value;
     poSelect.innerHTML = "";
-    appendOption(poSelect, "", "Select Prep PO");
+    appendOption(poSelect, "", "Select PO from Prep");
     [...prepMap.values()]
+      .filter(item => item.quantity > 0)   // only show POs that actually have overstock
       .sort((a,b)=>a.po.localeCompare(b.po))
-      .forEach(item => appendOption(poSelect, item.po, `${item.po} • Qty ${item.quantity}`));
+      .forEach(item => {
+        const label = [
+          item.po,
+          item.palletLabel ? `[${item.palletLabel}]` : '',
+          item.category    ? item.category            : '',
+          `+${item.quantity} overstock`,
+        ].filter(Boolean).join(' • ');
+        appendOption(poSelect, item.po, label);
+      });
+    // Also show POs with 0 overstock but from pallets (so operator can still log manual entries)
+    [...prepMap.values()]
+      .filter(item => item.quantity <= 0)
+      .sort((a,b)=>a.po.localeCompare(b.po))
+      .forEach(item => {
+        const label = [item.po, item.palletLabel ? `[${item.palletLabel}]` : '', item.category].filter(Boolean).join(' • ') + ' (no overstock)';
+        appendOption(poSelect, item.po, label);
+      });
     poSelect.value = prepMap.has(previous) ? previous : "";
   }
 
@@ -2716,6 +2732,55 @@ function populateOverstockFilterSelects() {
 function renderOverstockPage() {
   if (!Array.isArray(state.data.overstockEntries)) state.data.overstockEntries = [];
   if (!state.data.overstockFilters) state.data.overstockFilters = { date: "", associate: "All", location: "All", status: "All", search: "", mineOnly: false };
+
+  // ── Pallet-sourced overstock queue ───────────────────────────────────────
+  const overstockQueueEl = document.getElementById("overstockPalletQueue");
+  if (overstockQueueEl) {
+    const pallets = Array.isArray(state.data.pallets) ? state.data.pallets : [];
+    const palletOverstockPOs = [];
+    pallets.filter(p => p.status === 'prep' || p.status === 'done').forEach(pallet => {
+      (pallet.pos || []).forEach(po => {
+        const ord  = po.orderedQty  != null ? Number(po.orderedQty)  : 0;
+        const recv = po.receivedQty != null ? Number(po.receivedQty) : 0;
+        const over = Math.max(0, recv - ord);
+        if (over > 0) palletOverstockPOs.push({ po: po.po, overstock: over, ordered: ord, received: recv, category: po.category || '—', pallet: pallet.label, palletDate: pallet.date || '', status: pallet.status });
+      });
+    });
+
+    if (palletOverstockPOs.length === 0) {
+      overstockQueueEl.innerHTML = '';
+    } else {
+      const rows = palletOverstockPOs.map(item => `
+        <tr>
+          <td><strong>PO# ${escapeHtml(item.po)}</strong></td>
+          <td>${escapeHtml(item.category)}</td>
+          <td>${item.ordered}</td>
+          <td>${item.received}</td>
+          <td><span style="font-weight:700;color:#854d0e;background:#fef9c3;padding:2px 8px;border-radius:6px;">+${item.overstock}</span></td>
+          <td>${escapeHtml(item.pallet)}${item.palletDate ? ' · ' + item.palletDate : ''}</td>
+          <td><span style="font-size:0.75rem;color:#555;">${item.status === 'done' ? '✅ Done' : '🔀 In Prep'}</span></td>
+        </tr>`).join('');
+      overstockQueueEl.innerHTML = `
+        <section class="panel" style="border-left:4px solid #d97706;">
+          <div class="panel-header">
+            <div>
+              <h2>📤 Overstock from Pallets</h2>
+              <p>These POs have extras that automatically go to Overstock based on the difference between what was ordered and what was received. Log them below.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="sheet-table">
+              <thead><tr>
+                <th>PO #</th><th>Category</th>
+                <th>Ordered</th><th>Received</th><th>Overstock Qty</th>
+                <th>Pallet</th><th>Stage</th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </section>`;
+    }
+  }
 
   populateOverstockFormSelects();
   populateOverstockFilterSelects();
@@ -2886,6 +2951,8 @@ function bindRoleTabs() {
     if (state.currentPage === "performance") renderPerformancePage();
     if (state.currentPage === "overstock") renderOverstockPage();
     if (state.currentPage === "putaway") renderPutawayPage();
+    // Re-render pallet panels whenever a tab is clicked (they are lazy-rendered)
+    if (typeof plt_renderAllPanels === "function") plt_renderAllPanels();
     renderStats();
     renderCurrentDeptUphBadge();
   });
@@ -2907,7 +2974,8 @@ function normalizeAuditFieldsAcrossWorkflow() {
 function renderAll() {
   normalizeAuditFieldsAcrossWorkflow();
   syncAssociatesFromAttendance();
-  Object.keys(pageConfig).forEach(renderPage);
+  // dock/receiving/prep are now pallet-driven; their old section DOM is removed.
+  // inbound-pallets.js handles those panels via plt_renderAllPanels().
   renderOverstockPage();
   renderPutawayPage();
   renderPerformancePage();
@@ -2924,21 +2992,38 @@ function renderAll() {
 function renderPage(pageKey) {
   const cfg = pageConfig[pageKey];
 
-  fillSelect(document.getElementById(cfg.sectionLocation), state.masters.locations, t("selectLocation"));
+  // All three inbound tabs (dock/receiving/prep) had their section DOM removed
+  // and replaced by the pallet module. Guard every getElementById call so we
+  // never throw on a missing element and kill the rest of the init chain.
+  const sectionLocation = document.getElementById(cfg.sectionLocation);
+  if (sectionLocation) fillSelect(sectionLocation, state.masters.locations, t("selectLocation"));
 
   const filters = state.data[cfg.filterKey];
   const personSelect = document.getElementById(cfg.personFilter);
-  personSelect.innerHTML = "";
-  appendOption(personSelect, "All", t("everyone"));
-  [...state.masters.associates].sort((a, b) => a.localeCompare(b)).forEach((name) => appendOption(personSelect, name, name));
-  personSelect.value = state.masters.associates.includes(filters.person) || filters.person === "All" ? filters.person : "All";
-  filters.person = personSelect.value;
+  if (personSelect) {
+    personSelect.innerHTML = "";
+    appendOption(personSelect, "All", t("everyone"));
+    [...state.masters.associates].sort((a, b) => a.localeCompare(b)).forEach((name) => appendOption(personSelect, name, name));
+    personSelect.value = state.masters.associates.includes(filters.person) || filters.person === "All" ? filters.person : "All";
+    filters.person = personSelect.value;
+  }
 
   if (typeof filters.mineOnly !== "boolean") filters.mineOnly = false;
-  document.getElementById(cfg.dayFilter).value = filters.day;
-  document.getElementById(cfg.searchInput).value = filters.search;
+  const dayFilterEl = document.getElementById(cfg.dayFilter);
+  if (dayFilterEl) dayFilterEl.value = filters.day;
+  const searchInputEl = document.getElementById(cfg.searchInput);
+  if (searchInputEl) searchInputEl.value = filters.search;
   const mineBtn = document.getElementById(pageKey === "dock" ? "myItemsBtn" : pageKey === "receiving" ? "receivingMyItemsBtn" : "prepMyItemsBtn");
   if (mineBtn) mineBtn.classList.toggle("active-filter", !!filters.mineOnly);
+
+  // If the section container is gone this tab is pallet-driven — skip renderSections
+  const container = document.getElementById(cfg.container);
+  if (!container) {
+    if (state.currentPage === pageKey) renderStats();
+    renderCurrentDeptUphBadge();
+    applyLanguage();
+    return;
+  }
 
   renderSections(pageKey);
   if (state.currentPage === pageKey) renderStats();
@@ -2949,6 +3034,7 @@ function renderPage(pageKey) {
 function renderSections(pageKey) {
   const cfg = pageConfig[pageKey];
   const container = document.getElementById(cfg.container);
+  if (!container) return; // pallet-driven tab — no section DOM
   container.innerHTML = "";
 
   const visibleSections = getVisibleSections(pageKey);
@@ -3167,12 +3253,184 @@ function collectPoHistoryEntries(pageKey, po) {
   if (!targetPo) return [];
   const entries = [];
   const lang = state.language;
+  const stageLabel = {
+    dock: lang === "es" ? "Descarga" : "Dock",
+    receiving: lang === "es" ? "Recepción QA" : "QA Receiving",
+    prep: lang === "es" ? "Preparación" : "Prep",
+    overstock: lang === "es" ? "Exceso / Sobrante" : "Overstock",
+    putaway: lang === "es" ? "Ubicación" : "Putaway",
+  };
+  const eventTypeLabel = {
+    created: lang === "es" ? "Tarima creada" : "Pallet created",
+    label_changed: lang === "es" ? "Tarima renombrada" : "Pallet renamed",
+    date_changed: lang === "es" ? "Fecha cambiada" : "Pallet date changed",
+    po_added: lang === "es" ? "OC agregada" : "PO added",
+    po_removed: lang === "es" ? "OC eliminada" : "PO removed",
+    po_prior_receipt: lang === "es" ? "OC parcial detectada" : "Partial order continued",
+    po_recv_qty: lang === "es" ? "Conteo de recepción actualizado" : "Receiving count updated",
+    po_recv_done: lang === "es" ? "Recepción terminada" : "Receiving count marked done",
+    po_unrecv: lang === "es" ? "Recepción reabierta" : "Receiving count reopened",
+    po_prep_qty: lang === "es" ? "Conteo de prep actualizado" : "Prep count updated",
+    po_prep_verified: lang === "es" ? "Prep terminado" : "Prep count marked done",
+    po_routed: lang === "es" ? "OC enrutada" : "PO routed",
+    po_unrouted: lang === "es" ? "Ruta limpiada" : "PO routing cleared",
+    advanced: lang === "es" ? "Enviada a siguiente etapa" : "Sent to next stage",
+    pulled_back: lang === "es" ? "Regresada a etapa previa" : "Pulled back to previous stage",
+    deleted_restored: lang === "es" ? "Tarima restaurada" : "Pallet restored",
+  };
+  const eventStage = (ev) => {
+    const type = String(ev?.type || "");
+    const detail = String(ev?.detail || "").toLowerCase();
+    if (["po_recv_qty", "po_recv_done", "po_unrecv", "po_partial"].includes(type)) return "receiving";
+    if (["po_prep_qty", "po_prep_verified", "po_routed", "po_unrouted"].includes(type)) return "prep";
+    if (type === "advanced" || type === "pulled_back") {
+      if (detail.includes("receiv") || detail.includes("recep")) return "receiving";
+      if (detail.includes("prep") || detail.includes("prepar")) return "prep";
+      if (detail.includes("putaway") || detail.includes("ubic")) return "putaway";
+      return "dock";
+    }
+    return "dock";
+  };
+  const push = (entry) => entries.push({ entryKind: "summary", ...entry });
+  const pushEvent = (entry) => entries.push({ entryKind: "event", ...entry });
 
-  // Dock stage
+  // New pallet-first system (source of truth)
+  (state.data.pallets || []).forEach((pallet) => {
+    const poRow = (pallet.pos || []).find((row) => String(row.po || "").trim() === targetPo);
+    if (!poRow) return;
+    const orderedQty = Number(poRow.orderedQty || 0) || 0;
+    const receivedQty = Number(poRow.receivedQty || 0) || 0;
+    const prepQty = Number(poRow.prepReceivedQty || 0) || 0;
+    const extras = plt_hasVal(poRow.receivedQty) && plt_hasVal(poRow.orderedQty) ? Math.max(0, receivedQty - orderedQty) : 0;
+    const missing = plt_hasVal(poRow.receivedQty) && plt_hasVal(poRow.orderedQty) ? Math.max(0, orderedQty - receivedQty) : 0;
+    const prepMissing = plt_hasVal(poRow.prepReceivedQty) && plt_hasVal(poRow.receivedQty) ? Math.max(0, receivedQty - prepQty) : 0;
+    const recvActor = (pallet.events || []).slice().reverse().find((evt) => ["po_recv_done", "po_recv_qty", "po_unrecv"].includes(String(evt.type || "")) && (String(evt.poNum || "").trim() === targetPo || !evt.poNum))?.by || "";
+    const prepActor = (pallet.events || []).slice().reverse().find((evt) => ["po_prep_verified", "po_prep_qty", "po_routed", "po_unrouted"].includes(String(evt.type || "")) && (String(evt.poNum || "").trim() === targetPo || !evt.poNum))?.by || "";
+    const recvEventTs = (pallet.events || []).slice().reverse().find((evt) => ["po_recv_done", "po_recv_qty", "po_unrecv"].includes(String(evt.type || "")) && (String(evt.poNum || "").trim() === targetPo || !evt.poNum))?.ts || 0;
+    const prepEventTs = (pallet.events || []).slice().reverse().find((evt) => ["po_prep_verified", "po_prep_qty", "po_routed", "po_unrouted"].includes(String(evt.type || "")) && (String(evt.poNum || "").trim() === targetPo || !evt.poNum))?.ts || 0;
+
+    push({
+      sourcePage: "dock",
+      sourceLabel: stageLabel.dock,
+      createdAt: poRow.createdAt || pallet.createdAt || 0,
+      date: pallet.date || "",
+      associate: pallet.createdBy || "",
+      location: pallet.label || "",
+      boxes: Number(poRow.boxes || 0) || 0,
+      qty: orderedQty,
+      orderedQty,
+      receivedQty: 0,
+      extras: 0,
+      category: poRow.category || "",
+      notes: [poRow.dockNotes, poRow.category ? `Category: ${poRow.category}` : ""].filter(Boolean).join(" • "),
+      status: pallet.status || "",
+      originalDate: pallet.date || "",
+      editHistory: [],
+    });
+
+    if (plt_hasVal(poRow.receivedQty) || poRow.receivingDone) {
+      push({
+        sourcePage: "receiving",
+        sourceLabel: stageLabel.receiving,
+        createdAt: recvEventTs || pallet.updatedAt || pallet.createdAt || 0,
+        date: pallet.date || "",
+        associate: recvActor,
+        location: pallet.label || "",
+        boxes: Number(poRow.boxes || 0) || 0,
+        qty: 0,
+        orderedQty,
+        receivedQty,
+        extras: receivedQty - orderedQty,
+        category: poRow.category || "",
+        notes: [
+          poRow.receivingNotes,
+          missing > 0 ? `Missing ${missing}` : "",
+          extras > 0 ? `Extras ${extras}` : "",
+          poRow.receivingDone ? "Receiving done" : "Receiving in progress",
+        ].filter(Boolean).join(" • "),
+        status: poRow.receivingDone ? "Done" : "In Progress",
+        originalDate: pallet.date || "",
+        editHistory: [],
+      });
+    }
+
+    if (plt_hasVal(poRow.prepReceivedQty) || poRow.prepVerified || plt_hasVal(poRow.stsQty) || plt_hasVal(poRow.ltsQty)) {
+      const splitBits = [];
+      if (plt_hasVal(poRow.stsQty)) splitBits.push(`STS ${poRow.stsQty}`);
+      if (plt_hasVal(poRow.ltsQty)) splitBits.push(`LTS ${poRow.ltsQty}`);
+      push({
+        sourcePage: "prep",
+        sourceLabel: stageLabel.prep,
+        createdAt: prepEventTs || pallet.updatedAt || pallet.createdAt || 0,
+        date: pallet.date || "",
+        associate: prepActor,
+        location: pallet.label || "",
+        boxes: Number(poRow.boxes || 0) || 0,
+        qty: 0,
+        orderedQty: receivedQty || orderedQty,
+        receivedQty: prepQty,
+        extras: prepQty - receivedQty,
+        category: poRow.category || "",
+        notes: [
+          poRow.prepNotes,
+          splitBits.length ? `Split: ${splitBits.join(" / ")}` : "",
+          prepMissing > 0 ? `Still missing ${prepMissing}` : "",
+          poRow.prepVerified ? "Prep done" : "Prep in progress",
+        ].filter(Boolean).join(" • "),
+        status: poRow.prepVerified ? "Done" : (splitBits.length ? "Routed" : "In Progress"),
+        originalDate: pallet.date || "",
+        editHistory: [],
+      });
+    }
+
+    if (extras > 0) {
+      push({
+        sourcePage: "overstock",
+        sourceLabel: stageLabel.overstock,
+        createdAt: recvEventTs || pallet.updatedAt || pallet.createdAt || 0,
+        date: pallet.date || "",
+        associate: recvActor,
+        location: pallet.label || "",
+        status: "Extras",
+        action: "Auto from receiving variance",
+        quantity: extras,
+        orderedQty,
+        receivedQty,
+        extras,
+        notes: `Extras created from receiving count (+${extras})`,
+        originalDate: pallet.date || "",
+        editHistory: [],
+      });
+    }
+
+    (pallet.events || []).forEach((evt) => {
+      const appliesToPo = String(evt.poNum || "").trim() === targetPo || (!evt.poNum && ["created", "label_changed", "date_changed", "advanced", "pulled_back", "deleted_restored"].includes(String(evt.type || "")));
+      if (!appliesToPo) return;
+      const src = eventStage(evt);
+      pushEvent({
+        sourcePage: src,
+        sourceLabel: stageLabel[src],
+        createdAt: evt.ts || 0,
+        date: pallet.date || "",
+        associate: evt.by || "",
+        location: pallet.label || "",
+        boxes: 0,
+        orderedQty: 0,
+        receivedQty: 0,
+        extras: 0,
+        status: eventTypeLabel[String(evt.type || "")] || String(evt.type || ""),
+        notes: evt.detail || "",
+        originalDate: pallet.date || "",
+        editHistory: [],
+      });
+    });
+  });
+
+  // Legacy Dock stage
   (state.data.dockSections || []).forEach((section) => {
     (section.rows || []).forEach((row) => {
       if (String(row.po || "").trim() !== targetPo) return;
-      entries.push({
+      push({
         sourcePage: "dock",
         sourceLabel: lang === "es" ? "Descarga" : "Docker",
         createdAt: row.createdAt || section.updatedAt || section.createdAt || 0,
@@ -3190,11 +3448,11 @@ function collectPoHistoryEntries(pageKey, po) {
     });
   });
 
-  // QA Receiving stage
+  // Legacy QA Receiving stage
   (state.data.receivingSections || []).forEach((section) => {
     (section.rows || []).forEach((row) => {
       if (String(row.po || "").trim() !== targetPo) return;
-      entries.push({
+      push({
         sourcePage: "receiving",
         sourceLabel: lang === "es" ? "Recepción QA" : "QA Receiving",
         createdAt: row.createdAt || section.updatedAt || section.createdAt || 0,
@@ -3214,11 +3472,11 @@ function collectPoHistoryEntries(pageKey, po) {
     });
   });
 
-  // Prep stage
+  // Legacy Prep stage
   (state.data.prepSections || []).forEach((section) => {
     (section.rows || []).forEach((row) => {
       if (String(row.po || "").trim() !== targetPo) return;
-      entries.push({
+      push({
         sourcePage: "prep",
         sourceLabel: lang === "es" ? "Preparación" : "Prep",
         createdAt: row.createdAt || section.updatedAt || section.createdAt || 0,
@@ -3238,10 +3496,10 @@ function collectPoHistoryEntries(pageKey, po) {
     });
   });
 
-  // Overstock stage
+  // Legacy Overstock stage
   (state.data.overstockEntries || []).forEach((row) => {
     if (String(row.po || "").trim() !== targetPo) return;
-    entries.push({
+    push({
       sourcePage: "overstock",
       sourceLabel: lang === "es" ? "Exceso / Sobrante" : "Overstock",
       createdAt: row.updatedAt || row.createdAt || 0,
@@ -3257,10 +3515,10 @@ function collectPoHistoryEntries(pageKey, po) {
     });
   });
 
-  // Putaway stage
+  // Legacy Putaway stage
   (state.data.putawayEntries || []).forEach((row) => {
     if (String(row.po || "").trim() !== targetPo) return;
-    entries.push({
+    push({
       sourcePage: "putaway",
       sourceLabel: lang === "es" ? "Ubicación" : "Putaway",
       createdAt: row.updatedAt || row.createdAt || 0,
@@ -3297,17 +3555,18 @@ function openBatchHistoryModal(pageKey, po) {
     ? `This PO has ${rows.length} logged timeline entries.`
     : `This PO currently has a single timeline entry.`;
 
+  const summaryRows = rows.filter(r => r.entryKind !== "event");
   const uniqueAssociates = [...new Set(rows.map(r => r.associate).filter(Boolean))];
   const uniqueLocations = [...new Set(rows.map(r => r.location).filter(Boolean))];
-  const totalBoxes = rows.reduce((sum, r) => sum + (Number(r.boxes || 0) || 0), 0);
-  const totalOrdered = rows.reduce((sum, r) => sum + (Number(r.orderedQty || 0) || 0), 0);
-  const totalReceived = rows.reduce((sum, r) => {
+  const totalBoxes = summaryRows.reduce((sum, r) => sum + (Number(r.boxes || 0) || 0), 0);
+  const totalOrdered = summaryRows.reduce((sum, r) => sum + (Number(r.orderedQty || 0) || 0), 0);
+  const totalReceived = summaryRows.reduce((sum, r) => {
     const received = Number(r.receivedQty || 0);
     const qty = Number(r.qty || 0);
     const quantity = Number(r.quantity || 0);
     return sum + (received || qty || quantity || 0);
   }, 0);
-  const totalExtras = rows.reduce((sum, r) => sum + (Number(r.extras || 0) || 0), 0);
+  const totalExtras = summaryRows.reduce((sum, r) => sum + (Number(r.extras || 0) || 0), 0);
 
   stats.innerHTML = `
     <span class="batch-history-pill">${t("timelineEntries")} <strong>${rows.length}</strong></span>
@@ -3340,10 +3599,10 @@ function openBatchHistoryModal(pageKey, po) {
   body.innerHTML = rows.length ? rows.map(r => {
     const sc = stageBadgeClass[r.sourcePage] || "stage-badge-dock";
     const received = r.receivedQty || r.qty || r.quantity || 0;
-    const variance = (r.sourcePage === "receiving" || r.sourcePage === "prep")
+    const variance = (r.sourcePage === "receiving" || r.sourcePage === "prep" || r.sourcePage === "overstock")
       ? renderExtras(r.extras) : "—";
     const statusAction = [r.status, r.action].filter(Boolean).map(v => translateStatus(v)).join(" / ") || "—";
-    return `<tr>
+    return `<tr class="${r.entryKind === "event" ? "batch-history-event-row" : ""}">
       <td><span class="stage-badge ${sc}">${escapeHtml(r.sourceLabel)}</span></td>
       <td>${escapeHtml(formatDate(r.originalDate || r.date))}</td>
       <td><strong>${escapeHtml(r.associate || "—")}</strong></td>
@@ -3750,18 +4009,112 @@ function deleteRow(pageKey, sectionId, rowId) {
   renderPage(pageKey);
 }
 
+function getPalletDeptMetrics(pageKey, dateStr) {
+  const pallets = Array.isArray(state.data.pallets) ? state.data.pallets : [];
+  const targetDate = String(dateStr || new Date().toISOString().slice(0,10));
+  const isOnDate = (pallet) => {
+    const created = pallet.createdAt ? new Date(pallet.createdAt).toISOString().slice(0,10) : '';
+    const updated = pallet.updatedAt ? new Date(pallet.updatedAt).toISOString().slice(0,10) : '';
+    if (created === targetDate || updated === targetDate) return true;
+    return Array.isArray(pallet.events) && pallet.events.some(evt => {
+      try { return new Date(evt.ts || 0).toISOString().slice(0,10) === targetDate; } catch(_) { return false; }
+    });
+  };
+  const relevant = pallets.filter(isOnDate);
+  let rows = 0, boxes = 0, units = 0, poCount = 0;
+  relevant.forEach(pallet => {
+    (pallet.pos || []).forEach(po => {
+      const poCode = String(po.po || '').trim();
+      if (pageKey === 'dock') {
+        rows += 1;
+        boxes += Number(po.boxes || 0) || 0;
+        units += Number(po.orderedQty || 0) || 0;
+        if (poCode) poCount += 1;
+      } else if (pageKey === 'receiving') {
+        const hasReceiving = po.receivingDone === true || Number(po.receivedQty || 0) > 0;
+        if (!hasReceiving) return;
+        rows += 1;
+        boxes += Number(po.boxes || 0) || 0;
+        units += Number(po.receivedQty || 0) || 0;
+        if (poCode) poCount += 1;
+      } else if (pageKey === 'prep') {
+        const hasPrep = po.prepVerified === true || Number(po.prepReceivedQty || 0) > 0;
+        if (!hasPrep) return;
+        rows += 1;
+        boxes += Number(po.boxes || 0) || 0;
+        units += Number(po.prepReceivedQty || 0) || 0;
+        if (poCode) poCount += 1;
+      }
+    });
+  });
+  return { relevantPallets: relevant.length, rows, boxes, units, poCount };
+}
+
+function getHeroPulseContext() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (!['receiving','prep'].includes(state.currentPage)) return null;
+  const pallets = Array.isArray(state.data.pallets) ? state.data.pallets : [];
+  const relevant = pallets.filter(p => {
+    const created = p.createdAt ? new Date(p.createdAt).toISOString().slice(0,10) : '';
+    const updated = p.updatedAt ? new Date(p.updatedAt).toISOString().slice(0,10) : '';
+    if (created === today || updated === today) return true;
+    return Array.isArray(p.events) && p.events.some(evt => {
+      try { return new Date(evt.ts || 0).toISOString().slice(0,10) === today; } catch(_) { return false; }
+    });
+  });
+  return {
+    key: state.currentPage,
+    label: state.currentPage === 'receiving' ? 'QA Receiving' : 'QA Prep',
+    pallets: relevant,
+    metrics: getPalletDeptMetrics(state.currentPage, today)
+  };
+}
+
+function getPalletRowsForPulse(context) {
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = [];
+  (context?.pallets || []).forEach(pallet => {
+    (pallet.pos || []).forEach(po => {
+      if (context.key === 'receiving') {
+        if (!(po.receivingDone === true || Number(po.receivedQty || 0) > 0)) return;
+        rows.push({
+          associate: (pallet.events || []).slice().reverse().find(evt => String(evt.type || '').includes('recv'))?.by || 'Unknown',
+          category: po.category || 'Uncategorized',
+          units: Number(po.receivedQty || 0) || 0,
+          po: po.po || '',
+          location: pallet.label || '',
+          date: today
+        });
+      } else if (context.key === 'prep') {
+        if (!(po.prepVerified === true || Number(po.prepReceivedQty || 0) > 0)) return;
+        rows.push({
+          associate: (pallet.events || []).slice().reverse().find(evt => String(evt.type || '').includes('prep'))?.by || 'Unknown',
+          category: po.category || 'Uncategorized',
+          units: Number(po.prepReceivedQty || 0) || 0,
+          po: po.po || '',
+          location: pallet.label || '',
+          date: today
+        });
+      }
+    });
+  });
+  return rows;
+}
+
 function renderStats() {
   if (!["dock", "receiving", "prep"].includes(state.currentPage)) return;
-  const visibleSections = getVisibleSections(state.currentPage);
-  const visibleRows = visibleSections.flatMap((section) => getFilteredRows(state.currentPage, section));
+  const today = new Date().toISOString().slice(0, 10);
+  const statusForPage = { dock: "draft", receiving: "receiving", prep: "prep" };
+  const currentStatus = statusForPage[state.currentPage];
+  const pallets = Array.isArray(state.data.pallets) ? state.data.pallets : [];
+  const activePallets = pallets.filter(p => p.status === currentStatus);
+  const metrics = getPalletDeptMetrics(state.currentPage, today);
 
-  statSections.textContent = visibleSections.length;
-  statRows.textContent = visibleRows.length;
-  statBoxes.textContent = visibleRows.reduce((sum, row) => sum + Number(row.boxes || 0), 0);
-  statNotes.textContent = visibleRows.filter((row) => row.notes && row.notes.trim()).length;
-  totalQty.textContent = pageConfig[state.currentPage].mode === "simple"
-    ? visibleRows.reduce((sum, row) => sum + Number(row.qty || 0), 0)
-    : visibleRows.reduce((sum, row) => sum + Number(row.receivedQty || 0), 0);
+  if (statSections) statSections.textContent = activePallets.length;
+  if (statRows)     statRows.textContent = metrics.poCount;
+  if (statBoxes)    statBoxes.textContent = metrics.boxes;
+  if (statNotes)    statNotes.textContent = metrics.relevantPallets;
+  if (totalQty)     totalQty.textContent = metrics.units;
 }
 
 function renderMasterLists() {
@@ -3865,28 +4218,58 @@ function appendOption(select, value, label) {
 
 function getPrepPoReferenceMap() {
   const map = new Map();
+
+  // ── NEW: read from pallet-based workflow ──────────────────────────────────
+  // Include POs from pallets that have reached Prep or Done stage.
+  // Overstock quantity = receivedQty - orderedQty (auto-calculated, always positive).
+  const pallets = Array.isArray(state.data.pallets) ? state.data.pallets : [];
+  pallets
+    .filter(p => p.status === 'prep' || p.status === 'done')
+    .forEach(pallet => {
+      (pallet.pos || []).forEach(poRow => {
+        const po = String(poRow.po || '').trim();
+        if (!po) return;
+        const ordered  = poRow.orderedQty  != null ? Number(poRow.orderedQty)  : 0;
+        const received = poRow.receivedQty != null ? Number(poRow.receivedQty) : 0;
+        const overstock = Math.max(0, received - ordered); // extras always go to overstock
+        const category  = poRow.category || '';
+        const palletLabel = pallet.label || '';
+        const palletDate  = pallet.date  || '';
+        if (!map.has(po)) {
+          map.set(po, { po, quantity: overstock, ordered, received, overstock, category, palletLabel, palletDate, count: 1 });
+        } else {
+          const cur = map.get(po);
+          cur.quantity   += overstock;
+          cur.ordered    += ordered;
+          cur.received   += received;
+          cur.overstock  += overstock;
+          cur.count      += 1;
+        }
+      });
+    });
+
+  // ── LEGACY: also read from old prepSections in case any exist ────────────
   (state.data.prepSections || []).forEach(section => {
     (section.rows || []).forEach(row => {
-      const po = String(row.po || "").trim();
+      const po = String(row.po || '').trim();
       if (!po) return;
-      const ordered = Number(row.orderedQty || row.qty || 0) || 0;
+      const ordered  = Number(row.orderedQty || row.qty || 0) || 0;
       const received = Number(row.receivedQty || 0) || 0;
-      const extras = Number(row.extras || 0) || 0;
+      const extras   = Number(row.extras || 0) || 0;
       const variance = Math.abs(received - ordered);
       const quantity = extras > 0 ? extras : variance;
       if (!map.has(po)) {
-        map.set(po, { po, quantity, ordered, received, extras, variance, category: row.category || "", count: 1 });
+        map.set(po, { po, quantity, ordered, received, extras, variance, category: row.category || '', palletLabel: '', palletDate: '', count: 1 });
       } else {
-        const current = map.get(po);
-        current.quantity += quantity;
-        current.ordered += ordered;
-        current.received += received;
-        current.extras += extras;
-        current.variance += variance;
-        current.count += 1;
+        const cur = map.get(po);
+        cur.quantity  += quantity;
+        cur.ordered   += ordered;
+        cur.received  += received;
+        cur.count     += 1;
       }
     });
   });
+
   return map;
 }
 
@@ -3902,6 +4285,34 @@ function updateOverstockPoQuantity() {
 
 function getUnifiedPutawayPoReferenceMap() {
   const map = new Map();
+
+  // ── NEW: read from pallet-based workflow ─────────────────────────────────
+  const pallets = Array.isArray(state.data.pallets) ? state.data.pallets : [];
+  pallets.forEach(pallet => {
+    const dept = pallet.status === 'draft' ? 'Docker'
+               : pallet.status === 'receiving' ? 'QA Receiving'
+               : 'Prep';
+    (pallet.pos || []).forEach(poRow => {
+      const po = String(poRow.po || '').trim();
+      if (!po) return;
+      const qty = poRow.receivedQty != null ? Number(poRow.receivedQty)
+                : poRow.orderedQty  != null ? Number(poRow.orderedQty)
+                : 0;
+      if (!map.has(po)) {
+        map.set(po, {
+          po,
+          department: dept,
+          category: String(poRow.category || '').trim(),
+          quantity: qty,
+          palletLabel: pallet.label || '',
+          stsQty: poRow.stsQty || 0,
+          ltsQty: poRow.ltsQty || 0,
+        });
+      }
+    });
+  });
+
+  // ── LEGACY: also read from old section-based data ─────────────────────────
   const addRows = (sections, departmentLabel) => {
     (sections || []).forEach(section => {
       (section.rows || []).forEach(row => {
@@ -3909,10 +4320,10 @@ function getUnifiedPutawayPoReferenceMap() {
         if (!po) return;
         if (!map.has(po)) {
           map.set(po, {
-            po,
-            department: departmentLabel,
+            po, department: departmentLabel,
             category: String(row.category || "").trim(),
-            quantity: Number(row.receivedQty || row.orderedQty || row.qty || 0) || 0
+            quantity: Number(row.receivedQty || row.orderedQty || row.qty || 0) || 0,
+            palletLabel: '', stsQty: 0, ltsQty: 0,
           });
         }
       });
@@ -3963,6 +4374,7 @@ function updatePutawayPoFields() {
 
 function persistData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+  window.dispatchEvent(new CustomEvent('qa-workflow-data-changed'));
   scheduleWorkflowSync();
 }
 
@@ -3980,6 +4392,7 @@ function loadWorkflowData() {
     return {
       ...defaults,
       ...parsed,
+      pallets: Array.isArray(parsed.pallets) ? parsed.pallets : defaults.pallets,
       dockFilters: { ...defaults.dockFilters, ...(parsed.dockFilters || {}) },
       receivingFilters: { ...defaults.receivingFilters, ...(parsed.receivingFilters || {}) },
       prepFilters: { ...defaults.prepFilters, ...(parsed.prepFilters || {}) },
@@ -3998,6 +4411,7 @@ function loadWorkflowData() {
 
 function getDefaultData() {
   return {
+    pallets: [],
     dockSections: [],
     dockFilters: { person: "All", day: "", search: "", mineOnly: false },
     receivingSections: [],
@@ -4147,24 +4561,8 @@ document.addEventListener("click", (event) => {
 
 
 
-function getHeroPulseContext() {
-  if (state.currentPage === "receiving") return { key: "receiving", label: "QA Receiving", rows: state.data.receivingSections || [] };
-  if (state.currentPage === "prep") return { key: "prep", label: "QA Prep", rows: state.data.prepSections || [] };
-  return null;
-}
-
 function getSectionRowsForPulse(section, deptKey) {
-  return (section.rows || []).map(row => {
-    const units = Number(row.receivedQty || row.orderedQty || row.qty || 0) || 0;
-    return {
-      associate: section.name || "Unknown",
-      category: row.category || "Uncategorized",
-      units,
-      po: row.po || "",
-      location: section.location || "",
-      date: section.date || ""
-    };
-  });
+  return getPalletRowsForPulse(section);
 }
 
 function openPulseCheckModal() {
@@ -4201,10 +4599,7 @@ function openPulseCheckModal() {
     return;
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const todaySections = context.rows.filter(section => String(section.date || "").slice(0, 10) === today);
-  const usingSections = todaySections.length ? todaySections : context.rows;
-  const flatRows = usingSections.flatMap(section => getSectionRowsForPulse(section, context.key));
+  const flatRows = getPalletRowsForPulse(context);
 
   const peopleMap = new Map();
   const categoryMap = new Map();
@@ -4220,11 +4615,12 @@ function openPulseCheckModal() {
   const categories = [...categoryMap.entries()].sort((a, b) => b[1] - a[1]);
 
   if (title) title.textContent = `${context.label} Pulse Check`;
-  if (subtitle) subtitle.textContent = todaySections.length
+  if (subtitle) subtitle.textContent = flatRows.length
     ? `Today’s people, units, and category mix for ${context.label}.`
-    : `No rows for today, so this is using the latest available ${context.label} data.`;
+    : `No pallet activity found for today yet in ${context.label}.`;
 
-  const uphBadgeValue = Number((document.getElementById("currentDeptUphValue") || {}).textContent || 0);
+  const pulseSummary = getPulseUphSummary(context, flatRows);
+  const uphBadgeValue = pulseSummary.uph;
   const stage = getUphPaceStage(uphBadgeValue);
   if (statusImage) statusImage.src = getUphPaceAsset(stage);
   if (statusLabel) statusLabel.textContent = `${context.label} pace status`;
@@ -4413,7 +4809,8 @@ function renderPutawayPage() {
         <td>${escapeHtml(latest.status || "")}</td>
         <td>${escapeHtml(latest.notes || "")}</td>
         <td class="action-stack">
-          <button class="tiny-btn putaway-expand-btn" type="button">${expanded ? "Hide Timeline" : "View Timeline"}</button>
+          <button class="tiny-btn putaway-expand-btn" type="button">${expanded ? t("hidePutawayEntries") : t("viewPutawayEntries")}</button>
+          <button class="tiny-btn ghost-btn putaway-history-btn" type="button">${t("fullPoHistory")}</button>
         </td>
       `;
       parentTr.querySelector(".putaway-expand-btn").addEventListener("click", () => {
@@ -4421,6 +4818,10 @@ function renderPutawayPage() {
         persistData();
         renderPutawayPage();
       });
+      const historyBtn = parentTr.querySelector(".putaway-history-btn");
+      if (historyBtn) {
+        historyBtn.addEventListener("click", () => openBatchHistoryModal("putaway", po));
+      }
       tbody.appendChild(parentTr);
 
       if (expanded) {

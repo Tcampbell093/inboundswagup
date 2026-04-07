@@ -44,6 +44,7 @@
     newMarkDemeritInput:    document.getElementById('attendanceRemixNewMarkDemeritInput'),
     addMarkBtn:             document.getElementById('attendanceRemixAddMarkBtn'),
     newEmployeeName:        document.getElementById('attendanceRemixNewEmployeeName'),
+    newEmployeeAdpName:     document.getElementById('attendanceRemixNewEmployeeAdpName'),
     newEmployeeDepartment:  document.getElementById('attendanceRemixNewEmployeeDepartment'),
     newEmployeeBirthday:    document.getElementById('attendanceRemixNewEmployeeBirthday'),
     newEmployeeSize:        document.getElementById('attendanceRemixNewEmployeeSize'),
@@ -130,6 +131,8 @@
       attendanceRecords.push({ id: Date.now() + Math.random(), employeeName: name, department: dept, date, mark, demerits: safeNum(markDemerits[mark]) });
     }
     saveJson(attendanceStorageKey, attendanceRecords);
+    // PATCH: propagate to Neon via the shared sync path
+    if (typeof scheduleAttendanceSync === 'function') scheduleAttendanceSync();
   }
 
   function formatDateLabel(dateStr){
@@ -386,6 +389,8 @@
     const roster = getDepartmentRoster(activeAttendanceDepartment).map(emp => emp.name);
     attendanceRecords = attendanceRecords.filter(r => !(r.department === activeAttendanceDepartment && r.date === selectedDate && roster.includes(r.employeeName)));
     saveJson(attendanceStorageKey, attendanceRecords);
+    // PATCH: propagate to Neon via the shared sync path
+    if (typeof scheduleAttendanceSync === 'function') scheduleAttendanceSync();
     if (editorDraft){ Object.keys(editorDraft).forEach(name => editorDraft[name] = ''); renderEditorTable(); }
     afterRosterChange();
   }
@@ -425,6 +430,7 @@
     els.employeesList.innerHTML = settingsDraft.employees.map((emp, idx) => `
       <div class="attendance-remix-setting-item attendance-remix-emp-row">
         <input data-emp-name="${idx}" value="${escapeHtml(emp.name)}" />
+        <input data-emp-adp-name="${idx}" value="${escapeHtml(emp.adpName || '')}" placeholder="ADP name (e.g. Last, First)" title="ADP Name — how this person appears in ADP exports" />
         <select data-emp-dept="${idx}">
           ${settingsDraft.departments.map(d => `<option value="${escapeHtml(d)}" ${emp.department===d?'selected':''}>${escapeHtml(d)}</option>`).join('')}
         </select>
@@ -478,6 +484,7 @@
     settingsDraft.markDemerits = nextMarkDemerits;
     settingsDraft.employees = Array.from(els.employeesList.querySelectorAll('[data-emp-name]')).map((input, idx) => ({
       name: input.value.trim(),
+      adpName: (els.employeesList.querySelector(`[data-emp-adp-name="${idx}"]`)?.value || '').trim(),
       department: els.employeesList.querySelector(`[data-emp-dept="${idx}"]`)?.value || settingsDraft.departments[0],
       birthday: els.employeesList.querySelector(`[data-emp-birthday="${idx}"]`)?.value || '',
       size: els.employeesList.querySelector(`[data-emp-size="${idx}"]`)?.value || '',
@@ -521,8 +528,10 @@
     const name = (els.newEmployeeName.value || '').trim();
     if (!name) return;
     if (settingsDraft.employees.some(emp => emp.name.toLowerCase() === name.toLowerCase())) { alert('Employee already exists.'); return; }
-    settingsDraft.employees.push({ name, department: els.newEmployeeDepartment.value || settingsDraft.departments[0], birthday: els.newEmployeeBirthday.value || '', size: els.newEmployeeSize.value || '', active: true });
+    const adpName = (els.newEmployeeAdpName ? (els.newEmployeeAdpName.value || '').trim() : '');
+    settingsDraft.employees.push({ name, adpName, department: els.newEmployeeDepartment.value || settingsDraft.departments[0], birthday: els.newEmployeeBirthday.value || '', size: els.newEmployeeSize.value || '', active: true });
     els.newEmployeeName.value = '';
+    if (els.newEmployeeAdpName) els.newEmployeeAdpName.value = '';
     els.newEmployeeBirthday.value = '';
     els.newEmployeeSize.value = '';
     renderSettings();

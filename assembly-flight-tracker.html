@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Assembly Flight Tracker</title>
+  <link rel="stylesheet" href="assembly-flight-tracker.css" />
+</head>
+<body>
+  <div class="board-shell">
+    <header class="board-header">
+      <div>
+        <div class="eyebrow">External visibility</div>
+        <h1>Assembly Flight Tracker</h1>
+        <p class="subtitle">Read-only schedule visibility for account owners and outside stakeholders.</p>
+      </div>
+      <div class="header-meta">
+        <div class="meta-pill">
+          <span class="meta-label">Last updated</span>
+          <strong id="lastUpdated">—</strong>
+        </div>
+        <button class="secondary-btn" id="refreshBtn" type="button">Refresh now</button>
+      </div>
+    </header>
+
+    <section class="board-stats" id="boardStats">
+      <article class="stat-chip">
+        <span class="stat-label">Scheduled PBs</span>
+        <strong class="stat-value" id="statScheduledPbs">0</strong>
+      </article>
+      <article class="stat-chip">
+        <span class="stat-label">Total Units</span>
+        <strong class="stat-value" id="statUnits">0</strong>
+      </article>
+      <article class="stat-chip">
+        <span class="stat-label">Completed</span>
+        <strong class="stat-value" id="statCompleted">0</strong>
+      </article>
+      <article class="stat-chip">
+        <span class="stat-label">At Risk</span>
+        <strong class="stat-value" id="statAtRisk">0</strong>
+      </article>
+    </section>
+
+    <section class="filters-card">
+      <div class="filters-row">
+        <label class="field">
+          <span>Search</span>
+          <input id="searchInput" type="text" placeholder="Pack builder, sales order, account, owner..." />
+        </label>
+        <label class="field">
+          <span>Day</span>
+          <select id="dayFilter">
+            <option value="">All scheduled days</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Account</span>
+          <select id="accountFilter">
+            <option value="">All accounts</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Status</span>
+          <select id="statusFilter">
+            <option value="">All statuses</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <main id="boardContent" class="board-content">
+      <section class="empty-state">
+        <h2>No schedule loaded yet</h2>
+        <p>The board will show scheduled pack builders grouped by day once Assembly data is available.</p>
+      </section>
+    </main>
+  </div>
+
+  <script src="assembly-flight-tracker.js"></script>
+</body>
+</html>

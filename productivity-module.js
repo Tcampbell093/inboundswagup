@@ -3,6 +3,8 @@
   const LABOR_KEY = 'ops_hub_productivity_labor_v1';
   const SETTINGS_KEY = 'ops_hub_productivity_settings_v1';
   const IMPORT_BATCHES_KEY = 'ops_hub_productivity_import_batches_v1';
+  const PENDING_IMPORT_KEY = 'ops_hub_productivity_pending_import_v1';
+  const VIEW_KEY = 'ops_hub_productivity_view_v1';
   const EMPLOYEES_KEY = 'ops_hub_employees_v1';
   const ATTENDANCE_KEYS = ['ops_hub_attendance_records_v2','ops_hub_attendance_records_v1'];
   const WORKFLOW_KEY = 'qaV5SeparatedWorkflowData_v4fixed';
@@ -28,16 +30,20 @@
   let productivitySyncQueued = false;
   let productivitySyncTimer = null;
 
+  const savedView = load(VIEW_KEY, {});
+  const initialWeek = getWeekStart(savedView.selectedWeek || isoToday());
   const state = {
-    activeTab: 'week',
-    activeDept: 'qa-receiving',
-    selectedWeek: getWeekStart(isoToday()),
-    selectedDate: isoToday(),
-    selectedMonth: new Date().toISOString().slice(0,7),
-    dailyRecords: load(DAILY_KEY, []),
-    laborEntries: load(LABOR_KEY, []),
-    importBatches: load(IMPORT_BATCHES_KEY, []),
-    pendingImport: null,
+    activeTab: savedView.activeTab || 'week',
+    activeDept: savedView.activeDept || 'qa-receiving',
+    selectedWeek: initialWeek,
+    selectedDate: text(savedView.selectedDate || '').slice(0,10) || getWeekDays(initialWeek)[0] || isoToday(),
+    selectedMonth: text(savedView.selectedMonth || '').slice(0,7) || new Date().toISOString().slice(0,7),
+    // PATCH: Start empty — backend load in loadProductivityFromBackend() is the authoritative source.
+    // localStorage is only used as a fallback when Neon is unreachable.
+    dailyRecords: [],
+    laborEntries: [],
+    importBatches: [],
+    pendingImport: load(PENDING_IMPORT_KEY, null),
     financeUnlocked: false,
     settings: { ...defaultSettings, ...load(SETTINGS_KEY, {}) }
   };
@@ -68,6 +74,14 @@
   function isoToday(){ return new Date().toISOString().slice(0,10); }
   function monthFromDate(value){ return text(value).slice(0,7); }
   function uid(prefix='id'){ return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`; }
+  function uuid(){
+    try{ if(globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID(); }catch(_){ }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random()*16|0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
   function dateLabel(value){ if(!value) return '—'; const d = new Date(value+'T00:00:00'); return d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
   function monthLabel(value){ if(!value) return '—'; const [y,m]=value.split('-'); return new Date(Number(y), Number(m)-1, 1).toLocaleString(undefined,{month:'long', year:'numeric'}); }
   function getWeekStart(dateStr){ const d = new Date((dateStr||isoToday())+'T00:00:00'); const day=d.getDay(); const diff=(day+6)%7; d.setDate(d.getDate()-diff); return d.toISOString().slice(0,10); }
@@ -92,8 +106,145 @@
     const rows = load(EMPLOYEES_KEY, []);
     return safeArray(rows).map(row => ({
       name: text(row.name || row.employeeName),
+      adpName: text(row.adpName || ''),
       department: text(row.department || row.defaultDepartment || row.homeDepartment)
     })).filter(r => r.name);
+  }
+
+  function saveEmployees(rows){
+    save(EMPLOYEES_KEY, safeArray(rows));
+  }
+
+  function similarityScore(rawName, employee){
+    const rawNorm = normalizeName(rawName);
+    const displayNorm = normalizeName(employee?.name || '');
+    const adpNorm = normalizeName(employee?.adpName || '');
+    if(!rawNorm) return 0;
+    if(rawNorm && (rawNorm === displayNorm || rawNorm === adpNorm)) return 100;
+    const rawParts = new Set(rawNorm.split(' ').filter(Boolean));
+    const displayParts = new Set(displayNorm.split(' ').filter(Boolean));
+    const adpParts = new Set(adpNorm.split(' ').filter(Boolean));
+    let score = 0;
+    rawParts.forEach(part => {
+      if(displayParts.has(part)) score += 3;
+      if(adpParts.has(part)) score += 2;
+    });
+    const inverted = invertLastFirst(rawName);
+    if(inverted && inverted === displayNorm) score += 6;
+    if(inverted && inverted === adpNorm) score += 4;
+    const firstPart = [...rawParts][0] || '';
+    if(firstPart && displayNorm.startsWith(firstPart)) score += 1;
+    return score;
+  }
+
+  function getEmployeeOptionsForAdpName(rawName){
+    return getEmployees()
+      .map(emp => ({ ...emp, score: similarityScore(rawName, emp) }))
+      .sort((a,b)=> (b.score - a.score) || String(a.name).localeCompare(String(b.name)));
+  }
+
+  function rebuildPendingImportMatches(){
+    const pending = state.pendingImport;
+    if(!pending?.employeeRows?.length) return;
+    const employeeLookup = buildEmployeeMatchMap();
+    const unmatchedMap = new Map();
+    pending.employeeRows = pending.employeeRows.map(row => {
+      const rawName = text(row.adpRawName || row.employeeName).trim();
+      const resolved = resolveAdpName(rawName, employeeLookup);
+      const displayName = resolved ? resolved.employee.name : rawName;
+      const department = resolved ? (resolved.employee.department || row.homeDepartment || '') : (row.homeDepartment || '');
+      if(!resolved) unmatchedMap.set(rawName, (unmatchedMap.get(rawName) || 0) + 1);
+      return {
+        ...row,
+        employeeName: displayName,
+        matched: !!resolved,
+        homeDepartment: department,
+        workedDepartment: department || row.workedDepartment || ''
+      };
+    });
+    pending.unmatchedNames = [...unmatchedMap.entries()].map(([name, count]) => ({ name, count }));
+    pending.daySummaries = buildPendingImportSummary(pending.employeeRows, pending.fileName);
+  }
+
+  function refreshAdpMatchingUi(){
+    rebuildPendingImportMatches();
+    render();
+  }
+
+  function saveAdpNameMatch(rawAdpName, employeeName){
+    const rawName = text(rawAdpName).trim();
+    const targetName = text(employeeName).trim();
+    if(!rawName || !targetName){
+      alert('Pick an employee before saving the match.');
+      return;
+    }
+    const rows = load(EMPLOYEES_KEY, []);
+    const idx = safeArray(rows).findIndex(row => text(row.name || row.employeeName).trim() === targetName);
+    if(idx < 0){
+      alert('That employee record could not be found.');
+      return;
+    }
+    const existingAdpName = text(rows[idx].adpName || '').trim();
+    if(existingAdpName && normalizeName(existingAdpName) !== normalizeName(rawName)){
+      const ok = window.confirm(`${targetName} already has an ADP Name saved as "${existingAdpName}". Overwrite it with "${rawName}"?`);
+      if(!ok) return;
+    }
+    rows[idx] = { ...rows[idx], adpName: rawName };
+    saveEmployees(rows);
+    refreshAdpMatchingUi();
+  }
+
+  function addNewEmployeeFromAdpName(rawAdpName){
+    const rawName = text(rawAdpName).trim();
+    if(!rawName){
+      alert('That ADP name is blank.');
+      return;
+    }
+    const rows = load(EMPLOYEES_KEY, []);
+    const existing = safeArray(rows).find(row => normalizeName(text(row.name || row.employeeName)) === normalizeName(rawName));
+    if(existing){
+      const ok = window.confirm(`${rawName} is already on your employee list. Save it as this person's ADP Name too?`);
+      if(!ok) return;
+      existing.adpName = rawName;
+      saveEmployees(rows);
+      refreshAdpMatchingUi();
+      return;
+    }
+    rows.push({
+      name: rawName,
+      adpName: rawName,
+      department: '',
+      birthday: '',
+      size: '',
+      active: true
+    });
+    saveEmployees(rows);
+    refreshAdpMatchingUi();
+  }
+
+  function replaceEmployeeDisplayNameWithAdp(rawAdpName, employeeName){
+    const rawName = text(rawAdpName).trim();
+    const targetName = text(employeeName).trim();
+    if(!rawName || !targetName){
+      alert('Pick an employee first.');
+      return;
+    }
+    const rows = load(EMPLOYEES_KEY, []);
+    const idx = safeArray(rows).findIndex(row => text(row.name || row.employeeName).trim() === targetName);
+    if(idx < 0){
+      alert('That employee record could not be found.');
+      return;
+    }
+    const duplicate = safeArray(rows).find((row, rowIdx) => rowIdx !== idx && normalizeName(text(row.name || row.employeeName)) === normalizeName(rawName));
+    if(duplicate){
+      alert(`Another employee is already using the name "${rawName}".`);
+      return;
+    }
+    const ok = window.confirm(`Replace "${targetName}" on your employee list with "${rawName}"? This will also save "${rawName}" as the ADP Name.`);
+    if(!ok) return;
+    rows[idx] = { ...rows[idx], name: rawName, adpName: rawName };
+    saveEmployees(rows);
+    refreshAdpMatchingUi();
   }
 
 
@@ -155,20 +306,51 @@
     return n(state.settings.shippingRate || state.settings.qaRate || 0);
   }
 
+  // Convert "Last, First" → "first last" for normalized comparison.
+  function invertLastFirst(value){
+    const s = text(value).trim();
+    const m = s.match(/^([^,]+),\s*(.+)$/);
+    if(m) return normalizeName(`${m[2]} ${m[1]}`);
+    return normalizeName(s);
+  }
+
   function buildEmployeeMatchMap(){
     const map = new Map();
     getEmployees().forEach(emp => {
+      // Priority 1: explicit adpName (exact normalized match)
+      if(emp.adpName){
+        const adpKey = normalizeName(emp.adpName);
+        if(adpKey && !map.has(adpKey)) map.set(adpKey, emp);
+        // also index the Last,First→First Last inversion of adpName
+        const adpInverted = invertLastFirst(emp.adpName);
+        if(adpInverted && adpInverted !== adpKey && !map.has(adpInverted)) map.set(adpInverted, emp);
+      }
+      // Priority 2: display name (normalized full name)
       const full = normalizeName(emp.name);
       if(full && !map.has(full)) map.set(full, emp);
+      // Priority 3: first name only (weakest — only as final fallback)
       const first = normalizeName(text(emp.name).split(/\s+/)[0]);
       if(first && !map.has(first)) map.set(first, emp);
     });
     return map;
   }
 
+  // Resolve a raw ADP name string to the matching employee, or null.
+  // rawAdpName may be "Last, First" or "First Last".
+  // Returns { employee, matchedBy } or null.
+  function resolveAdpName(rawAdpName, employeeMatchMap){
+    if(!rawAdpName) return null;
+    const normalized = normalizeName(rawAdpName);
+    const inverted   = invertLastFirst(rawAdpName);
+    // Try normalized form first, then Last,First inverted
+    const emp = employeeMatchMap.get(normalized) || employeeMatchMap.get(inverted) || null;
+    return emp ? { employee: emp, matchedBy: normalized } : null;
+  }
+
   function summarizeAdpCsvRows(rows){
     const employeeLookup = buildEmployeeMatchMap();
     const grouped = new Map();
+    const unmatchedNames = new Map(); // rawName → count
     safeArray(rows).forEach(row => {
       const firstName = text(row['First Name']);
       const lastName = text(row['Last Name']);
@@ -176,17 +358,22 @@
       if(!rawName) return;
       const date = parseAdpDate(row['Pay Date']);
       if(!date) return;
-      const fullKey = normalizeName(rawName);
-      const firstKey = normalizeName(firstName);
-      const matched = employeeLookup.get(fullKey) || employeeLookup.get(firstKey);
-      const displayName = matched?.name || rawName;
-      const department = matched?.department || '';
+
+      const resolved = resolveAdpName(rawName, employeeLookup);
+      const displayName = resolved ? resolved.employee.name : rawName;
+      const department  = resolved ? resolved.employee.department : '';
+      if(!resolved){
+        unmatchedNames.set(rawName, (unmatchedNames.get(rawName) || 0) + 1);
+      }
+
       const weekStart = getWeekStart(date);
       const bucketKey = `${date}__${normalizeName(displayName)}`;
       if(!grouped.has(bucketKey)) grouped.set(bucketKey, {
         date,
         weekStart,
         employeeName: displayName,
+        adpRawName: rawName,
+        matched: !!resolved,
         homeDepartment: department,
         workedDepartment: department,
         regularHours: 0,
@@ -210,7 +397,7 @@
       else if(isLeave) bucket.ptoHours += hours;
       else bucket.regularHours += hours;
     });
-    return [...grouped.values()].map(row => ({
+    const employeeRows = [...grouped.values()].map(row => ({
       ...row,
       regularHours: round(row.regularHours),
       ptoHours: round(row.ptoHours),
@@ -218,6 +405,10 @@
       importDates: [...row.importDates].sort(),
       codes: [...row.codes]
     })).sort((a,b)=> String(a.date).localeCompare(String(b.date)) || String(a.employeeName).localeCompare(String(b.employeeName)));
+    return {
+      employeeRows,
+      unmatchedNames: [...unmatchedNames.entries()].map(([name, count]) => ({ name, count }))
+    };
   }
 
   function getDeptHoursBucket(department){
@@ -387,17 +578,59 @@
     return out;
   }
 
+  function palletTouchedOnDate(pallet, dateStr){
+    const created = text(new Date(n(pallet.createdAt || 0)).toISOString?.() || '').slice(0,10);
+    const updated = text(new Date(n(pallet.updatedAt || 0)).toISOString?.() || '').slice(0,10);
+    if(created === dateStr || updated === dateStr) return true;
+    return safeArray(pallet.events).some(evt => text(new Date(n(evt.ts || 0)).toISOString?.() || '').slice(0,10) === dateStr);
+  }
+
+  function getPalletWorkflowMetrics(dateStr){
+    const workflow = readWorkflowData();
+    const pallets = safeArray(workflow.pallets);
+    let receivingUnits = 0;
+    let prepUnits = 0;
+    let putawayUnits = 0;
+    let receivingPOs = 0;
+    let prepPOs = 0;
+    let putawayCount = 0;
+
+    pallets.forEach(pallet => {
+      if(!palletTouchedOnDate(pallet, dateStr)) return;
+      safeArray(pallet.pos).forEach(po => {
+        const poId = text(po.po || po.id);
+        if(text(po.receivingDone).toLowerCase() === 'true' || po.receivingDone === true || n(po.receivedQty) > 0){
+          receivingUnits += n(po.receivedQty);
+          if(poId) receivingPOs += 1;
+        }
+        if(text(po.prepVerified).toLowerCase() === 'true' || po.prepVerified === true || n(po.prepReceivedQty) > 0){
+          prepUnits += n(po.prepReceivedQty);
+          if(poId) prepPOs += 1;
+        }
+        const routedQty = n(po.stsQty) + n(po.ltsQty);
+        if(routedQty > 0){
+          putawayUnits += routedQty;
+          putawayCount += 1;
+        }
+      });
+    });
+
+    return { receivingUnits, receivingPOs, prepUnits, prepPOs, putawayCount, putawayUnits };
+  }
+
   function getWorkflowMetrics(dateStr){
+    const palletMetrics = getPalletWorkflowMetrics(dateStr);
     const workflow = readWorkflowData();
     const receivingRows = flattenWorkflowSections(workflow.receivingSections, 'Receiving').filter(r => r.date === dateStr);
     const prepRows = flattenWorkflowSections(workflow.prepSections, 'Prep').filter(r => r.date === dateStr);
     const putawayRows = safeArray(workflow.putawayEntries).filter(r => text(r.date) === dateStr);
-    const receivingUnits = receivingRows.reduce((s,r)=>s+n(r.received),0);
-    const prepUnits = prepRows.reduce((s,r)=>s+n(r.received),0);
-    const putawayCount = putawayRows.length;
-    const receivingPOs = new Set(receivingRows.map(r=>text(r.po)).filter(Boolean)).size;
-    const prepPOs = new Set(prepRows.map(r=>text(r.po)).filter(Boolean)).size;
-    return { receivingUnits, receivingPOs, prepUnits, prepPOs, putawayCount };
+    const receivingUnits = palletMetrics.receivingUnits || receivingRows.reduce((s,r)=>s+n(r.received),0);
+    const prepUnits = palletMetrics.prepUnits || prepRows.reduce((s,r)=>s+n(r.received),0);
+    const putawayCount = palletMetrics.putawayCount || putawayRows.length;
+    const receivingPOs = palletMetrics.receivingPOs || new Set(receivingRows.map(r=>text(r.po)).filter(Boolean)).size;
+    const prepPOs = palletMetrics.prepPOs || new Set(prepRows.map(r=>text(r.po)).filter(Boolean)).size;
+    const putawayUnits = palletMetrics.putawayUnits || safeArray(putawayRows).reduce((s,r)=>s+n(r.quantity || r.qty || 0),0);
+    return { receivingUnits, receivingPOs, prepUnits, prepPOs, putawayCount, putawayUnits };
   }
 
   function getAssemblyMetrics(dateStr){
@@ -424,11 +657,11 @@
     const qaUnits = n(auto.qaActualUnits);
     const qaHours = n(record.qaHoursWorked);
     const prepUnits = n(auto.prepUnits);
-    const prepApprovedUnits = n(record.prepApprovedUnits || prepUnits);
+    const prepApprovedUnits = record.prepApprovedManual ? n(record.prepApprovedUnits) : prepUnits;
     const prepHours = n(record.prepHoursWorked);
     const assemblyUnits = n(auto.assemblyUnits);
     const assemblyHours = n(record.assemblyHoursWorked);
-    const putawayUnits = n(record.putawayUnits);
+    const putawayUnits = n(auto.putawayUnits || record.putawayUnits);
     const putawayHours = n(record.putawayHoursWorked);
     const shippingUnits = n(record.fulfillmentIndividualUnits) + n(record.fulfillmentBulkUnits);
     const shippingHours = n(record.fulfillmentIndividualHoursWorked) + n(record.fulfillmentBulkHoursWorked);
@@ -479,7 +712,8 @@
       assemblyPacks: assembly.packs,
       assemblyAttendance: getAttendanceCountForDate(dateStr, ['assembly']),
       assemblyScheduledRows: assembly.scheduledRows,
-      putawayLineCount: workflow.putawayCount
+      putawayLineCount: workflow.putawayCount,
+      putawayUnits: workflow.putawayUnits
     };
   }
 
@@ -512,34 +746,59 @@
     return data;
   }
 
-  function applyProductivityPayload(data={}){
+  function applyProductivityPayload(data={}, options={}){
+    const persistLocal = options.persistLocal !== false;
     if(data && typeof data.settings === 'object' && data.settings){
       state.settings = { ...defaultSettings, ...data.settings };
-      save(SETTINGS_KEY, state.settings);
+      if(persistLocal) save(SETTINGS_KEY, state.settings);
     }
     if(Array.isArray(data.dailyRecords)){
       state.dailyRecords = data.dailyRecords;
-      save(DAILY_KEY, state.dailyRecords);
+      if(persistLocal) save(DAILY_KEY, state.dailyRecords);
     }
     if(Array.isArray(data.laborEntries)){
       state.laborEntries = data.laborEntries;
-      save(LABOR_KEY, state.laborEntries);
+      if(persistLocal) save(LABOR_KEY, state.laborEntries);
     }
     if(Array.isArray(data.importBatches)){
       state.importBatches = data.importBatches;
-      save(IMPORT_BATCHES_KEY, state.importBatches);
+      if(persistLocal) save(IMPORT_BATCHES_KEY, state.importBatches);
     }
   }
 
   async function loadProductivityFromBackend(){
     try{
       const data = await productivityApiRequest('GET');
-      applyProductivityPayload(data);
+      applyProductivityPayload(data, { persistLocal: false });
+      const fallbackDaily = load(DAILY_KEY, []);
+      const fallbackLabor = load(LABOR_KEY, []);
+      const fallbackBatches = load(IMPORT_BATCHES_KEY, []);
+      const fallbackPending = load(PENDING_IMPORT_KEY, null);
+      let hydratedFromLocal = false;
+      if(!state.dailyRecords.length && fallbackDaily.length){ state.dailyRecords = fallbackDaily; hydratedFromLocal = true; }
+      if(!state.laborEntries.length && fallbackLabor.length){ state.laborEntries = fallbackLabor; hydratedFromLocal = true; }
+      if(!state.importBatches.length && fallbackBatches.length){ state.importBatches = fallbackBatches; hydratedFromLocal = true; }
+      if(!state.pendingImport && fallbackPending?.employeeRows?.length){ state.pendingImport = fallbackPending; }
+      save(DAILY_KEY, state.dailyRecords);
+      save(LABOR_KEY, state.laborEntries);
+      save(IMPORT_BATCHES_KEY, state.importBatches);
+      save(PENDING_IMPORT_KEY, state.pendingImport);
       productivitySyncEnabled = true;
+      if(hydratedFromLocal) scheduleProductivitySync();
       render();
     }catch(err){
       console.warn('Productivity sync unavailable, using browser storage.', err);
+      // PATCH: Fall back to localStorage so app still works when Neon unreachable.
+      const fallbackDaily = load(DAILY_KEY, []);
+      const fallbackLabor = load(LABOR_KEY, []);
+      const fallbackBatches = load(IMPORT_BATCHES_KEY, []);
+      const fallbackPending = load(PENDING_IMPORT_KEY, null);
+      if(fallbackDaily.length) state.dailyRecords = fallbackDaily;
+      if(fallbackLabor.length) state.laborEntries = fallbackLabor;
+      if(fallbackBatches.length) state.importBatches = fallbackBatches;
+      if(fallbackPending?.employeeRows?.length) state.pendingImport = fallbackPending;
       productivitySyncEnabled = false;
+      render();
     }finally{
       productivitySyncLoaded = true;
     }
@@ -566,11 +825,23 @@
     }
   }
 
+  function persistView(){
+    save(VIEW_KEY, {
+      activeTab: state.activeTab,
+      activeDept: state.activeDept,
+      selectedWeek: state.selectedWeek,
+      selectedDate: state.selectedDate,
+      selectedMonth: state.selectedMonth
+    });
+  }
+
   function persist(){
+    persistView();
     save(DAILY_KEY, state.dailyRecords);
     save(LABOR_KEY, state.laborEntries);
     save(SETTINGS_KEY, state.settings);
     save(IMPORT_BATCHES_KEY, state.importBatches);
+    save(PENDING_IMPORT_KEY, state.pendingImport);
     scheduleProductivitySync();
   }
 
@@ -736,7 +1007,7 @@
           <div class="productivity-form-grid compact-grid">
             ${readOnlyField('Units (auto)','prepUnits', calc.prepUnits)}
             ${readOnlyField('POs (auto)','prepPOs', calc.prepPOs)}
-            ${field('QA Approved Units','prepApprovedUnits','number', record.prepApprovedUnits || calc.prepUnits || '')}
+            ${field('QA Approved Units','prepApprovedUnits','number', record.prepApprovedManual ? record.prepApprovedUnits : '', '1')}
             ${readOnlyField('Attendance (auto)','prepAttendance', calc.prepAttendance)}
             ${readOnlyField('Hours Worked (from weekly labor)','prepHoursWorked', fmt(record.prepHoursWorked || 0))}
             ${financeVisible() ? readOnlyField('Payout (from weekly labor)','prepPayout', money(record.prepPayout || 0)) : ''}
@@ -900,6 +1171,7 @@
                 <div class="right"><span class="pill">Prepared ${new Date(pending.preparedAt).toLocaleString()}</span></div>
               </div>
               <div class="productivity-table-wrap"><table class="productivity-table"><thead><tr><th>Pay Date</th><th>Employees</th><th>Total Hours</th><th>QA</th><th>Prep</th><th>Assembly</th><th>Inventory</th><th>Putaway</th><th>Fulfillment</th></tr></thead><tbody>${pending.daySummaries.map(day=>`<tr><td>${dateLabel(day.date)}</td><td>${fmtNum(day.employeeCount)}</td><td>${fmt(day.hours)}</td><td>${fmt(day.qaHours)}</td><td>${fmt(day.prepHours)}</td><td>${fmt(day.assemblyHours)}</td><td>${fmt(day.inventoryHours)}</td><td>${fmt(day.putawayHours)}</td><td>${fmt(day.fulfillmentIndividualHours + day.fulfillmentBulkHours)}</td></tr>`).join('')}</tbody></table></div>
+              ${pending.unmatchedNames && pending.unmatchedNames.length ? `<div class="productivity-import-unmatched"><strong>⚠ ${pending.unmatchedNames.length} unmatched ADP name${pending.unmatchedNames.length !== 1 ? 's' : ''} — match them here:</strong><div class="productivity-import-match-list">${pending.unmatchedNames.map(u=>{ const options = getEmployeeOptionsForAdpName(u.name); return `<div class="productivity-import-match-row"><div class="productivity-import-match-main"><div class="productivity-import-match-name">${escapeHtml(u.name)}</div><div class="productivity-import-match-meta">${u.count} row${u.count!==1?'s':''} waiting to be linked</div></div><div class="productivity-import-match-controls"><select class="productivity-import-match-select" data-adp-match-name="${escapeHtml(u.name)}"><option value="">Match to employee…</option>${options.map(opt=>`<option value="${escapeHtml(opt.name)}">${escapeHtml(opt.name)}${opt.department ? ` — ${escapeHtml(opt.department)}` : ''}</option>`).join('')}</select><div class="productivity-import-match-actions"><button class="btn secondary productivity-save-adp-match-btn" type="button" data-adp-save-name="${escapeHtml(u.name)}">Save Match</button><button class="btn secondary productivity-replace-adp-name-btn" type="button" data-adp-replace-name="${escapeHtml(u.name)}">Use ADP Name</button><button class="btn secondary productivity-add-adp-employee-btn" type="button" data-adp-add-name="${escapeHtml(u.name)}">Add as New</button></div></div></div>`; }).join('')}</div><div class="productivity-import-unmatched-hint">Save Match = link ADP name to someone already on your list. Use ADP Name = replace the selected employee name with the ADP version. Add as New = create a brand-new employee using the ADP name.</div></div>` : `<div class="productivity-import-matched-ok">✓ All ADP names matched to employee records.</div>`}
             </div>
           ` : ''}
           <form id="productivityLaborForm" class="productivity-inline-form">
@@ -955,9 +1227,9 @@
   }
 
   function bindEvents(){
-    root.querySelectorAll('[data-productivity-tab]').forEach(btn => btn.addEventListener('click', ()=>{ state.activeTab = btn.dataset.productivityTab; render(); }));
+    root.querySelectorAll('[data-productivity-tab]').forEach(btn => btn.addEventListener('click', ()=>{ state.activeTab = btn.dataset.productivityTab; persistView(); render(); }));
     const weekInput = document.getElementById('productivityWeekStartInput');
-    if(weekInput) weekInput.addEventListener('change', ()=>{ state.selectedWeek = getWeekStart(weekInput.value || isoToday()); state.selectedDate = getWeekDays(state.selectedWeek)[0]; render(); });
+    if(weekInput) weekInput.addEventListener('change', ()=>{ state.selectedWeek = getWeekStart(weekInput.value || isoToday()); state.selectedDate = getWeekDays(state.selectedWeek)[0]; persistView(); render(); });
     root.querySelectorAll('[data-day]').forEach(btn => btn.addEventListener('click', ()=>{ state.selectedDate = btn.dataset.day; render(); }));
     root.querySelectorAll('[data-dept]').forEach(btn => btn.addEventListener('click', ()=>{ state.activeDept = btn.dataset.dept; render(); }));
     root.querySelectorAll('[data-dept-form]').forEach(form => form.addEventListener('submit', onDeptSave));
@@ -968,6 +1240,22 @@
     if(adpPrepareBtn) adpPrepareBtn.addEventListener('click', prepareAdpCsvImport);
     const adpSaveBtn = document.getElementById('productivityAdpSaveBtn');
     if(adpSaveBtn) adpSaveBtn.addEventListener('click', savePendingAdpImport);
+    root.querySelectorAll('.productivity-save-adp-match-btn').forEach(btn => btn.addEventListener('click', ()=>{
+      const rawName = btn.dataset.adpSaveName || '';
+      const select = root.querySelector(`[data-adp-match-name="${CSS.escape(rawName)}"]`);
+      const employeeName = select?.value || '';
+      saveAdpNameMatch(rawName, employeeName);
+    }));
+    root.querySelectorAll('.productivity-replace-adp-name-btn').forEach(btn => btn.addEventListener('click', ()=>{
+      const rawName = btn.dataset.adpReplaceName || '';
+      const select = root.querySelector(`[data-adp-match-name="${CSS.escape(rawName)}"]`);
+      const employeeName = select?.value || '';
+      replaceEmployeeDisplayNameWithAdp(rawName, employeeName);
+    }));
+    root.querySelectorAll('.productivity-add-adp-employee-btn').forEach(btn => btn.addEventListener('click', ()=>{
+      const rawName = btn.dataset.adpAddName || '';
+      addNewEmployeeFromAdpName(rawName);
+    }));
     root.querySelectorAll('.productivity-delete-labor-btn').forEach(btn => btn.addEventListener('click', ()=> deleteLabor(btn.dataset.id)));
     root.querySelectorAll('.productivity-delete-batch-btn').forEach(btn => btn.addEventListener('click', ()=> deleteImportBatch(btn.dataset.batchId)));
     const monthInput = document.getElementById('productivityMonthInput');
@@ -996,9 +1284,20 @@
     const fd = new FormData(form);
     const date = text(fd.get('date')) || state.selectedDate;
     const record = getRecord(date);
+    const deptForm = text(form.dataset.deptForm);
+    const auto = getAutoMetrics(date);
     for(const [key, value] of fd.entries()){
       if(key === 'date') continue;
+      if(deptForm === 'qa-prep' && key === 'prepApprovedUnits') continue;
       record[key] = value === '' ? '' : value;
+    }
+    if(deptForm === 'qa-prep'){
+      const rawApproved = text(fd.get('prepApprovedUnits'));
+      const approvedValue = rawApproved === '' ? '' : n(rawApproved);
+      const autoPrepUnits = n(auto.prepUnits);
+      const shouldUseManual = rawApproved !== '' && approvedValue !== autoPrepUnits;
+      record.prepApprovedManual = shouldUseManual;
+      record.prepApprovedUnits = shouldUseManual ? approvedValue : '';
     }
     persist();
     render();
@@ -1008,7 +1307,7 @@
     event.preventDefault();
     const fd = new FormData(event.currentTarget);
     const entry = computeLabor({
-      id: uid('labor'),
+      id: uuid(),
       date: state.selectedDate,
       weekStart: state.selectedWeek,
       employeeName: text(fd.get('employeeName')),
@@ -1035,7 +1334,7 @@
     const raw = await file.text();
     const rows = parseCsv(raw);
     if(!rows.length){ alert('That CSV looked empty.'); return; }
-    const summary = summarizeAdpCsvRows(rows);
+    const { employeeRows: summary, unmatchedNames } = summarizeAdpCsvRows(rows);
     if(!summary.length){ alert('I could not find any usable pay-date rows in that CSV.'); return; }
     const employeeRows = summary.map(row => ({
       ...row,
@@ -1046,18 +1345,25 @@
       fileName: file.name,
       preparedAt: new Date().toISOString(),
       employeeRows,
-      daySummaries
+      daySummaries,
+      unmatchedNames
     };
+    if(daySummaries.length){
+      state.selectedWeek = getWeekStart(daySummaries[0].date || employeeRows[0]?.date || isoToday());
+      state.selectedDate = daySummaries[0].date || getWeekDays(state.selectedWeek)[0] || isoToday();
+      state.activeTab = 'labor';
+    }
+    persist();
     render();
   }
 
   function savePendingAdpImport(){
     const pending = state.pendingImport;
     if(!pending || !pending.employeeRows?.length){ alert('Prepare an import first.'); return; }
-    const batchId = uid('adp_batch');
+    const batchId = uuid();
     const savedAt = new Date().toISOString();
     const imported = pending.employeeRows.map(row => ({
-      id: uid('labor'),
+      id: uuid(),
       sourceKind: 'adp',
       importBatchId: batchId,
       importedAt: savedAt,
@@ -1088,6 +1394,11 @@
       weekStart: affectedDates.length ? getWeekStart(affectedDates[0]) : state.selectedWeek
     });
     state.pendingImport = null;
+    if(affectedDates.length){
+      state.selectedWeek = getWeekStart(affectedDates[0]);
+      state.selectedDate = affectedDates[0];
+      state.activeTab = 'labor';
+    }
     persist();
     render();
     alert(`Saved ${imported.length} imported labor row${imported.length===1?'':'s'} across ${affectedDates.length} day${affectedDates.length===1?'':'s'}.`);
@@ -1129,6 +1440,16 @@
   function deptBtn(id,label){
     return `<button type="button" class="productivity-radio-btn ${state.activeDept===id?'active':''}" data-dept="${id}">${escapeHtml(label)}</button>`;
   }
+
+  window.addEventListener('qa-workflow-data-changed', () => {
+    try { render(); } catch(_){}
+  });
+  window.addEventListener('assembly-data-changed', () => {
+    try { render(); } catch(_){}
+  });
+  window.addEventListener('attendance-data-changed', () => {
+    try { render(); } catch(_){}
+  });
 
   render();
   loadProductivityFromBackend();

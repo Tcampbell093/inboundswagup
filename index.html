@@ -4,8 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Warehouse Operations Hub</title>
-<link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="Styles/base.css">
+<link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="Styles/layout.css">
 <link rel="stylesheet" href="Styles/attendance.css">
 <link rel="stylesheet" href="Styles/errors.css">
@@ -17,6 +17,8 @@
 <link rel="stylesheet" href="Styles/sord.css">
 <link rel="stylesheet" href="Styles/policy.css">
 <link rel="stylesheet" href="Styles/productivity.css">
+<link rel="stylesheet" href="fulfillment-scan-prototype.css">
+<link rel="stylesheet" href="Styles/cycle-count.css">
 <link rel="stylesheet" href="risk-row.css">
   <link rel="icon" type="image/png" href="assets/houston-control-logo-left.png">
 </head>
@@ -39,87 +41,130 @@
       </button>
     </div>
 
+    <!-- Collapse toggle -->
+    <button class="sidebar-rail-toggle" id="sidebarRailToggle" type="button" aria-label="Collapse sidebar">
+      <svg class="rail-toggle-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+
     <!-- Scrollable nav -->
     <nav class="sidebar-nav" aria-label="Modules">
 
-      <div class="nav-group">
-        <div class="nav-group-label">Overview</div>
-        <div class="nav-list">
-          <button class="nav-btn active" data-page="homePage">
+      <!-- Overview group -->
+      <div class="nav-group" data-group="overview">
+        <button class="nav-group-header" type="button" aria-expanded="true" aria-controls="navg-overview">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/><path d="M10 6v4l2.5 2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span class="nav-group-label">Overview</span>
+          <svg class="nav-group-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="nav-list" id="navg-overview">
+          <button class="nav-btn" data-page="huddlePage" title="Daily Brief">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M4 5h12M4 9h8M4 13h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="16" cy="13" r="3" fill="currentColor" opacity=".35"/></svg>
+            <span class="nav-label">Daily Brief</span>
+          </button>
+          <button class="nav-btn active" data-page="homePage" title="Mission Control">
             <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M3 9.5L10 3l7 6.5V17a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
-            Mission Control
+            <span class="nav-label">Mission Control</span>
           </button>
-          <button class="nav-btn" data-page="helpPage">
-            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/><path d="M10 13v.5M10 7a2 2 0 011.732 3C11.268 10.5 10 11 10 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            Help &amp; Guide
-          </button>
-          <button class="nav-btn" data-page="importHubPage">
+          <button class="nav-btn" data-page="importHubPage" title="Import Hub">
             <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M10 3v10m-4-4l4 4 4-4M4 17h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Import Hub
+            <span class="nav-label">Import Hub</span>
           </button>
         </div>
       </div>
 
-      <div class="nav-group">
-        <div class="nav-group-label">Floor Operations</div>
-        <div class="nav-list">
-          <button class="nav-btn" data-page="attendancePage">
+      <!-- Floor Operations group -->
+      <div class="nav-group" data-group="floor">
+        <button class="nav-group-header" type="button" aria-expanded="true" aria-controls="navg-floor">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="none"><rect x="2" y="12" width="16" height="5" rx="1.5" stroke="currentColor" stroke-width="1.6"/><path d="M5 12V7m5 5V5m5 7V8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span class="nav-group-label">Floor Ops</span>
+          <svg class="nav-group-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="nav-list" id="navg-floor">
+          <button class="nav-btn" data-page="attendancePage" title="Attendance">
             <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3" stroke="currentColor" stroke-width="1.6"/><path d="M3 17c0-3.314 3.134-6 7-6s7 2.686 7 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            Attendance
+            <span class="nav-label">Attendance</span>
           </button>
-          <button class="nav-btn" data-page="workflowInboundPage">
+          <button class="nav-btn" data-page="workflowInboundPage" title="QA Inbound">
             <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><rect x="3" y="8" width="14" height="9" rx="1.5" stroke="currentColor" stroke-width="1.6"/><path d="M7 8V6a3 3 0 016 0v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            QA Inbound
+            <span class="nav-label">QA Inbound</span>
           </button>
-          <button class="nav-btn" data-page="returnsPage">
+          <button class="nav-btn" data-page="fulfillmentScanPage" title="Fulfillment Scan-Out">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M4 6.5h12v8a2 2 0 01-2 2H6a2 2 0 01-2-2v-8z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M7 10h6M8 13h4M6 6.5l1.5-3h5L14 6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="nav-label">Fulfillment Scan-Out</span>
+          </button>
+          <button class="nav-btn" data-page="returnsPage" title="Returns">
             <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M4 10h9a4 4 0 010 8H4m0-8l3-3M4 10l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Returns
+            <span class="nav-label">Returns</span>
           </button>
-          <button class="nav-btn" data-page="errorsPage">
+          <button class="nav-btn" data-page="cycleCountPage" title="Cycle Count">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M4 5h12M4 9h8M4 13h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="15" cy="14" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M13.5 14l1 1 2-2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="nav-label">Cycle Count</span>
+          </button>
+          <button class="nav-btn" data-page="errorsPage" title="Error Log">
             <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M10 3L2 17h16L10 3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 9v4M10 15v.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            Error Log
+            <span class="nav-label">Error Log</span>
           </button>
         </div>
       </div>
 
-      <div class="nav-group">
-        <div class="nav-group-label">Assembly</div>
-        <div class="nav-list">
-          <button class="nav-btn" data-page="assemblyPage">
+      <!-- Assembly group -->
+      <div class="nav-group" data-group="assembly">
+        <button class="nav-group-header" type="button" aria-expanded="true" aria-controls="navg-assembly">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="none"><rect x="3" y="11" width="5" height="6" rx="1" stroke="currentColor" stroke-width="1.6"/><rect x="8" y="7" width="5" height="10" rx="1" stroke="currentColor" stroke-width="1.6"/><rect x="13" y="3" width="4" height="14" rx="1" stroke="currentColor" stroke-width="1.6"/></svg>
+          <span class="nav-group-label">Assembly</span>
+          <svg class="nav-group-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="nav-list" id="navg-assembly">
+          <button class="nav-btn" data-page="assemblyPage" title="Assembly Planner">
             <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><rect x="3" y="11" width="5" height="6" rx="1" stroke="currentColor" stroke-width="1.6"/><rect x="8" y="7" width="5" height="10" rx="1" stroke="currentColor" stroke-width="1.6"/><rect x="13" y="3" width="4" height="14" rx="1" stroke="currentColor" stroke-width="1.6"/></svg>
-            Assembly Planner
+            <span class="nav-label">Assembly Planner</span>
           </button>
-          <button class="nav-btn" data-page="queuePage">
+          <button class="nav-btn" data-page="queuePage" title="Pack Builder Queue">
             <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M4 6h12M4 10h8M4 14h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            Pack Builder Queue
+            <span class="nav-label">Pack Builder Queue</span>
+          </button>
+          <button class="nav-btn" data-page="assemblyFlightTrackerPage" title="Assembly Flight Tracker">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M3 10h14M11 4l6 6-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 5v10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="nav-label">Flight Tracker</span>
           </button>
         </div>
       </div>
 
-      <div class="nav-group">
-        <div class="nav-group-label">Order Intelligence</div>
-        <div class="nav-list">
-          <button class="nav-btn" data-page="sordPage">
+      <!-- Intelligence + Management merged -->
+      <div class="nav-group" data-group="ops">
+        <button class="nav-group-header" type="button" aria-expanded="true" aria-controls="navg-ops">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="none"><path d="M4 15V9m4 6V5m4 10v-7m4 7V3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M3 17h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span class="nav-group-label">Management</span>
+          <svg class="nav-group-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="nav-list" id="navg-ops">
+          <button class="nav-btn" data-page="sordPage" title="Daily Tools Dossier">
             <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/><path d="M10 7v3l2 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            Daily Tools Dossier
+            <span class="nav-label">Daily Tools Dossier</span>
+          </button>
+          <button class="nav-btn" data-page="calendarPage" title="Calendar">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M3 8h14M7 3v2M13 3v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="nav-label">Calendar</span>
+          </button>
+          <button class="nav-btn" data-page="productivityPage" title="Productivity">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M4 15V9m4 6V5m4 10v-7m4 7V3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M3 17h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="nav-label">Productivity</span>
+          </button>
+          <button class="nav-btn" data-page="policyPage" title="Policy &amp; SOPs">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><rect x="4" y="2" width="12" height="16" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M7 7h6M7 10h6M7 13h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="nav-label">Policy &amp; SOPs</span>
           </button>
         </div>
       </div>
 
-      <div class="nav-group">
-        <div class="nav-group-label">Management</div>
+      <!-- Help — pinned at bottom of scroll -->
+      <div class="nav-group nav-group--utility">
         <div class="nav-list">
-          <button class="nav-btn" data-page="calendarPage">
-            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M3 8h14M7 3v2M13 3v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            Calendar
-          </button>
-          <button class="nav-btn" data-page="productivityPage">
-            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M4 15V9m4 6V5m4 10v-7m4 7V3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M3 17h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            Productivity
-          </button>
-          <button class="nav-btn" data-page="policyPage">
-            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><rect x="4" y="2" width="12" height="16" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M7 7h6M7 10h6M7 13h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            Policy &amp; SOPs
+          <button class="nav-btn" data-page="helpPage" title="Help &amp; Guide">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/><path d="M10 13v.5M10 7a2 2 0 011.732 3C11.268 10.5 10 11 10 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="nav-label">Help &amp; Guide</span>
           </button>
         </div>
       </div>
@@ -145,6 +190,95 @@
     </div>
 
     <!-- Home -->
+    <!-- ═══════════════════════════════════════════════════════════
+         DAILY BRIEF / HUDDLE DASHBOARD
+         ═══════════════════════════════════════════════════════════ -->
+    <section id="huddlePage" class="page">
+      <div class="mc-shell">
+
+        <!-- Hero -->
+        <div class="mc-hero">
+          <div>
+            <div class="eyebrow">Operations Brief</div>
+            <h2>Daily Brief</h2>
+            <p class="subtitle">Morning huddle, end-of-day recap, incoming potential, and historical snapshots — all from your live SORD and assembly data.</p>
+          </div>
+          <div class="toolbar right">
+            <button class="btn secondary" type="button" data-home-jump="sordPage">Open SORD</button>
+            <button class="btn secondary" type="button" data-home-jump="assemblyPage">Open Assembly</button>
+          </div>
+        </div>
+
+        <!-- ── SECTION 1: Floor Now ────────────────────────────────── -->
+        <section class="mc-panel">
+          <div class="mc-panel-head">
+            <div>
+              <div class="eyebrow">Floor Now</div>
+              <h3>Current workable floor state</h3>
+            </div>
+            <div id="huddleAttendance" class="mc-mini-list"></div>
+          </div>
+          <div class="mc-radar-grid" id="huddleFloorNow"></div>
+        </section>
+
+        <!-- ── SECTION 2: Incoming Potential ─────────────────────── -->
+        <section class="mc-panel">
+          <div class="mc-panel-head">
+            <div>
+              <div class="eyebrow">Incoming Potential</div>
+              <h3>Likely arrivals — not guaranteed</h3>
+            </div>
+          </div>
+          <div class="huddle-incoming-grid" id="huddleIncoming"></div>
+        </section>
+
+        <!-- ── SECTION 3: Today's Execution ──────────────────────── -->
+        <section class="mc-panel">
+          <div class="mc-panel-head">
+            <div>
+              <div class="eyebrow">Today's Execution</div>
+              <h3>What is actually moving</h3>
+            </div>
+          </div>
+          <div id="huddleTodayExec"></div>
+        </section>
+
+        <!-- ── SECTION 4: End-of-Day Recap ───────────────────────── -->
+        <section class="mc-panel" id="huddleRecapPanel">
+          <div class="mc-panel-head">
+            <div>
+              <div class="eyebrow">End-of-Day Lead Recap</div>
+              <h3>Save today's notes for the record</h3>
+            </div>
+          </div>
+          <div id="huddleRecapForm"></div>
+        </section>
+
+        <!-- ── SECTION 5: Recap History ──────────────────────────── -->
+        <section class="mc-panel">
+          <div class="mc-panel-head">
+            <div>
+              <div class="eyebrow">Recap History</div>
+              <h3>Past end-of-day notes</h3>
+            </div>
+          </div>
+          <div class="huddle-history-list" id="huddleRecapHistory"></div>
+        </section>
+
+        <!-- ── SECTION 6: SORD Snapshot History ─────────────────── -->
+        <section class="mc-panel">
+          <div class="mc-panel-head">
+            <div>
+              <div class="eyebrow">Status Snapshot History</div>
+              <h3>Daily SORD state — what was on the floor, by date</h3>
+            </div>
+          </div>
+          <div id="huddleSnapshotPanel"></div>
+        </section>
+
+      </div>
+    </section>
+
     <section id="homePage" class="page active">
       <div class="mc-shell">
         <div class="mc-hero">
@@ -564,6 +698,7 @@
       <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Add employee</h3>
       <div class="form-grid" style="grid-template-columns:1.4fr 1fr 1fr .8fr;align-items:end">
         <div class="field"><label for="employeeManagerName">Employee Name</label><input id="employeeManagerName" placeholder="Full name" /></div>
+        <div class="field"><label for="employeeManagerAdpName">ADP Name <span style="font-weight:400;color:#6b88a6">(optional)</span></label><input id="employeeManagerAdpName" placeholder="e.g. Campbell, TJ" title="How this person's name appears in ADP exports" /></div>
         <div class="field"><label for="employeeManagerDepartment">Default Department</label><select id="employeeManagerDepartment"></select></div>
         <div class="field"><label for="employeeManagerBirthday">Birthday</label><input id="employeeManagerBirthday" type="date" /></div>
         <div class="field"><label for="employeeManagerSize">Preferred Size</label><select id="employeeManagerSize"></select></div>
@@ -586,7 +721,7 @@
     <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Employee list</h3>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Employee Name</th><th>Default Department</th><th>Birthday</th><th>Preferred Size</th><th>Status</th><th>Action</th></tr></thead>
+        <thead><tr><th>Employee Name</th><th>ADP Name</th><th>Default Department</th><th>Birthday</th><th>Preferred Size</th><th>Status</th><th>Action</th></tr></thead>
         <tbody id="employeesTableBody"></tbody>
       </table>
     </div>
@@ -784,7 +919,314 @@
     </section>
 
 
-    <section id="productivityPage" class="page">
+    
+<section id="fulfillmentScanPage" class="page">
+  <div class="fsp-shell fsp-embedded">
+    <header class="fsp-hero">
+      <div class="fsp-brand">
+        <img src="assets/houston-control-logo-left.png" alt="Houston Control logo">
+        <div>
+          <div class="fsp-eyebrow">Fulfillment module</div>
+          <h1>Fulfillment Scan-Out</h1>
+          <p>Scanner-first shipment confirmation with pallet tracking, duplicate protection, traffic visibility, and shipment lookup for investigations.</p>
+        </div>
+      </div>
+      <div class="fsp-hero-actions">
+        <button id="fspExportBtn" class="fsp-btn secondary" type="button">Export day JSON</button>
+        <a class="fsp-btn secondary" href="fulfillment-scan-out.html" target="_blank" rel="noopener">Open standalone page</a>
+        <button id="fspResetBtn" class="fsp-btn danger" type="button">Clear fulfillment data</button>
+      </div>
+    </header>
+
+    <section class="fsp-grid-top">
+      <article class="fsp-card fsp-card-operator">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Session</div>
+            <h2>Operator & day</h2>
+          </div>
+        </div>
+        <div class="fsp-form-grid two">
+          <label>
+            <span>Operator</span>
+            <input id="fspOperatorInput" type="text" list="fspOperatorOptions" autocomplete="off" spellcheck="false" placeholder="Select or type operator name">
+            <datalist id="fspOperatorOptions"></datalist>
+          </label>
+          <div class="fsp-info-card">
+            <span>Station</span>
+            <strong>Main scan station</strong>
+            <small>Names come from Attendance so you can type to narrow the list or pick a name fast.</small>
+          </div>
+          <label>
+            <span>View date</span>
+            <input id="fspDateInput" type="date">
+          </label>
+          <label>
+            <span>Shift note</span>
+            <input id="fspSessionNoteInput" type="text" placeholder="Optional shift note">
+          </label>
+        </div>
+      </article>
+
+      <article class="fsp-card fsp-card-status">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Live status</div>
+            <h2>Current pallet</h2>
+          </div>
+          <span id="fspStatusPill" class="fsp-status-pill idle">No pallet open</span>
+        </div>
+        <div class="fsp-open-pallet" id="fspOpenPalletSummary">
+          <div class="fsp-empty-state">Pick a carrier below, start a pallet, then scan box after box.</div>
+        </div>
+        <div class="fsp-summary-strip" id="fspLiveStrip"></div>
+      </article>
+    </section>
+
+    <section class="fsp-grid-main">
+      <article class="fsp-card fsp-scan-card">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Scanner lane</div>
+            <h2>Scan intake</h2>
+          </div>
+          <div class="fsp-inline-actions">
+            <span class="fsp-helper-copy" style="margin:0;">Use the carrier popup to open the next pallet.</span>
+          </div>
+        </div>
+
+        <div class="fsp-scan-box">
+          <div class="fsp-start-toolbar">
+            <div class="fsp-info-card">
+              <span>Carrier for next pallet</span>
+              <strong id="fspSelectedCarrierText">—</strong>
+              <small>Keep this tucked away in a popup so the main scan page stays clean.</small>
+            </div>
+            <div class="fsp-inline-actions">
+              <button id="fspOpenCarrierPickerBtn" class="fsp-btn secondary" type="button">Choose carrier</button>
+              <button id="fspOpenCarrierSetupBtn" class="fsp-btn secondary" type="button">Carrier setup</button>
+              <button id="fspStartSelectedBtn" class="fsp-btn primary" type="button">Start selected carrier</button>
+            </div>
+          </div>
+
+          <label for="fspScanInput"><span>Scan barcode value</span></label>
+          <p class="fsp-helper-copy">Operator must be selected before a pallet can be opened or any scan can be accepted.</p>
+          <div class="fsp-scan-row">
+            <input id="fspScanInput" type="text" autocomplete="off" spellcheck="false" placeholder="Scanner waits for Enter suffix after each scan">
+            <button id="fspProcessScanBtn" class="fsp-btn primary" type="button">Submit</button>
+          </div>
+          <div class="fsp-command-list">
+            <span>Scanner command:</span>
+            <button type="button" class="fsp-chip" data-command="PALLET_END">PALLET_END</button>
+          </div>
+        </div>
+
+        <div id="fspAlertArea" class="fsp-alert-area"></div>
+
+        <div class="fsp-card-subsection">
+          <div class="fsp-subhead-row">
+            <h3>Current pallet scans</h3>
+            <div class="fsp-inline-actions">
+              <button id="fspUndoBtn" class="fsp-btn secondary" type="button">Delete last accepted scan</button>
+            </div>
+          </div>
+          <div class="fsp-table-wrap">
+            <table class="fsp-table fsp-compact-table">
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Tracking</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="fspCurrentScanBody"></tbody>
+            </table>
+          </div>
+          <p class="fsp-helper-copy">If the wrong box gets scanned onto the pallet, remove it here before closing the pallet.</p>
+        </div>
+
+        <div class="fsp-card-subsection">
+          <div class="fsp-subhead-row">
+            <h3>Last events</h3>
+          </div>
+          <div class="fsp-table-wrap">
+            <table class="fsp-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Type</th>
+                  <th>Value</th>
+                  <th>Carrier</th>
+                  <th>Result</th>
+                  <th>Pallet</th>
+                </tr>
+              </thead>
+              <tbody id="fspEventLogBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </article>
+
+      <aside class="fsp-side-stack">
+        <article class="fsp-card">
+          <div class="fsp-card-head">
+            <div>
+              <div class="fsp-eyebrow">Shipment lookup</div>
+              <h2>Find a scanned label</h2>
+            </div>
+          </div>
+          <div class="fsp-form-grid">
+            <label for="fspLookupInput">
+              <span>Scan or paste tracking number</span>
+              <input id="fspLookupInput" type="text" autocomplete="off" spellcheck="false" placeholder="Scan label here to search full history">
+            </label>
+            <div class="fsp-inline-actions">
+              <button id="fspLookupBtn" class="fsp-btn primary" type="button">Search shipment</button>
+              <button id="fspLookupClearBtn" class="fsp-btn secondary" type="button">Clear</button>
+            </div>
+          </div>
+          <div id="fspLookupResult" class="fsp-lookup-result"></div>
+        </article>
+
+        <article class="fsp-card">
+          <div class="fsp-card-head">
+            <div>
+              <div class="fsp-eyebrow">Daily snapshot</div>
+              <h2>Today’s numbers</h2>
+            </div>
+          </div>
+          <div class="fsp-stat-grid" id="fspStatsGrid"></div>
+        </article>
+      </aside>
+    </section>
+
+    <section class="fsp-grid-bottom">
+      <article class="fsp-card">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Traffic through the day</div>
+            <h2>Volume by time block</h2>
+          </div>
+          <label class="fsp-traffic-control">
+            <span>Bucket size</span>
+            <select id="fspBucketSizeSelect">
+              <option value="15">15 min</option>
+              <option value="30">30 min</option>
+              <option value="60">60 min</option>
+            </select>
+          </label>
+        </div>
+        <div class="fsp-traffic-summary" id="fspTrafficSummary"></div>
+        <div class="fsp-chart-wrap" id="fspTrafficChart"></div>
+        <div class="fsp-table-wrap">
+          <table class="fsp-table">
+            <thead>
+              <tr>
+                <th>Time block</th>
+                <th>Accepted scans</th>
+                <th>Pallets closed</th>
+                <th>Rejected scans</th>
+              </tr>
+            </thead>
+            <tbody id="fspTrafficBody"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="fsp-card">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Closed pallets</div>
+            <h2>Pallet history for selected date</h2>
+          </div>
+        </div>
+        <div class="fsp-table-wrap">
+          <table class="fsp-table">
+            <thead>
+              <tr>
+                <th>Pallet ID</th>
+                <th>Carrier</th>
+                <th>Boxes</th>
+                <th>Opened</th>
+                <th>Closed</th>
+                <th>Operator</th>
+              </tr>
+            </thead>
+            <tbody id="fspPalletHistoryBody"></tbody>
+          </table>
+        </div>
+
+        <div class="fsp-card-subsection">
+          <div class="fsp-subhead-row">
+            <h3>Rejected lane</h3>
+          </div>
+          <div class="fsp-table-wrap">
+            <table class="fsp-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Value</th>
+                  <th>Result</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody id="fspRejectedBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <div id="fspCarrierPickerModal" class="fsp-modal-backdrop" hidden>
+      <div class="fsp-modal">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Carrier for next pallet</div>
+            <h2>Choose carrier for the next pallet</h2>
+          </div>
+          <button class="fsp-btn secondary" type="button" data-close-modal="carrier-picker">Close</button>
+        </div>
+        <div id="fspQuickStartArea" class="fsp-quick-start-grid"></div>
+      </div>
+    </div>
+
+    <div id="fspCarrierSetupModal" class="fsp-modal-backdrop" hidden>
+      <div class="fsp-modal">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Carrier setup</div>
+            <h2>Add or remove carriers</h2>
+          </div>
+          <button class="fsp-btn secondary" type="button" data-close-modal="carrier-setup">Close</button>
+        </div>
+        <div class="fsp-form-grid carrier-admin-grid">
+          <label>
+            <span>New carrier name</span>
+            <input id="fspNewCarrierInput" type="text" placeholder="Example: DHL">
+          </label>
+          <button id="fspAddCarrierBtn" class="fsp-btn primary" type="button">Add carrier</button>
+        </div>
+        <div id="fspCarrierList" class="fsp-carrier-list"></div>
+      </div>
+    </div>
+
+    <div id="fspInfoModal" class="fsp-modal-backdrop" hidden>
+      <div class="fsp-modal" style="width:min(560px,100%)">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Full value</div>
+            <h2 id="fspInfoModalTitle">Details</h2>
+          </div>
+          <button class="fsp-btn secondary" type="button" data-close-modal="info">Close</button>
+        </div>
+        <div id="fspInfoModalValue" class="fsp-info-value">—</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section id="productivityPage" class="page">
       <div class="hero productivity-hero">
         <div>
           <div class="eyebrow">Management</div>
@@ -1031,26 +1473,36 @@
                 <div class="right"><span class="pill" id="assemblyViewModePill">Compact View</span></div>
               </div>
 
-              <div class="assembly-collapse" id="assemblyEditModePanel" hidden>
-                <div class="small-note" style="margin-bottom:14px"><strong>Edit mode:</strong> row creation and heavier controls live here so the default view stays lighter for meetings and quick reviews.</div>
-                <div class="form-grid assembly-board-form">
-                  <div class="field"><label for="assemblyWorkType">Work Type</label><select id="assemblyWorkType"><option value="pack_builder">Pack Builder</option><option value="jira">Jira</option><option value="placeholder">Placeholder</option></select></div>
-                  <div class="field"><label for="assemblyPb">Primary ID / Name</label><input id="assemblyPb" placeholder="PB-00031972 or JIRA-1234" /></div>
-                  <div class="field"><label for="assemblySo">Sales Order</label><input id="assemblySo" placeholder="SORD-047805" /></div>
-                  <div class="field"><label for="assemblyAccount">Account</label><input id="assemblyAccount" placeholder="Account name" /></div>
-                  <div class="field"><label for="assemblyQty">Scheduled Qty</label><input id="assemblyQty" type="number" min="0" value="0" /></div>
-                  <div class="field"><label for="assemblyFullQty">Full Qty</label><input id="assemblyFullQty" type="number" min="0" value="0" /></div>
-                  <div class="field"><label for="assemblyProducts">Total Products</label><input id="assemblyProducts" type="number" min="0" value="0" /></div>
-                  <div class="field"><label for="assemblyStatus">Status</label><input id="assemblyStatus" placeholder="Ready, Printing, On Line..." /></div>
-                  <div class="field"><label for="assemblyIhd">IHD</label><input id="assemblyIhd" type="date" /></div>
-                  <div class="field"><label for="assemblyExternalLink">External Link</label><input id="assemblyExternalLink" placeholder="Jira or other URL" /></div>
-                </div>
+              <div class="assembly-collapse assembly-add-modal-backdrop" id="assemblyEditModePanel" hidden>
+                <div class="assembly-add-modal-card">
+                  <div class="modal-header assembly-add-modal-header">
+                    <div>
+                      <div class="eyebrow">Assembly Row Creator</div>
+                      <h3 style="margin:6px 0 4px;font-size:28px;font-weight:900">Add or stage today’s work</h3>
+                      <p class="subtitle" style="max-width:none;margin:0">Keep the board light by creating rows in this pop-out instead of leaving the full input section on-screen.</p>
+                    </div>
+                    <button class="btn secondary" id="closeAssemblyCreateBtn" type="button">Close</button>
+                  </div>
+                  <div class="small-note" style="margin-bottom:14px"><strong>Edit mode:</strong> row creation and heavier controls live here so the default view stays lighter for meetings and quick reviews.</div>
+                  <div class="form-grid assembly-board-form">
+                    <div class="field"><label for="assemblyWorkType">Work Type</label><select id="assemblyWorkType"><option value="pack_builder">Pack Builder</option><option value="jira">Jira</option><option value="placeholder">Placeholder</option></select></div>
+                    <div class="field"><label for="assemblyPb">Primary ID / Name</label><input id="assemblyPb" placeholder="PB-00031972 or JIRA-1234" /></div>
+                    <div class="field"><label for="assemblySo">Sales Order</label><input id="assemblySo" placeholder="SORD-047805" /></div>
+                    <div class="field"><label for="assemblyAccount">Account</label><input id="assemblyAccount" placeholder="Account name" /></div>
+                    <div class="field"><label for="assemblyQty">Scheduled Qty</label><input id="assemblyQty" type="number" min="0" value="0" /></div>
+                    <div class="field"><label for="assemblyFullQty">Full Qty</label><input id="assemblyFullQty" type="number" min="0" value="0" /></div>
+                    <div class="field"><label for="assemblyProducts">Total Products</label><input id="assemblyProducts" type="number" min="0" value="0" /></div>
+                    <div class="field"><label for="assemblyStatus">Status</label><input id="assemblyStatus" placeholder="Ready, Printing, On Line..." /></div>
+                    <div class="field"><label for="assemblyIhd">IHD</label><input id="assemblyIhd" type="date" /></div>
+                    <div class="field"><label for="assemblyExternalLink">External Link</label><input id="assemblyExternalLink" placeholder="Jira or other URL" /></div>
+                  </div>
 
-                <div class="form-grid assembly-edit-subgrid">
-                  <div class="field"><label for="assemblyStage">Current Stage</label><select id="assemblyStage"><option value="aa">A.A.</option><option value="print">Print</option><option value="picked">Picked</option><option value="line">Line</option><option value="dpmo">DPMO</option><option value="done">Done</option></select></div>
-                  <div class="field"><label for="assemblyIsPartial">Partial Pack</label><select id="assemblyIsPartial"><option value="false">No</option><option value="true">Yes</option></select></div>
-                  <div class="field"><label>Units</label><input id="assemblyUnitsPreview" value="0" disabled /></div>
-                  <div class="toolbar right" style="margin:0;justify-content:flex-end"><button class="btn" id="assemblyAddBoardRowBtn">Add board row</button></div>
+                  <div class="form-grid assembly-edit-subgrid">
+                    <div class="field"><label for="assemblyStage">Current Stage</label><select id="assemblyStage"><option value="aa">A.A.</option><option value="print">Print</option><option value="picked">Picked</option><option value="line">Line</option><option value="dpmo">DPMO</option><option value="done">Done</option></select></div>
+                    <div class="field"><label for="assemblyIsPartial">Partial Pack</label><select id="assemblyIsPartial"><option value="false">No</option><option value="true">Yes</option></select></div>
+                    <div class="field"><label>Units</label><input id="assemblyUnitsPreview" value="0" disabled /></div>
+                    <div class="toolbar right" style="margin:0;justify-content:flex-end"><button class="btn" id="assemblyAddBoardRowBtn" type="button">Add board row</button></div>
+                  </div>
                 </div>
               </div>
 
@@ -1566,6 +2018,22 @@
       </div>
     </section>
 
+<section id="assemblyFlightTrackerPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Assembly Visibility</div>
+          <h2>Embedded assembly flight tracker</h2>
+          <p class="subtitle">Give account owners and outside stakeholders a clean, read-only window into scheduled pack builders without exposing the rest of Houston Control.</p>
+        </div>
+        <div class="toolbar right">
+          <a class="btn secondary" href="assembly-flight-tracker.html" target="_blank" rel="noopener">Open Standalone</a>
+        </div>
+      </div>
+      <div class="card" style="padding:12px">
+        <iframe id="assemblyFlightTrackerIframe" src="assembly-flight-tracker.html" loading="lazy" title="Assembly Flight Tracker" style="width:100%;min-height:1200px;border:none;border-radius:18px;background:#fff;"></iframe>
+      </div>
+    </section>
+
 <section id="workflowInboundPage" class="page">
       <div class="hero">
         <div>
@@ -1582,6 +2050,33 @@
       </div>
     </section>
 
+
+    <!-- CYCLE COUNT MODULE -->
+    <section id="cycleCountPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Inventory Operations</div>
+          <h2>Cycle Count</h2>
+          <p class="subtitle">Daily inventory cycle counts — assign work, enter counts in batches, verify results, and track performance.</p>
+        </div>
+      </div>
+      <div class="cc-body">
+        <div class="cc-tabs">
+          <button class="cc-tab active" data-tab="my-work">My Work <span class="cc-tab-badge">0</span></button>
+          <button class="cc-tab" data-tab="assignments">Assignments</button>
+          <button class="cc-tab" data-tab="review">Review Queue <span class="cc-tab-badge">0</span></button>
+          <button class="cc-tab" data-tab="history">History</button>
+          <button class="cc-tab" data-tab="kpi">Performance</button>
+          <button class="cc-tab" data-tab="settings">Settings</button>
+        </div>
+        <div class="cc-panel active" data-panel="my-work"></div>
+        <div class="cc-panel" data-panel="assignments"></div>
+        <div class="cc-panel" data-panel="review"></div>
+        <div class="cc-panel" data-panel="history"></div>
+        <div class="cc-panel" data-panel="kpi"></div>
+        <div class="cc-panel" data-panel="settings"></div>
+      </div>
+    </section>
   </main>
 </div>
 
@@ -1748,6 +2243,7 @@
         <div id="attendanceRemixEmployeesList" class="attendance-remix-settings-list"></div>
         <div class="attendance-remix-add-row">
           <input id="attendanceRemixNewEmployeeName" placeholder="Employee name" />
+          <input id="attendanceRemixNewEmployeeAdpName" placeholder="ADP name (e.g. Last, First)" title="How this person appears in ADP exports — leave blank if same as display name" />
           <select id="attendanceRemixNewEmployeeDepartment"></select>
           <input id="attendanceRemixNewEmployeeBirthday" type="date" title="Birthday" />
           <select id="attendanceRemixNewEmployeeSize"></select>
@@ -1778,7 +2274,9 @@
 <script src="revenue-tracker.js"></script>
 <script src="attendance-remix.js"></script>
 <script src="productivity-module.js"></script>
+<script src="fulfillment-scan-prototype.js"></script>
 
+<script src="huddle-module.js"></script>
 <script src="policy.js"></script>
 
 <!-- Global tooltip -->
@@ -1789,5 +2287,6 @@
 </div>
 
 <script src="help.js"></script>
+<script src="cycle-count.js"></script>
 </body>
 </html>

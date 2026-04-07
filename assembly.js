@@ -53,6 +53,7 @@ const assemblyRemainingUnitsStat=document.getElementById('assemblyRemainingUnits
 const assemblyCompletionStat=document.getElementById('assemblyCompletionStat');
 const assemblyEditModalBackdrop=document.getElementById('assemblyEditModalBackdrop');
 const assemblyEditModalSummary=document.getElementById('assemblyEditModalSummary');
+const closeAssemblyCreateBtn=document.getElementById('closeAssemblyCreateBtn');
 const closeAssemblyEditBtn=document.getElementById('closeAssemblyEditBtn');
 const cancelAssemblyEditBtn=document.getElementById('cancelAssemblyEditBtn');
 const saveAssemblyEditBtn=document.getElementById('saveAssemblyEditBtn');
@@ -61,10 +62,19 @@ let pendingAssemblyEditId=null;
 let assemblyInlineEditId=null;
 let assemblyShowBreakdown=false;
 let assemblyShowDetails=false;
-let assemblyEditMode=true;
+let assemblyEditMode=false;
 
 function getAssemblyUnits(row){
   return Number(row.qty||0) * Number(row.products||0);
+}
+function getAssemblyQty(row){
+  return Number(row?.qty||0);
+}
+function formatUnitsQtyText(units, qty){
+  return `${Number(units||0).toLocaleString()} units • ${Number(qty||0).toLocaleString()} packs`;
+}
+function formatUnitsQtyHtml(units, qty){
+  return `<div class="assembly-dual-metric"><strong>${Number(units||0).toLocaleString()}</strong><span>${Number(qty||0).toLocaleString()} packs</span></div>`;
 }
 function updateAssemblyUnitsPreview(){
   const qty=Number(assemblyQtyInput.value||0);
@@ -95,27 +105,30 @@ function renderAssembly(){
   if(assemblyEditModePanel) assemblyEditModePanel.hidden=!assemblyEditMode;
   if(assemblyBreakdownToggleBtn) assemblyBreakdownToggleBtn.textContent=assemblyShowBreakdown?'Hide Breakdown':'Show Breakdown';
   if(assemblyDetailsToggleBtn) assemblyDetailsToggleBtn.textContent=assemblyShowDetails?'Show Compact Columns':'Show Detail Columns';
-  if(assemblyEditModeToggleBtn) assemblyEditModeToggleBtn.textContent=assemblyEditMode?'Exit Edit Mode':'Enter Edit Mode';
+  if(assemblyEditModeToggleBtn) assemblyEditModeToggleBtn.textContent=assemblyEditMode?'Close Row Creator':'Open Row Creator';
 
-  const stageTotals={aa:0,print:0,picked:0,line:0,dpmo:0,done:0};
-  filteredRows.forEach(row=>{ if(stageTotals[row.stage]!==undefined){ stageTotals[row.stage]+=getAssemblyUnits(row); } });
-  assemblyAaUnits.textContent=stageTotals.aa.toLocaleString();
-  assemblyPrintUnits.textContent=stageTotals.print.toLocaleString();
-  assemblyPickedUnits.textContent=stageTotals.picked.toLocaleString();
-  assemblyLineUnits.textContent=stageTotals.line.toLocaleString();
-  assemblyDpmoUnits.textContent=stageTotals.dpmo.toLocaleString();
-  assemblyDoneUnits.textContent=stageTotals.done.toLocaleString();
+  const stageTotals={aa:{units:0,qty:0},print:{units:0,qty:0},picked:{units:0,qty:0},line:{units:0,qty:0},dpmo:{units:0,qty:0},done:{units:0,qty:0}};
+  filteredRows.forEach(row=>{ if(stageTotals[row.stage]!==undefined){ stageTotals[row.stage].units+=getAssemblyUnits(row); stageTotals[row.stage].qty+=getAssemblyQty(row); } });
+  assemblyAaUnits.textContent=formatUnitsQtyText(stageTotals.aa.units,stageTotals.aa.qty);
+  assemblyPrintUnits.textContent=formatUnitsQtyText(stageTotals.print.units,stageTotals.print.qty);
+  assemblyPickedUnits.textContent=formatUnitsQtyText(stageTotals.picked.units,stageTotals.picked.qty);
+  assemblyLineUnits.textContent=formatUnitsQtyText(stageTotals.line.units,stageTotals.line.qty);
+  assemblyDpmoUnits.textContent=formatUnitsQtyText(stageTotals.dpmo.units,stageTotals.dpmo.qty);
+  assemblyDoneUnits.textContent=formatUnitsQtyText(stageTotals.done.units,stageTotals.done.qty);
 
   const scheduledUnitsTotal=filteredRows.reduce((sum,row)=>sum+getAssemblyUnits(row),0);
+  const scheduledQtyTotal=filteredRows.reduce((sum,row)=>sum+getAssemblyQty(row),0);
   const doneUnitsTotal=filteredRows.filter(row=>row.stage==='done').reduce((sum,row)=>sum+getAssemblyUnits(row),0);
+  const doneQtyTotal=filteredRows.filter(row=>row.stage==='done').reduce((sum,row)=>sum+getAssemblyQty(row),0);
   const remainingUnitsTotal=Math.max(0,scheduledUnitsTotal-doneUnitsTotal);
+  const remainingQtyTotal=Math.max(0,scheduledQtyTotal-doneQtyTotal);
   const completionPct=scheduledUnitsTotal>0?(doneUnitsTotal/scheduledUnitsTotal)*100:0;
   const currentUph=hoursElapsed>0?doneUnitsTotal/(Math.max(1,headcount)*hoursElapsed):0;
   const goalProgress=uph>0?(currentUph/uph)*100:0;
   assemblyRowsTodayStat.textContent=filteredRows.length;
-  assemblyScheduledUnitsStat.textContent=scheduledUnitsTotal.toLocaleString();
-  assemblyDoneUnitsStat2.textContent=doneUnitsTotal.toLocaleString();
-  assemblyRemainingUnitsStat.textContent=remainingUnitsTotal.toLocaleString();
+  assemblyScheduledUnitsStat.textContent=formatUnitsQtyText(scheduledUnitsTotal,scheduledQtyTotal);
+  assemblyDoneUnitsStat2.textContent=formatUnitsQtyText(doneUnitsTotal,doneQtyTotal);
+  assemblyRemainingUnitsStat.textContent=formatUnitsQtyText(remainingUnitsTotal,remainingQtyTotal);
   assemblyCompletionStat.textContent=`${completionPct.toFixed(0)}%`;
   if(assemblyCurrentUphDisplay) assemblyCurrentUphDisplay.textContent=currentUph.toFixed(0);
   if(assemblyGoalProgressDisplay) assemblyGoalProgressDisplay.textContent=`${goalProgress.toFixed(0)}%`;
@@ -129,17 +142,19 @@ function renderAssembly(){
       const dayKey=d.toISOString().slice(0,10);
       const rows=assemblyBoardRows.filter(row=>row.date===dayKey);
       const units=rows.reduce((sum,row)=>sum+getAssemblyUnits(row),0);
+      const qty=rows.reduce((sum,row)=>sum+getAssemblyQty(row),0);
       const done=rows.filter(row=>row.stage==='done').reduce((sum,row)=>sum+getAssemblyUnits(row),0);
+      const doneQty=rows.filter(row=>row.stage==='done').reduce((sum,row)=>sum+getAssemblyQty(row),0);
       const pct=units>0?((done/units)*100):0;
-      weekRows.push(`<tr><td>${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</td><td>${rows.length}</td><td>${units.toLocaleString()}</td><td>${done.toLocaleString()}</td><td>${units?`${pct.toFixed(0)}%`:'—'}</td></tr>`);
+      weekRows.push(`<tr><td>${d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</td><td>${rows.length}</td><td>${formatUnitsQtyHtml(units,qty)}</td><td>${formatUnitsQtyHtml(done,doneQty)}</td><td>${units?`${pct.toFixed(0)}%`:'—'}</td></tr>`);
     }
     assemblyWeekViewBody.innerHTML=weekRows.join('');
   }
 
   if(assemblyBoardHead){
     assemblyBoardHead.innerHTML = assemblyShowDetails
-      ? '<tr><th>Work Type</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Qty</th><th>Total Products</th><th>Units</th><th>Status</th><th>IHD</th><th>Open</th><th>Subtotal</th><th>Current Stage</th><th>Reschedule Note</th><th>Action</th></tr>'
-      : '<tr><th>Pack Builder</th><th>Account</th><th>Units</th><th>IHD</th><th>Revenue</th><th>Stage</th><th>Status</th><th>Action</th></tr>';
+      ? '<tr><th>Work Type</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Packs</th><th>Total Products</th><th>Units / Packs</th><th>Status</th><th>IHD</th><th>Open</th><th>Subtotal</th><th>Current Stage</th><th>Reschedule Note</th><th>Action</th></tr>'
+      : '<tr><th>Pack Builder</th><th>Account</th><th>Units / Packs</th><th>IHD</th><th>Revenue</th><th>Stage</th><th>Status</th><th>Action</th></tr>';
   }
 
   if(!filteredRows.length){
@@ -179,10 +194,10 @@ function renderAssembly(){
     }
 
     if(!assemblyShowDetails){
-      return `<tr class="${rowClass}"><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${units.toLocaleString()}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td><select onchange="setAssemblyStage(${row.id},this.value)"><option value="aa" ${row.stage==='aa'?'selected':''}>A.A.</option><option value="print" ${row.stage==='print'?'selected':''}>Print</option><option value="picked" ${row.stage==='picked'?'selected':''}>Picked</option><option value="line" ${row.stage==='line'?'selected':''}>Line</option><option value="dpmo" ${row.stage==='dpmo'?'selected':''}>DPMO</option><option value="done" ${row.stage==='done'?'selected':''}>Done</option></select></td><td>${escapeHtml(row.status||'—')}${priorityBadge}</td><td><div class="row-actions">${openLink?`<a class="btn secondary" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:''}<button class="btn secondary" onclick="editAssemblyBoardRow(${row.id})">Edit</button>${isPackBuilderWorkType(row.workType)?`<button class="btn warn" onclick="openIssueHoldModal(${row.id},'assembly')">Hold</button>`:''}<button class="btn warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button></div></td></tr>`;
+      return `<tr class="${rowClass}"><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${formatUnitsQtyHtml(units,getAssemblyQty(row))}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td><select onchange="setAssemblyStage(${row.id},this.value)"><option value="aa" ${row.stage==='aa'?'selected':''}>A.A.</option><option value="print" ${row.stage==='print'?'selected':''}>Print</option><option value="picked" ${row.stage==='picked'?'selected':''}>Picked</option><option value="line" ${row.stage==='line'?'selected':''}>Line</option><option value="dpmo" ${row.stage==='dpmo'?'selected':''}>DPMO</option><option value="done" ${row.stage==='done'?'selected':''}>Done</option></select></td><td>${escapeHtml(row.status||'—')}${priorityBadge}</td><td><div class="row-actions">${openLink?`<a class="btn secondary" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:''}<button class="btn secondary" onclick="editAssemblyBoardRow(${row.id})">Edit</button>${isPackBuilderWorkType(row.workType)?`<button class="btn warn" onclick="openIssueHoldModal(${row.id},'assembly')">Hold</button>`:''}<button class="btn warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button></div></td></tr>`;
     }
 
-    return `<tr class="${rowClass}"><td>${escapeHtml(getAssemblyWorkTypeLabel(row.workType)+(row.isPartial?' • Partial':''))}</td><td>${escapeHtml(row.pb)}</td><td>${escapeHtml(row.so)}</td><td>${escapeHtml(row.account)}</td><td>${formatAssemblyQty(row)}</td><td>${row.products}</td><td>${units.toLocaleString()}</td><td>${escapeHtml(row.status||'—')}${priorityBadge}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${openLink?`<a class="queue-link" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td>$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td><select onchange="setAssemblyStage(${row.id},this.value)"><option value="aa" ${row.stage==='aa'?'selected':''}>A.A.</option><option value="print" ${row.stage==='print'?'selected':''}>Print</option><option value="picked" ${row.stage==='picked'?'selected':''}>Picked</option><option value="line" ${row.stage==='line'?'selected':''}>Line</option><option value="dpmo" ${row.stage==='dpmo'?'selected':''}>DPMO</option><option value="done" ${row.stage==='done'?'selected':''}>Done</option></select></td><td>${escapeHtml(row.rescheduleNote||'—')}</td><td><div class="row-actions"><button class="btn secondary" onclick="editAssemblyBoardRow(${row.id})">Edit</button>${isPackBuilderWorkType(row.workType)?`<button class="btn warn" onclick="openIssueHoldModal(${row.id},'assembly')">Hold</button>`:''}<button class="btn secondary" onclick="rescheduleAssemblyBoardRow(${row.id})">Reschedule</button><button class="btn warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button></div></td></tr>`;
+    return `<tr class="${rowClass}"><td>${escapeHtml(getAssemblyWorkTypeLabel(row.workType)+(row.isPartial?' • Partial':''))}</td><td>${escapeHtml(row.pb)}</td><td>${escapeHtml(row.so)}</td><td>${escapeHtml(row.account)}</td><td>${formatAssemblyQty(row)}</td><td>${row.products}</td><td>${formatUnitsQtyHtml(units,getAssemblyQty(row))}</td><td>${escapeHtml(row.status||'—')}${priorityBadge}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${openLink?`<a class="queue-link" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td>$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td><select onchange="setAssemblyStage(${row.id},this.value)"><option value="aa" ${row.stage==='aa'?'selected':''}>A.A.</option><option value="print" ${row.stage==='print'?'selected':''}>Print</option><option value="picked" ${row.stage==='picked'?'selected':''}>Picked</option><option value="line" ${row.stage==='line'?'selected':''}>Line</option><option value="dpmo" ${row.stage==='dpmo'?'selected':''}>DPMO</option><option value="done" ${row.stage==='done'?'selected':''}>Done</option></select></td><td>${escapeHtml(row.rescheduleNote||'—')}</td><td><div class="row-actions"><button class="btn secondary" onclick="editAssemblyBoardRow(${row.id})">Edit</button>${isPackBuilderWorkType(row.workType)?`<button class="btn warn" onclick="openIssueHoldModal(${row.id},'assembly')">Hold</button>`:''}<button class="btn secondary" onclick="rescheduleAssemblyBoardRow(${row.id})">Reschedule</button><button class="btn warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button></div></td></tr>`;
   }).join('');
 }
 function clearAssemblyBoardForm(){
@@ -231,6 +246,8 @@ function addAssemblyBoardRow(){
   });
   clearAssemblyBoardForm();
   updateAssemblyData();
+  assemblyEditMode=false;
+  renderAssembly();
 }
 function deleteAssemblyBoardRow(id){
   assemblyBoardRows=assemblyBoardRows.filter(row=>row.id!==id);
@@ -302,7 +319,7 @@ function openAssemblyEditModal(id){
   assemblyInlineEditId=id;
 
   if(assemblyEditModalSummary){
-    assemblyEditModalSummary.innerHTML=`<strong>${escapeHtml(row.pb||'Pack Builder')}</strong><div>${escapeHtml(row.account||'—')}</div><div>${Number(getAssemblyUnits(row)||0).toLocaleString()} units • ${escapeHtml(row.so||'—')}</div>`;
+    assemblyEditModalSummary.innerHTML=`<strong>${escapeHtml(row.pb||'Pack Builder')}</strong><div>${escapeHtml(row.account||'—')}</div><div>${formatUnitsQtyText(getAssemblyUnits(row),getAssemblyQty(row))} • ${escapeHtml(row.so||'—')}</div>`;
   }
 
   const workTypeInput=document.getElementById('assemblyEditWorkType');
@@ -406,6 +423,8 @@ if(typeof injectAssemblyQuickDateControls==='function'){
 assemblyBreakdownToggleBtn?.addEventListener('click',()=>{assemblyShowBreakdown=!assemblyShowBreakdown;renderAssembly();});
 assemblyDetailsToggleBtn?.addEventListener('click',()=>{assemblyShowDetails=!assemblyShowDetails;renderAssembly();});
 assemblyEditModeToggleBtn?.addEventListener('click',()=>{assemblyEditMode=!assemblyEditMode;renderAssembly();});
+closeAssemblyCreateBtn?.addEventListener('click',()=>{assemblyEditMode=false;renderAssembly();});
+assemblyEditModePanel?.addEventListener('click',(e)=>{if(e.target===assemblyEditModePanel){assemblyEditMode=false;renderAssembly();}});
 document.getElementById('assemblyAddBoardRowBtn')?.addEventListener('click',addAssemblyBoardRow);
 
 [document.getElementById('assemblyEditQty'),document.getElementById('assemblyEditProducts')].filter(Boolean).forEach(input=>input.addEventListener('input',updateInlineAssemblyUnitsPreview));
