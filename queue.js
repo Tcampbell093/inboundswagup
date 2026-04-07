@@ -115,6 +115,14 @@ function getDaysOnHold(startDate){
   const diff = Math.floor((current - start) / 86400000);
   return Math.max(0,diff);
 }
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 function hydrateIssueHoldReasonOptions(){
   if(!issueHoldTypeInput) return;
   const current = issueHoldTypeInput.value || 'Unknown / Investigate';
