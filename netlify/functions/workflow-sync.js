@@ -27,17 +27,57 @@ async function ensureSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
-  // Add active_editors column if it doesn't exist yet (for existing deployments)
   await pool.query(`
     ALTER TABLE workflow_sync_state ADD COLUMN IF NOT EXISTS
     active_editors JSONB NOT NULL DEFAULT '{}'::jsonb;
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pallet_events (
+      id TEXT PRIMARY KEY,
+      pallet_id TEXT NOT NULL,
+      pallet_label TEXT,
+      event_type TEXT NOT NULL,
+      detail TEXT,
+      po_num TEXT,
+      by_user TEXT,
+      event_ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pallet_events_pallet ON pallet_events (pallet_id, event_ts DESC);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pallet_events_ts ON pallet_events (event_ts DESC);`);
   await pool.query(`
     INSERT INTO workflow_sync_state (state_key, data_json, masters_json, active_editors)
     VALUES ('default', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)
     ON CONFLICT (state_key) DO NOTHING;
   `);
   schemaReady = true;
+}
+
+async function persistPalletEvents(pallets) {
+  if (!Array.isArray(pallets) || !pallets.length) return;
+  // Upsert every event from every pallet — id is the natural dedup key
+  for (const pallet of pallets) {
+    const events = Array.isArray(pallet.events) ? pallet.events : [];
+    for (const ev of events) {
+      if (!ev || !ev.id) continue;
+      await pool.query(
+        `INSERT INTO pallet_events (id, pallet_id, pallet_label, event_type, detail, po_num, by_user, event_ts)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, to_timestamp($8::bigint / 1000.0))
+         ON CONFLICT (id) DO NOTHING;`,
+        [
+          String(ev.id),
+          String(pallet.id || ''),
+          String(pallet.label || ''),
+          String(ev.type || ''),
+          String(ev.detail || ''),
+          String(ev.poNum || ''),
+          String(ev.by || ''),
+          Number(ev.ts || Date.now()),
+        ]
+      );
+    }
+  }
 }
 
 function pruneEditors(editors) {
@@ -82,6 +122,8 @@ exports.handler = async function handler(event) {
          RETURNING data_json, masters_json, active_editors, updated_at;`,
         [JSON.stringify(data), JSON.stringify(masters)]
       );
+      // Persist pallet events to audit table (non-blocking — failure doesn't break sync)
+      try { await persistPalletEvents(Array.isArray(data.pallets) ? data.pallets : []); } catch(_) {}
       const row = result.rows[0];
       return json(200, {
         ok: true,
