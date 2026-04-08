@@ -893,9 +893,11 @@
       save(PENDING_IMPORT_KEY, state.pendingImport);
       productivitySyncEnabled = true;
       productivitySyncLoaded = true;
-      // Capture live workflow/assembly metrics into any records missing a snapshot.
-      // This ensures data from other modules travels to the DB and is visible cross-browser.
-      const snapshotsRefreshed = refreshAllDailyRecordSnapshots();
+      // Only refresh snapshots if this browser has workflow data to contribute.
+      // Skipping this when workflow localStorage is empty prevents a secondary browser
+      // from capturing zero-snapshots that would overwrite real data in the DB.
+      const hasWorkflowData = snapshotHasMeaningfulAutoData(getAutoMetrics(isoToday()) || {});
+      const snapshotsRefreshed = hasWorkflowData ? refreshAllDailyRecordSnapshots() : 0;
       if(snapshotsRefreshed > 0){
         save(DAILY_KEY, state.dailyRecords);
       }
@@ -933,18 +935,21 @@
     const sentVersion = productivityMutationVersion;
 
     // Ensure every daily record has a savedSnapshot before pushing to DB.
-    // Records without one rely on live localStorage reads (workflow/assembly),
-    // which won't exist on other browsers. Capture now so the data travels with the record.
+    // Only capture if this browser actually has workflow data - otherwise we'd
+    // overwrite real snapshots with zeros on browsers that lack workflow localStorage.
+    const hasWorkflowData = snapshotHasMeaningfulAutoData(getAutoMetrics(isoToday()) || {});
     let snapshotsCaptured = 0;
-    state.dailyRecords.forEach(record => {
-      if(!getSavedAutoSnapshot(record)){
-        const snap = buildAutoSnapshot(record.date);
-        if(snapshotHasMeaningfulAutoData(snap)){
-          record.savedSnapshot = snap;
-          snapshotsCaptured++;
+    if(hasWorkflowData){
+      state.dailyRecords.forEach(record => {
+        if(!getSavedAutoSnapshot(record)){
+          const snap = buildAutoSnapshot(record.date);
+          if(snapshotHasMeaningfulAutoData(snap)){
+            record.savedSnapshot = snap;
+            snapshotsCaptured++;
+          }
         }
-      }
-    });
+      });
+    }
     if(snapshotsCaptured > 0){
       save(DAILY_KEY, state.dailyRecords);
     }
