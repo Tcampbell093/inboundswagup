@@ -10,6 +10,11 @@
   const WORKFLOW_KEY = 'qaV5SeparatedWorkflowData_v4fixed';
   const ASSEMBLY_KEY = 'ops_hub_assembly_board_v2';
   const PRODUCTIVITY_API_BASE = '/.netlify/functions/productivity-sync';
+  const WORKFLOW_API_BASE = '/.netlify/functions/workflow-sync';
+
+  // Cache of workflow data fetched from backend - used when workflow.html hasn't been opened
+  // and localStorage doesn't have the data (e.g. secondary browser, fresh profile)
+  let remoteWorkflowData = null;
 
   const DEFAULT_SHOW_SENSITIVE_FINANCIALS = false;
   const FINANCE_UNLOCK_CODE = '2025';
@@ -100,7 +105,13 @@
     return [];
   }
   function readWorkflowData(){
-    return load(WORKFLOW_KEY, {});
+    const local = load(WORKFLOW_KEY, null);
+    // If localStorage has workflow data (workflow.html was opened), use it.
+    // Otherwise fall back to data fetched directly from the workflow backend.
+    if(local && typeof local === 'object' && (Array.isArray(local.pallets) ? local.pallets.length : Object.keys(local).length)){
+      return local;
+    }
+    return remoteWorkflowData || {};
   }
   function readAssemblyRows(){
     return load(ASSEMBLY_KEY, []);
@@ -875,6 +886,16 @@
   }
 
   async function loadProductivityFromBackend(){
+    // Fetch workflow data from backend in parallel so getWorkflowMetrics works
+    // even when workflow.html has never been opened in this browser.
+    try{
+      const wfRes = await fetch(WORKFLOW_API_BASE, { headers: { 'Accept': 'application/json' } });
+      if(wfRes.ok){
+        const wfData = await wfRes.json();
+        if(wfData && typeof wfData.data === 'object') remoteWorkflowData = wfData.data;
+      }
+    }catch(_){ /* workflow fetch failing is non-fatal */ }
+
     try{
       const data = await productivityApiRequest('GET');
       applyProductivityPayload(data, { persistLocal: false });
@@ -893,11 +914,9 @@
       save(PENDING_IMPORT_KEY, state.pendingImport);
       productivitySyncEnabled = true;
       productivitySyncLoaded = true;
-      // Only refresh snapshots if this browser has workflow data to contribute.
-      // Skipping this when workflow localStorage is empty prevents a secondary browser
-      // from capturing zero-snapshots that would overwrite real data in the DB.
-      const hasWorkflowData = snapshotHasMeaningfulAutoData(getAutoMetrics(isoToday()) || {});
-      const snapshotsRefreshed = hasWorkflowData ? refreshAllDailyRecordSnapshots() : 0;
+      // Capture live workflow/assembly metrics into any records missing a snapshot.
+      // remoteWorkflowData ensures this works even when workflow.html hasn't been opened.
+      const snapshotsRefreshed = refreshAllDailyRecordSnapshots();
       if(snapshotsRefreshed > 0){
         save(DAILY_KEY, state.dailyRecords);
       }
@@ -935,21 +954,18 @@
     const sentVersion = productivityMutationVersion;
 
     // Ensure every daily record has a savedSnapshot before pushing to DB.
-    // Only capture if this browser actually has workflow data - otherwise we'd
-    // overwrite real snapshots with zeros on browsers that lack workflow localStorage.
-    const hasWorkflowData = snapshotHasMeaningfulAutoData(getAutoMetrics(isoToday()) || {});
+    // Records without one rely on live localStorage reads (workflow/assembly),
+    // which won't exist on other browsers. Capture now so the data travels with the record.
     let snapshotsCaptured = 0;
-    if(hasWorkflowData){
-      state.dailyRecords.forEach(record => {
-        if(!getSavedAutoSnapshot(record)){
-          const snap = buildAutoSnapshot(record.date);
-          if(snapshotHasMeaningfulAutoData(snap)){
-            record.savedSnapshot = snap;
-            snapshotsCaptured++;
-          }
+    state.dailyRecords.forEach(record => {
+      if(!getSavedAutoSnapshot(record)){
+        const snap = buildAutoSnapshot(record.date);
+        if(snapshotHasMeaningfulAutoData(snap)){
+          record.savedSnapshot = snap;
+          snapshotsCaptured++;
         }
-      });
-    }
+      }
+    });
     if(snapshotsCaptured > 0){
       save(DAILY_KEY, state.dailyRecords);
     }
