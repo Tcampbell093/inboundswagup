@@ -151,7 +151,14 @@ async function readAll() {
     [WORKSPACE_ID]
   );
   const dailyRes = await pool.query(
-    `SELECT id, to_char(record_date, 'YYYY-MM-DD') AS record_date, total_touched_units, total_hours_used, total_pto_hours, total_used_dollars, total_pto_dollars, cpu_touched, raw
+    `SELECT id, to_char(record_date, 'YYYY-MM-DD') AS record_date,
+            qa_actual_units, qa_actual_pos, qa_attendance,
+            prep_units, prep_pos, prep_approved_units, prep_attendance,
+            assembly_units, assembly_packs, assembly_attendance,
+            fulfillment_individual_units, fulfillment_bulk_units,
+            putaway_units,
+            total_touched_units, total_hours_used, total_pto_hours,
+            total_used_dollars, total_pto_dollars, cpu_touched, raw
      FROM productivity_daily_records
      WHERE workspace_id = $1
      ORDER BY record_date ASC;`,
@@ -199,17 +206,32 @@ async function readAll() {
       sourceKind: row.source || (row.import_batch_id ? 'adp' : 'manual'),
       codes: Array.isArray(row.pay_codes) ? row.pay_codes : [],
     })),
-    dailyRecords: dailyRes.rows.map((row) => ({
-      ...(row.raw || {}),
-      id: row.id,
-      date: row.record_date,
-      totalTouchedUnits: num(row.total_touched_units, 0),
-      totalHoursUsed: num(row.total_hours_used, 0),
-      totalPtoHours: num(row.total_pto_hours, 0),
-      totalUsedDollars: num(row.total_used_dollars, 0),
-      totalPtoDollars: num(row.total_pto_dollars, 0),
-      cpuTouched: num(row.cpu_touched, 0),
-    })),
+    dailyRecords: dailyRes.rows.map((row) => {
+      const raw = row.raw || {};
+      const savedSnapshot = raw.savedSnapshot ? { ...raw.savedSnapshot } : {};
+      if (row.qa_actual_units != null) savedSnapshot.qaActualUnits = num(row.qa_actual_units, 0);
+      if (row.qa_actual_pos != null) savedSnapshot.qaActualPOs = num(row.qa_actual_pos, 0);
+      if (row.qa_attendance != null) savedSnapshot.qaAttendance = num(row.qa_attendance, 0);
+      if (row.prep_units != null) savedSnapshot.prepUnits = num(row.prep_units, 0);
+      if (row.prep_pos != null) savedSnapshot.prepPOs = num(row.prep_pos, 0);
+      if (row.prep_attendance != null) savedSnapshot.prepAttendance = num(row.prep_attendance, 0);
+      if (row.assembly_units != null) savedSnapshot.assemblyUnits = num(row.assembly_units, 0);
+      if (row.assembly_packs != null) savedSnapshot.assemblyPacks = num(row.assembly_packs, 0);
+      if (row.assembly_attendance != null) savedSnapshot.assemblyAttendance = num(row.assembly_attendance, 0);
+      if (row.putaway_units != null) savedSnapshot.putawayUnits = num(row.putaway_units, 0);
+      return {
+        ...raw,
+        id: row.id,
+        date: row.record_date,
+        savedSnapshot: Object.keys(savedSnapshot).length ? { ...savedSnapshot, date: row.record_date } : raw.savedSnapshot,
+        totalTouchedUnits: num(row.total_touched_units, 0),
+        totalHoursUsed: num(row.total_hours_used, 0),
+        totalPtoHours: num(row.total_pto_hours, 0),
+        totalUsedDollars: num(row.total_used_dollars, 0),
+        totalPtoDollars: num(row.total_pto_dollars, 0),
+        cpuTouched: num(row.cpu_touched, 0),
+      };
+    }),
   };
 }
 
@@ -332,25 +354,45 @@ exports.handler = async function handler(event) {
       }
 
       for (const record of dailyRecords) {
+        const snap = (record.savedSnapshot && typeof record.savedSnapshot === 'object') ? record.savedSnapshot : {};
         await pool.query(
           `INSERT INTO productivity_daily_records
-           (id, workspace_id, record_date, total_touched_units, total_hours_used, total_pto_hours, total_used_dollars, total_pto_dollars, cpu_touched, raw)
+           (id, workspace_id, record_date,
+            qa_actual_units, qa_actual_pos, qa_attendance,
+            prep_units, prep_pos, prep_approved_units, prep_attendance,
+            assembly_units, assembly_packs, assembly_attendance,
+            fulfillment_individual_units, fulfillment_bulk_units,
+            putaway_units,
+            total_touched_units, total_hours_used, total_pto_hours,
+            total_used_dollars, total_pto_dollars, cpu_touched, raw)
            VALUES (
              CASE WHEN $1 ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN $1::uuid ELSE gen_random_uuid() END,
-             $2,
-             $3,
-             $4,
-             $5,
-             $6,
-             $7,
-             $8,
-             $9,
-             $10::jsonb
+             $2, $3,
+             $4, $5, $6,
+             $7, $8, $9, $10,
+             $11, $12, $13,
+             $14, $15,
+             $16,
+             $17, $18, $19,
+             $20, $21, $22, $23::jsonb
            );`,
           [
             text(record.id),
             WORKSPACE_ID,
             isoDate(record.date),
+            num(snap.qaActualUnits, 0),
+            num(snap.qaActualPOs, 0),
+            num(snap.qaAttendance, 0),
+            num(snap.prepUnits, 0),
+            num(snap.prepPOs, 0),
+            record.prepApprovedUnits != null ? num(record.prepApprovedUnits, 0) : num(snap.prepUnits, 0),
+            num(snap.prepAttendance, 0),
+            num(snap.assemblyUnits, 0),
+            num(snap.assemblyPacks, 0),
+            num(snap.assemblyAttendance, 0),
+            num(record.fulfillmentIndividualUnits, 0),
+            num(record.fulfillmentBulkUnits, 0),
+            num(snap.putawayUnits || record.putawayUnits, 0),
             Math.round(num(record.totalTouchedUnits, 0)),
             num(record.totalHoursUsed, 0),
             num(record.totalPtoHours, 0),
