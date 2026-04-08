@@ -266,7 +266,7 @@ exports.handler = async function handler(event) {
         await pool.query(
           `INSERT INTO productivity_import_batches
            (id, workspace_id, batch_type, file_name, imported_at, pay_dates, row_count, total_hours, batch_meta)
-           VALUES (COALESCE(NULLIF($1,''), gen_random_uuid()::text)::uuid, $2, 'adp_csv', $3, COALESCE(NULLIF($4,'')::timestamptz, now()), $5::jsonb, $6, $7, $8::jsonb);`,
+           VALUES (CASE WHEN $1 ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN $1::uuid ELSE gen_random_uuid() END, $2, 'adp_csv', $3, COALESCE(NULLIF($4,'')::timestamptz, now()), $5::jsonb, $6, $7, $8::jsonb);`,
           [
             text(batch.id),
             WORKSPACE_ID,
@@ -286,7 +286,7 @@ exports.handler = async function handler(event) {
            (id, workspace_id, import_batch_id, employee_name, entry_date, week_start, home_department, worked_department,
             regular_hours, pto_hours, ot_hours, hourly_rate, payout, pto_payout, source, pay_codes, raw)
            VALUES (
-            COALESCE(NULLIF($1,''), gen_random_uuid()::text)::uuid,
+            CASE WHEN $1 ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN $1::uuid ELSE gen_random_uuid() END,
             $2,
             NULLIF($3,'')::uuid,
             $4,
@@ -331,7 +331,7 @@ exports.handler = async function handler(event) {
           `INSERT INTO productivity_daily_records
            (id, workspace_id, record_date, total_touched_units, total_hours_used, total_pto_hours, total_used_dollars, total_pto_dollars, cpu_touched, raw)
            VALUES (
-             COALESCE(NULLIF($1,''), gen_random_uuid()::text)::uuid,
+             CASE WHEN $1 ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN $1::uuid ELSE gen_random_uuid() END,
              $2,
              $3,
              $4,
