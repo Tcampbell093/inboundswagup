@@ -944,6 +944,13 @@
     }
 
     try{
+      // Capture snapshots for local state before sending - these need to survive the round-trip.
+      const snapshotsByDate = {};
+      state.dailyRecords.forEach(r => {
+        const snap = getSavedAutoSnapshot(r);
+        if(snap && snapshotHasMeaningfulAutoData(snap)) snapshotsByDate[text(r.date)] = snap;
+      });
+
       const data = await productivityApiRequest('POST', {
         settings: state.settings,
         dailyRecords: state.dailyRecords,
@@ -954,6 +961,16 @@
       if(becameStale){
         setProductivityStatus('Newer Productivity changes are waiting. Finishing sync…', 'saving');
         return;
+      }
+      // Restore snapshots the server may not have returned yet (raw blob lags one cycle).
+      if(data && Array.isArray(data.dailyRecords)){
+        data.dailyRecords = data.dailyRecords.map(r => {
+          const existing = snapshotsByDate[text(r.date)];
+          if(existing && !snapshotHasMeaningfulAutoData(getSavedAutoSnapshot(r))){
+            return { ...r, savedSnapshot: existing };
+          }
+          return r;
+        });
       }
       applyProductivityPayload(data);
       setProductivityStatus('Productivity saved to shared storage.', 'synced', { clearAfter: 2500 });
