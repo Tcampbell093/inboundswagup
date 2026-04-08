@@ -125,14 +125,17 @@
     return attendanceRecords.find(r => r.employeeName === name && r.department === dept && r.date === date) || null;
   }
 
-  function upsertRecord(name, dept, date, mark){
+  function upsertRecord(name, dept, date, mark, options = {}){
+    const shouldSync = options.sync !== false;
     attendanceRecords = attendanceRecords.filter(r => !(r.employeeName === name && r.department === dept && r.date === date));
     if (mark) {
       attendanceRecords.push({ id: Date.now() + Math.random(), employeeName: name, department: dept, date, mark, demerits: safeNum(markDemerits[mark]) });
     }
     saveJson(attendanceStorageKey, attendanceRecords);
     // PATCH: propagate to Neon via the shared sync path
-    if (typeof flushAttendanceSync === 'function') flushAttendanceSync(); else if (typeof scheduleAttendanceSync === 'function') scheduleAttendanceSync();
+    if (shouldSync) {
+      if (typeof flushAttendanceSync === 'function') flushAttendanceSync(); else if (typeof scheduleAttendanceSync === 'function') scheduleAttendanceSync();
+    }
   }
 
   function formatDateLabel(dateStr){
@@ -562,8 +565,9 @@
   function quickMarkAllPresent(){
     const dept = isAllTab() ? (departments[0] || 'Receiving') : activeTab;
     getDepartmentRoster(dept).forEach(emp => {
-      upsertRecord(emp.name, dept, selectedDate, 'Present');
+      upsertRecord(emp.name, dept, selectedDate, 'Present', { sync: false });
     });
+    if (typeof flushAttendanceSync === 'function') flushAttendanceSync(); else if (typeof scheduleAttendanceSync === 'function') scheduleAttendanceSync();
     afterRosterChange();
   }
 

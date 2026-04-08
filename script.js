@@ -462,11 +462,12 @@ async function syncAttendanceState(){
   attendanceSyncInFlight=true;
   try{
     const data=await recordsApiRequest(attendanceApiBase,'POST',{records:attendanceRecords,moves:attendanceMoveRecords});
-    if(data && Array.isArray(data.records)){
+    const responseIsStale=attendanceSyncQueued;
+    if(!responseIsStale && data && Array.isArray(data.records)){
       attendanceRecords=normalizeAttendanceRecords(data.records);
       localStorage.setItem(attendanceStorageKey,JSON.stringify(attendanceRecords));
     }
-    if(data && Array.isArray(data.moves)){
+    if(!responseIsStale && data && Array.isArray(data.moves)){
       attendanceMoveRecords=normalizeAttendanceMoveRecords(data.moves);
       localStorage.setItem(attendanceMovesStorageKey,JSON.stringify(attendanceMoveRecords));
     }
