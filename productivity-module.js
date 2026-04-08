@@ -647,7 +647,7 @@
   function getRecord(dateStr){
     let found = state.dailyRecords.find(r => text(r.date) === dateStr);
     if(!found){
-      found = { id: uid('prod'), date: dateStr };
+      found = { id: uuid(), date: dateStr };
       state.dailyRecords.push(found);
       state.dailyRecords.sort((a,b)=> String(b.date).localeCompare(String(a.date)));
       persist(`Created Productivity record for ${dateLabel(dateStr)}. Syncing…`);
