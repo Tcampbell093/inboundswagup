@@ -29,6 +29,9 @@
   let productivitySyncInFlight = false;
   let productivitySyncQueued = false;
   let productivitySyncTimer = null;
+  let productivitySyncRequestId = 0;
+  let productivityMutationVersion = 0;
+  let productivityStatusTimer = null;
 
   const savedView = load(VIEW_KEY, {});
   const initialWeek = getWeekStart(savedView.selectedWeek || isoToday());
@@ -647,7 +650,7 @@
       found = { id: uid('prod'), date: dateStr };
       state.dailyRecords.push(found);
       state.dailyRecords.sort((a,b)=> String(b.date).localeCompare(String(a.date)));
-      persist();
+      persist(`Created Productivity record for ${dateLabel(dateStr)}. Syncing…`);
     }
     return found;
   }
@@ -717,6 +720,29 @@
     };
   }
 
+  function setProductivityStatus(message='', type='info', options={}){
+    state.syncStatus = { type, message: text(message) };
+    if(productivityStatusTimer) clearTimeout(productivityStatusTimer);
+    if(options.clearAfter){
+      productivityStatusTimer = setTimeout(()=>{
+        productivityStatusTimer = null;
+        if(state.syncStatus?.message === message) state.syncStatus = { type: 'idle', message: '' };
+        try{ render(); }catch(_){ }
+      }, options.clearAfter);
+    }
+  }
+
+  function markProductivityDirty(message='Changes saved locally. Syncing…'){
+    productivityMutationVersion += 1;
+    setProductivityStatus(message, productivitySyncEnabled ? 'saving' : 'local');
+  }
+
+  function productivityStatusMarkup(){
+    const status = state.syncStatus || {};
+    if(!status.message) return '';
+    return `<div class="productivity-sync-banner ${escapeHtml(status.type || 'info')}"><span>${escapeHtml(status.message)}</span></div>`;
+  }
+
   function computeLabor(entry){
     const regularHours = n(entry.regularHours);
     const ptoHours = n(entry.ptoHours);
@@ -784,7 +810,12 @@
       save(IMPORT_BATCHES_KEY, state.importBatches);
       save(PENDING_IMPORT_KEY, state.pendingImport);
       productivitySyncEnabled = true;
-      if(hydratedFromLocal) scheduleProductivitySync();
+      if(hydratedFromLocal){
+        setProductivityStatus('Recovered local Productivity data and syncing it to shared storage…', 'saving');
+        scheduleProductivitySync();
+      }else{
+        setProductivityStatus('Productivity is connected to shared storage.', 'synced', { clearAfter: 2500 });
+      }
       render();
     }catch(err){
       console.warn('Productivity sync unavailable, using browser storage.', err);
@@ -798,6 +829,7 @@
       if(fallbackBatches.length) state.importBatches = fallbackBatches;
       if(fallbackPending?.employeeRows?.length) state.pendingImport = fallbackPending;
       productivitySyncEnabled = false;
+      setProductivityStatus('Shared Productivity sync is unavailable. Saving in this browser only.', 'local');
       render();
     }finally{
       productivitySyncLoaded = true;
@@ -808,6 +840,8 @@
     if(!productivitySyncEnabled || !productivitySyncLoaded) return;
     if(productivitySyncInFlight){ productivitySyncQueued = true; return; }
     productivitySyncInFlight = true;
+    const requestId = ++productivitySyncRequestId;
+    const sentVersion = productivityMutationVersion;
     try{
       const data = await productivityApiRequest('POST', {
         settings: state.settings,
@@ -815,13 +849,21 @@
         laborEntries: state.laborEntries,
         importBatches: state.importBatches
       });
+      const becameStale = sentVersion !== productivityMutationVersion || productivitySyncQueued || requestId !== productivitySyncRequestId;
+      if(becameStale){
+        setProductivityStatus('Newer Productivity changes are waiting. Finishing sync…', 'saving');
+        return;
+      }
       applyProductivityPayload(data);
+      setProductivityStatus('Productivity saved to shared storage.', 'synced', { clearAfter: 2500 });
     }catch(err){
       console.warn('Productivity sync save failed; keeping local copy.', err);
       productivitySyncEnabled = false;
+      setProductivityStatus('Shared Productivity sync failed. Your latest changes are still saved in this browser.', 'local');
     }finally{
       productivitySyncInFlight = false;
       if(productivitySyncQueued){ productivitySyncQueued = false; syncProductivityState(); }
+      try{ render(); }catch(_){ }
     }
   }
 
@@ -835,13 +877,14 @@
     });
   }
 
-  function persist(){
+  function persist(statusMessage='Changes saved locally. Syncing…'){
     persistView();
     save(DAILY_KEY, state.dailyRecords);
     save(LABOR_KEY, state.laborEntries);
     save(SETTINGS_KEY, state.settings);
     save(IMPORT_BATCHES_KEY, state.importBatches);
     save(PENDING_IMPORT_KEY, state.pendingImport);
+    markProductivityDirty(statusMessage);
     scheduleProductivitySync();
   }
 
@@ -882,6 +925,7 @@
     if(!getWeekDays(state.selectedWeek).includes(state.selectedDate)) state.selectedDate = getWeekDays(state.selectedWeek)[0];
     root.innerHTML = `
       <div class="productivity-shell">
+        ${productivityStatusMarkup()}
         <div class="productivity-tabbar">
           <button type="button" class="productivity-tab-btn ${state.activeTab==='week'?'active':''}" data-productivity-tab="week">Weekly Board</button>
           <button type="button" class="productivity-tab-btn ${state.activeTab==='labor'?'active':''}" data-productivity-tab="labor">Weekly Labor</button>
@@ -1299,7 +1343,7 @@
       record.prepApprovedManual = shouldUseManual;
       record.prepApprovedUnits = shouldUseManual ? approvedValue : '';
     }
-    persist();
+    persist(`Saved ${form.querySelector('.productivity-panel-title')?.textContent || 'Productivity'} for ${dateLabel(date)}. Syncing…`);
     render();
   }
 
@@ -1321,7 +1365,7 @@
     });
     if(!entry.employeeName){ alert('Pick an employee first.'); return; }
     state.laborEntries.unshift(entry);
-    persist();
+    persist(`Saved labor row for ${entry.employeeName} on ${dateLabel(entry.date)}. Syncing…`);
     render();
   }
 
@@ -1353,7 +1397,7 @@
       state.selectedDate = daySummaries[0].date || getWeekDays(state.selectedWeek)[0] || isoToday();
       state.activeTab = 'labor';
     }
-    persist();
+    persist(`Prepared ${employeeRows.length} ADP labor row${employeeRows.length===1?'':'s'} from ${file.name}.`);
     render();
   }
 
@@ -1399,16 +1443,15 @@
       state.selectedDate = affectedDates[0];
       state.activeTab = 'labor';
     }
-    persist();
+    persist(`Saved ${imported.length} imported labor row${imported.length===1?'':'s'} across ${affectedDates.length} day${affectedDates.length===1?'':'s'}. Syncing…`);
     render();
-    alert(`Saved ${imported.length} imported labor row${imported.length===1?'':'s'} across ${affectedDates.length} day${affectedDates.length===1?'':'s'}.`);
   }
 
   function deleteLabor(id){
     const target = state.laborEntries.find(row => String(row.id) === String(id));
     state.laborEntries = state.laborEntries.filter(row => String(row.id) !== String(id));
     if(target?.sourceKind === 'adp' && target?.date) recomputeImportedHoursForDate(target.date);
-    persist();
+    persist(`Deleted 1 labor row. Syncing…`);
     render();
   }
 
@@ -1423,7 +1466,7 @@
     });
     state.importBatches = state.importBatches.filter(row => String(row.id) !== String(batchId));
     [...affectedDates].forEach(recomputeImportedHoursForDate);
-    persist();
+    persist(`Deleted import ${batch.fileName || 'batch'}. Syncing…`);
     render();
   }
 
