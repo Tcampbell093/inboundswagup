@@ -34,3 +34,9 @@
 .productivity-import-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .productivity-import-actions input[type=file]{max-width:280px;padding:10px 12px;border:1px solid rgba(15,23,42,.1);border-radius:12px;background:#fff;color:#10283d}
 @media (max-width: 900px){.productivity-import-box{flex-direction:column;align-items:stretch}.productivity-import-actions{justify-content:flex-start}}
+
+.productivity-sync-banner{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:14px;border:1px solid rgba(15,23,42,.08);background:#f8fbff;color:#16324a;font-weight:700;box-shadow:0 10px 24px rgba(15,23,42,.04)}
+.productivity-sync-banner.saving{background:#eef7ff;border-color:rgba(59,130,246,.22);color:#0f3b66}
+.productivity-sync-banner.synced{background:#eefaf2;border-color:rgba(34,197,94,.22);color:#166534}
+.productivity-sync-banner.local{background:#fff7ed;border-color:rgba(249,115,22,.22);color:#9a3412}
+.productivity-sync-banner.info,.productivity-sync-banner.idle{background:#f8fbff;border-color:rgba(15,23,42,.08);color:#16324a}
