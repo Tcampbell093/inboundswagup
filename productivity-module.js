@@ -893,7 +893,13 @@
       save(PENDING_IMPORT_KEY, state.pendingImport);
       productivitySyncEnabled = true;
       productivitySyncLoaded = true;
-      if(hydratedFromLocal){
+      // Capture live workflow/assembly metrics into any records missing a snapshot.
+      // This ensures data from other modules travels to the DB and is visible cross-browser.
+      const snapshotsRefreshed = refreshAllDailyRecordSnapshots();
+      if(snapshotsRefreshed > 0){
+        save(DAILY_KEY, state.dailyRecords);
+      }
+      if(hydratedFromLocal || snapshotsRefreshed > 0){
         setProductivityStatus('Recovered local Productivity data and syncing it to shared storage…', 'saving');
         scheduleProductivitySync();
       }else{
