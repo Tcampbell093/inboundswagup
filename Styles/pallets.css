@@ -1621,3 +1621,42 @@
   color: #1e40af;
   border: 1px solid #93c5fd;
 }
+
+/* ---- Concurrent editor warning banner ---- */
+.plt-conflict-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  background: #fff3cd;
+  border: 3px solid #f59e0b;
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 12px rgba(245,158,11,0.18);
+  animation: plt-conflict-pulse 2s ease-in-out infinite;
+}
+
+@keyframes plt-conflict-pulse {
+  0%, 100% { border-color: #f59e0b; box-shadow: 0 2px 12px rgba(245,158,11,0.18); }
+  50%       { border-color: #d97706; box-shadow: 0 2px 20px rgba(245,158,11,0.38); }
+}
+
+.plt-conflict-icon {
+  font-size: 2rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.plt-conflict-text {
+  font-size: 0.97rem;
+  color: #78350f;
+  line-height: 1.5;
+}
+
+.plt-conflict-text strong {
+  font-size: 1.05rem;
+  display: block;
+  margin-bottom: 4px;
+  color: #92400e;
+}
