@@ -925,6 +925,24 @@
     productivitySyncInFlight = true;
     const requestId = ++productivitySyncRequestId;
     const sentVersion = productivityMutationVersion;
+
+    // Ensure every daily record has a savedSnapshot before pushing to DB.
+    // Records without one rely on live localStorage reads (workflow/assembly),
+    // which won't exist on other browsers. Capture now so the data travels with the record.
+    let snapshotsCaptured = 0;
+    state.dailyRecords.forEach(record => {
+      if(!getSavedAutoSnapshot(record)){
+        const snap = buildAutoSnapshot(record.date);
+        if(snapshotHasMeaningfulAutoData(snap)){
+          record.savedSnapshot = snap;
+          snapshotsCaptured++;
+        }
+      }
+    });
+    if(snapshotsCaptured > 0){
+      save(DAILY_KEY, state.dailyRecords);
+    }
+
     try{
       const data = await productivityApiRequest('POST', {
         settings: state.settings,
