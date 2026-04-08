@@ -14,6 +14,8 @@ function json(statusCode, body) {
     body: JSON.stringify(body),
   };
 }
+const EDITOR_TTL_MS = 3 * 60 * 1000; // 3 minutes — stale editor entries auto-expire
+
 async function ensureSchema() {
   if (schemaReady) return;
   await pool.query(`
@@ -21,41 +23,106 @@ async function ensureSchema() {
       state_key TEXT PRIMARY KEY,
       data_json JSONB NOT NULL DEFAULT '{}'::jsonb,
       masters_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      active_editors JSONB NOT NULL DEFAULT '{}'::jsonb,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  // Add active_editors column if it doesn't exist yet (for existing deployments)
   await pool.query(`
-    INSERT INTO workflow_sync_state (state_key, data_json, masters_json)
-    VALUES ('default', '{}'::jsonb, '{}'::jsonb)
+    ALTER TABLE workflow_sync_state ADD COLUMN IF NOT EXISTS
+    active_editors JSONB NOT NULL DEFAULT '{}'::jsonb;
+  `);
+  await pool.query(`
+    INSERT INTO workflow_sync_state (state_key, data_json, masters_json, active_editors)
+    VALUES ('default', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)
     ON CONFLICT (state_key) DO NOTHING;
   `);
   schemaReady = true;
 }
+
+function pruneEditors(editors) {
+  // Remove entries older than TTL so stale sessions never block anyone
+  const now = Date.now();
+  const pruned = {};
+  for (const [palletId, entry] of Object.entries(editors || {})) {
+    if (entry && (now - (entry.ts || 0)) < EDITOR_TTL_MS) {
+      pruned[palletId] = entry;
+    }
+  }
+  return pruned;
+}
+
 exports.handler = async function handler(event) {
   if (!process.env.DATABASE_URL) return json(500, { error: 'DATABASE_URL is not configured' });
   try {
     await ensureSchema();
+
     if (event.httpMethod === 'GET') {
       const result = await pool.query(
-        `SELECT data_json, masters_json, updated_at FROM workflow_sync_state WHERE state_key='default' LIMIT 1;`
+        `SELECT data_json, masters_json, active_editors, updated_at FROM workflow_sync_state WHERE state_key='default' LIMIT 1;`
       );
-      const row = result.rows[0] || { data_json: {}, masters_json: {}, updated_at: null };
-      return json(200, { data: row.data_json || {}, masters: row.masters_json || {}, updated_at: row.updated_at });
+      const row = result.rows[0] || { data_json: {}, masters_json: {}, active_editors: {}, updated_at: null };
+      return json(200, {
+        data: row.data_json || {},
+        masters: row.masters_json || {},
+        activeEditors: pruneEditors(row.active_editors),
+        updated_at: row.updated_at,
+      });
     }
+
     if (event.httpMethod === 'POST') {
       const body = JSON.parse(event.body || '{}');
       const data = body && typeof body.data === 'object' && body.data ? body.data : {};
       const masters = body && typeof body.masters === 'object' && body.masters ? body.masters : {};
       const result = await pool.query(
-        `INSERT INTO workflow_sync_state (state_key, data_json, masters_json, updated_at)
-         VALUES ('default', $1::jsonb, $2::jsonb, NOW())
+        `INSERT INTO workflow_sync_state (state_key, data_json, masters_json, active_editors, updated_at)
+         VALUES ('default', $1::jsonb, $2::jsonb, '{}'::jsonb, NOW())
          ON CONFLICT (state_key)
          DO UPDATE SET data_json=EXCLUDED.data_json, masters_json=EXCLUDED.masters_json, updated_at=NOW()
-         RETURNING data_json, masters_json, updated_at;`,
+         RETURNING data_json, masters_json, active_editors, updated_at;`,
         [JSON.stringify(data), JSON.stringify(masters)]
       );
-      return json(200, { ok: true, data: result.rows[0].data_json, masters: result.rows[0].masters_json, updated_at: result.rows[0].updated_at });
+      const row = result.rows[0];
+      return json(200, {
+        ok: true,
+        data: row.data_json,
+        masters: row.masters_json,
+        activeEditors: pruneEditors(row.active_editors),
+        updated_at: row.updated_at,
+      });
     }
+
+    // PATCH — atomically update just the active_editors field.
+    // Used by each browser to register/deregister themselves as editing a pallet.
+    // action: 'open'  { palletId, user } — register editor
+    // action: 'close' { palletId, user } — deregister editor
+    if (event.httpMethod === 'PATCH') {
+      const body = JSON.parse(event.body || '{}');
+      const { action, palletId, user } = body;
+      if (!action || !palletId) return json(400, { error: 'action and palletId required' });
+
+      // Read current editors, prune stale, apply change, write back atomically
+      const current = await pool.query(
+        `SELECT active_editors FROM workflow_sync_state WHERE state_key='default' LIMIT 1;`
+      );
+      const editors = pruneEditors(current.rows[0]?.active_editors || {});
+
+      if (action === 'open' && user) {
+        editors[palletId] = { user, ts: Date.now() };
+      } else if (action === 'close') {
+        // Remove any entry for this pallet by this user
+        if (editors[palletId]?.user === user) {
+          delete editors[palletId];
+        }
+      }
+
+      await pool.query(
+        `UPDATE workflow_sync_state SET active_editors=$1::jsonb WHERE state_key='default';`,
+        [JSON.stringify(editors)]
+      );
+      return json(200, { ok: true, activeEditors: editors });
+    }
+
     return json(405, { error: 'Method not allowed' });
   } catch (error) {
     return json(500, { error: error.message || 'Unknown workflow sync error' });
