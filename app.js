@@ -8,6 +8,43 @@ let workflowSyncLoaded=false;
 let workflowSyncInFlight=false;
 let workflowSyncQueued=false;
 let workflowSyncTimer=null;
+let workflowPollTimer=null;
+const WORKFLOW_POLL_INTERVAL = 20000; // poll every 20 seconds
+
+// Active editors — who is currently in which pallet modal
+// { palletId: { user, ts } } — updated from server on every GET/poll
+let workflowActiveEditors = {};
+
+function plt_getActiveEditors() { return workflowActiveEditors; }
+
+// Register/deregister self as editing a pallet via PATCH endpoint
+async function workflowRegisterEditor(palletId, action) {
+  if (!workflowSyncEnabled) return;
+  const user = (typeof state !== 'undefined' && state.currentUser) ? state.currentUser : null;
+  if (!user) return;
+  try {
+    await fetch(WORKFLOW_API_BASE, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, palletId, user }),
+    });
+  } catch(_) { /* non-fatal */ }
+}
+
+function startWorkflowPoll() {
+  if (workflowPollTimer) return;
+  workflowPollTimer = setInterval(async () => {
+    if (!workflowSyncEnabled || workflowSyncInFlight) return;
+    try {
+      const data = await workflowApiRequest('GET');
+      if (data) applyWorkflowSyncPayload(data);
+    } catch(_) { /* non-fatal poll failure */ }
+  }, WORKFLOW_POLL_INTERVAL);
+}
+
+function stopWorkflowPoll() {
+  if (workflowPollTimer) { clearInterval(workflowPollTimer); workflowPollTimer = null; }
+}
 
 const ATTENDANCE_EMPLOYEE_KEY = "ops_hub_employees_v1";
 
@@ -60,6 +97,11 @@ async function workflowApiRequest(method='GET', body){
   return data;
 }
 function applyWorkflowSyncPayload(payload={}){
+  if (payload && typeof payload.activeEditors === 'object') {
+    workflowActiveEditors = payload.activeEditors || {};
+    // If a pallet modal is open, refresh its warning banner
+    if (typeof plt_refreshEditorWarning === 'function') plt_refreshEditorWarning();
+  }
   if (payload && typeof payload.data === 'object') {
     const defaults = getDefaultData();
     const parsed = payload.data;
@@ -96,6 +138,7 @@ async function loadWorkflowFromBackend() {
     const data = await workflowApiRequest('GET');
     if (data) applyWorkflowSyncPayload(data);
     workflowSyncEnabled = true;
+    startWorkflowPoll();
   } catch (err) {
     console.warn('Workflow sync unavailable, using browser storage.', err);
     workflowSyncEnabled = false;
@@ -2351,6 +2394,11 @@ async function init() {
   await Promise.all([loadWorkflowFromBackend(), refreshImportedLibraryCache()]);
   applyLanguage();
   renderAll();
+  // Refresh workflow data when user tabs back — so associates always see latest pallets
+  window.addEventListener('focus', () => { if(workflowSyncEnabled) loadWorkflowFromBackend().catch(()=>{}); });
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'visible' && workflowSyncEnabled) loadWorkflowFromBackend().catch(()=>{});
+  });
 }
 
 function t(key) {

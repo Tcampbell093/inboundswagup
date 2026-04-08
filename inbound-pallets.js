@@ -368,7 +368,47 @@ function plt_discrepancyHtml(po) {
 
 /* ---- modal stack ---- */
 let plt_stack=[];
-function plt_closeAll(){ plt_stack.forEach(el=>el.remove()); plt_stack=[]; document.removeEventListener('keydown',plt_escH); }
+let plt_currentEditorPalletId = null; // track which pallet this browser has open
+
+// Called by app.js poll to refresh the warning in any open modal
+function plt_refreshEditorWarning() {
+  const overlay = document.getElementById('palletDetailOverlay');
+  if (!overlay) return;
+  const palletId = overlay.dataset.pid;
+  if (!palletId) return;
+  const banner = overlay.querySelector('#plt_editorWarning');
+  if (!banner) return;
+  const warningHtml = plt_editorWarningHtml(palletId);
+  banner.innerHTML = warningHtml;
+  banner.style.display = warningHtml ? 'block' : 'none';
+}
+
+function plt_editorWarningHtml(palletId) {
+  const editors = (typeof plt_getActiveEditors === 'function') ? plt_getActiveEditors() : {};
+  const myUser = plt_user();
+  const entry = editors[palletId];
+  if (!entry || !entry.user || entry.user === myUser) return '';
+  const name = plt_esc(entry.user);
+  return `
+    <div class="plt-conflict-banner">
+      <div class="plt-conflict-icon">⚠️</div>
+      <div class="plt-conflict-text">
+        <strong>${name} ${plt_t('is also in this pallet right now.','también está en esta tarima ahora.')}</strong><br>
+        ${plt_t('Your changes and theirs may conflict. Coordinate before saving.','Tus cambios y los suyos pueden entrar en conflicto. Coordinen antes de guardar.')}
+      </div>
+    </div>`;
+}
+
+function plt_closeAll(){
+  // Deregister self as editor when closing any modal
+  if (plt_currentEditorPalletId) {
+    if (typeof workflowRegisterEditor === 'function') {
+      workflowRegisterEditor(plt_currentEditorPalletId, 'close');
+    }
+    plt_currentEditorPalletId = null;
+  }
+  plt_stack.forEach(el=>el.remove()); plt_stack=[]; document.removeEventListener('keydown',plt_escH);
+}
 function plt_escH(e){ if(e.key==='Escape'){plt_closeAll();plt_renderAllPanels();} }
 function plt_push(el){ plt_stack.push(el); document.body.appendChild(el); if(plt_stack.length===1)document.addEventListener('keydown',plt_escH); }
 function plt_overlay(id){ const el=document.createElement('div'); el.className='pallet-overlay'; el.id=id; return el; }
@@ -773,6 +813,12 @@ function plt_buildPalletModal(pallet,dept){
   const overlay=plt_overlay('palletDetailOverlay');
   overlay.dataset.pid=pallet.id;
 
+  // Register self as editing this pallet
+  plt_currentEditorPalletId = pallet.id;
+  if (typeof workflowRegisterEditor === 'function') {
+    workflowRegisterEditor(pallet.id, 'open');
+  }
+
   const pos=pallet.pos||[];
   const order=['draft','receiving','prep','done'];
   const ci=order.indexOf(pallet.status);
@@ -840,6 +886,8 @@ function plt_buildPalletModal(pallet,dept){
       </div>
 
       <div class="pallet-modal-body">
+        <!-- Concurrent editor warning — shown when another associate has this pallet open -->
+        ${(()=>{ const w=plt_editorWarningHtml(pallet.id); return `<div id="plt_editorWarning" style="${w?'':'display:none;'}">${w}</div>`; })()}
         <!-- name + date inline editor (hidden by default) -->
         <div class="plt-rename-row hidden" id="plt_renameRow">
           <div class="plt-rename-fields">
