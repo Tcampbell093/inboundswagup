@@ -656,7 +656,7 @@
   }
 
   function computeDaily(record){
-    const auto = getSavedAutoSnapshot(record) || getAutoMetrics(record.date);
+    const auto = getAutoMetrics(record.date);
     const qaUnits = n(auto.qaActualUnits);
     const qaHours = n(record.qaHoursWorked);
     const prepUnits = n(auto.prepUnits);
@@ -718,88 +718,6 @@
       putawayLineCount: workflow.putawayCount,
       putawayUnits: workflow.putawayUnits
     };
-  }
-
-  function buildAutoSnapshot(dateStr, autoMetrics){
-    const auto = autoMetrics || getAutoMetrics(dateStr);
-    return {
-      date: text(dateStr),
-      qaActualUnits: n(auto.qaActualUnits),
-      qaActualPOs: n(auto.qaActualPOs),
-      qaAttendance: n(auto.qaAttendance),
-      prepUnits: n(auto.prepUnits),
-      prepPOs: n(auto.prepPOs),
-      prepAttendance: n(auto.prepAttendance),
-      assemblyUnits: n(auto.assemblyUnits),
-      assemblyPacks: n(auto.assemblyPacks),
-      assemblyAttendance: n(auto.assemblyAttendance),
-      assemblyScheduledRows: n(auto.assemblyScheduledRows),
-      putawayLineCount: n(auto.putawayLineCount),
-      putawayUnits: n(auto.putawayUnits),
-      capturedAt: new Date().toISOString()
-    };
-  }
-
-  function snapshotsEqual(a, b){
-    if(!a || !b) return false;
-    return text(a.date) === text(b.date)
-      && n(a.qaActualUnits) === n(b.qaActualUnits)
-      && n(a.qaActualPOs) === n(b.qaActualPOs)
-      && n(a.qaAttendance) === n(b.qaAttendance)
-      && n(a.prepUnits) === n(b.prepUnits)
-      && n(a.prepPOs) === n(b.prepPOs)
-      && n(a.prepAttendance) === n(b.prepAttendance)
-      && n(a.assemblyUnits) === n(b.assemblyUnits)
-      && n(a.assemblyPacks) === n(b.assemblyPacks)
-      && n(a.assemblyAttendance) === n(b.assemblyAttendance)
-      && n(a.assemblyScheduledRows) === n(b.assemblyScheduledRows)
-      && n(a.putawayLineCount) === n(b.putawayLineCount)
-      && n(a.putawayUnits) === n(b.putawayUnits);
-  }
-
-  function getSavedAutoSnapshot(record){
-    const snapshot = record && typeof record.savedSnapshot === 'object' ? record.savedSnapshot : null;
-    if(!snapshot || !text(snapshot.date || record?.date)) return null;
-    return {
-      ...snapshot,
-      date: text(snapshot.date || record.date)
-    };
-  }
-
-  function snapshotHasMeaningfulAutoData(snapshot){
-    if(!snapshot) return false;
-    return n(snapshot.qaActualUnits)
-      || n(snapshot.qaActualPOs)
-      || n(snapshot.qaAttendance)
-      || n(snapshot.prepUnits)
-      || n(snapshot.prepPOs)
-      || n(snapshot.prepAttendance)
-      || n(snapshot.assemblyUnits)
-      || n(snapshot.assemblyPacks)
-      || n(snapshot.assemblyAttendance)
-      || n(snapshot.assemblyScheduledRows)
-      || n(snapshot.putawayLineCount)
-      || n(snapshot.putawayUnits);
-  }
-
-  function refreshDailyRecordSnapshot(record){
-    if(!record || !text(record.date)) return false;
-    const nextSnapshot = buildAutoSnapshot(record.date);
-    const previousSnapshot = getSavedAutoSnapshot(record);
-    const nextHasData = snapshotHasMeaningfulAutoData(nextSnapshot);
-    const previousHasData = snapshotHasMeaningfulAutoData(previousSnapshot);
-    if(previousHasData && !nextHasData) return false;
-    if(snapshotsEqual(previousSnapshot, nextSnapshot)) return false;
-    record.savedSnapshot = nextSnapshot;
-    return true;
-  }
-
-  function refreshAllDailyRecordSnapshots(){
-    let changed = 0;
-    state.dailyRecords.forEach(record => {
-      if(refreshDailyRecordSnapshot(record)) changed += 1;
-    });
-    return changed;
   }
 
   function setProductivityStatus(message='', type='info', options={}){
@@ -1425,7 +1343,6 @@
       record.prepApprovedManual = shouldUseManual;
       record.prepApprovedUnits = shouldUseManual ? approvedValue : '';
     }
-    record.savedSnapshot = buildAutoSnapshot(date, auto);
     persist(`Saved ${form.querySelector('.productivity-panel-title')?.textContent || 'Productivity'} for ${dateLabel(date)}. Syncing…`);
     render();
   }
