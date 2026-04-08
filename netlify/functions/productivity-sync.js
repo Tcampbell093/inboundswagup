@@ -208,22 +208,10 @@ async function readAll() {
     })),
     dailyRecords: dailyRes.rows.map((row) => {
       const raw = row.raw || {};
-      const savedSnapshot = raw.savedSnapshot ? { ...raw.savedSnapshot } : {};
-      if (row.qa_actual_units != null) savedSnapshot.qaActualUnits = num(row.qa_actual_units, 0);
-      if (row.qa_actual_pos != null) savedSnapshot.qaActualPOs = num(row.qa_actual_pos, 0);
-      if (row.qa_attendance != null) savedSnapshot.qaAttendance = num(row.qa_attendance, 0);
-      if (row.prep_units != null) savedSnapshot.prepUnits = num(row.prep_units, 0);
-      if (row.prep_pos != null) savedSnapshot.prepPOs = num(row.prep_pos, 0);
-      if (row.prep_attendance != null) savedSnapshot.prepAttendance = num(row.prep_attendance, 0);
-      if (row.assembly_units != null) savedSnapshot.assemblyUnits = num(row.assembly_units, 0);
-      if (row.assembly_packs != null) savedSnapshot.assemblyPacks = num(row.assembly_packs, 0);
-      if (row.assembly_attendance != null) savedSnapshot.assemblyAttendance = num(row.assembly_attendance, 0);
-      if (row.putaway_units != null) savedSnapshot.putawayUnits = num(row.putaway_units, 0);
       return {
         ...raw,
         id: row.id,
         date: row.record_date,
-        savedSnapshot: Object.keys(savedSnapshot).length ? { ...savedSnapshot, date: row.record_date } : raw.savedSnapshot,
         totalTouchedUnits: num(row.total_touched_units, 0),
         totalHoursUsed: num(row.total_hours_used, 0),
         totalPtoHours: num(row.total_pto_hours, 0),
