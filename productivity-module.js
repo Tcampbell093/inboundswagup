@@ -106,12 +106,12 @@
   }
   function readWorkflowData(){
     const local = load(WORKFLOW_KEY, null);
-    // If localStorage has workflow data (workflow.html was opened), use it.
-    // Otherwise fall back to data fetched directly from the workflow backend.
-    if(local && typeof local === 'object' && (Array.isArray(local.pallets) ? local.pallets.length : Object.keys(local).length)){
+    // Only trust localStorage if it has the current pallet-based format.
+    // Old section-based data (no pallets array) gets ignored in favour of remote.
+    if(local && Array.isArray(local.pallets) && local.pallets.length){
       return local;
     }
-    return remoteWorkflowData || {};
+    return remoteWorkflowData || local || {};
   }
   function readAssemblyRows(){
     return load(ASSEMBLY_KEY, []);
