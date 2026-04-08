@@ -585,13 +585,10 @@
 
   function targetAllowsNormalTyping(target) {
     if (!isTypingTarget(target)) return false;
-    return [
-      el.operatorInput,
-      el.lookupInput,
-      el.newCarrierInput,
-      el.dateInput,
-      el.sessionNoteInput
-    ].filter(Boolean).includes(target);
+    // Allow typing in ANY input, textarea, select, or contenteditable on the page —
+    // not just the scanner's own fields. This prevents the scanner listener from
+    // swallowing keystrokes meant for other modules (e.g. cycle count batch inputs).
+    return true;
   }
 
   function queueScannerCharacter(char) {
