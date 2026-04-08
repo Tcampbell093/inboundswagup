@@ -121,6 +121,11 @@ function num(value, fallback = 0) {
 function text(value) {
   return value == null ? '' : String(value);
 }
+function isoDate(value) {
+  // Normalize any date string (including full ISO timestamps) to YYYY-MM-DD
+  const s = text(value).slice(0, 10);
+  return s.match(/^\d{4}-\d{2}-\d{2}$/) ? s : '';
+}
 
 async function readAll() {
   const settingsRes = await pool.query(
@@ -131,14 +136,14 @@ async function readAll() {
     [WORKSPACE_ID]
   );
   const batchRes = await pool.query(
-    `SELECT id, file_name, imported_at, pay_dates, row_count, total_hours, batch_meta
+    `SELECT id, file_name, to_char(imported_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS imported_at, pay_dates, row_count, total_hours, batch_meta
      FROM productivity_import_batches
      WHERE workspace_id = $1
      ORDER BY imported_at DESC;`,
     [WORKSPACE_ID]
   );
   const laborRes = await pool.query(
-    `SELECT id, import_batch_id, employee_name, entry_date, week_start, home_department, worked_department,
+    `SELECT id, import_batch_id, employee_name, to_char(entry_date, 'YYYY-MM-DD') AS entry_date, to_char(week_start, 'YYYY-MM-DD') AS week_start, home_department, worked_department,
             regular_hours, pto_hours, ot_hours, hourly_rate, payout, pto_payout, source, pay_codes, raw
      FROM productivity_labor_entries
      WHERE workspace_id = $1
@@ -146,7 +151,7 @@ async function readAll() {
     [WORKSPACE_ID]
   );
   const dailyRes = await pool.query(
-    `SELECT id, record_date, total_touched_units, total_hours_used, total_pto_hours, total_used_dollars, total_pto_dollars, cpu_touched, raw
+    `SELECT id, to_char(record_date, 'YYYY-MM-DD') AS record_date, total_touched_units, total_hours_used, total_pto_hours, total_used_dollars, total_pto_dollars, cpu_touched, raw
      FROM productivity_daily_records
      WHERE workspace_id = $1
      ORDER BY record_date ASC;`,
@@ -309,8 +314,8 @@ exports.handler = async function handler(event) {
             WORKSPACE_ID,
             text(entry.importBatchId),
             text(entry.employeeName),
-            text(entry.date),
-            text(entry.weekStart),
+            isoDate(entry.date),
+            isoDate(entry.weekStart),
             text(entry.homeDepartment),
             text(entry.workedDepartment),
             num(entry.regularHours, 0),
@@ -345,7 +350,7 @@ exports.handler = async function handler(event) {
           [
             text(record.id),
             WORKSPACE_ID,
-            text(record.date),
+            isoDate(record.date),
             Math.round(num(record.totalTouchedUnits, 0)),
             num(record.totalHoursUsed, 0),
             num(record.totalPtoHours, 0),
