@@ -2,6 +2,12 @@
   if (!document.getElementById('fulfillmentScanPage')) return;
 
   const STORAGE_KEY = 'houston_control_fulfillment_scan_prototype_v2_manual_carriers';
+  const FULFILLMENT_API_BASE = '/.netlify/functions/fulfillment-sync';
+  let fspSyncEnabled = false;
+  let fspSyncLoaded = false;
+  let fspSyncInFlight = false;
+  let fspSyncQueued = false;
+  let fspSyncTimer = null;
   const MASTER_KEY = 'qaBlueSheetMastersV5';
   const CURRENT_USER_KEY = 'qaWorkflowCurrentUserV2';
   const EMPLOYEES_STORAGE_KEY = 'ops_hub_employees_v1';
@@ -126,6 +132,12 @@
   hydrateSessionControls();
   bindEvents();
   render();
+  loadFspFromBackend();
+  // Refresh from backend on tab focus so multiple operators stay in sync
+  window.addEventListener('focus', () => { if (fspSyncEnabled) loadFspFromBackend().catch(() => {}); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && fspSyncEnabled) loadFspFromBackend().catch(() => {});
+  });
 
   function createDayRecord() {
     return {
@@ -181,6 +193,99 @@
       days: state.days
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    scheduleFspSync();
+  }
+
+  function scheduleFspSync() {
+    if (!fspSyncEnabled || !fspSyncLoaded) return;
+    if (fspSyncTimer) clearTimeout(fspSyncTimer);
+    fspSyncTimer = setTimeout(() => { fspSyncTimer = null; syncFspState(); }, 400);
+  }
+
+  async function fspApiRequest(method, body) {
+    const options = { method, headers: { 'Accept': 'application/json' } };
+    if (body !== undefined) {
+      options.headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(body);
+    }
+    const response = await fetch(FULFILLMENT_API_BASE, options);
+    const raw = await response.text();
+    let data = {};
+    try { data = raw ? JSON.parse(raw) : {}; } catch { data = { raw }; }
+    if (!response.ok) throw new Error(data?.error || `Fulfillment sync failed (${response.status})`);
+    return data;
+  }
+
+  function applyFspPayload(payload) {
+    if (!payload || typeof payload.state !== 'object') return false;
+    const remote = payload.state;
+    // Merge remote days into local — remote is authoritative for any date it has
+    if (remote.days && typeof remote.days === 'object') {
+      state.days = { ...state.days, ...remote.days };
+    }
+    if (Array.isArray(remote.carriers) && remote.carriers.length) {
+      state.carriers = [...new Set([...state.carriers, ...remote.carriers])];
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      session: state.session,
+      selectedDate: state.selectedDate,
+      selectedCarrier: state.selectedCarrier,
+      lookupQuery: state.lookupQuery,
+      bucketMinutes: state.bucketMinutes,
+      carriers: state.carriers,
+      openPallet: state.openPallet,
+      days: state.days
+    }));
+    return true;
+  }
+
+  async function loadFspFromBackend() {
+    try {
+      const data = await fspApiRequest('GET');
+      applyFspPayload(data);
+      fspSyncEnabled = true;
+      setFspSyncStatus('Fulfillment sync connected.', 'synced', { clearAfter: 2500 });
+    } catch (err) {
+      console.warn('Fulfillment sync unavailable, using browser storage.', err);
+      fspSyncEnabled = false;
+      setFspSyncStatus('Saving in this browser only.', 'local');
+    } finally {
+      fspSyncLoaded = true;
+    }
+  }
+
+  async function syncFspState() {
+    if (!fspSyncEnabled || !fspSyncLoaded) return;
+    if (fspSyncInFlight) { fspSyncQueued = true; return; }
+    fspSyncInFlight = true;
+    const payload = { session: state.session, selectedDate: state.selectedDate,
+      selectedCarrier: state.selectedCarrier, lookupQuery: state.lookupQuery,
+      bucketMinutes: state.bucketMinutes, carriers: state.carriers,
+      openPallet: state.openPallet, days: state.days };
+    try {
+      await fspApiRequest('POST', { state: payload });
+      setFspSyncStatus('Fulfillment data saved.', 'synced', { clearAfter: 2000 });
+    } catch (err) {
+      console.warn('Fulfillment sync save failed; keeping local copy.', err);
+      fspSyncEnabled = false;
+      setFspSyncStatus('Sync failed. Saving in this browser only.', 'local');
+    } finally {
+      fspSyncInFlight = false;
+      if (fspSyncQueued) { fspSyncQueued = false; syncFspState(); }
+    }
+  }
+
+  function setFspSyncStatus(message, type, options = {}) {
+    const banner = document.getElementById('fspSyncBanner');
+    if (!banner) return;
+    banner.textContent = message;
+    banner.className = `fsp-sync-banner fsp-sync-${type}`;
+    banner.style.display = message ? '' : 'none';
+    if (options.clearAfter) {
+      setTimeout(() => {
+        if (banner.textContent === message) banner.style.display = 'none';
+      }, options.clearAfter);
+    }
   }
 
   function ensureCarriers() {

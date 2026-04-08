@@ -8,6 +8,12 @@
 
   /* ── Storage key ── */
   const CC_KEY = 'ops_hub_cycle_count_v1';
+  const CC_API_BASE = '/.netlify/functions/cycle-count-sync';
+  let ccSyncEnabled = false;
+  let ccSyncLoaded = false;
+  let ccSyncInFlight = false;
+  let ccSyncQueued = false;
+  let ccSyncTimer = null;
 
   /* ── Helpers ── */
   function ccId()       { return 'cc' + Math.random().toString(36).slice(2, 10); }
@@ -113,6 +119,91 @@
   }
   function ccSave(data) {
     try { localStorage.setItem(CC_KEY, JSON.stringify(data)); } catch(e) {}
+    scheduleCcSync();
+  }
+
+  function scheduleCcSync() {
+    if (!ccSyncEnabled || !ccSyncLoaded) return;
+    if (ccSyncTimer) clearTimeout(ccSyncTimer);
+    ccSyncTimer = setTimeout(() => { ccSyncTimer = null; syncCcState(); }, 400);
+  }
+
+  async function ccApiRequest(method, body) {
+    const options = { method, headers: { 'Accept': 'application/json' } };
+    if (body !== undefined) {
+      options.headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(body);
+    }
+    const response = await fetch(CC_API_BASE, options);
+    const raw = await response.text();
+    let data = {};
+    try { data = raw ? JSON.parse(raw) : {}; } catch { data = { raw }; }
+    if (!response.ok) throw new Error(data?.error || `Cycle count sync failed (${response.status})`);
+    return data;
+  }
+
+  function applyCcPayload(payload) {
+    if (!payload || typeof payload.state !== 'object') return false;
+    const remote = payload.state;
+    if (Array.isArray(remote.assignments)) ccData.assignments = remote.assignments;
+    if (Array.isArray(remote.counts)) ccData.counts = remote.counts;
+    if (remote.settings && typeof remote.settings === 'object') {
+      ccData.settings = { ...ccDefaultSettings(), ...remote.settings };
+    }
+    try { localStorage.setItem(CC_KEY, JSON.stringify(ccData)); } catch(e) {}
+    return true;
+  }
+
+  async function loadCcFromBackend() {
+    try {
+      const data = await ccApiRequest('GET');
+      const hadData = applyCcPayload(data);
+      ccSyncEnabled = true;
+      if (hadData && (ccData.assignments.length || ccData.counts.length)) {
+        setCcSyncStatus('Cycle count connected.', 'synced', { clearAfter: 2500 });
+      } else if (ccData.assignments.length) {
+        // Local data exists but DB is empty — seed it up
+        await syncCcState();
+      } else {
+        setCcSyncStatus('Cycle count connected.', 'synced', { clearAfter: 2500 });
+      }
+    } catch(err) {
+      console.warn('Cycle count sync unavailable, using browser storage.', err);
+      ccSyncEnabled = false;
+      setCcSyncStatus('Saving in this browser only.', 'local');
+    } finally {
+      ccSyncLoaded = true;
+    }
+  }
+
+  async function syncCcState() {
+    if (!ccSyncEnabled || !ccSyncLoaded) return;
+    if (ccSyncInFlight) { ccSyncQueued = true; return; }
+    ccSyncInFlight = true;
+    try {
+      await ccApiRequest('POST', { state: { assignments: ccData.assignments, counts: ccData.counts, settings: ccData.settings } });
+      setCcSyncStatus('Cycle count saved.', 'synced', { clearAfter: 2000 });
+    } catch(err) {
+      console.warn('Cycle count sync save failed; keeping local copy.', err);
+      ccSyncEnabled = false;
+      setCcSyncStatus('Sync failed. Saving in this browser only.', 'local');
+    } finally {
+      ccSyncInFlight = false;
+      if (ccSyncQueued) { ccSyncQueued = false; syncCcState(); }
+    }
+  }
+
+  function setCcSyncStatus(message, type, options = {}) {
+    const banner = document.getElementById('ccSyncBanner');
+    if (!banner) return;
+    banner.textContent = message;
+    banner.className = `cc-sync-banner cc-sync-${type}`;
+    banner.style.display = message ? '' : 'none';
+    if (options.clearAfter) {
+      setTimeout(() => {
+        if (banner.textContent === message) banner.style.display = 'none';
+      }, options.clearAfter);
+    }
   }
 
   /* ── State ── */
@@ -2454,6 +2545,13 @@
 
     // Initial render
     ccSwitchTab('my-work');
+
+    // Load from backend — cross-browser sync
+    loadCcFromBackend();
+    window.addEventListener('focus', () => { if (ccSyncEnabled) loadCcFromBackend().catch(() => {}); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && ccSyncEnabled) loadCcFromBackend().catch(() => {});
+    });
   }
 
   // Wait for DOM
