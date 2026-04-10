@@ -1157,7 +1157,7 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
       </div>
       <div class="plt-ref-row plt-overstock-auto">
         <span class="plt-ref-label">📤 ${plt_t('To Overstock (from Prep count)','A Exceso (desde Prep)')}</span>
-        <span class="plt-ref-value">
+        <span class="plt-ref-value" id="prepOverstockRef_${po.id}">
           ${overstockQty!==null
             ? (overstockQty>0
                 ? `<span class="plt-extras plt-extras-over">+${overstockQty} ${plt_t('units → Overstock','unidades → Exceso')}</span>`
@@ -1479,6 +1479,69 @@ function plt_bindPoCardEvents(container, pallet, dept){
     }
     if(ordInput)  ordInput.addEventListener('blur',saveQty);
     if(recvInput) recvInput.addEventListener('blur',saveQty);
+
+    // Inline prep qty input + displays
+    const prepInput        = card.querySelector('.plt-prep-qty');
+    const prepDiscrepEl    = card.querySelector(`#prepDiscrepDisplay_${poId}`);
+    const prepOrderEl      = card.querySelector(`#prepOrderVarianceDisplay_${poId}`);
+    const prepOverstockRef = card.querySelector(`#prepOverstockRef_${poId}`);
+
+    function recalcPrepDisplays(){
+      const po = (plt_get(pallet.id)?.pos||[]).find(r=>r.id===poId);
+      if(!po) return;
+      const prepVal = prepInput && prepInput.value!=='' ? Number(prepInput.value) : null;
+      const recvVal = plt_hasVal(po.receivedQty) ? Number(po.receivedQty) : null;
+      const ordVal  = plt_hasVal(po.orderedQty)  ? Number(po.orderedQty)  : null;
+
+      if(prepDiscrepEl){
+        if(prepVal===null || recvVal===null){
+          prepDiscrepEl.innerHTML = '<span class="act-dim">—</span>';
+        }else{
+          const diff = prepVal - recvVal;
+          if(diff===0) prepDiscrepEl.innerHTML = `<span class="plt-extras plt-extras-exact">✓ ${plt_t('Counts match','Conteos coinciden')}</span>`;
+          else prepDiscrepEl.innerHTML = `<span class="plt-extras plt-extras-short">⚠️ ${plt_t('Discrepancy','Discrepancia')}: ${diff>0?'+':''}${diff} ${plt_t('vs Receiving','vs Recepción')}</span>`;
+        }
+      }
+
+      const overstockHtml = (() => {
+        if(prepVal===null || ordVal===null) return `<span class="act-dim">${plt_t('Enter Prep count first','Ingresa conteo de Prep primero')}</span>`;
+        const diff = prepVal - ordVal;
+        if(diff > 0) return `<span class="plt-extras plt-extras-over">📤 +${diff} ${plt_t('to Overstock','a Exceso')}</span>`;
+        if(diff < 0) return `<span class="plt-extras plt-extras-short">⚠️ ${diff} ${plt_t('vs Ordered','vs Ordenado')}</span>`;
+        return `<span class="plt-extras plt-extras-exact">✓ ${plt_t('Exact to order','Exacto al pedido')}</span>`;
+      })();
+
+      if(prepOrderEl){
+        if(prepVal===null || ordVal===null){
+          prepOrderEl.innerHTML = '<span class="act-dim">—</span>';
+        }else{
+          prepOrderEl.innerHTML = overstockHtml;
+        }
+      }
+
+      if(prepOverstockRef){
+        if(prepVal===null || ordVal===null){
+          prepOverstockRef.innerHTML = `<span class="act-dim">${plt_t('Enter Prep count first','Ingresa conteo de Prep primero')}</span>`;
+        }else{
+          const over = Math.max(0, prepVal - ordVal);
+          prepOverstockRef.innerHTML = over>0
+            ? `<span class="plt-extras plt-extras-over">+${over} ${plt_t('units → Overstock','unidades → Exceso')}</span>`
+            : `<span class="plt-extras plt-extras-exact">0 — ${plt_t('no extras','sin excedentes')}</span>`;
+        }
+      }
+    }
+
+    function savePrepQty(){
+      const po = (plt_get(pallet.id)?.pos||[]).find(r=>r.id===poId); if(!po) return;
+      const prepVal = prepInput && prepInput.value!=='' ? Number(prepInput.value) : null;
+      if(prepVal===po.prepReceivedQty) return;
+      plt_updatePo(pallet.id, poId, { prepReceivedQty: prepVal });
+      plt_renderAllPanels();
+    }
+
+    if(prepInput) prepInput.addEventListener('input', recalcPrepDisplays);
+    if(prepInput) prepInput.addEventListener('blur', savePrepQty);
+    recalcPrepDisplays();
     // Dock toggle
     const dockToggle=card.querySelector('.plt-dock-toggle');
     if(dockToggle){
@@ -1559,16 +1622,16 @@ function plt_routingSummaryHtml(pallet){
   // Tally units by destination
   let totSts=0, totLts=0, totOverstock=0, posNeedingRouting=0;
   pos.forEach(po=>{
-    const recv   = plt_hasVal(po.receivedQty) ? Number(po.receivedQty) : 0;
-    const ord    = plt_hasVal(po.orderedQty)  ? Number(po.orderedQty)  : 0;
-    const over   = Math.max(0, recv - ord);
+    const prep   = plt_hasVal(po.prepReceivedQty) ? Number(po.prepReceivedQty) : 0;
+    const ord    = plt_hasVal(po.orderedQty)     ? Number(po.orderedQty)     : 0;
+    const over   = Math.max(0, prep - ord);
     const sts    = plt_hasVal(po.stsQty) ? Number(po.stsQty) : 0;
     const lts    = plt_hasVal(po.ltsQty) ? Number(po.ltsQty) : 0;
     totOverstock += over;
     totSts       += sts;
     totLts       += lts;
-    // A PO still needs routing if recv>0 and neither STS nor LTS is set
-    if(recv>0 && !sts && !lts && (recv-over)>0) posNeedingRouting++;
+    // A PO still needs routing if prep counted units exist and neither STS nor LTS is set
+    if(prep>0 && !sts && !lts && (prep-over)>0) posNeedingRouting++;
   });
   const allRouted = posNeedingRouting===0 && pos.length>0;
   return`<div class="pallet-section-title">${plt_t('Routing Summary','Resumen de Enrutamiento')}</div>
