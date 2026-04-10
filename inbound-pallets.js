@@ -1322,19 +1322,6 @@ function plt_addPoFormHtml(catOpts){
           </div>
         </div>
 
-        <!-- Apparel size breakdown — shown when Apparel is selected -->
-        <div id="plt_apparelSizesPanel" style="display:none;" class="plt-apparel-sizes-panel">
-          <div class="plt-apparel-sizes-title">👕 ${plt_t('Size Breakdown (optional)','Desglose por Talla (opcional)')}</div>
-          <div class="plt-apparel-sizes-grid">
-            ${['XS','S','M','L','XL','2XL','3XL'].map(sz=>`
-              <div class="plt-size-field">
-                <label>${sz}</label>
-                <input type="number" min="0" class="plt-size-input" data-size="${sz}" placeholder="0"/>
-              </div>`).join('')}
-          </div>
-          <div id="plt_sizeTotal" class="plt-size-total-hint"></div>
-        </div>
-
         <button class="pallet-btn-primary" id="plt_saveNewPo" type="button">
           + ${plt_t('Add PO','Agregar OC')}
         </button>
@@ -1349,30 +1336,7 @@ function plt_bindAddPoForm(formEl,palletId,dept){
   const boxInput  = formEl.querySelector('#plt_newBoxes');
   const catSelect = formEl.querySelector('#plt_newCat');
   const notesInput= formEl.querySelector('#plt_newDockNotes');
-  const apparelPanel = formEl.querySelector('#plt_apparelSizesPanel');
-  const sizeTotalEl  = formEl.querySelector('#plt_sizeTotal');
-
-  // ── #7 Show apparel size panel when Apparel is selected ──────────────
-  function updateApparelPanel() {
-    if (!apparelPanel) return;
-    apparelPanel.style.display = plt_isApparel(catSelect?.value) ? '' : 'none';
-  }
-  function updateSizeTotals() {
-    if (!sizeTotalEl) return;
-    const total = [...(formEl.querySelectorAll('.plt-size-input') || [])].reduce((s,el)=>s+Number(el.value||0),0);
-    const ordQty = Number(qtyInput?.value || 0);
-    if (!total) { sizeTotalEl.textContent=''; return; }
-    if (ordQty && total !== ordQty) {
-      sizeTotalEl.style.color='#dc2626';
-      sizeTotalEl.textContent=`${plt_t('Size total','Total tallas')}: ${total} — ${plt_t('does not match Ordered Qty','no coincide con Cant. Ordenada')} (${ordQty})`;
-    } else {
-      sizeTotalEl.style.color='#059669';
-      sizeTotalEl.textContent=`${plt_t('Size total','Total tallas')}: ${total} ✓`;
-    }
-  }
-  if (catSelect) catSelect.addEventListener('change', updateApparelPanel);
-  formEl.querySelectorAll('.plt-size-input').forEach(el => el.addEventListener('input', updateSizeTotals));
-  if (qtyInput) qtyInput.addEventListener('input', updateSizeTotals);
+  // Dock does not count sizes — size breakdown is for QA Receiving, Prep, and Overstock only
 
   // ── Prior-receipt lookup — fires when the PO number field loses focus ──
   // Shows a banner if this PO number was received before on another pallet.
@@ -1443,22 +1407,11 @@ function plt_bindAddPoForm(formEl,palletId,dept){
       ? priorInfo.canonicalOrdered
       : orderedQty;
 
-    // Collect size breakdown if Apparel
-    const sizeBreakdown = {};
-    let hasSizes = false;
-    formEl.querySelectorAll('.plt-size-input').forEach(el => {
-      const v = Number(el.value || 0);
-      if (v > 0) { sizeBreakdown[el.dataset.size] = v; hasSizes = true; }
-    });
-
-    plt_addPo(palletId, {po, orderedQty: finalOrderedQty, boxes, category, dockNotes, hasPriorReceipts: !!priorInfo, priorReceiptCount: priorInfo?.hits?.length||0, priorTotalReceived: priorInfo?.totalReceived||0, sizeBreakdown: hasSizes ? sizeBreakdown : undefined});
+    plt_addPo(palletId, {po, orderedQty: finalOrderedQty, boxes, category, dockNotes, hasPriorReceipts: !!priorInfo, priorReceiptCount: priorInfo?.hits?.length||0, priorTotalReceived: priorInfo?.totalReceived||0});
 
     // Clear form for fast multi-entry
     poInput.value=''; qtyInput.value=''; if(boxInput) boxInput.value='';
     catSelect.value=''; if(notesInput) notesInput.value='';
-    formEl.querySelectorAll('.plt-size-input').forEach(el=>el.value='');
-    if(apparelPanel) apparelPanel.style.display='none';
-    if(sizeTotalEl) sizeTotalEl.textContent='';
     poInput.focus();
 
     // Re-render the PO list in place without closing the modal
@@ -1638,18 +1591,20 @@ function plt_bindPoCardEvents(container, pallet, dept){
 
     function plt_recalcRouted(){
       if(!routedDisp) return;
-      const sts  = stsInput  && stsInput.value!==''  ? Number(stsInput.value)  : 0;
-      const lts  = ltsInput  && ltsInput.value!==''  ? Number(ltsInput.value)  : 0;
+      const sts   = stsInput && stsInput.value!=='' ? Number(stsInput.value) : 0;
+      const lts   = ltsInput && ltsInput.value!=='' ? Number(ltsInput.value) : 0;
       const total = sts + lts;
-      // Get the PO to compute overstock
       const po = (plt_get(pallet.id)?.pos||[]).find(r=>r.id===poId);
       if(!po || (!stsInput?.value && !ltsInput?.value)) {
         routedDisp.innerHTML='<span class="act-dim">—</span>'; return;
       }
-      const prepCount = plt_hasVal(po.prepReceivedQty) ? Number(po.prepReceivedQty) : null;
+      // Use Prep count as authoritative; fall back to Receiving count
+      const countQty = plt_hasVal(po.prepReceivedQty)
+        ? Number(po.prepReceivedQty)
+        : (plt_hasVal(po.receivedQty) ? Number(po.receivedQty) : null);
       const ordered = plt_hasVal(po.orderedQty) ? Number(po.orderedQty) : null;
-      const over = prepCount!==null && ordered!==null ? Math.max(0, prepCount-ordered) : 0;
-      const expected = prepCount!==null ? prepCount - over : null; // units to route after true prep extras
+      const over    = countQty!==null && ordered!==null ? Math.max(0, countQty-ordered) : 0;
+      const expected = countQty!==null ? countQty - over : null;
       if(expected!==null && total===expected)
         routedDisp.innerHTML=`<span class="plt-extras plt-extras-exact">✓ ${total}</span>`;
       else if(expected!==null && total>expected)
@@ -1685,19 +1640,22 @@ function plt_bindPoCardEvents(container, pallet, dept){
    ------------------------------------------------------------------ */
 function plt_routingSummaryHtml(pallet){
   const pos=pallet.pos||[];
-  // Tally units by destination
   let totSts=0, totLts=0, totOverstock=0, posNeedingRouting=0;
   pos.forEach(po=>{
-    const recv   = plt_hasVal(po.receivedQty) ? Number(po.receivedQty) : 0;
-    const ord    = plt_hasVal(po.orderedQty)  ? Number(po.orderedQty)  : 0;
-    const over   = Math.max(0, recv - ord);
-    const sts    = plt_hasVal(po.stsQty) ? Number(po.stsQty) : 0;
-    const lts    = plt_hasVal(po.ltsQty) ? Number(po.ltsQty) : 0;
+    const ord  = plt_hasVal(po.orderedQty)       ? Number(po.orderedQty)       : 0;
+    const sts  = plt_hasVal(po.stsQty)           ? Number(po.stsQty)           : 0;
+    const lts  = plt_hasVal(po.ltsQty)           ? Number(po.ltsQty)           : 0;
+    // Use Prep count as authoritative; fall back to Receiving count if Prep hasn't counted yet
+    const countQty = plt_hasVal(po.prepReceivedQty)
+      ? Number(po.prepReceivedQty)
+      : (plt_hasVal(po.receivedQty) ? Number(po.receivedQty) : 0);
+    const over = ord > 0 ? Math.max(0, countQty - ord) : 0;
+    const toRoute = countQty - over; // units that should go to STS or LTS
     totOverstock += over;
     totSts       += sts;
     totLts       += lts;
-    // A PO still needs routing if recv>0 and neither STS nor LTS is set
-    if(recv>0 && !sts && !lts && (recv-over)>0) posNeedingRouting++;
+    // Needs routing if there are units to route and no STS/LTS set yet
+    if(toRoute > 0 && !sts && !lts) posNeedingRouting++;
   });
   const allRouted = posNeedingRouting===0 && pos.length>0;
   return`<div class="pallet-section-title">${plt_t('Routing Summary','Resumen de Enrutamiento')}</div>
@@ -1714,10 +1672,12 @@ function plt_routingSummaryHtml(pallet){
         <span>📤 ${plt_rl('overstock')} <em style="font-size:0.7rem;font-weight:400;">${plt_t('(auto-calculated)','(calculado automáticamente)')}</em></span>
         <strong>${totOverstock} ${plt_t('units','unidades')}</strong>
       </div>
-      ${!allRouted&&pos.length>0?`<div class="pallet-routing-summary-row" style="color:#92400e;background:#fef3c7;border-radius:6px;padding:4px 8px;">
-        <span>⚠️ ${plt_t('Some POs still need STS/LTS routing','Algunas OCs aún necesitan enrutamiento')}</span>
-        <strong>${posNeedingRouting}</strong>
-      </div>`:`<div class="pallet-routing-summary-row" style="color:#166534;">✓ ${plt_t('All POs have routing set','Todas las OCs tienen destino asignado')}</div>`}
+      ${!allRouted&&pos.length>0
+        ?`<div class="pallet-routing-summary-row" style="color:#92400e;background:#fef3c7;border-radius:6px;padding:4px 8px;">
+          <span>⚠️ ${plt_t('Some POs still need STS/LTS routing','Algunas OCs aún necesitan enrutamiento')}</span>
+          <strong>${posNeedingRouting}</strong>
+        </div>`
+        :`<div class="pallet-routing-summary-row" style="color:#166534;">✓ ${plt_t('All POs have routing set','Todas las OCs tienen destino asignado')}</div>`}
     </div>`;
 }
 
