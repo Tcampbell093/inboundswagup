@@ -366,6 +366,19 @@ function plt_discrepancyHtml(po) {
   return `<span class="plt-extras plt-extras-short">⚠️ ${plt_t('Discrepancy','Discrepancia')}: ${diff>0?'+':''}${diff} ${plt_t('vs Receiving','vs Recepción')}</span>`;
 }
 
+function plt_prepOverstockQty(po) {
+  if(!plt_hasVal(po.prepReceivedQty) || !plt_hasVal(po.orderedQty)) return null;
+  return Math.max(0, Number(po.prepReceivedQty) - Number(po.orderedQty));
+}
+
+function plt_prepVsOrderedHtml(po) {
+  if(!plt_hasVal(po.prepReceivedQty) || !plt_hasVal(po.orderedQty)) return '';
+  const diff = Number(po.prepReceivedQty) - Number(po.orderedQty);
+  if(diff > 0) return `<span class="plt-extras plt-extras-over">📤 +${diff} ${plt_t('to Overstock','a Exceso')}</span>`;
+  if(diff < 0) return `<span class="plt-extras plt-extras-short">⚠️ ${diff} ${plt_t('vs Ordered','vs Ordenado')}</span>`;
+  return `<span class="plt-extras plt-extras-exact">✓ ${plt_t('Exact to order','Exacto al pedido')}</span>`;
+}
+
 /* ---- modal stack ---- */
 let plt_stack=[];
 let plt_currentEditorPalletId = null; // track which pallet this browser has open
@@ -958,7 +971,7 @@ function plt_buildPalletModal(pallet,dept){
   overlay.querySelector('#plt_renameSave')?.addEventListener('click',()=>{
     const val = overlay.querySelector('#plt_renameInput').value.trim();
     const nextDate = overlay.querySelector('#plt_dateInput')?.value || pallet.date || '';
-    if(!val) return window.alert(plt_t('Pallet name is required.','El nombre de la tarima es obligatorio.'));
+    if(!val) return showToast(plt_t('Pallet name is required.','El nombre de la tarima es obligatorio.'), 'error');
     const changed = plt_updateMeta(pallet.id,{ label: val, date: nextDate });
     if (!changed) {
       overlay.querySelector('#plt_renameRow').classList.add('hidden');
@@ -1117,9 +1130,7 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
   // ── PREP VIEW ─────────────────────────────────────────────────────────────
   // Receiving numbers are HIDDEN by default — Prep enters their own count first.
   // Overstock auto-calculated. Receiving count revealed only on demand.
-  const overstockQty = (plt_hasVal(po.receivedQty) && plt_hasVal(po.orderedQty))
-    ? Math.max(0, Number(po.receivedQty) - Number(po.orderedQty))
-    : null;
+  const overstockQty = plt_prepOverstockQty(po);
   const hasSts = plt_hasVal(po.stsQty);
   const hasLts = plt_hasVal(po.ltsQty);
   const prepRevealId = `prepReveal_${po.id}`;
@@ -1145,13 +1156,13 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
         <span class="plt-ref-value">${hasRecv ? po.receivedQty : '—'}</span>
       </div>
       <div class="plt-ref-row plt-overstock-auto">
-        <span class="plt-ref-label">📤 ${plt_t('Overstock (auto)','Exceso (auto)')}</span>
+        <span class="plt-ref-label">📤 ${plt_t('To Overstock (from Prep count)','A Exceso (desde Prep)')}</span>
         <span class="plt-ref-value">
           ${overstockQty!==null
             ? (overstockQty>0
                 ? `<span class="plt-extras plt-extras-over">+${overstockQty} ${plt_t('units → Overstock','unidades → Exceso')}</span>`
                 : `<span class="plt-extras plt-extras-exact">0 — ${plt_t('no extras','sin excedentes')}</span>`)
-            : `<span class="act-dim">${plt_t('Enter Receiving count first','Ingresa conteo de Recepción primero')}</span>`}
+            : `<span class="act-dim">${plt_t('Enter Prep count first','Ingresa conteo de Prep primero')}</span>`}
         </span>
       </div>
       ${plt_fulfillmentBadge(po)?`<div style="margin:6px 0;">${plt_fulfillmentBadge(po)}</div>`:''}
@@ -1159,16 +1170,22 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
 
     <!-- Prep's own independent count -->
     <div class="plt-recv-entry" style="margin-top:8px;">
-      <div class="plt-recv-inputs" style="grid-template-columns:1fr 1fr;">
+      <div class="plt-recv-inputs" style="grid-template-columns:1fr 1fr 1fr;">
         <div class="plt-recv-field">
           <label>${plt_t('Your count — Prep Count','Tu conteo — Conteo Prep')} ✏️</label>
           <input type="number" min="0" class="plt-qty-input plt-prep-qty" data-po-id="${po.id}"
             value="${hasPrep?po.prepReceivedQty:''}" placeholder="0"/>
         </div>
         <div class="plt-recv-field plt-extras-field">
-          <label>${plt_t('vs Receiving','vs Recepción')}</label>
+          <label>${plt_t('Prep vs Receiving','Prep vs Recepción')}</label>
           <div class="plt-extras-display" id="prepDiscrepDisplay_${po.id}">
             ${plt_discrepancyHtml(po)||'<span class="act-dim">—</span>'}
+          </div>
+        </div>
+        <div class="plt-recv-field plt-extras-field">
+          <label>${plt_t('Prep vs Ordered / To Overstock','Prep vs Ordenado / A Exceso')}</label>
+          <div class="plt-extras-display" id="prepOrderVarianceDisplay_${po.id}">
+            ${plt_prepVsOrderedHtml(po)||'<span class="act-dim">—</span>'}
           </div>
         </div>
       </div>
@@ -1225,9 +1242,10 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
     ${(plt_hasVal(po.stsQty)||plt_hasVal(po.ltsQty))?`<div class="plt-recv-summary" style="margin-top:6px;">
       ${plt_hasVal(po.stsQty)?`<span class="plt-recv-pair"><span class="plt-recv-pair-label">📦 STS</span><strong>${po.stsQty}</strong></span>`:''}
       ${plt_hasVal(po.ltsQty)?`<span class="plt-recv-pair"><span class="plt-recv-pair-label">🏭 LTS</span><strong>${po.ltsQty}</strong></span>`:''}
-      ${(plt_hasVal(po.receivedQty)&&plt_hasVal(po.orderedQty)&&Number(po.receivedQty)>Number(po.orderedQty))?`<span class="plt-recv-pair"><span class="plt-recv-pair-label" style="color:#854d0e;">📤 Overstock</span><strong>+${Number(po.receivedQty)-Number(po.orderedQty)}</strong></span>`:''}
+      ${(plt_prepOverstockQty(po) && plt_prepOverstockQty(po)>0)?`<span class="plt-recv-pair"><span class="plt-recv-pair-label" style="color:#854d0e;">📤 Overstock</span><strong>+${plt_prepOverstockQty(po)}</strong></span>`:''}
     </div>`:''}
-    ${plt_extrasHtml(po)?`<div style="margin:4px 0;">${plt_extrasHtml(po)}</div>`:''}
+    ${plt_discrepancyHtml(po)?`<div style="margin:4px 0;">${plt_discrepancyHtml(po)}</div>`:''}
+    ${plt_prepVsOrderedHtml(po)?`<div style="margin:4px 0;">${plt_prepVsOrderedHtml(po)}</div>`:''}
     ${po.receivingNotes?`<p class="po-note">📝 ${plt_esc(po.receivingNotes)}</p>`:''}
     ${po.prepNotes     ?`<p class="po-note">🔀 ${plt_esc(po.prepNotes)}</p>`:''}
     ${!isDone?`<div class="po-card-actions">
@@ -1499,10 +1517,10 @@ function plt_bindPoCardEvents(container, pallet, dept){
       if(!po || (!stsInput?.value && !ltsInput?.value)) {
         routedDisp.innerHTML='<span class="act-dim">—</span>'; return;
       }
-      const recv = plt_hasVal(po.receivedQty) ? Number(po.receivedQty) : null;
-      const over = (plt_hasVal(po.receivedQty)&&plt_hasVal(po.orderedQty))
-        ? Math.max(0, Number(po.receivedQty)-Number(po.orderedQty)) : 0;
-      const expected = recv!==null ? recv - over : null; // units to route (excl. overstock)
+      const prepCount = plt_hasVal(po.prepReceivedQty) ? Number(po.prepReceivedQty) : null;
+      const ordered = plt_hasVal(po.orderedQty) ? Number(po.orderedQty) : null;
+      const over = prepCount!==null && ordered!==null ? Math.max(0, prepCount-ordered) : 0;
+      const expected = prepCount!==null ? prepCount - over : null; // units to route after true prep extras
       if(expected!==null && total===expected)
         routedDisp.innerHTML=`<span class="plt-extras plt-extras-exact">✓ ${total}</span>`;
       else if(expected!==null && total>expected)
@@ -1655,7 +1673,7 @@ function plt_openTransferModal(fromPalletId,poId,dept){
   const others=plt_all().filter(p=>p.id!==fromPalletId&&p.status!=='done');
   plt_closeAll();
   if(!others.length){
-    alert(plt_t('No other pallets available to transfer to.','No hay otras tarimas disponibles.'));
+    showToast(plt_t('No other pallets available to transfer to.','No hay otras tarimas disponibles.'), 'error');
     plt_buildPalletModal(plt_get(fromPalletId),dept); return;
   }
   const palletOpts=others.map(p=>`<option value="${p.id}">${plt_esc(p.label)} — ${plt_esc(plt_sl(p.status))}</option>`).join('');

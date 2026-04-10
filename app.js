@@ -100,68 +100,6 @@ function stopWorkflowPoll() {
 }
 
 const ATTENDANCE_EMPLOYEE_KEY = "ops_hub_employees_v1";
-const EMPLOYEES_API_BASE = '/.netlify/functions/employees';
-let employeesSyncEnabled = false;
-
-function normalizeEmployeeNames(list = []) {
-  if (!Array.isArray(list)) return [];
-  return [...new Set(
-    list
-      .filter(item => item && item.active !== false)
-      .map(item => typeof item === "string" ? item.trim() : String(item.name || "").trim())
-      .filter(Boolean)
-  )].sort((a, b) => a.localeCompare(b));
-}
-
-async function employeesApiRequest(method = 'GET', body) {
-  const options = { method, headers: { 'Accept': 'application/json' } };
-  if (body !== undefined) {
-    options.headers['Content-Type'] = 'application/json';
-    options.body = JSON.stringify(body);
-  }
-  const response = await fetch(EMPLOYEES_API_BASE, options);
-  const raw = await response.text();
-  let data = {};
-  try { data = raw ? JSON.parse(raw) : {}; } catch { data = { raw }; }
-  if (!response.ok) throw new Error(data?.error || `Employees sync failed (${response.status})`);
-  return data;
-}
-
-function applyEmployeesPayload(payload = {}, options = {}) {
-  const names = normalizeEmployeeNames(payload.employees || []);
-  if (!names.length) return false;
-
-  localStorage.setItem(ATTENDANCE_EMPLOYEE_KEY, JSON.stringify(payload.employees || []));
-
-  const existing = Array.isArray(state?.masters?.associates) ? state.masters.associates : [];
-  const changed =
-    names.length !== existing.length ||
-    names.some((name, index) => existing[index] !== name);
-
-  if (changed && state && state.masters) {
-    state.masters.associates = names;
-    localStorage.setItem(MASTER_KEY, JSON.stringify(state.masters));
-  }
-
-  if (options.render) {
-    populateCurrentUserSelect();
-    if (typeof renderAll === 'function') renderAll();
-  }
-
-  return changed;
-}
-
-async function loadEmployeesFromBackend(options = {}) {
-  try {
-    const data = await employeesApiRequest('GET');
-    employeesSyncEnabled = true;
-    return applyEmployeesPayload(data || {}, options);
-  } catch (err) {
-    console.warn('Employees sync unavailable, using browser storage.', err);
-    employeesSyncEnabled = false;
-    return false;
-  }
-}
 
 function readAttendanceEmployees() {
   try {
@@ -2506,30 +2444,13 @@ async function init() {
   bindLanguageSwitch();
   bindFilterToggles();
   bindCurrentUserControls();
-  await Promise.all([loadEmployeesFromBackend(), loadWorkflowFromBackend(), refreshImportedLibraryCache()]);
+  await Promise.all([loadWorkflowFromBackend(), refreshImportedLibraryCache()]);
   applyLanguage();
   renderAll();
-  // Refresh workflow + employee roster when user tabs back — so floor devices pick up new names
-  window.addEventListener('focus', () => {
-    Promise.allSettled([
-      loadEmployeesFromBackend({ render: true }),
-      workflowSyncEnabled ? loadWorkflowFromBackend() : Promise.resolve()
-    ]);
-  });
+  // Refresh workflow data when user tabs back — so associates always see latest pallets
+  window.addEventListener('focus', () => { if(workflowSyncEnabled) loadWorkflowFromBackend().catch(()=>{}); });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      Promise.allSettled([
-        loadEmployeesFromBackend({ render: true }),
-        workflowSyncEnabled ? loadWorkflowFromBackend() : Promise.resolve()
-      ]);
-    }
-  });
-  window.addEventListener('storage', (event) => {
-    if (event.key === ATTENDANCE_EMPLOYEE_KEY) {
-      syncAssociatesFromAttendance();
-      populateCurrentUserSelect();
-      if (typeof renderAll === 'function') renderAll();
-    }
+    if(document.visibilityState === 'visible' && workflowSyncEnabled) loadWorkflowFromBackend().catch(()=>{});
   });
 }
 
@@ -2819,6 +2740,7 @@ function bindOverstockEvents() {
       date: document.getElementById("overstockEntryDate").value,
       po: selectedPo,
       manualPo: overstockPoManualMode || undefined,
+      sourceType: overstockPoManualMode ? 'manual' : 'auto',
       quantity: qtyValue,
       status: document.getElementById("overstockEntryStatus").value,
       action: document.getElementById("overstockEntryAction").value,
@@ -2882,23 +2804,20 @@ function populateOverstockFormSelects() {
     poSelect.innerHTML = "";
     appendOption(poSelect, "", "Select PO from Prep");
     [...prepMap.values()]
-      .filter(item => item.quantity > 0)   // only show POs that actually have overstock
+      .filter(item => item.quantity > 0)
       .sort((a,b)=>a.po.localeCompare(b.po))
       .forEach(item => {
+        const overLabel = `+${item.quantity} overstock`;
+        const compareLabel = item.prepVsReceiving == null
+          ? ''
+          : `Prep vs Recv ${item.prepVsReceiving > 0 ? '+' : ''}${item.prepVsReceiving}`;
         const label = [
           item.po,
           item.palletLabel ? `[${item.palletLabel}]` : '',
-          item.category    ? item.category            : '',
-          `+${item.quantity} overstock`,
+          item.category ? item.category : '',
+          overLabel,
+          compareLabel,
         ].filter(Boolean).join(' • ');
-        appendOption(poSelect, item.po, label);
-      });
-    // Also show POs with 0 overstock but from pallets (so operator can still log manual entries)
-    [...prepMap.values()]
-      .filter(item => item.quantity <= 0)
-      .sort((a,b)=>a.po.localeCompare(b.po))
-      .forEach(item => {
-        const label = [item.po, item.palletLabel ? `[${item.palletLabel}]` : '', item.category].filter(Boolean).join(' • ') + ' (no overstock)';
         appendOption(poSelect, item.po, label);
       });
     poSelect.value = prepMap.has(previous) ? previous : "";
@@ -2968,10 +2887,21 @@ function renderOverstockPage() {
     const palletOverstockPOs = [];
     pallets.filter(p => p.status === 'prep' || p.status === 'done').forEach(pallet => {
       (pallet.pos || []).forEach(po => {
-        const ord  = po.orderedQty  != null ? Number(po.orderedQty)  : 0;
-        const recv = po.receivedQty != null ? Number(po.receivedQty) : 0;
-        const over = Math.max(0, recv - ord);
-        if (over > 0) palletOverstockPOs.push({ po: po.po, overstock: over, ordered: ord, received: recv, category: po.category || '—', pallet: pallet.label, palletDate: pallet.date || '', status: pallet.status });
+        const ref = getPoPrepVarianceRef(po);
+        const over = ref.extras;
+        if (over > 0) palletOverstockPOs.push({
+          po: po.po,
+          overstock: over,
+          ordered: ref.ordered || 0,
+          received: ref.received || 0,
+          prep: ref.prep || 0,
+          prepVsReceiving: ref.prepVsReceiving,
+          extrasSource: ref.extrasSource,
+          category: po.category || '—',
+          pallet: pallet.label,
+          palletDate: pallet.date || '',
+          status: pallet.status
+        });
       });
     });
 
@@ -2984,6 +2914,8 @@ function renderOverstockPage() {
           <td>${escapeHtml(item.category)}</td>
           <td>${item.ordered}</td>
           <td>${item.received}</td>
+          <td>${item.prep || '—'}</td>
+          <td>${item.prepVsReceiving == null ? '—' : `${item.prepVsReceiving > 0 ? '+' : ''}${item.prepVsReceiving}`}</td>
           <td><span style="font-weight:700;color:#854d0e;background:#fef9c3;padding:2px 8px;border-radius:6px;">+${item.overstock}</span></td>
           <td>${escapeHtml(item.pallet)}${item.palletDate ? ' · ' + item.palletDate : ''}</td>
           <td><span style="font-size:0.75rem;color:#555;">${item.status === 'done' ? '✅ Done' : '🔀 In Prep'}</span></td>
@@ -2993,14 +2925,14 @@ function renderOverstockPage() {
           <div class="panel-header">
             <div>
               <h2>📤 Overstock from Pallets</h2>
-              <p>These POs have extras that automatically go to Overstock based on the difference between what was ordered and what was received. Log them below.</p>
+              <p>These POs have true extras after Prep. Overstock is based on Prep count minus Ordered quantity, while Prep vs Receiving is shown separately for comparison.</p>
             </div>
           </div>
           <div class="table-wrap">
             <table class="sheet-table">
               <thead><tr>
                 <th>PO #</th><th>Category</th>
-                <th>Ordered</th><th>Received</th><th>Overstock Qty</th>
+                <th>Ordered</th><th>Receiving</th><th>Prep</th><th>Prep vs Recv</th><th>Overstock Qty</th>
                 <th>Pallet</th><th>Stage</th>
               </tr></thead>
               <tbody>${rows}</tbody>
@@ -3027,7 +2959,8 @@ function renderOverstockPage() {
   }
 
   entries.forEach((row) => {
-    const ownerLocked = !!(state.currentUser && state.currentUser !== LEADERSHIP_USER && row.associate && row.associate !== state.currentUser);
+    const isAutoRow = row.sourceType === 'auto' || (!!row.po && !row.manualPo);
+    const ownerLocked = isAutoRow || !!(state.currentUser && state.currentUser !== LEADERSHIP_USER && row.associate && row.associate !== state.currentUser);
     const tr = document.createElement("tr");
     const batchCount = getPoHistoryCount("overstock", row.po);
     const batchBtn = batchCount >= 1
@@ -3035,7 +2968,7 @@ function renderOverstockPage() {
       : `<span class="lock-note">—</span>`;
     tr.innerHTML = `
       <td><span class="day-pill ${getDayClass(formatDayCode(row.date))}">${formatDate(row.date)}</span></td>
-      <td>${escapeHtml(row.po)}</td>
+      <td>${escapeHtml(row.po)} ${isAutoRow ? '<span class="lock-note" style="margin-left:6px;">Auto</span>' : ''}</td>
       <td>${Number(row.quantity || 0) || 0}</td>
       <td>${translateStatus(row.status)}</td>
       <td>${translateStatus(row.action)}</td>
@@ -3076,7 +3009,7 @@ function toggleOverstockEditRow(tableRow, rowId) {
       <div class="overstock-edit-grid">
         <input type="date" value="${row.date}" data-field="date" />
         <select data-field="po"></select>
-        <input type="number" value="${Number(row.quantity || 0) || 0}" data-field="quantity" readonly />
+        <input type="number" value="${Number(row.quantity || 0) || 0}" data-field="quantity" ${row.sourceType === 'manual' || row.manualPo ? '' : 'readonly'} />
         <select data-field="status"></select>
         <select data-field="action"></select>
         <select data-field="location"></select>
@@ -3093,13 +3026,15 @@ function toggleOverstockEditRow(tableRow, rowId) {
   poSel.innerHTML = "";
   appendOption(poSel, "", "Select Prep PO");
   [...prepMap.values()].sort((a,b)=>a.po.localeCompare(b.po)).forEach(item => appendOption(poSel, item.po, `${item.po} • Qty ${item.quantity}`));
+  const manualRow = row.sourceType === 'manual' || row.manualPo;
   poSel.value = prepMap.has(row.po) ? row.po : "";
   const syncEditQty = () => {
+    if (manualRow) return;
     const ref = prepMap.get(poSel.value);
     qtyInput.value = ref ? String(ref.quantity || 0) : "";
   };
   poSel.addEventListener("change", syncEditQty);
-  syncEditQty();
+  if (!manualRow) syncEditQty();
 
   const statusSel = editTr.querySelector('[data-field="status"]');
   statusSel.innerHTML = "";
@@ -3127,6 +3062,7 @@ function toggleOverstockEditRow(tableRow, rowId) {
 
     row.date = editTr.querySelector('[data-field="date"]').value;
     row.po = editTr.querySelector('[data-field="po"]').value.trim();
+    row.quantity = Number(editTr.querySelector('[data-field="quantity"]').value || 0) || 0;
     row.status = editTr.querySelector('[data-field="status"]').value;
     row.action = editTr.querySelector('[data-field="action"]').value;
     row.location = editTr.querySelector('[data-field="location"]').value;
@@ -3361,14 +3297,14 @@ function renderSectionRows(pageKey, tbody, section) {
 
     const cells = cfg.mode === "simple"
       ? `
-        <td>${escapeHtml(row.po)}</td>
+        <td>${escapeHtml(row.po)} ${isAutoRow ? '<span class="lock-note" style="margin-left:6px;">Auto</span>' : ''}</td>
         <td>${row.boxes}</td>
         <td>${row.qty}</td>
         <td>${escapeHtml(row.category)}</td>
         <td>${renderNotesCell(row)}${renderAuditSummary(row)}</td>
       `
       : `
-        <td>${escapeHtml(row.po)}</td>
+        <td>${escapeHtml(row.po)} ${isAutoRow ? '<span class="lock-note" style="margin-left:6px;">Auto</span>' : ''}</td>
         <td>${row.boxes}</td>
         <td>${row.orderedQty}</td>
         <td>${row.receivedQty}</td>
@@ -3611,7 +3547,9 @@ function collectPoHistoryEntries(pageKey, po) {
       });
     }
 
-    if (extras > 0) {
+    const prepOverstock = plt_hasVal(poRow.prepReceivedQty) && plt_hasVal(poRow.orderedQty) ? Math.max(0, prepQty - orderedQty) : extras;
+
+    if (prepOverstock > 0) {
       push({
         sourcePage: "overstock",
         sourceLabel: stageLabel.overstock,
@@ -3620,12 +3558,12 @@ function collectPoHistoryEntries(pageKey, po) {
         associate: recvActor,
         location: pallet.label || "",
         status: "Extras",
-        action: "Auto from receiving variance",
-        quantity: extras,
+        action: "Auto from prep extras",
+        quantity: prepOverstock,
         orderedQty,
-        receivedQty,
-        extras,
-        notes: `Extras created from receiving count (+${extras})`,
+        receivedQty: prepQty || receivedQty,
+        extras: prepOverstock,
+        notes: `Extras created from prep count (+${prepOverstock})`,
         originalDate: pallet.date || "",
         editHistory: [],
       });
@@ -4444,12 +4382,32 @@ function appendOption(select, value, label) {
 }
 
 
+function getPoPrepVarianceRef(poRow) {
+  const ordered = plt_hasVal(poRow?.orderedQty) ? Number(poRow.orderedQty) : null;
+  const received = plt_hasVal(poRow?.receivedQty) ? Number(poRow.receivedQty) : null;
+  const prep = plt_hasVal(poRow?.prepReceivedQty) ? Number(poRow.prepReceivedQty) : null;
+  const prepVsReceiving = prep !== null && received !== null ? prep - received : null;
+  const extrasSourceQty = prep !== null ? prep : received;
+  const extras = extrasSourceQty !== null && ordered !== null ? Math.max(0, extrasSourceQty - ordered) : 0;
+  const shortage = extrasSourceQty !== null && ordered !== null ? Math.max(0, ordered - extrasSourceQty) : 0;
+  return { ordered, received, prep, prepVsReceiving, extras, shortage, extrasSource: prep !== null ? "prep" : (received !== null ? "receiving" : "none") };
+}
+
+function getLegacyPrepRowVarianceRef(row) {
+  const ordered = Number(row?.orderedQty || row?.qty || 0) || 0;
+  const prep = plt_hasVal(row?.prepReceivedQty) ? Number(row.prepReceivedQty) : (plt_hasVal(row?.receivedQty) ? Number(row.receivedQty) : null);
+  const received = plt_hasVal(row?.receivedQty) ? Number(row.receivedQty) : null;
+  const prepVsReceiving = prep !== null && received !== null ? prep - received : null;
+  const extras = prep !== null && ordered ? Math.max(0, prep - ordered) : 0;
+  const shortage = prep !== null && ordered ? Math.max(0, ordered - prep) : 0;
+  return { ordered, received, prep, prepVsReceiving, extras, shortage, extrasSource: prep !== null ? "prep" : "none" };
+}
+
 function getPrepPoReferenceMap() {
   const map = new Map();
 
-  // ── NEW: read from pallet-based workflow ──────────────────────────────────
-  // Include POs from pallets that have reached Prep or Done stage.
-  // Overstock quantity = receivedQty - orderedQty (auto-calculated, always positive).
+  // Read from pallet-based workflow. Overstock must come from TRUE extras only.
+  // If Prep has counted the PO, use Prep count vs Ordered. Otherwise do not guess.
   const pallets = Array.isArray(state.data.pallets) ? state.data.pallets : [];
   pallets
     .filter(p => p.status === 'prep' || p.status === 'done')
@@ -4457,43 +4415,70 @@ function getPrepPoReferenceMap() {
       (pallet.pos || []).forEach(poRow => {
         const po = String(poRow.po || '').trim();
         if (!po) return;
-        const ordered  = poRow.orderedQty  != null ? Number(poRow.orderedQty)  : 0;
-        const received = poRow.receivedQty != null ? Number(poRow.receivedQty) : 0;
-        const overstock = Math.max(0, received - ordered); // extras always go to overstock
-        const category  = poRow.category || '';
+        const ref = getPoPrepVarianceRef(poRow);
+        const category = poRow.category || '';
         const palletLabel = pallet.label || '';
-        const palletDate  = pallet.date  || '';
+        const palletDate = pallet.date || '';
         if (!map.has(po)) {
-          map.set(po, { po, quantity: overstock, ordered, received, overstock, category, palletLabel, palletDate, count: 1 });
+          map.set(po, {
+            po,
+            quantity: ref.extras,
+            ordered: ref.ordered || 0,
+            received: ref.received || 0,
+            prep: ref.prep || 0,
+            prepVsReceiving: ref.prepVsReceiving,
+            overstock: ref.extras,
+            shortage: ref.shortage,
+            extrasSource: ref.extrasSource,
+            category,
+            palletLabel,
+            palletDate,
+            count: 1,
+          });
         } else {
           const cur = map.get(po);
-          cur.quantity   += overstock;
-          cur.ordered    += ordered;
-          cur.received   += received;
-          cur.overstock  += overstock;
-          cur.count      += 1;
+          cur.quantity += ref.extras;
+          cur.ordered += ref.ordered || 0;
+          cur.received += ref.received || 0;
+          cur.prep += ref.prep || 0;
+          cur.overstock += ref.extras;
+          cur.shortage = (cur.shortage || 0) + (ref.shortage || 0);
+          cur.count += 1;
         }
       });
     });
 
-  // ── LEGACY: also read from old prepSections in case any exist ────────────
+  // Legacy Prep rows: only trust explicit positive extras from Prep vs Ordered.
   (state.data.prepSections || []).forEach(section => {
     (section.rows || []).forEach(row => {
       const po = String(row.po || '').trim();
       if (!po) return;
-      const ordered  = Number(row.orderedQty || row.qty || 0) || 0;
-      const received = Number(row.receivedQty || 0) || 0;
-      const extras   = Number(row.extras || 0) || 0;
-      const variance = Math.abs(received - ordered);
-      const quantity = extras > 0 ? extras : variance;
+      const ref = getLegacyPrepRowVarianceRef(row);
       if (!map.has(po)) {
-        map.set(po, { po, quantity, ordered, received, extras, variance, category: row.category || '', palletLabel: '', palletDate: '', count: 1 });
+        map.set(po, {
+          po,
+          quantity: ref.extras,
+          ordered: ref.ordered || 0,
+          received: ref.received || 0,
+          prep: ref.prep || 0,
+          prepVsReceiving: ref.prepVsReceiving,
+          overstock: ref.extras,
+          shortage: ref.shortage,
+          extrasSource: ref.extrasSource,
+          category: row.category || '',
+          palletLabel: '',
+          palletDate: '',
+          count: 1,
+        });
       } else {
         const cur = map.get(po);
-        cur.quantity  += quantity;
-        cur.ordered   += ordered;
-        cur.received  += received;
-        cur.count     += 1;
+        cur.quantity += ref.extras;
+        cur.ordered += ref.ordered || 0;
+        cur.received += ref.received || 0;
+        cur.prep += ref.prep || 0;
+        cur.overstock += ref.extras;
+        cur.shortage = (cur.shortage || 0) + (ref.shortage || 0);
+        cur.count += 1;
       }
     });
   });
