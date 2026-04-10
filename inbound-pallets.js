@@ -45,6 +45,7 @@ const EVENT_LABELS = {
 
 /* ---- helpers ---- */
 function plt_lang()    { return (typeof state!=='undefined'&&state.language==='es')?'es':'en'; }
+function plt_isApparel(cat) { const v=(cat||'').toLowerCase(); return v.includes('apparel')||v.includes('ropa'); }
 function plt_t(en,es)  { return plt_lang()==='es'?es:en; }
 function plt_sl(k)     { return (STATUS_LABELS[plt_lang()]||STATUS_LABELS.en)[k]||k; }
 function plt_rl(k)     { return (ROUTING_LABELS[plt_lang()]||ROUTING_LABELS.en)[k]||k; }
@@ -1354,8 +1355,7 @@ function plt_bindAddPoForm(formEl,palletId,dept){
   // ── #7 Show apparel size panel when Apparel is selected ──────────────
   function updateApparelPanel() {
     if (!apparelPanel) return;
-    const isApparel = (catSelect?.value || '').toLowerCase() === 'apparel';
-    apparelPanel.style.display = isApparel ? '' : 'none';
+    apparelPanel.style.display = plt_isApparel(catSelect?.value) ? '' : 'none';
   }
   function updateSizeTotals() {
     if (!sizeTotalEl) return;
@@ -1522,6 +1522,58 @@ function plt_bindPoCardEvents(container, pallet, dept){
       plt_updatePo(pallet.id,poId,{prepVerified:e.target.checked});
       plt_renderAllPanels();
     });
+
+    // ── Prep qty input — live recalc + save on blur ──────────────────────────
+    const prepInput      = card.querySelector('.plt-prep-qty');
+    const prepDiscrepEl  = card.querySelector(`#prepDiscrepDisplay_${poId}`);
+    const prepVsOrdEl    = card.querySelector(`#prepOrderVarianceDisplay_${poId}`);
+
+    function plt_recalcPrepDisplays() {
+      const po = (plt_get(pallet.id)?.pos||[]).find(r=>r.id===poId);
+      const prepVal = prepInput ? prepInput.value : '';
+      const prepQty = prepVal !== '' ? Number(prepVal) : null;
+      const ordQty  = po && plt_hasVal(po.orderedQty)  ? Number(po.orderedQty)  : null;
+      const recvQty = po && plt_hasVal(po.receivedQty) ? Number(po.receivedQty) : null;
+
+      // Prep vs Receiving
+      if(prepDiscrepEl) {
+        if(prepQty === null || recvQty === null) {
+          prepDiscrepEl.innerHTML = '<span class="act-dim">—</span>';
+        } else {
+          const diff = prepQty - recvQty;
+          if(diff === 0) prepDiscrepEl.innerHTML = `<span class="plt-extras plt-extras-exact">✓ ${plt_t('Counts match','Conteos coinciden')}</span>`;
+          else prepDiscrepEl.innerHTML = `<span class="plt-extras plt-extras-short">⚠️ ${plt_t('Discrepancy','Discrepancia')}: ${diff>0?'+':''}${diff} ${plt_t('vs Receiving','vs Recepción')}</span>`;
+        }
+      }
+
+      // Prep vs Ordered / To Overstock
+      if(prepVsOrdEl) {
+        if(prepQty === null || ordQty === null) {
+          prepVsOrdEl.innerHTML = '<span class="act-dim">—</span>';
+        } else {
+          const diff = prepQty - ordQty;
+          if(diff > 0) prepVsOrdEl.innerHTML = `<span class="plt-extras plt-extras-over">📤 +${diff} ${plt_t('to Overstock','a Exceso')}</span>`;
+          else if(diff < 0) prepVsOrdEl.innerHTML = `<span class="plt-extras plt-extras-short">⚠️ ${diff} ${plt_t('vs Ordered','vs Ordenado')}</span>`;
+          else prepVsOrdEl.innerHTML = `<span class="plt-extras plt-extras-exact">✓ ${plt_t('Exact to order','Exacto al pedido')}</span>`;
+        }
+      }
+    }
+
+    function plt_savePrepQty() {
+      const po = (plt_get(pallet.id)?.pos||[]).find(r=>r.id===poId); if(!po) return;
+      if(!prepInput) return;
+      const val = prepInput.value !== '' ? Number(prepInput.value) : null;
+      if(val === po.prepReceivedQty) return;
+      plt_updatePo(pallet.id, poId, {prepReceivedQty: val});
+      plt_renderAllPanels();
+    }
+
+    if(prepInput) {
+      prepInput.addEventListener('input',  plt_recalcPrepDisplays);
+      prepInput.addEventListener('blur',   plt_savePrepQty);
+    }
+    // Kick off display if value already set (e.g. re-opening pallet modal)
+    plt_recalcPrepDisplays();
     // Inline receiving qty inputs
     const ordInput  = card.querySelector('.plt-ordered-qty');
     const recvInput = card.querySelector('.plt-received-qty');
@@ -1692,7 +1744,7 @@ function plt_openPoEditModal(palletId,poId,dept){
   plt_closeAll();
   const catOpts=plt_cats().map(c=>`<option value="${plt_esc(c)}" ${c===po.category?'selected':''}>${plt_esc(c)}</option>`).join('');
   const existingSizes = po.sizeBreakdown || {};
-  const isApparel = (po.category||'').toLowerCase()==='apparel';
+  const isApparel = plt_isApparel(po.category);
   const sizeInputs = ['XS','S','M','L','XL','2XL','3XL'].map(sz=>`
     <div class="plt-size-field">
       <label>${sz}</label>
@@ -1739,7 +1791,7 @@ function plt_openPoEditModal(palletId,poId,dept){
   const eSizeTotal  = overlay.querySelector('#plt_eSizeTotal');
   function eUpdateSizePanel() {
     if(!eSizesPanel) return;
-    eSizesPanel.style.display = (eCat?.value||'').toLowerCase()==='apparel' ? '' : 'none';
+    eSizesPanel.style.display = plt_isApparel(eCat?.value) ? '' : 'none';
   }
   function eUpdateSizeTotals() {
     if(!eSizeTotal) return;
@@ -1779,7 +1831,7 @@ function plt_openPoEditModal(palletId,poId,dept){
       orderedQty: eOrdQty!==''&&eOrdQty!=null ? Number(eOrdQty) : po.orderedQty,
       boxes:      eBoxes!==''&&eBoxes!=null    ? Number(eBoxes)  : po.boxes,
       category:      eCat?.value||po.category,
-      sizeBreakdown: (eCat?.value||'').toLowerCase()==='apparel' ? (hasSizes?updatedSizes:null) : null,
+      sizeBreakdown: plt_isApparel(eCat?.value) ? (hasSizes?updatedSizes:null) : null,
       dockNotes:     overlay.querySelector('#plt_eDockNotes')?.value.trim()||'',
       receivingNotes:overlay.querySelector('#plt_eRecvNotes')?.value.trim()||'',
       prepNotes:     overlay.querySelector('#plt_ePrepNotes')?.value.trim()||'',

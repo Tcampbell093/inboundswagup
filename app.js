@@ -2699,7 +2699,7 @@ function overstockRestoreDraft() {
       catEl.value = d.category;
       // Show apparel size panel if category was Apparel
       const apparelPanel = document.getElementById("overstockApparelSizes");
-      if (apparelPanel) apparelPanel.style.display = (d.category || "").toLowerCase() === "apparel" ? "" : "none";
+      if (apparelPanel) apparelPanel.style.display = isApparelCategory(d.category) ? "" : "none";
     }
     const statusEl = document.getElementById("overstockEntryStatus");
     if (statusEl && d.status) statusEl.value = d.status;
@@ -2829,7 +2829,7 @@ function bindOverstockEvents() {
 
   function updateApparelSizes() {
     if (!catSelectEl || !apparelSizesPanel) return;
-    const isApparel = (catSelectEl.value || "").toLowerCase() === "apparel";
+    const isApparel = isApparelCategory(catSelectEl.value);
     apparelSizesPanel.style.display = isApparel ? "" : "none";
   }
   function updateSizeTotals() {
@@ -3042,7 +3042,7 @@ function bindOverstockEvents() {
       originalAutoQty: autoQtyWasAdjusted ? Number(_overstockAutoQty) : undefined,
       quantity: qtyValue,
       category: document.getElementById("overstockEntryCategory")?.value || "",
-      sizeBreakdown: hasSizes ? sizeBreakdown : undefined,
+      sizeBreakdown: isApparelCategory(document.getElementById("overstockEntryCategory")?.value) ? (hasSizes ? sizeBreakdown : undefined) : undefined,
       status: document.getElementById("overstockEntryStatus").value,
       action: document.getElementById("overstockEntryAction").value,
       location: document.getElementById("overstockEntryLocation").value,
