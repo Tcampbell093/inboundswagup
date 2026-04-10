@@ -159,25 +159,43 @@
   </div>
   <div class="field full"><button class="primary-btn" type="submit">Add Entry</button></div>
 </form></section>
-      <section class="panel" id="overstockAuditPanel"><div class="panel-header panel-header-split"><div><h2>📋 Location Audit</h2><p>Send someone to a location (e.g. E-4) to verify each PO one by one. Mark status, note if it can be donated, or flag it as lost/missing.</p></div></div>
-        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
-          <div style="flex:1;min-width:140px;">
-            <label for="overstockAuditLocation" style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Location</label>
-            <select id="overstockAuditLocation" style="width:100%;"></select>
+      <section class="panel os-tool-panel" id="overstockAuditPanel">
+        <div class="os-tool-header">
+          <div class="os-tool-icon">📋</div>
+          <div class="os-tool-meta">
+            <h2 class="os-tool-title">Location Audit</h2>
+            <p class="os-tool-sub">Pick a location, load its POs, and update each one inline.</p>
           </div>
-          <button id="overstockAuditStartBtn" class="secondary-btn" type="button">Load POs for this Location</button>
-          <button id="overstockAuditClearBtn" class="secondary-btn" type="button" style="display:none;">Clear Audit</button>
+        </div>
+        <div class="os-tool-bar">
+          <div class="os-search-wrap">
+            <span class="os-search-icon">📍</span>
+            <select id="overstockAuditLocation" class="os-search-select">
+              <option value="">— Select location —</option>
+            </select>
+          </div>
+          <button id="overstockAuditStartBtn" class="os-action-btn" type="button">Load POs</button>
+          <button id="overstockAuditClearBtn" class="os-ghost-btn" type="button" style="display:none;">✕ Clear</button>
         </div>
         <div id="overstockAuditResults"></div>
       </section>
-      <section class="panel"><div class="panel-header"><div><h2>🔍 PO Lookup</h2><p>Search for a specific PO to see its full overstock history — who logged it, what quantity, when, and every edit.</p></div></div>
-        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
-          <div style="flex:1;min-width:180px;">
-            <label for="overstockPoLookupInput" style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">PO Number</label>
-            <input id="overstockPoLookupInput" type="text" placeholder="e.g. 265923" autocomplete="off" style="width:100%;box-sizing:border-box;" />
+
+      <section class="panel os-tool-panel">
+        <div class="os-tool-header">
+          <div class="os-tool-icon">🔍</div>
+          <div class="os-tool-meta">
+            <h2 class="os-tool-title">PO Lookup</h2>
+            <p class="os-tool-sub">Trace a PO's full overstock history — quantity, who logged it, every edit.</p>
           </div>
-          <button id="overstockPoLookupBtn" class="secondary-btn" type="button">Search PO</button>
-          <button id="overstockPoLookupClear" class="secondary-btn" type="button" style="display:none;">Clear</button>
+        </div>
+        <div class="os-tool-bar">
+          <div class="os-search-wrap os-search-wrap-text">
+            <span class="os-search-icon">🏷️</span>
+            <input id="overstockPoLookupInput" type="text" class="os-search-input"
+              placeholder="Enter PO number…" autocomplete="off" />
+          </div>
+          <button id="overstockPoLookupBtn" class="os-action-btn" type="button">Search</button>
+          <button id="overstockPoLookupClear" class="os-ghost-btn" type="button" style="display:none;">✕ Clear</button>
         </div>
         <div id="overstockPoLookupResults"></div>
       </section>
