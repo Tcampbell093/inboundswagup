@@ -2328,3 +2328,128 @@ font-weight:800
     padding-bottom: 2px !important;
   }
 }
+
+/* ── Overstock Tool Panels (Audit + PO Lookup) ── */
+.workflow-page .os-tool-panel {
+  padding: 22px 26px 20px;
+}
+.workflow-page .os-tool-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.workflow-page .os-tool-icon {
+  font-size: 1.5rem;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #e8f4ff 0%, #d0eafc 100%);
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.workflow-page .os-tool-meta {
+  flex: 1;
+  min-width: 0;
+}
+.workflow-page .os-tool-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--navy);
+  margin: 0 0 2px;
+  letter-spacing: -0.01em;
+}
+.workflow-page .os-tool-sub {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.4;
+}
+.workflow-page .os-tool-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.workflow-page .os-search-wrap {
+  flex: 1;
+  min-width: 180px;
+  display: flex;
+  align-items: center;
+  background: linear-gradient(180deg, #f7fcff 0%, #eef7fd 100%);
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  padding: 0 14px;
+  gap: 8px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.workflow-page .os-search-wrap:focus-within {
+  border-color: var(--blue4);
+  box-shadow: 0 0 0 3px rgba(106,174,220,0.15);
+}
+.workflow-page .os-search-icon {
+  font-size: 0.9rem;
+  flex-shrink: 0;
+  opacity: 0.65;
+}
+.workflow-page .os-search-select,
+.workflow-page .os-search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 0.9rem;
+  color: var(--text);
+  padding: 11px 0;
+  outline: none;
+  min-width: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.workflow-page .os-search-wrap select.os-search-select {
+  cursor: pointer;
+}
+.workflow-page .os-search-input::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+.workflow-page .os-action-btn {
+  padding: 11px 22px;
+  border-radius: 14px;
+  border: none;
+  background: linear-gradient(180deg, var(--blue4) 0%, var(--blue5) 100%);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(59,130,185,0.25);
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.workflow-page .os-action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(59,130,185,0.32);
+}
+.workflow-page .os-action-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(59,130,185,0.2);
+}
+.workflow-page .os-ghost-btn {
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1.5px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.workflow-page .os-ghost-btn:hover {
+  color: var(--danger);
+  border-color: #ffd6db;
+  background: var(--danger-bg);
+}
