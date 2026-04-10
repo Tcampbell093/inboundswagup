@@ -263,6 +263,7 @@ function plt_addPo(palletId,data) {
     // overstockQty is COMPUTED as receivedQty - orderedQty (not stored)
     receivingDone:false,
     prepVerified:false,
+    prepDiscrepancyAccepted:false,
     createdAt:plt_now()
   };
   p.pos.push(po);
@@ -1157,7 +1158,7 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
       </div>
       <div class="plt-ref-row plt-overstock-auto">
         <span class="plt-ref-label">📤 ${plt_t('To Overstock (from Prep count)','A Exceso (desde Prep)')}</span>
-        <span class="plt-ref-value" id="prepOverstockRef_${po.id}">
+        <span class="plt-ref-value">
           ${overstockQty!==null
             ? (overstockQty>0
                 ? `<span class="plt-extras plt-extras-over">+${overstockQty} ${plt_t('units → Overstock','unidades → Exceso')}</span>`
@@ -1222,6 +1223,12 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
         ${po.prepVerified
           ? `<span class="plt-done-label">✓ ${plt_t('Prep count done','Conteo de prep listo')}</span>`
           : plt_t('Mark prep count done','Marcar conteo de prep como listo')}
+      </label>
+      <label class="plt-check-label plt-discrepancy-ack-wrap" style="display:${(plt_hasVal(po.prepReceivedQty)&&plt_hasVal(po.receivedQty)&&Number(po.prepReceivedQty)!==Number(po.receivedQty))?'inline-flex':'none'};">
+        <input type="checkbox" class="plt-prep-discrepancy-ack-check" ${po.prepDiscrepancyAccepted?'checked':''}/>
+        ${po.prepDiscrepancyAccepted
+          ? `<span class="plt-done-label">✓ ${plt_t('Discrepancy reviewed','Diferencia revisada')}</span>`
+          : plt_t('Accept discrepancy and continue','Aceptar diferencia y continuar')}
       </label>
       <button class="pallet-btn-ghost plt-tiny plt-po-edit">${plt_t('Notes','Notas')}</button>
       ${canTransfer?`<button class="pallet-btn-ghost plt-tiny plt-po-transfer">⇄ ${plt_t('Transfer','Transferir')}</button>`:''}
@@ -1481,66 +1488,76 @@ function plt_bindPoCardEvents(container, pallet, dept){
     if(recvInput) recvInput.addEventListener('blur',saveQty);
 
     // Inline prep qty input + displays
-    const prepInput        = card.querySelector('.plt-prep-qty');
-    const prepDiscrepEl    = card.querySelector(`#prepDiscrepDisplay_${poId}`);
-    const prepOrderEl      = card.querySelector(`#prepOrderVarianceDisplay_${poId}`);
-    const prepOverstockRef = card.querySelector(`#prepOverstockRef_${poId}`);
+    const prepInput = card.querySelector('.plt-prep-qty');
+    const prepDiscrepEl = card.querySelector(`#prepDiscrepDisplay_${poId}`);
+    const prepOrderEl = card.querySelector(`#prepOrderVarianceDisplay_${poId}`);
+    const prepDiscrepAckWrap = card.querySelector('.plt-discrepancy-ack-wrap');
+    const prepDiscrepAckCheck = card.querySelector('.plt-prep-discrepancy-ack-check');
 
     function recalcPrepDisplays(){
       const po = (plt_get(pallet.id)?.pos||[]).find(r=>r.id===poId);
       if(!po) return;
       const prepVal = prepInput && prepInput.value!=='' ? Number(prepInput.value) : null;
       const recvVal = plt_hasVal(po.receivedQty) ? Number(po.receivedQty) : null;
-      const ordVal  = plt_hasVal(po.orderedQty)  ? Number(po.orderedQty)  : null;
+      const ordVal  = plt_hasVal(po.orderedQty) ? Number(po.orderedQty) : null;
+      const accepted = !!po.prepDiscrepancyAccepted;
 
       if(prepDiscrepEl){
         if(prepVal===null || recvVal===null){
           prepDiscrepEl.innerHTML = '<span class="act-dim">—</span>';
-        }else{
+        } else {
           const diff = prepVal - recvVal;
           if(diff===0) prepDiscrepEl.innerHTML = `<span class="plt-extras plt-extras-exact">✓ ${plt_t('Counts match','Conteos coinciden')}</span>`;
+          else if(accepted) prepDiscrepEl.innerHTML = `<span class="plt-extras plt-extras-over">✓ ${plt_t('Reviewed discrepancy','Diferencia revisada')}: ${diff>0?'+':''}${diff} ${plt_t('vs Receiving','vs Recepción')}</span>`;
           else prepDiscrepEl.innerHTML = `<span class="plt-extras plt-extras-short">⚠️ ${plt_t('Discrepancy','Discrepancia')}: ${diff>0?'+':''}${diff} ${plt_t('vs Receiving','vs Recepción')}</span>`;
         }
       }
 
-      const overstockHtml = (() => {
-        if(prepVal===null || ordVal===null) return `<span class="act-dim">${plt_t('Enter Prep count first','Ingresa conteo de Prep primero')}</span>`;
-        const diff = prepVal - ordVal;
-        if(diff > 0) return `<span class="plt-extras plt-extras-over">📤 +${diff} ${plt_t('to Overstock','a Exceso')}</span>`;
-        if(diff < 0) return `<span class="plt-extras plt-extras-short">⚠️ ${diff} ${plt_t('vs Ordered','vs Ordenado')}</span>`;
-        return `<span class="plt-extras plt-extras-exact">✓ ${plt_t('Exact to order','Exacto al pedido')}</span>`;
-      })();
-
       if(prepOrderEl){
         if(prepVal===null || ordVal===null){
           prepOrderEl.innerHTML = '<span class="act-dim">—</span>';
-        }else{
-          prepOrderEl.innerHTML = overstockHtml;
+        } else {
+          const diff = prepVal - ordVal;
+          if(diff > 0) prepOrderEl.innerHTML = `<span class="plt-extras plt-extras-over">📤 +${diff} ${plt_t('to Overstock','a Exceso')}</span>`;
+          else if(diff < 0) prepOrderEl.innerHTML = `<span class="plt-extras plt-extras-short">⚠️ ${diff} ${plt_t('vs Ordered','vs Ordenado')}</span>`;
+          else prepOrderEl.innerHTML = `<span class="plt-extras plt-extras-exact">✓ ${plt_t('Exact to order','Exacto al pedido')}</span>`;
         }
       }
 
-      if(prepOverstockRef){
-        if(prepVal===null || ordVal===null){
-          prepOverstockRef.innerHTML = `<span class="act-dim">${plt_t('Enter Prep count first','Ingresa conteo de Prep primero')}</span>`;
-        }else{
-          const over = Math.max(0, prepVal - ordVal);
-          prepOverstockRef.innerHTML = over>0
-            ? `<span class="plt-extras plt-extras-over">+${over} ${plt_t('units → Overstock','unidades → Exceso')}</span>`
-            : `<span class="plt-extras plt-extras-exact">0 — ${plt_t('no extras','sin excedentes')}</span>`;
-        }
+      if(prepDiscrepAckWrap){
+        const showAck = prepVal!==null && recvVal!==null && prepVal!==recvVal;
+        prepDiscrepAckWrap.style.display = showAck ? 'inline-flex' : 'none';
+        if(prepDiscrepAckCheck && !showAck) prepDiscrepAckCheck.checked = false;
       }
     }
 
     function savePrepQty(){
       const po = (plt_get(pallet.id)?.pos||[]).find(r=>r.id===poId); if(!po) return;
       const prepVal = prepInput && prepInput.value!=='' ? Number(prepInput.value) : null;
-      if(prepVal===po.prepReceivedQty) return;
-      plt_updatePo(pallet.id, poId, { prepReceivedQty: prepVal });
+      const recvVal = plt_hasVal(po.receivedQty) ? Number(po.receivedQty) : null;
+      const discrepancyChanged = prepVal!==null && recvVal!==null && prepVal!==recvVal;
+      if(prepVal===po.prepReceivedQty && (!po.prepDiscrepancyAccepted || discrepancyChanged)) return;
+      plt_updatePo(pallet.id, poId, {
+        prepReceivedQty: prepVal,
+        prepDiscrepancyAccepted: discrepancyChanged ? false : po.prepDiscrepancyAccepted
+      });
+      plt_renderAllPanels();
+    }
+
+    function savePrepDiscrepancyAck(){
+      const po = (plt_get(pallet.id)?.pos||[]).find(r=>r.id===poId); if(!po || !prepDiscrepAckCheck) return;
+      const prepVal = prepInput && prepInput.value!=='' ? Number(prepInput.value) : null;
+      const recvVal = plt_hasVal(po.receivedQty) ? Number(po.receivedQty) : null;
+      const canAccept = prepVal!==null && recvVal!==null && prepVal!==recvVal;
+      const accepted = canAccept ? !!prepDiscrepAckCheck.checked : false;
+      if(accepted===!!po.prepDiscrepancyAccepted) return;
+      plt_updatePo(pallet.id, poId, { prepDiscrepancyAccepted: accepted });
       plt_renderAllPanels();
     }
 
     if(prepInput) prepInput.addEventListener('input', recalcPrepDisplays);
     if(prepInput) prepInput.addEventListener('blur', savePrepQty);
+    if(prepDiscrepAckCheck) prepDiscrepAckCheck.addEventListener('change', savePrepDiscrepancyAck);
     recalcPrepDisplays();
     // Dock toggle
     const dockToggle=card.querySelector('.plt-dock-toggle');
@@ -1622,16 +1639,16 @@ function plt_routingSummaryHtml(pallet){
   // Tally units by destination
   let totSts=0, totLts=0, totOverstock=0, posNeedingRouting=0;
   pos.forEach(po=>{
-    const prep   = plt_hasVal(po.prepReceivedQty) ? Number(po.prepReceivedQty) : 0;
-    const ord    = plt_hasVal(po.orderedQty)     ? Number(po.orderedQty)     : 0;
-    const over   = Math.max(0, prep - ord);
+    const recv   = plt_hasVal(po.receivedQty) ? Number(po.receivedQty) : 0;
+    const ord    = plt_hasVal(po.orderedQty)  ? Number(po.orderedQty)  : 0;
+    const over   = Math.max(0, recv - ord);
     const sts    = plt_hasVal(po.stsQty) ? Number(po.stsQty) : 0;
     const lts    = plt_hasVal(po.ltsQty) ? Number(po.ltsQty) : 0;
     totOverstock += over;
     totSts       += sts;
     totLts       += lts;
-    // A PO still needs routing if prep counted units exist and neither STS nor LTS is set
-    if(prep>0 && !sts && !lts && (prep-over)>0) posNeedingRouting++;
+    // A PO still needs routing if recv>0 and neither STS nor LTS is set
+    if(recv>0 && !sts && !lts && (recv-over)>0) posNeedingRouting++;
   });
   const allRouted = posNeedingRouting===0 && pos.length>0;
   return`<div class="pallet-section-title">${plt_t('Routing Summary','Resumen de Enrutamiento')}</div>
