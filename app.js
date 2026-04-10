@@ -3075,9 +3075,8 @@ function toggleOverstockEditRow(tableRow, rowId) {
     <td colspan="8">
       <div class="overstock-edit-grid">
         <input type="date" value="${row.date}" data-field="date" />
-        <select data-field="poSelect"></select>
-        <input type="text" value="${escapeHtml(row.po || "")}" data-field="poManual" placeholder="Manual PO number" style="display:none;" />
-        <input type="number" value="${Number(row.quantity || 0) || 0}" data-field="quantity" min="0" step="1" />
+        <select data-field="po"></select>
+        <input type="number" value="${Number(row.quantity || 0) || 0}" data-field="quantity" readonly />
         <select data-field="status"></select>
         <select data-field="action"></select>
         <select data-field="location"></select>
@@ -3088,59 +3087,19 @@ function toggleOverstockEditRow(tableRow, rowId) {
     </td>
   `;
 
-  const poSel = editTr.querySelector('[data-field="poSelect"]');
-  const poManualInput = editTr.querySelector('[data-field="poManual"]');
+  const poSel = editTr.querySelector('[data-field="po"]');
   const qtyInput = editTr.querySelector('[data-field="quantity"]');
   const prepMap = getPrepPoReferenceMap();
-  const isManualRow = !!row.manualPo || !prepMap.has(row.po);
-
   poSel.innerHTML = "";
   appendOption(poSel, "", "Select Prep PO");
   [...prepMap.values()].sort((a,b)=>a.po.localeCompare(b.po)).forEach(item => appendOption(poSel, item.po, `${item.po} • Qty ${item.quantity}`));
-
-  function syncEditMode() {
-    const manualMode = !!poManualInput.dataset.manualMode;
-    if (manualMode) {
-      poSel.style.display = "none";
-      poManualInput.style.display = "";
-      qtyInput.readOnly = false;
-      return;
-    }
-    poSel.style.display = "";
-    poManualInput.style.display = "none";
+  poSel.value = prepMap.has(row.po) ? row.po : "";
+  const syncEditQty = () => {
     const ref = prepMap.get(poSel.value);
-    if (ref) {
-      qtyInput.value = String(ref.quantity || 0);
-      qtyInput.readOnly = true;
-    } else {
-      qtyInput.readOnly = false;
-    }
-  }
-
-  if (isManualRow) {
-    poManualInput.dataset.manualMode = "1";
-    poManualInput.value = row.po || "";
-  } else {
-    poSel.value = row.po || "";
-    poManualInput.dataset.manualMode = "";
-  }
-
-  poSel.addEventListener("change", () => {
-    poManualInput.dataset.manualMode = "";
-    syncEditMode();
-  });
-
-  poManualInput.addEventListener("input", () => {
-    poManualInput.dataset.manualMode = "1";
-    syncEditMode();
-  });
-
-  poManualInput.addEventListener("focus", () => {
-    poManualInput.dataset.manualMode = "1";
-    syncEditMode();
-  });
-
-  syncEditMode();
+    qtyInput.value = ref ? String(ref.quantity || 0) : "";
+  };
+  poSel.addEventListener("change", syncEditQty);
+  syncEditQty();
 
   const statusSel = editTr.querySelector('[data-field="status"]');
   statusSel.innerHTML = "";
@@ -3166,28 +3125,8 @@ function toggleOverstockEditRow(tableRow, rowId) {
     const beforeSnapshot = cloneForAudit(row);
     ensureRowAuditFields(row, { date: row.date || "" });
 
-    const manualMode = !!poManualInput.dataset.manualMode;
-    const resolvedPo = manualMode ? poManualInput.value.trim() : poSel.value.trim();
-    const resolvedQty = Math.max(0, Number(qtyInput.value || 0) || 0);
-
-    if (!resolvedPo) {
-      if (manualMode) {
-        poManualInput.focus();
-        poManualInput.style.borderColor = "#dc2626";
-      } else {
-        poSel.focus();
-        poSel.style.borderColor = "#dc2626";
-      }
-      return;
-    }
-
-    poManualInput.style.borderColor = "";
-    poSel.style.borderColor = "";
-
     row.date = editTr.querySelector('[data-field="date"]').value;
-    row.po = resolvedPo;
-    row.manualPo = manualMode || !prepMap.has(resolvedPo) ? true : undefined;
-    row.quantity = resolvedQty;
+    row.po = editTr.querySelector('[data-field="po"]').value.trim();
     row.status = editTr.querySelector('[data-field="status"]').value;
     row.action = editTr.querySelector('[data-field="action"]').value;
     row.location = editTr.querySelector('[data-field="location"]').value;
