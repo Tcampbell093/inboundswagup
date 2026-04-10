@@ -1660,3 +1660,72 @@
   margin-bottom: 4px;
   color: #92400e;
 }
+
+/* ── Fix #1: Ordered qty badge always visible in Receiving/Prep strips ── */
+.plt-ordered-badge {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #1e40af;
+  background: #eff6ff;
+  border: 1.5px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+.plt-ordered-badge.plt-ordered-missing {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+/* ── Fix #7: Apparel size breakdown panel in add-PO form ── */
+.plt-apparel-sizes-panel {
+  background: #f0f9ff;
+  border: 1.5px solid #bae6fd;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.plt-apparel-sizes-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #0c4a6e;
+  margin-bottom: 10px;
+}
+.plt-apparel-sizes-grid {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.plt-size-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.plt-size-field label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #0369a1;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.plt-size-input {
+  width: 56px;
+  text-align: center;
+  font-size: 0.9rem;
+  padding: 4px 4px;
+  border: 1.5px solid #bae6fd;
+  border-radius: 6px;
+  background: #fff;
+}
+.plt-size-input:focus {
+  border-color: #0284c7;
+  outline: none;
+  box-shadow: 0 0 0 2px #e0f2fe;
+}
+.plt-size-total-hint {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
