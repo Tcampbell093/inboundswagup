@@ -346,8 +346,8 @@ const translations = {
   }
 };
 
-const overstockStatusOptions = ["Donation", "Not Donation", "Pending PB"];
-const overstockActionOptions = ["Donated", "Required", "Replaced", "Missing from Box"];
+const overstockStatusOptions = ["Donation", "Not Donation", "Pending PB", "Donated"];
+const overstockActionOptions = ["Donated", "Required", "Replaced", "Missing from Box", "Lost"];
 const overstockLocations = Array.from({length:24}, (_,i)=>`E-${i+1}`);
 
 const pageConfig = {
@@ -2447,6 +2447,7 @@ async function init() {
   await Promise.all([loadWorkflowFromBackend(), refreshImportedLibraryCache()]);
   applyLanguage();
   renderAll();
+  restoreSavedTab();
   // Refresh workflow data when user tabs back — so associates always see latest pallets
   window.addEventListener('focus', () => { if(workflowSyncEnabled) loadWorkflowFromBackend().catch(()=>{}); });
   document.addEventListener('visibilitychange', () => {
@@ -2653,6 +2654,8 @@ function bindMasterEvents() {
 
 // ── #10 Overstock draft persistence (survives tab switches) ─────────────
 const OVERSTOCK_DRAFT_KEY = "overstockFormDraft_v1";
+// Module-level so updateOverstockPoQuantity (called during re-renders) can always sync it
+let _overstockAutoQty = null;
 function overstockSaveDraft() {
   const draft = {
     date:      document.getElementById("overstockEntryDate")?.value || "",
@@ -2692,7 +2695,12 @@ function overstockRestoreDraft() {
       if (qtyEl) qtyEl.value = d.qty;
     }
     const catEl = document.getElementById("overstockEntryCategory");
-    if (catEl && d.category) catEl.value = d.category;
+    if (catEl && d.category) {
+      catEl.value = d.category;
+      // Show apparel size panel if category was Apparel
+      const apparelPanel = document.getElementById("overstockApparelSizes");
+      if (apparelPanel) apparelPanel.style.display = (d.category || "").toLowerCase() === "apparel" ? "" : "none";
+    }
     const statusEl = document.getElementById("overstockEntryStatus");
     if (statusEl && d.status) statusEl.value = d.status;
     const actionEl = document.getElementById("overstockEntryAction");
@@ -2744,7 +2752,7 @@ function bindOverstockEvents() {
   const overstockPoSelect = document.getElementById("overstockEntryPo");
 
   // ── #3 Auto-qty warning + delta signal ──────────────────────────────────
-  let _overstockAutoQty = null; // the value that was auto-filled
+  // _overstockAutoQty is module-level (defined above bindOverstockEvents)
   const qtyInputEl      = document.getElementById("overstockEntryQty");
   const qtyAutoLbl      = document.getElementById("overstockQtyAutoLabel");
   const qtyAdjBadge     = document.getElementById("overstockQtyAdjustedBadge");
@@ -2756,36 +2764,23 @@ function bindOverstockEvents() {
     const auto = Number(_overstockAutoQty);
     if (cur !== auto) {
       const delta = cur - auto;
-      qtyAdjBadge.style.display = "";
-      qtyAdjBadge.textContent = `⚠️ Adjusted from auto (${auto}) — ${delta > 0 ? "+" : ""}${delta} from calculated`;
-      qtyAutoWarn.style.display = "";
+      if (qtyAdjBadge) { qtyAdjBadge.style.display = ""; qtyAdjBadge.textContent = `⚠️ Adjusted from auto (${auto}) — ${delta > 0 ? "+" : ""}${delta} from calculated`; }
+      if (qtyAutoWarn) qtyAutoWarn.style.display = "";
     } else {
-      qtyAdjBadge.style.display = "none";
-      qtyAutoWarn.style.display = "none";
+      if (qtyAdjBadge) qtyAdjBadge.style.display = "none";
+      if (qtyAutoWarn) qtyAutoWarn.style.display = "none";
     }
   }
 
   if (qtyInputEl) {
-    qtyInputEl.addEventListener("focus", () => {
-      if (_overstockAutoQty !== null) {
-        qtyAutoWarn.style.display = "";
-      }
-    });
     qtyInputEl.addEventListener("input", overstockCheckQtyAdjust);
     qtyInputEl.addEventListener("blur", overstockCheckQtyAdjust);
   }
 
+  // updateOverstockPoQuantityWithSignal: called when user changes the PO dropdown
+  // updateOverstockPoQuantity (module-level) already syncs _overstockAutoQty on every call
   function updateOverstockPoQuantityWithSignal() {
-    updateOverstockPoQuantity();
-    if (qtyInputEl && qtyInputEl.value !== "") {
-      _overstockAutoQty = qtyInputEl.value;
-      if (qtyAutoLbl) { qtyAutoLbl.style.display = ""; qtyAutoLbl.textContent = " (auto-filled from Prep)"; }
-      if (qtyAdjBadge) qtyAdjBadge.style.display = "none";
-      if (qtyAutoWarn) qtyAutoWarn.style.display = "none";
-    } else {
-      _overstockAutoQty = null;
-      if (qtyAutoLbl) qtyAutoLbl.style.display = "none";
-    }
+    updateOverstockPoQuantity(); // this already sets _overstockAutoQty and clears badges
   }
   if (overstockPoSelect) overstockPoSelect.addEventListener("change", updateOverstockPoQuantityWithSignal);
 
@@ -3079,6 +3074,7 @@ function translateStatus(value) {
     "Required": t("required"),
     "Replaced": t("replaced"),
     "Missing from Box": t("missingFromBox"),
+    "Lost": state.language === "es" ? "Perdido" : "Lost",
   };
   return map[value] || value;
 }
@@ -3344,12 +3340,16 @@ function toggleOverstockEditRow(tableRow, rowId) {
   const row = state.data.overstockEntries.find(item => item.id === rowId);
   const editTr = document.createElement("tr");
   editTr.className = "overstock-edit-row";
+  const manualRow = row.sourceType === 'manual' || row.manualPo;
   editTr.innerHTML = `
-    <td colspan="8">
+    <td colspan="9">
       <div class="overstock-edit-grid">
         <input type="date" value="${row.date}" data-field="date" />
-        <select data-field="po"></select>
-        <input type="number" value="${Number(row.quantity || 0) || 0}" data-field="quantity" ${row.sourceType === 'manual' || row.manualPo ? '' : 'readonly'} />
+        ${manualRow
+          ? `<input type="text" value="${row.po || ''}" data-field="po" placeholder="PO number" />`
+          : `<select data-field="po"></select>`}
+        <select data-field="category"></select>
+        <input type="number" value="${Number(row.quantity || 0) || 0}" data-field="quantity" ${manualRow ? '' : 'readonly'} />
         <select data-field="status"></select>
         <select data-field="action"></select>
         <select data-field="location"></select>
@@ -3363,18 +3363,26 @@ function toggleOverstockEditRow(tableRow, rowId) {
   const poSel = editTr.querySelector('[data-field="po"]');
   const qtyInput = editTr.querySelector('[data-field="quantity"]');
   const prepMap = getPrepPoReferenceMap();
-  poSel.innerHTML = "";
-  appendOption(poSel, "", "Select Prep PO");
-  [...prepMap.values()].sort((a,b)=>a.po.localeCompare(b.po)).forEach(item => appendOption(poSel, item.po, `${item.po} • Qty ${item.quantity}`));
-  const manualRow = row.sourceType === 'manual' || row.manualPo;
-  poSel.value = prepMap.has(row.po) ? row.po : "";
-  const syncEditQty = () => {
-    if (manualRow) return;
-    const ref = prepMap.get(poSel.value);
-    qtyInput.value = ref ? String(ref.quantity || 0) : "";
-  };
-  poSel.addEventListener("change", syncEditQty);
-  if (!manualRow) syncEditQty();
+  // Only wire the prep-PO dropdown if this is an auto row (manual rows use a text input)
+  if (!manualRow && poSel && poSel.tagName === 'SELECT') {
+    poSel.innerHTML = "";
+    appendOption(poSel, "", "Select Prep PO");
+    [...prepMap.values()].sort((a,b)=>a.po.localeCompare(b.po)).forEach(item => appendOption(poSel, item.po, `${item.po} • Qty ${item.quantity}`));
+    poSel.value = prepMap.has(row.po) ? row.po : "";
+    const syncEditQty = () => {
+      const ref = prepMap.get(poSel.value);
+      qtyInput.value = ref ? String(ref.quantity || 0) : "";
+    };
+    poSel.addEventListener("change", syncEditQty);
+    syncEditQty();
+  }
+
+  const categorySel = editTr.querySelector('[data-field="category"]');
+  categorySel.innerHTML = "";
+  appendOption(categorySel, "", "— Category —");
+  (Array.isArray(state.masters.categories) ? state.masters.categories : ['Drinkware','Apparel','Electronics','Kitchen','Toys','Misc'])
+    .forEach(c => appendOption(categorySel, c, c));
+  categorySel.value = row.category || "";
 
   const statusSel = editTr.querySelector('[data-field="status"]');
   statusSel.innerHTML = "";
@@ -3401,7 +3409,9 @@ function toggleOverstockEditRow(tableRow, rowId) {
     ensureRowAuditFields(row, { date: row.date || "" });
 
     row.date = editTr.querySelector('[data-field="date"]').value;
-    row.po = editTr.querySelector('[data-field="po"]').value.trim();
+    const poField = editTr.querySelector('[data-field="po"]');
+    row.po = (poField ? poField.value : row.po).trim();
+    row.category = editTr.querySelector('[data-field="category"]').value;
     row.quantity = Number(editTr.querySelector('[data-field="quantity"]').value || 0) || 0;
     row.status = editTr.querySelector('[data-field="status"]').value;
     row.action = editTr.querySelector('[data-field="action"]').value;
@@ -3462,11 +3472,12 @@ function bindRoleTabs() {
     renderStats();
     renderCurrentDeptUphBadge();
   });
+}
 
-  // Restore saved tab on page load
+function restoreSavedTab() {
   try {
-    const saved = sessionStorage.getItem(TAB_KEY);
-    if (saved) {
+    const saved = sessionStorage.getItem("wf_activeTab");
+    if (saved && saved !== "dock") {
       const btn = roleTabs.querySelector(`.role-tab[data-page="${saved}"]`);
       if (btn) btn.click();
     }
@@ -4842,7 +4853,20 @@ function updateOverstockPoQuantity() {
   const qtyInput = document.getElementById("overstockEntryQty");
   if (!poSelect || !qtyInput) return;
   const ref = getPrepPoReferenceMap().get(poSelect.value);
-  qtyInput.value = ref ? String(ref.quantity || 0) : "";
+  const newVal = ref ? String(ref.quantity || 0) : "";
+  qtyInput.value = newVal;
+  // Keep the module-level signal in sync so the adjusted-warning doesn't fire on re-renders
+  _overstockAutoQty = newVal !== "" ? newVal : null;
+  // Clear any stale adjusted badges whenever the canonical auto-qty is refreshed
+  const adjBadge = document.getElementById("overstockQtyAdjustedBadge");
+  const autoWarn = document.getElementById("overstockAutoQtyWarn");
+  if (adjBadge) adjBadge.style.display = "none";
+  if (autoWarn) autoWarn.style.display = "none";
+  const autoLbl = document.getElementById("overstockQtyAutoLabel");
+  if (autoLbl) {
+    autoLbl.style.display = newVal !== "" ? "" : "none";
+    autoLbl.textContent = " (auto-filled from Prep)";
+  }
 }
 
 

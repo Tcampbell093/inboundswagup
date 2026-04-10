@@ -613,6 +613,9 @@ function plt_renderActivityPanel(containerId) {
         const fulfilBadge = plt_fulfillmentBadge(po);
         const extrasCell  = plt_extrasHtml(po)||'<span class="act-dim">—</span>';
         const notes=[po.dockNotes,po.receivingNotes,po.prepNotes].filter(Boolean).join(' · ')||'';
+        const sizesNote = po.sizeBreakdown && Object.keys(po.sizeBreakdown).length
+          ? `👕 ${Object.entries(po.sizeBreakdown).map(([s,q])=>`${s}:${q}`).join(' · ')}`
+          : '';
         return`<tr>
           <td class="act-po-num">PO# ${plt_esc(po.po)}</td>
           <td>${plt_esc(po.category)||'—'}</td>
@@ -625,7 +628,7 @@ function plt_renderActivityPanel(containerId) {
           <td>${recvBadge}</td>
           <td>${destBadge}</td>
           <td class="act-time">${plt_fmtTime(po.createdAt)}</td>
-        </tr>${notes?`<tr class="act-notes-row"><td colspan="9">📝 ${plt_esc(notes)}</td></tr>`:''}`
+        </tr>${(notes||sizesNote)?`<tr class="act-notes-row"><td colspan="9">${notes?`📝 ${plt_esc(notes)}`:''}${notes&&sizesNote?' · ':''}${sizesNote}</td></tr>`:''}`
       }).join('');
 
     const eventsHtml=selEvents.length===0?'':`<div class="act-timeline">${
@@ -1688,6 +1691,13 @@ function plt_openPoEditModal(palletId,poId,dept){
   const po=(pallet.pos||[]).find(r=>r.id===poId); if(!po)return;
   plt_closeAll();
   const catOpts=plt_cats().map(c=>`<option value="${plt_esc(c)}" ${c===po.category?'selected':''}>${plt_esc(c)}</option>`).join('');
+  const existingSizes = po.sizeBreakdown || {};
+  const isApparel = (po.category||'').toLowerCase()==='apparel';
+  const sizeInputs = ['XS','S','M','L','XL','2XL','3XL'].map(sz=>`
+    <div class="plt-size-field">
+      <label>${sz}</label>
+      <input type="number" min="0" class="plt-edit-size-input" data-size="${sz}" value="${existingSizes[sz]||''}" placeholder="0"/>
+    </div>`).join('');
   const overlay=plt_overlay('palletPoEditOverlay');
   overlay.innerHTML=`
     <div class="pallet-modal" style="max-width:500px;" role="dialog" aria-modal="true">
@@ -1704,6 +1714,11 @@ function plt_openPoEditModal(palletId,poId,dept){
         <div class="pallet-form-row"><div class="pallet-form-field" style="flex:1;"><label>${plt_t('Category','Categoría')}</label>
           <select id="plt_eCat"><option value="">${plt_t('— Select —','— Seleccionar —')}</option>${catOpts}</select>
         </div></div>
+        <div id="plt_eApparelSizes" class="plt-apparel-sizes-panel" style="${isApparel?'':'display:none;'}">
+          <div class="plt-apparel-sizes-title">👕 ${plt_t('Size Breakdown','Desglose por Talla')}</div>
+          <div class="plt-apparel-sizes-grid">${sizeInputs}</div>
+          <div id="plt_eSizeTotal" class="plt-size-total-hint"></div>
+        </div>
         <div class="pallet-form-row"><div class="pallet-form-field" style="flex:1;min-width:100%;"><label>${plt_t('Dock Notes','Notas del Muelle')}</label>
           <input id="plt_eDockNotes" type="text" value="${plt_esc(po.dockNotes||'')}" placeholder="${plt_t('Optional…','Opcional…')}"/></div></div>
         <div class="pallet-form-row"><div class="pallet-form-field" style="flex:1;min-width:100%;"><label>${plt_t('Receiving Notes','Notas de Recepción')}</label>
@@ -1717,6 +1732,34 @@ function plt_openPoEditModal(palletId,poId,dept){
       </div>
     </div>`;
   plt_push(overlay);
+
+  // Show/hide size panel when category changes
+  const eCat = overlay.querySelector('#plt_eCat');
+  const eSizesPanel = overlay.querySelector('#plt_eApparelSizes');
+  const eSizeTotal  = overlay.querySelector('#plt_eSizeTotal');
+  function eUpdateSizePanel() {
+    if(!eSizesPanel) return;
+    eSizesPanel.style.display = (eCat?.value||'').toLowerCase()==='apparel' ? '' : 'none';
+  }
+  function eUpdateSizeTotals() {
+    if(!eSizeTotal) return;
+    const total = [...overlay.querySelectorAll('.plt-edit-size-input')].reduce((s,el)=>s+Number(el.value||0),0);
+    const ordQty = Number(overlay.querySelector('#plt_eOrderedQty')?.value||0);
+    if(!total){eSizeTotal.textContent='';return;}
+    if(ordQty && total!==ordQty){
+      eSizeTotal.style.color='#dc2626';
+      eSizeTotal.textContent=`${plt_t('Size total','Total tallas')}: ${total} — ${plt_t('does not match Ordered Qty','no coincide con Cant. Ordenada')} (${ordQty})`;
+    } else {
+      eSizeTotal.style.color='#059669';
+      eSizeTotal.textContent=`${plt_t('Size total','Total tallas')}: ${total} ✓`;
+    }
+  }
+  if(eCat) eCat.addEventListener('change', eUpdateSizePanel);
+  overlay.querySelectorAll('.plt-edit-size-input').forEach(el=>el.addEventListener('input',eUpdateSizeTotals));
+  overlay.querySelector('#plt_eOrderedQty')?.addEventListener('input',eUpdateSizeTotals);
+  // Kick off totals if apparel already selected
+  if(isApparel) eUpdateSizeTotals();
+
   const goBack=()=>{plt_closeAll();plt_buildPalletModal(plt_get(palletId),dept);};
   overlay.querySelector('.pallet-modal-close').addEventListener('click',goBack);
   overlay.querySelector('#plt_eCancel').addEventListener('click',goBack);
@@ -1724,11 +1767,19 @@ function plt_openPoEditModal(palletId,poId,dept){
   overlay.querySelector('#plt_eSave').addEventListener('click',()=>{
     const eOrdQty = overlay.querySelector('#plt_eOrderedQty')?.value;
     const eBoxes  = overlay.querySelector('#plt_eBoxes')?.value;
+    // Collect updated size breakdown
+    const updatedSizes = {};
+    let hasSizes = false;
+    overlay.querySelectorAll('.plt-edit-size-input').forEach(el=>{
+      const v=Number(el.value||0);
+      if(v>0){updatedSizes[el.dataset.size]=v;hasSizes=true;}
+    });
     const updates={
       po:        overlay.querySelector('#plt_ePo')?.value.trim()||po.po,
       orderedQty: eOrdQty!==''&&eOrdQty!=null ? Number(eOrdQty) : po.orderedQty,
       boxes:      eBoxes!==''&&eBoxes!=null    ? Number(eBoxes)  : po.boxes,
-      category:      overlay.querySelector('#plt_eCat')?.value||po.category,
+      category:      eCat?.value||po.category,
+      sizeBreakdown: (eCat?.value||'').toLowerCase()==='apparel' ? (hasSizes?updatedSizes:null) : null,
       dockNotes:     overlay.querySelector('#plt_eDockNotes')?.value.trim()||'',
       receivingNotes:overlay.querySelector('#plt_eRecvNotes')?.value.trim()||'',
       prepNotes:     overlay.querySelector('#plt_ePrepNotes')?.value.trim()||'',
