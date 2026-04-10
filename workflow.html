@@ -106,7 +106,25 @@
       <div class="inbound-filter-bar"><div class="filter-bar-wrap"><button class="filter-toggle-btn" id="overstockFilterToggle" type="button" data-target="overstockFilterPanel" aria-expanded="false"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> <span data-i18n="filterResults">Filter</span></button><div class="filter-collapsible hidden" id="overstockFilterPanel"><div class="filter-inner"><div class="filter-field"><label for="overstockDateFilter" data-i18n="date">Date</label><input id="overstockDateFilter" type="date" /></div><div class="filter-field"><label for="overstockAssociateFilter" data-i18n="associate">Associate</label><select id="overstockAssociateFilter"></select></div><div class="filter-field"><label for="overstockLocationFilter" data-i18n="location">Location</label><select id="overstockLocationFilter"></select></div><div class="filter-field"><label for="overstockStatusFilter" data-i18n="status">Status</label><select id="overstockStatusFilter"></select></div><div class="filter-field search-field"><label for="overstockSearchInput" data-i18n="search">Search</label><input id="overstockSearchInput" type="text" /></div><div class="filter-field"><label>&nbsp;</label><button id="overstockMyItemsBtn" class="secondary-btn" type="button" data-i18n="myItemsOnly">My Items Only</button><button id="overstockClearFiltersBtn" class="secondary-btn" type="button" data-i18n="clearFilters">Clear Filters</button></div></div></div></div></div>
       <section class="stats-grid"><article class="stat-card"><span class="stat-label">Entries</span><strong id="overstockStatRows">0</strong><p>Logged overstock lines</p></article><article class="stat-card"><span class="stat-label">Donation Candidates</span><strong id="overstockStatDonation">0</strong><p>Rows marked as donation</p></article><article class="stat-card"><span class="stat-label">Required Pulls</span><strong id="overstockStatRequired">0</strong><p>Rows still needed</p></article><article class="stat-card"><span class="stat-label">Auditors</span><strong id="overstockStatAssociates">0</strong><p>Unique associates logged</p></article></section>
       <div id="overstockPalletQueue"></div>
-      <section class="panel"><div class="panel-header panel-header-split"><div><h2>Add Overstock Entry</h2><p>Use this when putting fresh overstock away or auditing a location for donations. POs now come directly from Prep so nobody has to type them manually.</p></div><div class="toolbar"><button id="overstockSeedBtn" class="secondary-btn" type="button">Load Demo Data</button></div></div><form id="overstockEntryForm" class="form-grid overstock-entry-grid"><div class="field"><label for="overstockEntryDate">Date</label><input id="overstockEntryDate" type="date" required /></div><div class="field"><label for="overstockEntryPo">PO#</label><select id="overstockEntryPo" required></select></div><div class="field"><label for="overstockEntryQty">Overstock Qty <span style="font-weight:400;font-size:0.8em;">(auto-filled, adjust if needed)</span></label><input id="overstockEntryQty" type="number" min="0" step="1" /></div><div class="field"><label for="overstockEntryStatus">Status</label><select id="overstockEntryStatus" required></select></div><div class="field"><label for="overstockEntryAction">Action</label><select id="overstockEntryAction" required></select></div><div class="field"><label for="overstockEntryLocation">Location</label><select id="overstockEntryLocation" required></select></div><div class="field"><label for="overstockEntryAssociate">Associate Name</label><select id="overstockEntryAssociate" required></select></div><div class="field full"><button class="primary-btn" type="submit">Add Entry</button></div></form></section>
+      <section class="panel"><div class="panel-header panel-header-split"><div><h2>Add Overstock Entry</h2><p>Use this when putting fresh overstock away or auditing a location for donations. POs now come directly from Prep so nobody has to type them manually.</p></div><div class="toolbar"><button id="overstockSeedBtn" class="secondary-btn" type="button">Load Demo Data</button></div></div><form id="overstockEntryForm" class="form-grid overstock-entry-grid"><div class="field"><label for="overstockEntryDate">Date</label><input id="overstockEntryDate" type="date" required /></div><div class="field" style="grid-column:1/-1;">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+    <label style="margin:0;">PO#</label>
+    <span style="display:flex;align-items:center;gap:6px;margin-left:auto;font-size:12px;color:var(--color-text-secondary,#666);">
+      <span id="overstockPoModeLabel">From Prep list</span>
+      <button type="button" id="overstockPoModeToggle"
+        style="font-size:11px;padding:2px 8px;border:1px solid #ccc;border-radius:6px;background:#f5f5f5;cursor:pointer;color:#555;">
+        Enter manually
+      </button>
+    </span>
+  </div>
+  <select id="overstockEntryPo" required></select>
+  <input id="overstockEntryPoManual" type="text" placeholder="Type PO number…"
+    style="display:none;width:100%;box-sizing:border-box;" autocomplete="off" />
+  <div id="overstockManualPoWarning"
+    style="display:none;margin-top:5px;padding:7px 10px;background:#fffbeb;border:1px solid #f59e0b;border-radius:6px;font-size:12px;color:#92400e;">
+    ⚠️ Prefer selecting from the Prep list when possible — manual entries won't auto-fill the overstock quantity.
+  </div>
+</div><div class="field"><label for="overstockEntryQty">Overstock Qty <span style="font-weight:400;font-size:0.8em;">(auto-filled, adjust if needed)</span></label><input id="overstockEntryQty" type="number" min="0" step="1" /></div><div class="field"><label for="overstockEntryStatus">Status</label><select id="overstockEntryStatus" required></select></div><div class="field"><label for="overstockEntryAction">Action</label><select id="overstockEntryAction" required></select></div><div class="field"><label for="overstockEntryLocation">Location</label><select id="overstockEntryLocation" required></select></div><div class="field"><label for="overstockEntryAssociate">Associate Name</label><select id="overstockEntryAssociate" required></select></div><div class="field full"><button class="primary-btn" type="submit">Add Entry</button></div></form></section>
       <section class="panel"><div class="panel-header"><div><h2>Overstock Log</h2><p>Simple audit table for what is there, what can be donated, and what still needs to stay.</p></div></div><div class="table-wrap overstock-wrap"><table class="sheet-table overstock-table"><thead><tr><th>Date</th><th>PO#</th><th>Quantity</th><th>Status</th><th>Action</th><th>Location</th><th>Associate Name</th><th>Action</th></tr></thead><tbody id="overstockTableBody"></tbody></table></div></section>
     </section>
 
@@ -144,13 +162,25 @@
             <label for="putawayEntryDate">Date</label>
             <input id="putawayEntryDate" type="date" required />
           </div>
-          <div class="field">
-            <label for="putawayEntryPoSearch">PO#</label>
-            <input id="putawayEntryPoSearch" type="text" placeholder="Type to filter PO list" />
-          </div>
-          <div class="field">
-            <label for="putawayEntryPo">Select PO</label>
+          <div class="field" style="grid-column:span 2;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+              <label style="margin:0;">PO#</label>
+              <span style="display:flex;align-items:center;gap:6px;margin-left:auto;font-size:12px;color:#666;">
+                <span id="putawayPoModeLabel">From list</span>
+                <button type="button" id="putawayPoModeToggle"
+                  style="font-size:11px;padding:2px 8px;border:1px solid #ccc;border-radius:6px;background:#f5f5f5;cursor:pointer;color:#555;">
+                  Enter manually
+                </button>
+              </span>
+            </div>
+            <input id="putawayEntryPoSearch" type="text" placeholder="Type to filter PO list" style="margin-bottom:4px;" />
             <select id="putawayEntryPo" required></select>
+            <input id="putawayEntryPoManual" type="text" placeholder="Type PO number…"
+              style="display:none;width:100%;box-sizing:border-box;margin-top:4px;" autocomplete="off" />
+            <div id="putawayManualPoWarning"
+              style="display:none;margin-top:5px;padding:7px 10px;background:#fffbeb;border:1px solid #f59e0b;border-radius:6px;font-size:12px;color:#92400e;">
+              ⚠️ Prefer selecting from the list when possible — manual entries won't auto-fill qty or category.
+            </div>
           </div>
           <div class="field">
             <label for="putawayEntryLocation">Location</label>

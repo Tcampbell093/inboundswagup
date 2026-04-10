@@ -1,3 +1,56 @@
+// =============================================================
+// app.js — QA Inbound Workflow Runtime
+// Houston Control Warehouse Operations Hub
+//
+// PURPOSE: This is the core runtime for workflow.html (the standalone
+// QA Inbound Pallet Tracker page). It is NOT part of the main Ops Hub
+// app (index.html). Do not load it from index.html.
+//
+// workflow.html load order:
+//   1. app.js       ← this file (defines `state`, sync, masters, user)
+//   2. inbound-pallets.js  ← pallet UI module (depends on state from app.js)
+//
+// WHAT THIS FILE OWNS:
+//   - `state` object (currentUser, language, masters, data)
+//   - Workflow backend sync (/.netlify/functions/workflow-sync)
+//   - User login / session management
+//   - Masters editor (categories, locations)
+//   - CEO/import tooling for performance data
+// =============================================================
+
+// ── Shared toast notification (used by app.js and inbound-pallets.js) ──
+(function buildToast() {
+  const el = document.createElement('div');
+  el.id = 'hcToastMsg';
+  el.setAttribute('role', 'status');
+  el.setAttribute('aria-live', 'polite');
+  Object.assign(el.style, {
+    position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%) translateY(12px)',
+    background: '#1e293b', color: '#f1f5f9',
+    padding: '10px 20px', borderRadius: '10px',
+    fontSize: '14px', fontWeight: '500', lineHeight: '1.4',
+    boxShadow: '0 4px 16px rgba(0,0,0,.18)',
+    opacity: '0', transition: 'opacity .2s, transform .2s',
+    zIndex: '99999', pointerEvents: 'none', maxWidth: '360px', textAlign: 'center',
+  });
+  document.body.appendChild(el);
+})();
+let _toastTimer = null;
+function showToast(message, type = 'info') {
+  const el = document.getElementById('hcToastMsg');
+  if (!el) return;
+  el.textContent = message;
+  el.style.background = type === 'error' ? '#7f1d1d' : type === 'success' ? '#14532d' : '#1e293b';
+  el.style.opacity = '1';
+  el.style.transform = 'translateX(-50%) translateY(0)';
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => {
+    el.style.opacity = '0';
+    el.style.transform = 'translateX(-50%) translateY(12px)';
+  }, type === 'error' ? 4000 : 2500);
+}
+window.showToast = showToast;
+
 const STORAGE_KEY = "qaV5SeparatedWorkflowData_v4fixed";
 const MASTER_KEY = "qaBlueSheetMastersV5";
 const LANGUAGE_KEY = "qaWorkflowLanguageV1";
@@ -601,7 +654,7 @@ async function clearImportedLibraryData() {
     renderStats();
   } catch (error) {
     console.error("Failed to clear imported performance data:", error);
-    alert("Could not reset imported performance data.");
+    showToast("Could not reset imported performance data.", "error");
   }
 }
 
@@ -633,7 +686,7 @@ function bindCurrentUserControls() {
     if (selected === LEADERSHIP_USER && !isLeadershipUnlocked()) {
       const code = window.prompt("Enter Leadership code");
       if (String(code || "").trim() !== LEADERSHIP_CODE) {
-        window.alert("Incorrect code.");
+        showToast("Incorrect code.", "error");
         populateCurrentUserSelect();
         return;
       }
@@ -1459,15 +1512,15 @@ function bindImportControls() {
     const label = monthLabelInput.value.trim();
 
     if (!combinedFile) {
-      window.alert("Choose the combined line historics CSV first.");
+      showToast("Choose the combined line historics CSV first.", "error");
       return;
     }
     if (!statusWorkbookFile) {
-      window.alert("Choose the Salesforce PO status workbook too.");
+      showToast("Choose the Salesforce PO status workbook too.", "error");
       return;
     }
     if (!label) {
-      window.alert("Enter a month label first.");
+      showToast("Enter a month label first.", "error");
       return;
     }
 
@@ -1484,10 +1537,10 @@ function bindImportControls() {
       renderPerformancePage();
 
       const latest = getLatestImportedDate(imported);
-      window.alert(`CEO month import saved.${latest ? ` Latest detected date: ${latest}.` : ""}`);
+      showToast(`CEO month import saved.${latest ? " Latest: " + latest : ""}`, "success");
     } catch (err) {
       console.error("Historics import failed:", err);
-      window.alert("Import failed. Make sure the combined CSV and status workbook are in the expected format.");
+      showToast("Import failed. Check that CSV and workbook formats are correct.", "error");
     }
   });
 
@@ -1510,7 +1563,7 @@ function bindImportControls() {
 
   removeBtn.addEventListener("click", async () => {
     if (!activeImportedKey) {
-      window.alert("Choose an imported month first.");
+      showToast("Choose an imported month first.", "error");
       return;
     }
     if (!window.confirm("Delete the selected imported month?")) return;
@@ -2542,8 +2595,8 @@ function bindPageEvents() {
         const date = document.getElementById(cfg.sectionDate).value;
         const name = state.currentUser || "";
         const location = document.getElementById(cfg.sectionLocation).value;
-        if (!location) return window.alert("Location is required.");
-        if (!name) return window.alert(state.language === "es" ? "Primero selecciona un usuario actual." : "Select a current user first.");
+        if (!location) { showToast("Location is required.", "error"); return; }
+        if (!name) { showToast(state.language === "es" ? "Primero selecciona un usuario actual." : "Select a current user first.", "error"); return; }
         state.data[cfg.sectionKey].unshift({ id: makeId(), date, name, location, rows: [], createdAt: Date.now(), updatedAt: Date.now() });
         persistData();
         sectionForm.reset();
@@ -2630,16 +2683,63 @@ function bindOverstockEvents() {
   const overstockPoSelect = document.getElementById("overstockEntryPo");
   if (overstockPoSelect) overstockPoSelect.addEventListener("change", updateOverstockPoQuantity);
 
+  // ── Manual PO entry toggle (Overstock) ──────────────────────────────
+  let overstockPoManualMode = false;
+  const overstockToggleBtn   = document.getElementById("overstockPoModeToggle");
+  const overstockModeLabel   = document.getElementById("overstockPoModeLabel");
+  const overstockManualInput = document.getElementById("overstockEntryPoManual");
+  const overstockManualWarn  = document.getElementById("overstockManualPoWarning");
+
+  function setOverstockPoMode(manual) {
+    overstockPoManualMode = manual;
+    if (manual) {
+      overstockPoSelect.style.display    = "none";
+      overstockPoSelect.required         = false;
+      overstockManualInput.style.display = "";
+      overstockManualInput.required      = true;
+      overstockManualWarn.style.display  = "";
+      overstockModeLabel.textContent     = "Manual entry";
+      overstockToggleBtn.textContent     = "Back to list";
+      overstockManualInput.focus();
+    } else {
+      overstockPoSelect.style.display    = "";
+      overstockPoSelect.required         = true;
+      overstockManualInput.style.display = "none";
+      overstockManualInput.required      = false;
+      overstockManualWarn.style.display  = "none";
+      overstockModeLabel.textContent     = "From Prep list";
+      overstockToggleBtn.textContent     = "Enter manually";
+      overstockManualInput.value         = "";
+    }
+  }
+  if (overstockToggleBtn) overstockToggleBtn.addEventListener("click", () => setOverstockPoMode(!overstockPoManualMode));
+  // ────────────────────────────────────────────────────────────────────
+
   document.getElementById("overstockEntryForm").addEventListener("submit", (event) => {
     event.preventDefault();
     if (!Array.isArray(state.data.overstockEntries)) state.data.overstockEntries = [];
     if (!state.data.overstockFilters) state.data.overstockFilters = { date: "", associate: "All", location: "All", status: "All", search: "" };
-    const selectedPo = document.getElementById("overstockEntryPo").value;
+
+    // Read PO from whichever mode is active
+    const selectedPo = overstockPoManualMode
+      ? (overstockManualInput ? overstockManualInput.value.trim() : "")
+      : document.getElementById("overstockEntryPo").value;
+
+    if (!selectedPo) {
+      if (overstockPoManualMode && overstockManualInput) {
+        overstockManualInput.style.borderColor = "#dc2626";
+        overstockManualInput.focus();
+      }
+      return;
+    }
+    if (overstockPoManualMode && overstockManualInput) overstockManualInput.style.borderColor = "";
+
     const qtyValue = Number(document.getElementById("overstockEntryQty").value || 0) || 0;
     state.data.overstockEntries.unshift({
       id: makeId(),
       date: document.getElementById("overstockEntryDate").value,
       po: selectedPo,
+      manualPo: overstockPoManualMode || undefined,
       quantity: qtyValue,
       status: document.getElementById("overstockEntryStatus").value,
       action: document.getElementById("overstockEntryAction").value,
@@ -2650,6 +2750,7 @@ function bindOverstockEvents() {
     });
     persistData();
     document.getElementById("overstockEntryForm").reset();
+    if (overstockPoManualMode) overstockManualInput.value = "";
     updateOverstockPoQuantity();
     renderOverstockPage();
   });
@@ -3147,7 +3248,7 @@ function renderSections(pageKey) {
       if (ownerLocked) return;
       const date = editor.querySelector(".edit-section-date").value;
       const location = editor.querySelector(".edit-section-location").value;
-      if (!location) return window.alert("Location is required.");
+      if (!location) { showToast("Location is required.", "error"); return; }
       section.date = date;
       section.location = location;
       touchSection(section);
@@ -3897,7 +3998,7 @@ function toggleInlineAddRow(pageKey, sectionRoot, sectionId) {
     const category = editor.querySelector('[data-field="category"]').value;
     let notes = editor.querySelector('[data-field="notes"]').value.trim();
 
-    if (!po || !category) return window.alert("PO# and Category are required.");
+    if (!po || !category) { showToast("PO# and Category are required.", "error"); return; }
 
     const sizeData = cfg.mode === "counting" ? getSizeBreakdownData(editor) : {};
     notes = appendSizeBreakdownToNotes(notes, sizeData);
@@ -4008,7 +4109,7 @@ function toggleInlineEditRow(pageKey, tableRow, sectionId, rowId) {
     const category = editTr.querySelector('[data-field="category"]').value;
     let notes = editTr.querySelector('[data-field="notes"]').value.trim();
 
-    if (!po || !category) return window.alert("PO# and Category are required.");
+    if (!po || !category) { showToast("PO# and Category are required.", "error"); return; }
 
     const sizeData = cfg.mode === "counting" ? getSizeBreakdownData(editTr) : {};
     notes = appendSizeBreakdownToNotes(notes, sizeData);
@@ -4206,7 +4307,7 @@ function addMasterItem(type, rawValue) {
 
 function renameMasterItem(type, oldValue, newValue) {
   if (!newValue || oldValue === newValue) return;
-  if (state.masters[type].includes(newValue)) return window.alert("That value already exists.");
+  if (state.masters[type].includes(newValue)) { showToast("That value already exists.", "error"); return; }
   state.masters[type] = state.masters[type].map((item) => item === oldValue ? newValue : item);
 
   Object.keys(pageConfig).forEach((pageKey) => {
@@ -5008,6 +5109,34 @@ function bindPutawayEvents() {
   if (poSearch) poSearch.addEventListener("input", populatePutawayFormSelects);
   if (poSelect) poSelect.addEventListener("change", () => {});
 
+  // ── Manual PO entry toggle (Putaway) ────────────────────────────────
+  let putawayPoManualMode = false;
+  const putawayToggleBtn   = document.getElementById("putawayPoModeToggle");
+  const putawayModeLabel   = document.getElementById("putawayPoModeLabel");
+  const putawayManualInput = document.getElementById("putawayEntryPoManual");
+  const putawayManualWarn  = document.getElementById("putawayManualPoWarning");
+
+  function setPutawayPoMode(manual) {
+    putawayPoManualMode = manual;
+    if (manual) {
+      if (poSearch)  poSearch.style.display  = "none";
+      if (poSelect)  { poSelect.style.display = "none"; poSelect.required = false; }
+      if (putawayManualInput) { putawayManualInput.style.display = ""; putawayManualInput.required = true; putawayManualInput.focus(); }
+      if (putawayManualWarn) putawayManualWarn.style.display = "";
+      if (putawayModeLabel)  putawayModeLabel.textContent = "Manual entry";
+      if (putawayToggleBtn)  putawayToggleBtn.textContent = "Back to list";
+    } else {
+      if (poSearch)  poSearch.style.display  = "";
+      if (poSelect)  { poSelect.style.display = ""; poSelect.required = true; }
+      if (putawayManualInput) { putawayManualInput.style.display = "none"; putawayManualInput.required = false; putawayManualInput.value = ""; }
+      if (putawayManualWarn) putawayManualWarn.style.display = "none";
+      if (putawayModeLabel)  putawayModeLabel.textContent = "From list";
+      if (putawayToggleBtn)  putawayToggleBtn.textContent = "Enter manually";
+    }
+  }
+  if (putawayToggleBtn) putawayToggleBtn.addEventListener("click", () => setPutawayPoMode(!putawayPoManualMode));
+  // ────────────────────────────────────────────────────────────────────
+
   const myBtn = document.getElementById("putawayMyItemsBtn");
   if (myBtn) myBtn.addEventListener("click", () => {
     state.data.putawayFilters.mineOnly = !state.data.putawayFilters.mineOnly;
@@ -5031,11 +5160,26 @@ function bindPutawayEvents() {
   if (form) form.addEventListener("submit", (event) => {
     event.preventDefault();
     if (!Array.isArray(state.data.putawayEntries)) state.data.putawayEntries = [];
-    const po = document.getElementById("putawayEntryPo").value;
+
+    // Read PO from whichever mode is active
+    const po = putawayPoManualMode
+      ? (putawayManualInput ? putawayManualInput.value.trim() : "")
+      : (document.getElementById("putawayEntryPo") ? document.getElementById("putawayEntryPo").value : "");
+
+    if (!po) {
+      if (putawayPoManualMode && putawayManualInput) {
+        putawayManualInput.style.borderColor = "#dc2626";
+        putawayManualInput.focus();
+      }
+      return;
+    }
+    if (putawayPoManualMode && putawayManualInput) putawayManualInput.style.borderColor = "";
+
     state.data.putawayEntries.unshift({
       id: makeId(),
       date: document.getElementById("putawayEntryDate").value,
       po,
+      manualPo: putawayPoManualMode || undefined,
       location: document.getElementById("putawayEntryLocation").value.trim(),
       status: document.getElementById("putawayEntryStatus").value,
       notes: document.getElementById("putawayEntryNotes").value.trim(),
@@ -5045,6 +5189,7 @@ function bindPutawayEvents() {
     });
     persistData();
     form.reset();
+    if (putawayPoManualMode && putawayManualInput) putawayManualInput.value = "";
     populatePutawayFormSelects();
     renderPutawayPage();
   });
