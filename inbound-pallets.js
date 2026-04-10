@@ -263,7 +263,6 @@ function plt_addPo(palletId,data) {
     // overstockQty is COMPUTED as receivedQty - orderedQty (not stored)
     receivingDone:false,
     prepVerified:false,
-    prepDiscrepancyAccepted:false,
     createdAt:plt_now()
   };
   p.pos.push(po);
@@ -1224,12 +1223,6 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
           ? `<span class="plt-done-label">✓ ${plt_t('Prep count done','Conteo de prep listo')}</span>`
           : plt_t('Mark prep count done','Marcar conteo de prep como listo')}
       </label>
-      <label class="plt-check-label plt-discrepancy-ack-wrap" style="display:${(plt_hasVal(po.prepReceivedQty)&&plt_hasVal(po.receivedQty)&&Number(po.prepReceivedQty)!==Number(po.receivedQty))?'inline-flex':'none'};">
-        <input type="checkbox" class="plt-prep-discrepancy-ack-check" ${po.prepDiscrepancyAccepted?'checked':''}/>
-        ${po.prepDiscrepancyAccepted
-          ? `<span class="plt-done-label">✓ ${plt_t('Discrepancy reviewed','Diferencia revisada')}</span>`
-          : plt_t('Accept discrepancy and continue','Aceptar diferencia y continuar')}
-      </label>
       <button class="pallet-btn-ghost plt-tiny plt-po-edit">${plt_t('Notes','Notas')}</button>
       ${canTransfer?`<button class="pallet-btn-ghost plt-tiny plt-po-transfer">⇄ ${plt_t('Transfer','Transferir')}</button>`:''}
       <button class="pallet-btn-danger plt-tiny plt-po-delete">✕</button>
@@ -1478,87 +1471,23 @@ function plt_bindPoCardEvents(container, pallet, dept){
     if(recvInput) recvInput.addEventListener('input',recalc);
     function saveQty(){
       const po=(plt_get(pallet.id)?.pos||[]).find(r=>r.id===poId); if(!po) return;
-      const oVal=ordInput&&ordInput.value!==''?Number(ordInput.value):null;
-      const rVal=recvInput&&recvInput.value!==''?Number(recvInput.value):null;
-      if(oVal===po.orderedQty&&rVal===po.receivedQty) return;
-      plt_updatePo(pallet.id,poId,{orderedQty:oVal,receivedQty:rVal});
+      const nextFields = {};
+      const oVal = ordInput
+        ? (ordInput.value !== '' ? Number(ordInput.value) : null)
+        : po.orderedQty;
+      const rVal = recvInput
+        ? (recvInput.value !== '' ? Number(recvInput.value) : null)
+        : po.receivedQty;
+
+      if (ordInput && oVal !== po.orderedQty) nextFields.orderedQty = oVal;
+      if (recvInput && rVal !== po.receivedQty) nextFields.receivedQty = rVal;
+      if (!Object.keys(nextFields).length) return;
+
+      plt_updatePo(pallet.id, poId, nextFields);
       plt_renderAllPanels();
     }
     if(ordInput)  ordInput.addEventListener('blur',saveQty);
     if(recvInput) recvInput.addEventListener('blur',saveQty);
-
-    // Inline prep qty input + displays
-    const prepInput = card.querySelector('.plt-prep-qty');
-    const prepDiscrepEl = card.querySelector(`#prepDiscrepDisplay_${poId}`);
-    const prepOrderEl = card.querySelector(`#prepOrderVarianceDisplay_${poId}`);
-    const prepDiscrepAckWrap = card.querySelector('.plt-discrepancy-ack-wrap');
-    const prepDiscrepAckCheck = card.querySelector('.plt-prep-discrepancy-ack-check');
-
-    function recalcPrepDisplays(){
-      const po = (plt_get(pallet.id)?.pos||[]).find(r=>r.id===poId);
-      if(!po) return;
-      const prepVal = prepInput && prepInput.value!=='' ? Number(prepInput.value) : null;
-      const recvVal = plt_hasVal(po.receivedQty) ? Number(po.receivedQty) : null;
-      const ordVal  = plt_hasVal(po.orderedQty) ? Number(po.orderedQty) : null;
-      const accepted = !!po.prepDiscrepancyAccepted;
-
-      if(prepDiscrepEl){
-        if(prepVal===null || recvVal===null){
-          prepDiscrepEl.innerHTML = '<span class="act-dim">—</span>';
-        } else {
-          const diff = prepVal - recvVal;
-          if(diff===0) prepDiscrepEl.innerHTML = `<span class="plt-extras plt-extras-exact">✓ ${plt_t('Counts match','Conteos coinciden')}</span>`;
-          else if(accepted) prepDiscrepEl.innerHTML = `<span class="plt-extras plt-extras-over">✓ ${plt_t('Reviewed discrepancy','Diferencia revisada')}: ${diff>0?'+':''}${diff} ${plt_t('vs Receiving','vs Recepción')}</span>`;
-          else prepDiscrepEl.innerHTML = `<span class="plt-extras plt-extras-short">⚠️ ${plt_t('Discrepancy','Discrepancia')}: ${diff>0?'+':''}${diff} ${plt_t('vs Receiving','vs Recepción')}</span>`;
-        }
-      }
-
-      if(prepOrderEl){
-        if(prepVal===null || ordVal===null){
-          prepOrderEl.innerHTML = '<span class="act-dim">—</span>';
-        } else {
-          const diff = prepVal - ordVal;
-          if(diff > 0) prepOrderEl.innerHTML = `<span class="plt-extras plt-extras-over">📤 +${diff} ${plt_t('to Overstock','a Exceso')}</span>`;
-          else if(diff < 0) prepOrderEl.innerHTML = `<span class="plt-extras plt-extras-short">⚠️ ${diff} ${plt_t('vs Ordered','vs Ordenado')}</span>`;
-          else prepOrderEl.innerHTML = `<span class="plt-extras plt-extras-exact">✓ ${plt_t('Exact to order','Exacto al pedido')}</span>`;
-        }
-      }
-
-      if(prepDiscrepAckWrap){
-        const showAck = prepVal!==null && recvVal!==null && prepVal!==recvVal;
-        prepDiscrepAckWrap.style.display = showAck ? 'inline-flex' : 'none';
-        if(prepDiscrepAckCheck && !showAck) prepDiscrepAckCheck.checked = false;
-      }
-    }
-
-    function savePrepQty(){
-      const po = (plt_get(pallet.id)?.pos||[]).find(r=>r.id===poId); if(!po) return;
-      const prepVal = prepInput && prepInput.value!=='' ? Number(prepInput.value) : null;
-      const recvVal = plt_hasVal(po.receivedQty) ? Number(po.receivedQty) : null;
-      const discrepancyChanged = prepVal!==null && recvVal!==null && prepVal!==recvVal;
-      if(prepVal===po.prepReceivedQty && (!po.prepDiscrepancyAccepted || discrepancyChanged)) return;
-      plt_updatePo(pallet.id, poId, {
-        prepReceivedQty: prepVal,
-        prepDiscrepancyAccepted: discrepancyChanged ? false : po.prepDiscrepancyAccepted
-      });
-      plt_renderAllPanels();
-    }
-
-    function savePrepDiscrepancyAck(){
-      const po = (plt_get(pallet.id)?.pos||[]).find(r=>r.id===poId); if(!po || !prepDiscrepAckCheck) return;
-      const prepVal = prepInput && prepInput.value!=='' ? Number(prepInput.value) : null;
-      const recvVal = plt_hasVal(po.receivedQty) ? Number(po.receivedQty) : null;
-      const canAccept = prepVal!==null && recvVal!==null && prepVal!==recvVal;
-      const accepted = canAccept ? !!prepDiscrepAckCheck.checked : false;
-      if(accepted===!!po.prepDiscrepancyAccepted) return;
-      plt_updatePo(pallet.id, poId, { prepDiscrepancyAccepted: accepted });
-      plt_renderAllPanels();
-    }
-
-    if(prepInput) prepInput.addEventListener('input', recalcPrepDisplays);
-    if(prepInput) prepInput.addEventListener('blur', savePrepQty);
-    if(prepDiscrepAckCheck) prepDiscrepAckCheck.addEventListener('change', savePrepDiscrepancyAck);
-    recalcPrepDisplays();
     // Dock toggle
     const dockToggle=card.querySelector('.plt-dock-toggle');
     if(dockToggle){
