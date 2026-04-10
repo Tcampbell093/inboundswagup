@@ -100,6 +100,68 @@ function stopWorkflowPoll() {
 }
 
 const ATTENDANCE_EMPLOYEE_KEY = "ops_hub_employees_v1";
+const EMPLOYEES_API_BASE = '/.netlify/functions/employees';
+let employeesSyncEnabled = false;
+
+function normalizeEmployeeNames(list = []) {
+  if (!Array.isArray(list)) return [];
+  return [...new Set(
+    list
+      .filter(item => item && item.active !== false)
+      .map(item => typeof item === "string" ? item.trim() : String(item.name || "").trim())
+      .filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b));
+}
+
+async function employeesApiRequest(method = 'GET', body) {
+  const options = { method, headers: { 'Accept': 'application/json' } };
+  if (body !== undefined) {
+    options.headers['Content-Type'] = 'application/json';
+    options.body = JSON.stringify(body);
+  }
+  const response = await fetch(EMPLOYEES_API_BASE, options);
+  const raw = await response.text();
+  let data = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch { data = { raw }; }
+  if (!response.ok) throw new Error(data?.error || `Employees sync failed (${response.status})`);
+  return data;
+}
+
+function applyEmployeesPayload(payload = {}, options = {}) {
+  const names = normalizeEmployeeNames(payload.employees || []);
+  if (!names.length) return false;
+
+  localStorage.setItem(ATTENDANCE_EMPLOYEE_KEY, JSON.stringify(payload.employees || []));
+
+  const existing = Array.isArray(state?.masters?.associates) ? state.masters.associates : [];
+  const changed =
+    names.length !== existing.length ||
+    names.some((name, index) => existing[index] !== name);
+
+  if (changed && state && state.masters) {
+    state.masters.associates = names;
+    localStorage.setItem(MASTER_KEY, JSON.stringify(state.masters));
+  }
+
+  if (options.render) {
+    populateCurrentUserSelect();
+    if (typeof renderAll === 'function') renderAll();
+  }
+
+  return changed;
+}
+
+async function loadEmployeesFromBackend(options = {}) {
+  try {
+    const data = await employeesApiRequest('GET');
+    employeesSyncEnabled = true;
+    return applyEmployeesPayload(data || {}, options);
+  } catch (err) {
+    console.warn('Employees sync unavailable, using browser storage.', err);
+    employeesSyncEnabled = false;
+    return false;
+  }
+}
 
 function readAttendanceEmployees() {
   try {
@@ -2444,13 +2506,30 @@ async function init() {
   bindLanguageSwitch();
   bindFilterToggles();
   bindCurrentUserControls();
-  await Promise.all([loadWorkflowFromBackend(), refreshImportedLibraryCache()]);
+  await Promise.all([loadEmployeesFromBackend(), loadWorkflowFromBackend(), refreshImportedLibraryCache()]);
   applyLanguage();
   renderAll();
-  // Refresh workflow data when user tabs back — so associates always see latest pallets
-  window.addEventListener('focus', () => { if(workflowSyncEnabled) loadWorkflowFromBackend().catch(()=>{}); });
+  // Refresh workflow + employee roster when user tabs back — so floor devices pick up new names
+  window.addEventListener('focus', () => {
+    Promise.allSettled([
+      loadEmployeesFromBackend({ render: true }),
+      workflowSyncEnabled ? loadWorkflowFromBackend() : Promise.resolve()
+    ]);
+  });
   document.addEventListener('visibilitychange', () => {
-    if(document.visibilityState === 'visible' && workflowSyncEnabled) loadWorkflowFromBackend().catch(()=>{});
+    if (document.visibilityState === 'visible') {
+      Promise.allSettled([
+        loadEmployeesFromBackend({ render: true }),
+        workflowSyncEnabled ? loadWorkflowFromBackend() : Promise.resolve()
+      ]);
+    }
+  });
+  window.addEventListener('storage', (event) => {
+    if (event.key === ATTENDANCE_EMPLOYEE_KEY) {
+      syncAssociatesFromAttendance();
+      populateCurrentUserSelect();
+      if (typeof renderAll === 'function') renderAll();
+    }
   });
 }
 
