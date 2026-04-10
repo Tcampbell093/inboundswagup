@@ -263,13 +263,15 @@ function plt_addPo(palletId,data) {
     // overstockQty is COMPUTED as receivedQty - orderedQty (not stored)
     receivingDone:false,
     prepVerified:false,
+    sizeBreakdown: data.sizeBreakdown || null,
     createdAt:plt_now()
   };
   p.pos.push(po);
   if(data.hasPriorReceipts){
     plt_log(p,'po_prior_receipt',`PO# ${po.po} — continuation of partial order · ${data.priorReceiptCount} prior pallet(s) · ${data.priorTotalReceived} already received`,po.po);
   }
-  plt_log(p,'po_added',`PO# ${po.po} · ordered ${po.orderedQty??'?'} · ${po.boxes??0} boxes · ${po.category}`,po.po);
+  const sizeNote = po.sizeBreakdown ? ` · sizes: ${Object.entries(po.sizeBreakdown).map(([s,q])=>`${s}:${q}`).join(' ')}` : '';
+  plt_log(p,'po_added',`PO# ${po.po} · ordered ${po.orderedQty??'?'} · ${po.boxes??0} boxes · ${po.category}${sizeNote}`,po.po);
   plt_save(); return po;
 }
 
@@ -1072,6 +1074,9 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
       </div>
     </div>
     ${po.dockNotes?`<p class="po-note">📦 ${plt_esc(po.dockNotes)}</p>`:''}
+    ${po.sizeBreakdown && Object.keys(po.sizeBreakdown).length
+      ? `<p class="po-note" style="color:#6b7280;">👕 ${plt_t('Sizes','Tallas')}: ${Object.entries(po.sizeBreakdown).map(([s,q])=>`${plt_esc(s)}:${q}`).join(' · ')}</p>`
+      : ''}
     <div class="po-card-actions">
       <button class="pallet-btn-ghost plt-tiny plt-po-edit">${plt_t('Edit','Editar')}</button>
       ${canTransfer?`<button class="pallet-btn-ghost plt-tiny plt-po-transfer">⇄ ${plt_t('Transfer','Transferir')}</button>`:''}
@@ -1085,8 +1090,11 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
   const recvView = `
     <div class="plt-recv-meta-strip">
       <span class="plt-recv-cat">📦 ${plt_esc(po.category)||'—'}</span>
+      ${hasOrd
+        ? `<span class="plt-ordered-badge">📋 ${plt_t('Ordered','Ordenado')}: <strong>${po.orderedQty}</strong></span>`
+        : `<span class="plt-ordered-badge plt-ordered-missing">📋 ${plt_t('Ordered: not set','Ordenado: no ingresado')}</span>`}
       <button type="button" class="plt-reveal-toggle plt-recv-reveal-btn" data-target="${recvRevealId}">
-        👁 ${plt_t('Show dock numbers','Ver números del muelle')}
+        👁 ${plt_t('Show dock details','Ver detalles del muelle')}
       </button>
     </div>
     <div class="plt-prev-dept-block hidden" id="${recvRevealId}">
@@ -1094,6 +1102,10 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
       <div class="plt-ref-row">
         <span class="plt-ref-label">📋 ${plt_t('Ordered (Dock)','Ordenado (Muelle)')}</span>
         <span class="plt-ref-value">${hasOrd ? po.orderedQty : plt_t('Not set','No ingresado')}</span>
+      </div>
+      <div class="plt-ref-row">
+        <span class="plt-ref-label">📦 ${plt_t('Boxes','Cajas')}</span>
+        <span class="plt-ref-value">${plt_hasVal(po.boxes) ? po.boxes : '—'}</span>
       </div>
       ${po.dockNotes?`<p class="po-note" style="margin:4px 0 0;">📦 ${plt_esc(po.dockNotes)}</p>`:''}
     </div>
@@ -1136,15 +1148,18 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
   const prepRevealId = `prepReveal_${po.id}`;
 
   const prepView = `
-    <!-- Identity strip — no numeric counts shown by default -->
+    <!-- Identity strip — ordered qty always visible, counts hidden by default -->
     <div class="plt-recv-meta-strip">
       <span class="plt-recv-cat">📦 ${plt_esc(po.category)||'—'}</span>
+      ${hasOrd
+        ? `<span class="plt-ordered-badge">📋 ${plt_t('Ordered','Ordenado')}: <strong>${po.orderedQty}</strong></span>`
+        : `<span class="plt-ordered-badge plt-ordered-missing">📋 ${plt_t('Ordered: not set','Ordenado: no ingresado')}</span>`}
       <button type="button" class="plt-reveal-toggle plt-prep-reveal-btn" data-target="${prepRevealId}">
         👁 ${plt_t('Show previous counts','Ver conteos anteriores')}
       </button>
     </div>
 
-    <!-- Hidden reference block — ordered + receiving count, shown on demand -->
+    <!-- Hidden reference block — receiving count + notes, shown on demand -->
     <div class="plt-prev-dept-block hidden" id="${prepRevealId}">
       <div class="plt-prev-dept-label">⚠️ ${plt_t('Previous dept numbers — enter your own count first, then compare.','Números de deptamento anterior — ingresa tu conteo primero, luego compara.')}</div>
       <div class="plt-ref-row">
@@ -1303,6 +1318,19 @@ function plt_addPoFormHtml(catOpts){
           </div>
         </div>
 
+        <!-- Apparel size breakdown — shown when Apparel is selected -->
+        <div id="plt_apparelSizesPanel" style="display:none;" class="plt-apparel-sizes-panel">
+          <div class="plt-apparel-sizes-title">👕 ${plt_t('Size Breakdown (optional)','Desglose por Talla (opcional)')}</div>
+          <div class="plt-apparel-sizes-grid">
+            ${['XS','S','M','L','XL','2XL','3XL'].map(sz=>`
+              <div class="plt-size-field">
+                <label>${sz}</label>
+                <input type="number" min="0" class="plt-size-input" data-size="${sz}" placeholder="0"/>
+              </div>`).join('')}
+          </div>
+          <div id="plt_sizeTotal" class="plt-size-total-hint"></div>
+        </div>
+
         <button class="pallet-btn-primary" id="plt_saveNewPo" type="button">
           + ${plt_t('Add PO','Agregar OC')}
         </button>
@@ -1317,6 +1345,31 @@ function plt_bindAddPoForm(formEl,palletId,dept){
   const boxInput  = formEl.querySelector('#plt_newBoxes');
   const catSelect = formEl.querySelector('#plt_newCat');
   const notesInput= formEl.querySelector('#plt_newDockNotes');
+  const apparelPanel = formEl.querySelector('#plt_apparelSizesPanel');
+  const sizeTotalEl  = formEl.querySelector('#plt_sizeTotal');
+
+  // ── #7 Show apparel size panel when Apparel is selected ──────────────
+  function updateApparelPanel() {
+    if (!apparelPanel) return;
+    const isApparel = (catSelect?.value || '').toLowerCase() === 'apparel';
+    apparelPanel.style.display = isApparel ? '' : 'none';
+  }
+  function updateSizeTotals() {
+    if (!sizeTotalEl) return;
+    const total = [...(formEl.querySelectorAll('.plt-size-input') || [])].reduce((s,el)=>s+Number(el.value||0),0);
+    const ordQty = Number(qtyInput?.value || 0);
+    if (!total) { sizeTotalEl.textContent=''; return; }
+    if (ordQty && total !== ordQty) {
+      sizeTotalEl.style.color='#dc2626';
+      sizeTotalEl.textContent=`${plt_t('Size total','Total tallas')}: ${total} — ${plt_t('does not match Ordered Qty','no coincide con Cant. Ordenada')} (${ordQty})`;
+    } else {
+      sizeTotalEl.style.color='#059669';
+      sizeTotalEl.textContent=`${plt_t('Size total','Total tallas')}: ${total} ✓`;
+    }
+  }
+  if (catSelect) catSelect.addEventListener('change', updateApparelPanel);
+  formEl.querySelectorAll('.plt-size-input').forEach(el => el.addEventListener('input', updateSizeTotals));
+  if (qtyInput) qtyInput.addEventListener('input', updateSizeTotals);
 
   // ── Prior-receipt lookup — fires when the PO number field loses focus ──
   // Shows a banner if this PO number was received before on another pallet.
@@ -1386,11 +1439,23 @@ function plt_bindAddPoForm(formEl,palletId,dept){
     const finalOrderedQty = (priorInfo && plt_hasVal(priorInfo.canonicalOrdered))
       ? priorInfo.canonicalOrdered
       : orderedQty;
-    plt_addPo(palletId, {po, orderedQty: finalOrderedQty, boxes, category, dockNotes, hasPriorReceipts: !!priorInfo, priorReceiptCount: priorInfo?.hits?.length||0, priorTotalReceived: priorInfo?.totalReceived||0});
+
+    // Collect size breakdown if Apparel
+    const sizeBreakdown = {};
+    let hasSizes = false;
+    formEl.querySelectorAll('.plt-size-input').forEach(el => {
+      const v = Number(el.value || 0);
+      if (v > 0) { sizeBreakdown[el.dataset.size] = v; hasSizes = true; }
+    });
+
+    plt_addPo(palletId, {po, orderedQty: finalOrderedQty, boxes, category, dockNotes, hasPriorReceipts: !!priorInfo, priorReceiptCount: priorInfo?.hits?.length||0, priorTotalReceived: priorInfo?.totalReceived||0, sizeBreakdown: hasSizes ? sizeBreakdown : undefined});
 
     // Clear form for fast multi-entry
     poInput.value=''; qtyInput.value=''; if(boxInput) boxInput.value='';
     catSelect.value=''; if(notesInput) notesInput.value='';
+    formEl.querySelectorAll('.plt-size-input').forEach(el=>el.value='');
+    if(apparelPanel) apparelPanel.style.display='none';
+    if(sizeTotalEl) sizeTotalEl.textContent='';
     poInput.focus();
 
     // Re-render the PO list in place without closing the modal

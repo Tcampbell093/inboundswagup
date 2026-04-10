@@ -2651,6 +2651,67 @@ function bindMasterEvents() {
 
 
 
+// ── #10 Overstock draft persistence (survives tab switches) ─────────────
+const OVERSTOCK_DRAFT_KEY = "overstockFormDraft_v1";
+function overstockSaveDraft() {
+  const draft = {
+    date:      document.getElementById("overstockEntryDate")?.value || "",
+    po:        document.getElementById("overstockEntryPo")?.value || "",
+    poManual:  document.getElementById("overstockEntryPoManual")?.value || "",
+    qty:       document.getElementById("overstockEntryQty")?.value || "",
+    category:  document.getElementById("overstockEntryCategory")?.value || "",
+    status:    document.getElementById("overstockEntryStatus")?.value || "",
+    action:    document.getElementById("overstockEntryAction")?.value || "",
+    location:  document.getElementById("overstockEntryLocation")?.value || "",
+    associate: document.getElementById("overstockEntryAssociate")?.value || "",
+    sizes:     [...document.querySelectorAll(".overstock-size-input")].reduce((acc, el) => {
+      if (el.value) acc[el.dataset.size] = el.value; return acc;
+    }, {}),
+    isManual:  document.getElementById("overstockEntryPoManual")?.style.display !== "none",
+  };
+  try { sessionStorage.setItem(OVERSTOCK_DRAFT_KEY, JSON.stringify(draft)); } catch(e) {}
+}
+function overstockRestoreDraft() {
+  try {
+    const raw = sessionStorage.getItem(OVERSTOCK_DRAFT_KEY);
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    const dateEl = document.getElementById("overstockEntryDate");
+    if (dateEl && d.date) dateEl.value = d.date;
+    if (d.isManual) {
+      const toggleBtn = document.getElementById("overstockPoModeToggle");
+      if (toggleBtn) toggleBtn.click();
+      const manualEl = document.getElementById("overstockEntryPoManual");
+      if (manualEl && d.poManual) manualEl.value = d.poManual;
+    } else {
+      const poEl = document.getElementById("overstockEntryPo");
+      if (poEl && d.po) { poEl.value = d.po; updateOverstockPoQuantity(); }
+    }
+    if (d.qty) {
+      const qtyEl = document.getElementById("overstockEntryQty");
+      if (qtyEl) qtyEl.value = d.qty;
+    }
+    const catEl = document.getElementById("overstockEntryCategory");
+    if (catEl && d.category) catEl.value = d.category;
+    const statusEl = document.getElementById("overstockEntryStatus");
+    if (statusEl && d.status) statusEl.value = d.status;
+    const actionEl = document.getElementById("overstockEntryAction");
+    if (actionEl && d.action) actionEl.value = d.action;
+    const locEl = document.getElementById("overstockEntryLocation");
+    if (locEl && d.location) locEl.value = d.location;
+    const assocEl = document.getElementById("overstockEntryAssociate");
+    if (assocEl && d.associate) assocEl.value = d.associate;
+    if (d.sizes && Object.keys(d.sizes).length) {
+      document.querySelectorAll(".overstock-size-input").forEach(el => {
+        if (d.sizes[el.dataset.size]) el.value = d.sizes[el.dataset.size];
+      });
+    }
+  } catch(e) {}
+}
+function overstockClearDraft() {
+  try { sessionStorage.removeItem(OVERSTOCK_DRAFT_KEY); } catch(e) {}
+}
+
 function bindOverstockEvents() {
   const dateFilter = document.getElementById("overstockDateFilter");
   const associateFilter = document.getElementById("overstockAssociateFilter");
@@ -2681,9 +2742,54 @@ function bindOverstockEvents() {
   });
 
   const overstockPoSelect = document.getElementById("overstockEntryPo");
-  if (overstockPoSelect) overstockPoSelect.addEventListener("change", updateOverstockPoQuantity);
 
-  // ── Manual PO entry toggle (Overstock) ──────────────────────────────
+  // ── #3 Auto-qty warning + delta signal ──────────────────────────────────
+  let _overstockAutoQty = null; // the value that was auto-filled
+  const qtyInputEl      = document.getElementById("overstockEntryQty");
+  const qtyAutoLbl      = document.getElementById("overstockQtyAutoLabel");
+  const qtyAdjBadge     = document.getElementById("overstockQtyAdjustedBadge");
+  const qtyAutoWarn     = document.getElementById("overstockAutoQtyWarn");
+
+  function overstockCheckQtyAdjust() {
+    if (_overstockAutoQty === null || !qtyInputEl) return;
+    const cur = Number(qtyInputEl.value || 0);
+    const auto = Number(_overstockAutoQty);
+    if (cur !== auto) {
+      const delta = cur - auto;
+      qtyAdjBadge.style.display = "";
+      qtyAdjBadge.textContent = `⚠️ Adjusted from auto (${auto}) — ${delta > 0 ? "+" : ""}${delta} from calculated`;
+      qtyAutoWarn.style.display = "";
+    } else {
+      qtyAdjBadge.style.display = "none";
+      qtyAutoWarn.style.display = "none";
+    }
+  }
+
+  if (qtyInputEl) {
+    qtyInputEl.addEventListener("focus", () => {
+      if (_overstockAutoQty !== null) {
+        qtyAutoWarn.style.display = "";
+      }
+    });
+    qtyInputEl.addEventListener("input", overstockCheckQtyAdjust);
+    qtyInputEl.addEventListener("blur", overstockCheckQtyAdjust);
+  }
+
+  function updateOverstockPoQuantityWithSignal() {
+    updateOverstockPoQuantity();
+    if (qtyInputEl && qtyInputEl.value !== "") {
+      _overstockAutoQty = qtyInputEl.value;
+      if (qtyAutoLbl) { qtyAutoLbl.style.display = ""; qtyAutoLbl.textContent = " (auto-filled from Prep)"; }
+      if (qtyAdjBadge) qtyAdjBadge.style.display = "none";
+      if (qtyAutoWarn) qtyAutoWarn.style.display = "none";
+    } else {
+      _overstockAutoQty = null;
+      if (qtyAutoLbl) qtyAutoLbl.style.display = "none";
+    }
+  }
+  if (overstockPoSelect) overstockPoSelect.addEventListener("change", updateOverstockPoQuantityWithSignal);
+
+  // ── Manual PO entry toggle (Overstock) ──────────────────────────────────
   let overstockPoManualMode = false;
   const overstockToggleBtn   = document.getElementById("overstockPoModeToggle");
   const overstockModeLabel   = document.getElementById("overstockPoModeLabel");
@@ -2700,6 +2806,12 @@ function bindOverstockEvents() {
       overstockManualWarn.style.display  = "";
       overstockModeLabel.textContent     = "Manual entry";
       overstockToggleBtn.textContent     = "Back to list";
+      // Manual mode: qty is free to edit — clear auto signal
+      _overstockAutoQty = null;
+      if (qtyAutoLbl) { qtyAutoLbl.style.display = ""; qtyAutoLbl.textContent = " (enter manually)"; }
+      if (qtyAdjBadge) qtyAdjBadge.style.display = "none";
+      if (qtyAutoWarn) qtyAutoWarn.style.display = "none";
+      if (qtyInputEl) qtyInputEl.readOnly = false;
       overstockManualInput.focus();
     } else {
       overstockPoSelect.style.display    = "";
@@ -2710,17 +2822,191 @@ function bindOverstockEvents() {
       overstockModeLabel.textContent     = "From Prep list";
       overstockToggleBtn.textContent     = "Enter manually";
       overstockManualInput.value         = "";
+      updateOverstockPoQuantityWithSignal();
     }
   }
   if (overstockToggleBtn) overstockToggleBtn.addEventListener("click", () => setOverstockPoMode(!overstockPoManualMode));
-  // ────────────────────────────────────────────────────────────────────
+
+  // ── #7 Apparel size breakdown toggle ────────────────────────────────────
+  const catSelectEl       = document.getElementById("overstockEntryCategory");
+  const apparelSizesPanel = document.getElementById("overstockApparelSizes");
+  const sizeTotalHint     = document.getElementById("overstockSizeTotalHint");
+
+  function updateApparelSizes() {
+    if (!catSelectEl || !apparelSizesPanel) return;
+    const isApparel = (catSelectEl.value || "").toLowerCase() === "apparel";
+    apparelSizesPanel.style.display = isApparel ? "" : "none";
+  }
+  function updateSizeTotals() {
+    if (!sizeTotalHint) return;
+    const total = [...document.querySelectorAll(".overstock-size-input")]
+      .reduce((s, el) => s + (Number(el.value) || 0), 0);
+    const orderedQty = Number(qtyInputEl?.value || 0);
+    if (total === 0) { sizeTotalHint.textContent = ""; return; }
+    if (orderedQty && total !== orderedQty) {
+      sizeTotalHint.style.color = "#dc2626";
+      sizeTotalHint.textContent = `Size total: ${total} — does not match Overstock Qty (${orderedQty})`;
+    } else {
+      sizeTotalHint.style.color = "#059669";
+      sizeTotalHint.textContent = `Size total: ${total} ✓`;
+    }
+  }
+  if (catSelectEl) catSelectEl.addEventListener("change", updateApparelSizes);
+  document.querySelectorAll(".overstock-size-input").forEach(el => {
+    el.addEventListener("input", updateSizeTotals);
+  });
+
+  // ── #5 Location Audit ───────────────────────────────────────────────────
+  const auditLocationSel = document.getElementById("overstockAuditLocation");
+  const auditStartBtn    = document.getElementById("overstockAuditStartBtn");
+  const auditClearBtn    = document.getElementById("overstockAuditClearBtn");
+  const auditResults     = document.getElementById("overstockAuditResults");
+
+  function populateAuditLocations() {
+    if (!auditLocationSel) return;
+    const prev = auditLocationSel.value;
+    auditLocationSel.innerHTML = "";
+    appendOption(auditLocationSel, "", "— Select location —");
+    overstockLocations.forEach(loc => appendOption(auditLocationSel, loc, loc));
+    if (prev) auditLocationSel.value = prev;
+  }
+  populateAuditLocations();
+
+  function runLocationAudit() {
+    if (!auditResults || !auditLocationSel) return;
+    const loc = auditLocationSel.value;
+    if (!loc) { showToast("Please select a location to audit.", "error"); return; }
+    if (auditClearBtn) auditClearBtn.style.display = "";
+    const entries = (state.data.overstockEntries || []).filter(r => r.location === loc);
+    if (!entries.length) {
+      auditResults.innerHTML = `<div style="padding:12px;color:#6b7280;font-size:13px;">No overstock entries logged for location <strong>${escapeHtml(loc)}</strong>.</div>`;
+      return;
+    }
+    const rows = entries.map(r => {
+      const sizesHtml = r.sizeBreakdown && Object.keys(r.sizeBreakdown).length
+        ? `<div style="font-size:10px;color:#6b7280;">Sizes: ${Object.entries(r.sizeBreakdown).map(([s,qty])=>`${s}:${qty}`).join(' · ')}</div>` : '';
+      return `<tr>
+        <td><strong>${escapeHtml(r.po)}</strong></td>
+        <td>${escapeHtml(r.category || '—')}</td>
+        <td>${Number(r.quantity||0)}${sizesHtml}</td>
+        <td>${translateStatus(r.status)}</td>
+        <td>${translateStatus(r.action)}</td>
+        <td>${escapeHtml(r.associate)}</td>
+        <td><span class="day-pill ${getDayClass(formatDayCode(r.date))}">${formatDate(r.date)}</span></td>
+        <td>
+          <select class="audit-status-update" data-row-id="${r.id}" style="font-size:11px;">
+            ${overstockStatusOptions.map(opt => `<option value="${opt}" ${opt===r.status?'selected':''}>${translateStatus(opt)}</option>`).join('')}
+          </select>
+        </td>
+        <td>
+          <select class="audit-action-update" data-row-id="${r.id}" style="font-size:11px;">
+            ${overstockActionOptions.map(opt => `<option value="${opt}" ${opt===r.action?'selected':''}>${translateStatus(opt)}</option>`).join('')}
+          </select>
+        </td>
+      </tr>`;
+    }).join('');
+    auditResults.innerHTML = `
+      <div style="margin-bottom:8px;font-size:12px;color:#6b7280;">${entries.length} PO(s) at <strong>${escapeHtml(loc)}</strong>. Update status/action inline — changes save immediately.</div>
+      <div class="table-wrap"><table class="sheet-table">
+        <thead><tr><th>PO#</th><th>Category</th><th>Qty</th><th>Status</th><th>Action</th><th>Associate</th><th>Date</th><th>Update Status</th><th>Update Action</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+
+    auditResults.querySelectorAll(".audit-status-update, .audit-action-update").forEach(sel => {
+      sel.addEventListener("change", () => {
+        const rowId = sel.dataset.rowId;
+        const row = state.data.overstockEntries.find(r => r.id === rowId);
+        if (!row) return;
+        if (sel.classList.contains("audit-status-update")) row.status = sel.value;
+        if (sel.classList.contains("audit-action-update")) row.action = sel.value;
+        row.updatedAt = Date.now();
+        persistData();
+        renderOverstockPage();
+        // Re-run audit after re-render so inline selects reflect fresh state
+        if (auditLocationSel.value) runLocationAudit();
+      });
+    });
+  }
+
+  if (auditStartBtn) auditStartBtn.addEventListener("click", runLocationAudit);
+  if (auditClearBtn) auditClearBtn.addEventListener("click", () => {
+    if (auditResults) auditResults.innerHTML = "";
+    auditClearBtn.style.display = "none";
+  });
+
+  // ── #4 PO Lookup ────────────────────────────────────────────────────────
+  const poLookupInput   = document.getElementById("overstockPoLookupInput");
+  const poLookupBtn     = document.getElementById("overstockPoLookupBtn");
+  const poLookupClear   = document.getElementById("overstockPoLookupClear");
+  const poLookupResults = document.getElementById("overstockPoLookupResults");
+
+  function runPoLookup() {
+    const q = (poLookupInput?.value || "").trim().toLowerCase();
+    if (!poLookupResults) return;
+    if (!q) { poLookupResults.innerHTML = ""; if (poLookupClear) poLookupClear.style.display = "none"; return; }
+    if (poLookupClear) poLookupClear.style.display = "";
+    const hits = (state.data.overstockEntries || []).filter(r => String(r.po || "").toLowerCase().includes(q));
+    if (!hits.length) {
+      poLookupResults.innerHTML = `<div style="padding:10px;color:#6b7280;font-size:13px;">No overstock entries found for "<strong>${escapeHtml(q)}</strong>".</div>`;
+      return;
+    }
+    const rows = hits.map(r => {
+      const sizesHtml = r.sizeBreakdown && Object.keys(r.sizeBreakdown).length
+        ? `<div style="font-size:10px;color:#6b7280;">Sizes: ${Object.entries(r.sizeBreakdown).map(([s,qty])=>`${s}:${qty}`).join(' · ')}</div>` : '';
+      const adjBadge = r.autoQtyAdjusted
+        ? `<span style="font-size:10px;color:#92400e;background:#fef3c7;padding:1px 5px;border-radius:4px;">⚠️ adj. from ${r.originalAutoQty}</span>` : '';
+      const srcBadge = r.sourceType === 'manual'
+        ? `<span style="font-size:10px;background:#e0e7ff;color:#3730a3;padding:1px 5px;border-radius:4px;">Manual</span>`
+        : `<span style="font-size:10px;background:#d1fae5;color:#065f46;padding:1px 5px;border-radius:4px;">Auto</span>`;
+      return `<tr>
+        <td><span class="day-pill ${getDayClass(formatDayCode(r.date))}">${formatDate(r.date)}</span></td>
+        <td><strong>${escapeHtml(r.po)}</strong> ${srcBadge} ${adjBadge}</td>
+        <td>${escapeHtml(r.category || '—')}</td>
+        <td>${Number(r.quantity||0)}${sizesHtml}</td>
+        <td>${translateStatus(r.status)}</td>
+        <td>${translateStatus(r.action)}</td>
+        <td>${escapeHtml(r.location)}</td>
+        <td>${escapeHtml(r.associate)}</td>
+        <td>${r.updatedAt && r.updatedAt !== r.createdAt ? `<span style="font-size:10px;color:#6b7280;">edited ${new Date(r.updatedAt).toLocaleDateString()}</span>` : '—'}</td>
+      </tr>`;
+    }).join('');
+    poLookupResults.innerHTML = `
+      <div style="margin-bottom:6px;font-size:12px;color:#6b7280;">${hits.length} entr${hits.length===1?'y':'ies'} found for "<strong>${escapeHtml(q)}</strong>"</div>
+      <div class="table-wrap"><table class="sheet-table">
+        <thead><tr><th>Date</th><th>PO#</th><th>Category</th><th>Qty</th><th>Status</th><th>Action</th><th>Location</th><th>Associate</th><th>Last Edit</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+  }
+
+  if (poLookupBtn)   poLookupBtn.addEventListener("click", runPoLookup);
+  if (poLookupInput) poLookupInput.addEventListener("keydown", e => { if (e.key === "Enter") runPoLookup(); });
+  if (poLookupClear) poLookupClear.addEventListener("click", () => {
+    if (poLookupInput) poLookupInput.value = "";
+    if (poLookupResults) poLookupResults.innerHTML = "";
+    poLookupClear.style.display = "none";
+  });
+
+  // ── #5 Audit function (see below, wired in renderOverstockPage) ──────────
+
+  // ── #9 Default date to today ─────────────────────────────────────────────
+  const entryDateEl = document.getElementById("overstockEntryDate");
+  if (entryDateEl && !entryDateEl.value) {
+    entryDateEl.value = new Date().toISOString().slice(0, 10);
+  }
+
+  // ── #10 Save draft on any form input (survives tab switch) ───────────────
+  const formEl = document.getElementById("overstockEntryForm");
+  if (formEl) {
+    formEl.addEventListener("input", overstockSaveDraft);
+    formEl.addEventListener("change", overstockSaveDraft);
+  }
 
   document.getElementById("overstockEntryForm").addEventListener("submit", (event) => {
     event.preventDefault();
     if (!Array.isArray(state.data.overstockEntries)) state.data.overstockEntries = [];
     if (!state.data.overstockFilters) state.data.overstockFilters = { date: "", associate: "All", location: "All", status: "All", search: "" };
 
-    // Read PO from whichever mode is active
+    // #8 PO required — reject if blank
     const selectedPo = overstockPoManualMode
       ? (overstockManualInput ? overstockManualInput.value.trim() : "")
       : document.getElementById("overstockEntryPo").value;
@@ -2729,19 +3015,39 @@ function bindOverstockEvents() {
       if (overstockPoManualMode && overstockManualInput) {
         overstockManualInput.style.borderColor = "#dc2626";
         overstockManualInput.focus();
+      } else if (!overstockPoManualMode && overstockPoSelect) {
+        overstockPoSelect.style.borderColor = "#dc2626";
+        overstockPoSelect.focus();
+        showToast("Please select a PO before adding the row.", "error");
       }
       return;
     }
     if (overstockPoManualMode && overstockManualInput) overstockManualInput.style.borderColor = "";
+    if (!overstockPoManualMode && overstockPoSelect) overstockPoSelect.style.borderColor = "";
+
+    // Collect size breakdown if Apparel
+    const sizeBreakdown = {};
+    let hasSizes = false;
+    document.querySelectorAll(".overstock-size-input").forEach(el => {
+      if (el.value && Number(el.value) > 0) {
+        sizeBreakdown[el.dataset.size] = Number(el.value);
+        hasSizes = true;
+      }
+    });
 
     const qtyValue = Number(document.getElementById("overstockEntryQty").value || 0) || 0;
+    const autoQtyWasAdjusted = _overstockAutoQty !== null && qtyValue !== Number(_overstockAutoQty);
     state.data.overstockEntries.unshift({
       id: makeId(),
       date: document.getElementById("overstockEntryDate").value,
       po: selectedPo,
       manualPo: overstockPoManualMode || undefined,
       sourceType: overstockPoManualMode ? 'manual' : 'auto',
+      autoQtyAdjusted: autoQtyWasAdjusted || undefined,
+      originalAutoQty: autoQtyWasAdjusted ? Number(_overstockAutoQty) : undefined,
       quantity: qtyValue,
+      category: document.getElementById("overstockEntryCategory")?.value || "",
+      sizeBreakdown: hasSizes ? sizeBreakdown : undefined,
       status: document.getElementById("overstockEntryStatus").value,
       action: document.getElementById("overstockEntryAction").value,
       location: document.getElementById("overstockEntryLocation").value,
@@ -2750,9 +3056,16 @@ function bindOverstockEvents() {
       updatedAt: Date.now(),
     });
     persistData();
+    overstockClearDraft();
     document.getElementById("overstockEntryForm").reset();
     if (overstockPoManualMode) overstockManualInput.value = "";
-    updateOverstockPoQuantity();
+    _overstockAutoQty = null;
+    if (qtyAdjBadge) qtyAdjBadge.style.display = "none";
+    if (qtyAutoWarn) qtyAutoWarn.style.display = "none";
+    if (apparelSizesPanel) apparelSizesPanel.style.display = "none";
+    // Re-default date to today after reset
+    if (entryDateEl) entryDateEl.value = new Date().toISOString().slice(0, 10);
+    updateOverstockPoQuantityWithSignal();
     renderOverstockPage();
   });
 }
@@ -2797,6 +3110,17 @@ function populateOverstockFormSelects() {
     }
   }
 
+  // ── #6 Category dropdown (manual entries) ────────────────────────────
+  const categorySelect = document.getElementById("overstockEntryCategory");
+  if (categorySelect) {
+    const prev = categorySelect.value;
+    categorySelect.innerHTML = "";
+    appendOption(categorySelect, "", "— Category (optional) —");
+    (Array.isArray(state.masters.categories) ? state.masters.categories : ['Drinkware','Apparel','Electronics','Kitchen','Toys','Misc'])
+      .forEach(c => appendOption(categorySelect, c, c));
+    if (prev) categorySelect.value = prev;
+  }
+
   const poSelect = document.getElementById("overstockEntryPo");
   if (poSelect) {
     const prepMap = getPrepPoReferenceMap();
@@ -2804,7 +3128,7 @@ function populateOverstockFormSelects() {
     poSelect.innerHTML = "";
     appendOption(poSelect, "", "Select PO from Prep");
     [...prepMap.values()]
-      .filter(item => item.quantity > 0)
+      .filter(item => item.quantity > 0 && item.extrasSource === 'prep')
       .sort((a,b)=>a.po.localeCompare(b.po))
       .forEach(item => {
         const overLabel = `+${item.quantity} overstock`;
@@ -2888,8 +3212,10 @@ function renderOverstockPage() {
     pallets.filter(p => p.status === 'prep' || p.status === 'done').forEach(pallet => {
       (pallet.pos || []).forEach(po => {
         const ref = getPoPrepVarianceRef(po);
+        // Only show as overstock if Prep actually counted AND prep count > ordered qty
+        // (not just "receiving > ordered" — Prep is the verification step)
         const over = ref.extras;
-        if (over > 0) palletOverstockPOs.push({
+        if (over > 0 && ref.extrasSource === 'prep') palletOverstockPOs.push({
           po: po.po,
           overstock: over,
           ordered: ref.ordered || 0,
@@ -2945,6 +3271,13 @@ function renderOverstockPage() {
   populateOverstockFormSelects();
   populateOverstockFilterSelects();
 
+  // #9 default date to today if blank, #10 restore any in-progress draft
+  const entryDateEl2 = document.getElementById("overstockEntryDate");
+  if (entryDateEl2 && !entryDateEl2.value) {
+    entryDateEl2.value = new Date().toISOString().slice(0, 10);
+  }
+  overstockRestoreDraft();
+
   const entries = getFilteredOverstockEntries();
   document.getElementById("overstockStatRows").textContent = entries.length;
   document.getElementById("overstockStatDonation").textContent = entries.filter(r => r.status === "Donation").length;
@@ -2954,7 +3287,7 @@ function renderOverstockPage() {
   const tbody = document.getElementById("overstockTableBody");
   tbody.innerHTML = "";
   if (!entries.length) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty-state-cell">${t("noRows")}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state-cell">${t("noRows")}</td></tr>`;
     return;
   }
 
@@ -2966,10 +3299,17 @@ function renderOverstockPage() {
     const batchBtn = batchCount >= 1
       ? `<button class="tiny-btn history-row" type="button">${t("viewTimeline")}</button>`
       : `<span class="lock-note">—</span>`;
+    const sizesHtml = row.sizeBreakdown && Object.keys(row.sizeBreakdown).length
+      ? `<div style="font-size:10px;color:#6b7280;margin-top:2px;">${Object.entries(row.sizeBreakdown).map(([s,q])=>`${s}:${q}`).join(' · ')}</div>`
+      : '';
+    const adjBadge = row.autoQtyAdjusted
+      ? `<div style="font-size:10px;color:#92400e;background:#fef3c7;padding:1px 5px;border-radius:4px;margin-top:2px;display:inline-block;">⚠️ adj. from ${row.originalAutoQty}</div>`
+      : '';
     tr.innerHTML = `
       <td><span class="day-pill ${getDayClass(formatDayCode(row.date))}">${formatDate(row.date)}</span></td>
       <td>${escapeHtml(row.po)} ${isAutoRow ? '<span class="lock-note" style="margin-left:6px;">Auto</span>' : ''}</td>
-      <td>${Number(row.quantity || 0) || 0}</td>
+      <td>${escapeHtml(row.category || '—')}</td>
+      <td>${Number(row.quantity || 0) || 0}${sizesHtml}${adjBadge}</td>
       <td>${translateStatus(row.status)}</td>
       <td>${translateStatus(row.action)}</td>
       <td>${escapeHtml(row.location)}</td>
@@ -3098,10 +3438,12 @@ function formatDayCode(dateValue) {
 }
 
 function bindRoleTabs() {
+  const TAB_KEY = "wf_activeTab";
   roleTabs.addEventListener("click", (event) => {
     const button = event.target.closest(".role-tab");
     if (!button) return;
     state.currentPage = button.dataset.page;
+    try { sessionStorage.setItem(TAB_KEY, state.currentPage); } catch(e) {}
 
     document.querySelectorAll(".role-tab").forEach((tab) => {
       tab.classList.toggle("active", tab.dataset.page === state.currentPage);
@@ -3120,6 +3462,15 @@ function bindRoleTabs() {
     renderStats();
     renderCurrentDeptUphBadge();
   });
+
+  // Restore saved tab on page load
+  try {
+    const saved = sessionStorage.getItem(TAB_KEY);
+    if (saved) {
+      const btn = roleTabs.querySelector(`.role-tab[data-page="${saved}"]`);
+      if (btn) btn.click();
+    }
+  } catch(e) {}
 }
 
 
