@@ -51,20 +51,20 @@ exports.handler = async function handler(event) {
   try {
     await ensureSchema();
 
-    // GET  /flight-tracker-comments?latest=1  — returns single most recent comment (for alert polling)
-    if (event.httpMethod === 'GET' && params.latest === '1') {
-      const result = await pool.query(
-        `SELECT id, pb_id, pb_name, so, account, author_name, category, body, created_at
-           FROM flight_tracker_comments
-           ORDER BY id DESC
-           LIMIT 1;`
-      );
-      return json(200, { comment: result.rows[0] || null });
-    }
-
-    // GET  /flight-tracker-comments?pb_id=xxx  OR  ?so=xxx
+    // GET  /flight-tracker-comments?latest=1  OR  ?pb_id=xxx  OR  ?so=xxx
     if (event.httpMethod === 'GET') {
       const params = event.queryStringParameters || {};
+
+      // ?latest=1 — single most recent comment (used by alert poller)
+      if (params.latest === '1') {
+        const result = await pool.query(
+          `SELECT id, pb_id, pb_name, so, account, author_name, category, body, created_at
+             FROM flight_tracker_comments
+             ORDER BY id DESC
+             LIMIT 1;`
+        );
+        return json(200, { comment: result.rows[0] || null });
+      }
       const pbId = (params.pb_id || '').trim();
       const so   = (params.so   || '').trim();
 
