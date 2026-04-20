@@ -1516,36 +1516,6 @@
             </div>
           </div>
 
-          <div>
-            <div class="card assembly-card-side">
-              <div class="upcoming-schedule-header" id="upcomingScheduleToggle" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-                <div>
-                  <div class="eyebrow">7-Day Lookahead</div>
-                  <h3 style="margin:6px 0 0;font-size:22px;font-weight:900">Upcoming scheduled work</h3>
-                </div>
-                <span class="upcoming-toggle-icon" id="upcomingToggleIcon" style="font-size:20px;color:var(--muted);user-select:none;">▼</span>
-              </div>
-              <div id="upcomingScheduleBody" style="margin-top:14px;">
-                <div class="table-wrap">
-                  <table>
-                    <thead><tr><th>Day</th><th>PBs</th><th>Units</th><th>Done</th><th>Completion</th></tr></thead>
-                    <tbody id="assemblyWeekViewBody"></tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-
-            <div class="card assembly-card-side" style="margin-top:20px">
-              <div class="eyebrow">Build Notes</div>
-              <h3 style="margin:6px 0 14px;font-size:22px;font-weight:900">Planned build path</h3>
-              <div class="assembly-note-list">
-                <div class="assembly-note-item"><h4>Phase 1</h4><p>Command view focused on today’s output and capacity.</p></div>
-                <div class="assembly-note-item"><h4>Phase 2</h4><p>Compact board for the day, with detail columns shown only when needed.</p></div>
-                <div class="assembly-note-item"><h4>Phase 3</h4><p>Breakdown metrics, stage tracking, and rescheduling tools behind toggles instead of always on-screen.</p></div>
-                <div class="assembly-note-item"><h4>Phase 4+</h4><p>Report imports, dollar matching, and later hyperlink support where the source data allows it.</p></div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </section>
@@ -2296,6 +2266,48 @@
 </div>
 
 <!-- New comment alert banner -->
+<!-- Internal comment modal (Assembly & Queue) -->
+<div id="internalCommentModal" class="cm-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="icmTitle">
+  <div class="cm-dialog">
+    <div class="cm-header">
+      <div>
+        <div class="eyebrow" style="text-transform:uppercase;letter-spacing:.16em;font-size:11px;font-weight:800;color:#6d879d;margin-bottom:6px;">Order Communication</div>
+        <h2 class="cm-title" id="icmTitle">Comments</h2>
+        <p class="cm-subtitle" id="icmSubtitle"></p>
+      </div>
+      <button class="cm-close" id="icmClose" type="button" aria-label="Close">&#x2715;</button>
+    </div>
+    <div class="cm-thread" id="icmThread">
+      <p class="cm-loading">Loading comments…</p>
+    </div>
+    <div class="cm-compose">
+      <div class="cm-compose-row">
+        <label class="cm-field">
+          <span>Your name</span>
+          <input id="icmAuthor" type="text" maxlength="80" placeholder="e.g. Jane Smith" autocomplete="name" />
+        </label>
+        <label class="cm-field cm-field-cat">
+          <span>Type</span>
+          <select id="icmCategory">
+            <option value="general">General note</option>
+            <option value="priority">Priority request</option>
+            <option value="instructions">Special instructions</option>
+          </select>
+        </label>
+      </div>
+      <label class="cm-field">
+        <span>Message</span>
+        <textarea id="icmBody" rows="3" maxlength="2000" placeholder="Share a request or note for the assembly team…"></textarea>
+      </label>
+      <div class="cm-compose-footer">
+        <span class="cm-char-count" id="icmCharCount">0 / 2000</span>
+        <button class="cm-submit" id="icmSubmit" type="button">Send</button>
+      </div>
+      <p class="cm-error" id="icmError" hidden></p>
+    </div>
+  </div>
+</div>
+
 <div id="commentAlertBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#1a56db;color:#fff;padding:12px 20px;display:none;align-items:center;gap:14px;font-size:14px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.18);">
   <span style="font-size:20px;">💬</span>
   <span id="commentAlertText">New comment on a scheduled order</span>
@@ -2316,6 +2328,107 @@
     open = !open;
     body.style.display = open ? '' : 'none';
     icon.textContent = open ? '▼' : '▶';
+  });
+})();
+
+// ── Internal Comment Modal (Assembly & Queue) ──────────────────────────────
+(function(){
+  const COMMENTS_API = '/.netlify/functions/flight-tracker-comments';
+  const CATEGORY_LABELS = { priority:'🔴 Priority Request', instructions:'📋 Special Instructions', general:'💬 General Note' };
+  const modal    = document.getElementById('internalCommentModal');
+  const thread   = document.getElementById('icmThread');
+  const titleEl  = document.getElementById('icmTitle');
+  const subtitle = document.getElementById('icmSubtitle');
+  const closeBtn = document.getElementById('icmClose');
+  const author   = document.getElementById('icmAuthor');
+  const category = document.getElementById('icmCategory');
+  const body     = document.getElementById('icmBody');
+  const charCount= document.getElementById('icmCharCount');
+  const submitBtn= document.getElementById('icmSubmit');
+  const errorEl  = document.getElementById('icmError');
+  if(!modal) return;
+
+  let icmState = { pbId:'', pbName:'', so:'', account:'' };
+
+  function escHtml(v){ return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function fmtTime(iso){ const d=new Date(iso); return isNaN(d)?'':d.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
+
+  function renderThread(comments){
+    if(!comments.length){ thread.innerHTML='<p class="cm-empty">No comments yet.</p>'; return; }
+    thread.innerHTML = comments.map(c=>`
+      <div class="cm-comment cm-cat-${escHtml(c.category)}">
+        <div class="cm-comment-meta">
+          <span class="cm-cat-badge">${escHtml(CATEGORY_LABELS[c.category]||c.category)}</span>
+          <span class="cm-comment-author">${escHtml(c.author_name||'Stakeholder')}</span>
+          <span class="cm-comment-time">${escHtml(fmtTime(c.created_at))}</span>
+        </div>
+        <p class="cm-comment-body">${escHtml(c.body)}</p>
+      </div>`).join('');
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  async function loadComments(){
+    thread.innerHTML='<p class="cm-loading">Loading comments…</p>';
+    try{
+      const key = icmState.pbId ? `pb_id=${encodeURIComponent(icmState.pbId)}` : `so=${encodeURIComponent(icmState.so)}`;
+      const res = await fetch(`${COMMENTS_API}?${key}`,{headers:{Accept:'application/json'}});
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error||'Load failed');
+      renderThread(data.comments||[]);
+    }catch(err){ thread.innerHTML=`<p class="cm-empty cm-err-text">Could not load comments: ${escHtml(err.message)}</p>`; }
+  }
+
+  window.openInternalCommentModal = function(pbId, pbName, so, account){
+    icmState = { pbId:pbId||'', pbName:pbName||'', so:so||'', account:account||'' };
+    titleEl.textContent  = pbName || so || 'Order';
+    subtitle.textContent = [so?`SO: ${so}`:'', account?`Account: ${account}`:''].filter(Boolean).join(' · ');
+    errorEl.hidden = true;
+    modal.hidden   = false;
+    document.body.style.overflow = 'hidden';
+    loadComments();
+  };
+
+  function closeModal(){ modal.hidden=true; document.body.style.overflow=''; }
+
+  closeBtn.addEventListener('click', closeModal);
+  modal.addEventListener('click', e=>{ if(e.target===modal) closeModal(); });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape'&&!modal.hidden) closeModal(); });
+  body.addEventListener('input', ()=>{ charCount.textContent=`${body.value.length} / 2000`; });
+
+  submitBtn.addEventListener('click', async function(){
+    const msg = body.value.trim();
+    const who = author.value.trim()||'Lead';
+    errorEl.hidden = true;
+    if(!msg){ errorEl.textContent='Please write a message.'; errorEl.hidden=false; return; }
+    submitBtn.disabled=true; submitBtn.textContent='Sending…';
+    try{
+      const res = await fetch(COMMENTS_API,{
+        method:'POST', headers:{'Content-Type':'application/json',Accept:'application/json'},
+        body: JSON.stringify({ pb_id:icmState.pbId, pb_name:icmState.pbName, so:icmState.so, account:icmState.account, author_name:who, category:category.value, body:msg })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error||'Submit failed');
+      body.value=''; charCount.textContent='0 / 2000';
+      await loadComments();
+      if(typeof window.renderAssemblyCommentBadges==='function') window.renderAssemblyCommentBadges();
+      if(typeof window.renderQueueCommentBadges==='function') window.renderQueueCommentBadges();
+    }catch(err){ errorEl.textContent=err.message||'Failed to send.'; errorEl.hidden=false; }
+    finally{ submitBtn.disabled=false; submitBtn.textContent='Send'; }
+  });
+
+  // Delegated click — catches any comment badge (.cb-has, .cb-none) in Assembly board and Queue
+  document.addEventListener('click', function(e){
+    const badge = e.target.closest('.cb-badge');
+    if(!badge || badge.classList.contains('cb-loading')) return;
+    const cell = badge.closest('.cb-cell');
+    if(!cell) return;
+    const row = cell.closest('tr');
+    if(!row) return;
+    const cbKey   = row.dataset.cbkey || cell.dataset.cbkey || '';
+    const pbName  = row.dataset.pbname || '';
+    const so      = cbKey.toUpperCase().startsWith('SORD') ? cbKey : '';
+    const actualPbId = cbKey.toUpperCase().startsWith('SORD') ? '' : cbKey;
+    window.openInternalCommentModal(actualPbId, pbName, so, '');
   });
 })();
 

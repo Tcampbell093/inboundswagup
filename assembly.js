@@ -473,8 +473,8 @@ async function renderAssemblyCommentBadges() {
       span.title = `${count} comment${count === 1 ? '' : 's'}`;
     } else {
       span.className = 'cb-badge cb-none';
-      span.textContent = '—';
-      span.title = 'No comments';
+      span.textContent = '💬 Add';
+      span.title = 'Click to add a comment';
     }
   });
 }
