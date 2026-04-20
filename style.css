@@ -3836,3 +3836,37 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 .productivity-import-match-actions .btn {
   white-space: nowrap;
 }
+
+/* ── Comment badge chips (Assembly board & Scheduled queue) ─────────────── */
+.cb-cell { white-space: nowrap; }
+.cb-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.cb-loading {
+  background: #f0f4f8;
+  color: var(--muted, #6d879d);
+  border: 1px solid #d9e8f4;
+  letter-spacing: .04em;
+}
+.cb-none {
+  background: transparent;
+  color: var(--muted, #6d879d);
+  border: none;
+}
+.cb-has {
+  background: #eaf4ff;
+  color: #1a56db;
+  border: 1px solid #cfe3fb;
+  cursor: default;
+}
+
+/* ── Upcoming schedule collapsible ──────────────────────────────────────── */
+.upcoming-schedule-header:hover .upcoming-toggle-icon {
+  color: var(--blue, #2c6be0);
+}

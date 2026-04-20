@@ -538,7 +538,7 @@ function renderQueue(){
   }
   const scheduledSorted=getSortedQueueRows(scheduledQueueRows.filter(matchesQueueSearch)).sort((a,b)=>String(b.scheduledAt||'').localeCompare(String(a.scheduledAt||''))||String(a.scheduledFor||'').localeCompare(String(b.scheduledFor||'')));
   const scheduledVisible=applyQueueLimit(scheduledSorted,scheduledQueueLimit?.value||'10');
-  scheduledQueueTableBody.innerHTML=scheduledSorted.length?scheduledVisible.map(row=>{const link=buildSalesforcePbLink(row.pbId,row.pdfUrl);return `<tr><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.so||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${Number(row.units||0).toLocaleString()}</td><td>${escapeHtml(row.scheduledFor||'—')}</td><td>${escapeHtml(row.scheduledAt||'—')}</td><td>${renderQueueFlags(row)}</td><td>${escapeHtml(row.scheduleNote||'—')}</td><td>${link?`<a class="queue-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td><div class="row-actions"><button class="btn secondary" onclick="viewScheduledInAssembly('${escapeJs(String(row.id))}')">View in Assembly</button><button class="btn warn" onclick="openIssueHoldModal('${escapeJs(String(row.id))}','scheduled')">Hold</button><button class="btn secondary" onclick="unscheduleQueueRow('${escapeJs(String(row.id))}')">Unschedule</button><button class="btn danger" onclick="deleteScheduledQueueRow('${escapeJs(String(row.id))}')">Delete</button></div></td></tr>`}).join(''):'<tr><td colspan="10" class="empty">Nothing has been scheduled from the queue yet.</td></tr>';
+  scheduledQueueTableBody.innerHTML=scheduledSorted.length?scheduledVisible.map(row=>{const link=buildSalesforcePbLink(row.pbId,row.pdfUrl);return `<tr data-cbkey="${escapeHtml(row.pbId||row.so||'')}"><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.so||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${Number(row.units||0).toLocaleString()}</td><td>${escapeHtml(row.scheduledFor||'—')}</td><td>${escapeHtml(row.scheduledAt||'—')}</td><td>${renderQueueFlags(row)}</td><td>${escapeHtml(row.scheduleNote||'—')}</td><td>${link?`<a class="queue-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td class="cb-cell" data-cbkey="${escapeHtml(row.pbId||row.so||'')}"><span class="cb-badge cb-loading">…</span></td><td><div class="row-actions"><button class="btn secondary" onclick="viewScheduledInAssembly('${escapeJs(String(row.id))}')">View in Assembly</button><button class="btn warn" onclick="openIssueHoldModal('${escapeJs(String(row.id))}','scheduled')">Hold</button><button class="btn secondary" onclick="unscheduleQueueRow('${escapeJs(String(row.id))}')">Unschedule</button><button class="btn danger" onclick="deleteScheduledQueueRow('${escapeJs(String(row.id))}')">Delete</button></div></td></tr>`}).join(''):'<tr><td colspan="10" class="empty">Nothing has been scheduled from the queue yet.</td></tr>';
   renderIssueHoldSection();
 }
 function setQueueImportStatus(message,isError=false){
@@ -927,3 +927,45 @@ window.clearRevenueReferenceSilent = function(){
   renderRevenueReferenceStats();
   setRevenueImportStatus('Revenue reference cleared.');
 };
+
+// ── Comment badge loader for Scheduled Queue ─────────────────────────────
+async function renderQueueCommentBadges() {
+  const cells = document.querySelectorAll('#scheduledQueueTableBody .cb-cell');
+  if (!cells.length) return;
+  const keys = [...new Set([...cells].map(c => c.dataset.cbkey).filter(Boolean))];
+  await Promise.all(keys.map(async key => {
+    let count = 0;
+    try {
+      const isPbId = !key.startsWith('SORD') && key.length > 6;
+      const param  = isPbId ? `pb_id=${encodeURIComponent(key)}` : `so=${encodeURIComponent(key)}`;
+      const res    = await fetch(`/.netlify/functions/flight-tracker-comments?${param}`, { headers: { Accept: 'application/json' } });
+      if (res.ok) { const d = await res.json(); count = (d.comments || []).length; }
+    } catch { /* silent */ }
+    document.querySelectorAll(`#scheduledQueueTableBody .cb-cell[data-cbkey="${CSS.escape(key)}"]`).forEach(cell => {
+      const span = cell.querySelector('.cb-badge');
+      if (!span) return;
+      span.classList.remove('cb-loading');
+      if (count > 0) {
+        span.className = 'cb-badge cb-has';
+        span.textContent = `💬 ${count}`;
+        span.title = `${count} comment${count === 1 ? '' : 's'}`;
+      } else {
+        span.className = 'cb-badge cb-none';
+        span.textContent = '—';
+        span.title = 'No comments';
+      }
+    });
+  }));
+}
+window.renderQueueCommentBadges = renderQueueCommentBadges;
+
+// Hook into renderQueue so badges always load after render
+const _origRenderQueue = window.renderQueue || (typeof renderQueue !== 'undefined' ? renderQueue : null);
+if (_origRenderQueue && !window._queueCommentHooked) {
+  window._queueCommentHooked = true;
+  const _patchedRenderQueue = function(...args) {
+    _origRenderQueue.apply(this, args);
+    renderQueueCommentBadges();
+  };
+  window.renderQueue = _patchedRenderQueue;
+}

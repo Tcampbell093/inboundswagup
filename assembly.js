@@ -153,12 +153,12 @@ function renderAssembly(){
 
   if(assemblyBoardHead){
     assemblyBoardHead.innerHTML = assemblyShowDetails
-      ? '<tr><th>Work Type</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Packs</th><th>Total Products</th><th>Units / Packs</th><th>Status</th><th>IHD</th><th>Open</th><th>Subtotal</th><th>Current Stage</th><th>Reschedule Note</th><th>Action</th></tr>'
-      : '<tr><th>Pack Builder</th><th>Account</th><th>Units / Packs</th><th>IHD</th><th>Revenue</th><th>Stage</th><th>Status</th><th>Action</th></tr>';
+      ? '<tr><th>Work Type</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Packs</th><th>Total Products</th><th>Units / Packs</th><th>Status</th><th>IHD</th><th>Open</th><th>Subtotal</th><th>Current Stage</th><th>Reschedule Note</th><th>Comments</th><th>Action</th></tr>'
+      : '<tr><th>Pack Builder</th><th>Account</th><th>Units / Packs</th><th>IHD</th><th>Revenue</th><th>Stage</th><th>Status</th><th>Comments</th><th>Action</th></tr>';
   }
 
   if(!filteredRows.length){
-    assemblyBoardBody.innerHTML=`<tr><td colspan="${assemblyShowDetails?14:8}" class="empty">No assembly board rows for the selected day.</td></tr>`;
+    assemblyBoardBody.innerHTML=`<tr><td colspan="${assemblyShowDetails?15:9}" class="empty">No assembly board rows for the selected day.</td></tr>`;
     return;
   }
 
@@ -194,10 +194,12 @@ function renderAssembly(){
     }
 
     if(!assemblyShowDetails){
-      return `<tr class="${rowClass}"><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${formatUnitsQtyHtml(units,getAssemblyQty(row))}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td><select onchange="setAssemblyStage(${row.id},this.value)"><option value="aa" ${row.stage==='aa'?'selected':''}>A.A.</option><option value="print" ${row.stage==='print'?'selected':''}>Print</option><option value="picked" ${row.stage==='picked'?'selected':''}>Picked</option><option value="line" ${row.stage==='line'?'selected':''}>Line</option><option value="dpmo" ${row.stage==='dpmo'?'selected':''}>DPMO</option><option value="done" ${row.stage==='done'?'selected':''}>Done</option></select></td><td>${escapeHtml(row.status||'—')}${priorityBadge}</td><td><div class="row-actions">${openLink?`<a class="btn secondary" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:''}<button class="btn secondary" onclick="editAssemblyBoardRow(${row.id})">Edit</button>${isPackBuilderWorkType(row.workType)?`<button class="btn warn" onclick="openIssueHoldModal(${row.id},'assembly')">Hold</button>`:''}<button class="btn warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button></div></td></tr>`;
+      const cbKey = row.pbId||row.so||'';
+      return `<tr class="${rowClass}"><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${formatUnitsQtyHtml(units,getAssemblyQty(row))}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td><select onchange="setAssemblyStage(${row.id},this.value)"><option value="aa" ${row.stage==='aa'?'selected':''}>A.A.</option><option value="print" ${row.stage==='print'?'selected':''}>Print</option><option value="picked" ${row.stage==='picked'?'selected':''}>Picked</option><option value="line" ${row.stage==='line'?'selected':''}>Line</option><option value="dpmo" ${row.stage==='dpmo'?'selected':''}>DPMO</option><option value="done" ${row.stage==='done'?'selected':''}>Done</option></select></td><td>${escapeHtml(row.status||'—')}${priorityBadge}</td><td class="cb-cell" data-cbkey="${cbKey}"><span class="cb-badge cb-loading">…</span></td><td><div class="row-actions">${openLink?`<a class="btn secondary" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:''}<button class="btn secondary" onclick="editAssemblyBoardRow(${row.id})">Edit</button>${isPackBuilderWorkType(row.workType)?`<button class="btn warn" onclick="openIssueHoldModal(${row.id},'assembly')">Hold</button>`:''}<button class="btn warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button></div></td></tr>`;
     }
 
-    return `<tr class="${rowClass}"><td>${escapeHtml(getAssemblyWorkTypeLabel(row.workType)+(row.isPartial?' • Partial':''))}</td><td>${escapeHtml(row.pb)}</td><td>${escapeHtml(row.so)}</td><td>${escapeHtml(row.account)}</td><td>${formatAssemblyQty(row)}</td><td>${row.products}</td><td>${formatUnitsQtyHtml(units,getAssemblyQty(row))}</td><td>${escapeHtml(row.status||'—')}${priorityBadge}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${openLink?`<a class="queue-link" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td>$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td><select onchange="setAssemblyStage(${row.id},this.value)"><option value="aa" ${row.stage==='aa'?'selected':''}>A.A.</option><option value="print" ${row.stage==='print'?'selected':''}>Print</option><option value="picked" ${row.stage==='picked'?'selected':''}>Picked</option><option value="line" ${row.stage==='line'?'selected':''}>Line</option><option value="dpmo" ${row.stage==='dpmo'?'selected':''}>DPMO</option><option value="done" ${row.stage==='done'?'selected':''}>Done</option></select></td><td>${escapeHtml(row.rescheduleNote||'—')}</td><td><div class="row-actions"><button class="btn secondary" onclick="editAssemblyBoardRow(${row.id})">Edit</button>${isPackBuilderWorkType(row.workType)?`<button class="btn warn" onclick="openIssueHoldModal(${row.id},'assembly')">Hold</button>`:''}<button class="btn secondary" onclick="rescheduleAssemblyBoardRow(${row.id})">Reschedule</button><button class="btn warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button></div></td></tr>`;
+    const cbKey2 = row.pbId||row.so||'';
+    return `<tr class="${rowClass}"><td>${escapeHtml(getAssemblyWorkTypeLabel(row.workType)+(row.isPartial?' • Partial':''))}</td><td>${escapeHtml(row.pb)}</td><td>${escapeHtml(row.so)}</td><td>${escapeHtml(row.account)}</td><td>${formatAssemblyQty(row)}</td><td>${row.products}</td><td>${formatUnitsQtyHtml(units,getAssemblyQty(row))}</td><td>${escapeHtml(row.status||'—')}${priorityBadge}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${openLink?`<a class="queue-link" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td>$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td><select onchange="setAssemblyStage(${row.id},this.value)"><option value="aa" ${row.stage==='aa'?'selected':''}>A.A.</option><option value="print" ${row.stage==='print'?'selected':''}>Print</option><option value="picked" ${row.stage==='picked'?'selected':''}>Picked</option><option value="line" ${row.stage==='line'?'selected':''}>Line</option><option value="dpmo" ${row.stage==='dpmo'?'selected':''}>DPMO</option><option value="done" ${row.stage==='done'?'selected':''}>Done</option></select></td><td>${escapeHtml(row.rescheduleNote||'—')}</td><td class="cb-cell" data-cbkey="${cbKey2}"><span class="cb-badge cb-loading">…</span></td><td><div class="row-actions"><button class="btn secondary" onclick="editAssemblyBoardRow(${row.id})">Edit</button>${isPackBuilderWorkType(row.workType)?`<button class="btn warn" onclick="openIssueHoldModal(${row.id},'assembly')">Hold</button>`:''}<button class="btn secondary" onclick="rescheduleAssemblyBoardRow(${row.id})">Reschedule</button><button class="btn warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button></div></td></tr>`;
   }).join('');
 }
 function clearAssemblyBoardForm(){
@@ -434,3 +436,58 @@ saveAssemblyEditBtn?.addEventListener('click',()=>saveAssemblyBoardRow());
 assemblyEditModalBackdrop?.addEventListener('click',(e)=>{if(e.target===assemblyEditModalBackdrop)closeAssemblyEditModal()});
 
 window.openIssueHoldModal=window.openIssueHoldModal||openIssueHoldModal;
+
+// ── Comment badge loader for Assembly board ───────────────────────────────
+const _assemblyCommentCache = new Map(); // cbKey → count
+
+async function _fetchCommentCount(cbKey) {
+  if (!cbKey) return 0;
+  try {
+    const isPbId = !cbKey.startsWith('SORD') && cbKey.length > 6;
+    const param  = isPbId ? `pb_id=${encodeURIComponent(cbKey)}` : `so=${encodeURIComponent(cbKey)}`;
+    const res    = await fetch(`/.netlify/functions/flight-tracker-comments?${param}`, { headers: { Accept: 'application/json' } });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    return (data.comments || []).length;
+  } catch { return 0; }
+}
+
+async function renderAssemblyCommentBadges() {
+  const cells = document.querySelectorAll('#assemblyBoardBody .cb-cell');
+  if (!cells.length) return;
+  // Collect unique keys
+  const keys = [...new Set([...cells].map(c => c.dataset.cbkey).filter(Boolean))];
+  await Promise.all(keys.map(async key => {
+    const count = await _fetchCommentCount(key);
+    _assemblyCommentCache.set(key, count);
+  }));
+  cells.forEach(cell => {
+    const key   = cell.dataset.cbkey || '';
+    const count = _assemblyCommentCache.get(key) ?? 0;
+    const span  = cell.querySelector('.cb-badge');
+    if (!span) return;
+    span.classList.remove('cb-loading');
+    if (count > 0) {
+      span.className = 'cb-badge cb-has';
+      span.textContent = `💬 ${count}`;
+      span.title = `${count} comment${count === 1 ? '' : 's'}`;
+    } else {
+      span.className = 'cb-badge cb-none';
+      span.textContent = '—';
+      span.title = 'No comments';
+    }
+  });
+}
+
+// Run after every renderAssembly call
+const _origRenderAssembly = typeof renderAssembly === 'function' ? renderAssembly : null;
+if (_origRenderAssembly) {
+  const _wrappedRenderAssembly = function(...args) {
+    _origRenderAssembly.apply(this, args);
+    renderAssemblyCommentBadges();
+  };
+  // Only wrap if renderAssembly is directly accessible as a var in this scope
+  // (it is — defined above in this file). Reassign the module-level reference.
+  window.renderAssemblyCommentBadges = renderAssemblyCommentBadges;
+}
+window.renderAssemblyCommentBadges = renderAssemblyCommentBadges;

@@ -1518,13 +1518,20 @@
 
           <div>
             <div class="card assembly-card-side">
-              <div class="eyebrow">7-Day Lookahead</div>
-              <h3 style="margin:6px 0 14px;font-size:22px;font-weight:900">Upcoming scheduled work</h3>
-              <div class="table-wrap">
-                <table>
-                  <thead><tr><th>Day</th><th>PBs</th><th>Units</th><th>Done</th><th>Completion</th></tr></thead>
-                  <tbody id="assemblyWeekViewBody"></tbody>
-                </table>
+              <div class="upcoming-schedule-header" id="upcomingScheduleToggle" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                  <div class="eyebrow">7-Day Lookahead</div>
+                  <h3 style="margin:6px 0 0;font-size:22px;font-weight:900">Upcoming scheduled work</h3>
+                </div>
+                <span class="upcoming-toggle-icon" id="upcomingToggleIcon" style="font-size:20px;color:var(--muted);user-select:none;">▼</span>
+              </div>
+              <div id="upcomingScheduleBody" style="margin-top:14px;">
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>Day</th><th>PBs</th><th>Units</th><th>Done</th><th>Completion</th></tr></thead>
+                    <tbody id="assemblyWeekViewBody"></tbody>
+                  </table>
+                </div>
               </div>
             </div>
 
@@ -1747,7 +1754,7 @@
         </div>
         <div class="table-wrap queue-table-wrap">
           <table>
-            <thead><tr><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>Scheduled For</th><th>Scheduled At</th><th>Flags</th><th>Schedule Note</th></tr></thead>
+            <thead><tr><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>Scheduled For</th><th>Scheduled At</th><th>Flags</th><th>Schedule Note</th><th>Comments</th><th>Action</th></tr></thead>
             <tbody id="scheduledQueueTableBody"></tbody>
           </table>
         </div>
@@ -2288,7 +2295,78 @@
   <button class="hc-tip-jump btn secondary" type="button" style="display:none;margin-top:10px;font-size:12px;padding:6px 12px">Go to page →</button>
 </div>
 
+<!-- New comment alert banner -->
+<div id="commentAlertBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#1a56db;color:#fff;padding:12px 20px;display:none;align-items:center;gap:14px;font-size:14px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.18);">
+  <span style="font-size:20px;">💬</span>
+  <span id="commentAlertText">New comment on a scheduled order</span>
+  <button onclick="document.getElementById('commentAlertBanner').style.display='none'" style="margin-left:auto;background:rgba(255,255,255,.2);border:none;color:#fff;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:800;">Dismiss</button>
+</div>
+
 <script src="help.js"></script>
 <script src="cycle-count.js"></script>
+<script>
+// ── Upcoming Schedule collapsible ─────────────────────────────────────────
+(function(){
+  const toggle = document.getElementById('upcomingScheduleToggle');
+  const body   = document.getElementById('upcomingScheduleBody');
+  const icon   = document.getElementById('upcomingToggleIcon');
+  if(!toggle || !body) return;
+  let open = true;
+  toggle.addEventListener('click', function(){
+    open = !open;
+    body.style.display = open ? '' : 'none';
+    icon.textContent = open ? '▼' : '▶';
+  });
+})();
+
+// ── New-comment global alert polling ─────────────────────────────────────
+(function(){
+  const COMMENTS_API = '/.netlify/functions/flight-tracker-comments';
+  const POLL_MS = 20000; // 20 s
+  const SEEN_KEY = 'hc_last_seen_comment_id';
+
+  let lastSeenId = parseInt(localStorage.getItem(SEEN_KEY) || '0', 10);
+  let bannerDismissed = false;
+
+  const banner    = document.getElementById('commentAlertBanner');
+  const alertText = document.getElementById('commentAlertText');
+
+  async function pollLatest(){
+    try{
+      const res  = await fetch(COMMENTS_API + '?latest=1', { headers:{ Accept:'application/json' } });
+      if(!res.ok) return;
+      const data = await res.json();
+      const latest = data.comment;
+      if(!latest) return;
+      const latestId = Number(latest.id || 0);
+      if(latestId > lastSeenId){
+        lastSeenId = latestId;
+        localStorage.setItem(SEEN_KEY, String(latestId));
+        // Show banner
+        const label = latest.pb_name || latest.so || 'an order';
+        const author = latest.author_name || 'A stakeholder';
+        alertText.textContent = `${author} left a comment on ${label}`;
+        banner.style.display = 'flex';
+        bannerDismissed = false;
+        // Re-render comment badges if queue/assembly are visible
+        if(typeof renderQueueCommentBadges === 'function') renderQueueCommentBadges();
+        if(typeof renderAssemblyCommentBadges === 'function') renderAssemblyCommentBadges();
+      }
+    }catch(e){ /* silent */ }
+  }
+
+  // Seed last-seen on first load (don't alert on old comments)
+  fetch(COMMENTS_API + '?latest=1', { headers:{ Accept:'application/json' } })
+    .then(r=>r.ok?r.json():null)
+    .then(data=>{
+      if(data?.comment) {
+        const id = Number(data.comment.id || 0);
+        if(id > lastSeenId){ lastSeenId = id; localStorage.setItem(SEEN_KEY, String(id)); }
+      }
+      setInterval(pollLatest, POLL_MS);
+    })
+    .catch(()=>{ setInterval(pollLatest, POLL_MS); });
+})();
+</script>
 </body>
 </html>

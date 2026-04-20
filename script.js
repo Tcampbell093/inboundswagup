@@ -2070,3 +2070,38 @@ window.addEventListener('storage',(event)=>{
   renderRevenueReferenceStats();
   renderHome();
 });
+
+// ── Auto-trigger comment badges after every render ────────────────────────
+(function() {
+  function hookBadges() {
+    const origAssembly = window.renderAssembly;
+    if (origAssembly && !origAssembly._cbHooked) {
+      window.renderAssembly = function(...args) {
+        origAssembly.apply(this, args);
+        if (typeof window.renderAssemblyCommentBadges === 'function') {
+          window.renderAssemblyCommentBadges();
+        }
+      };
+      window.renderAssembly._cbHooked = true;
+    }
+
+    const origQueue = window.renderQueue;
+    if (origQueue && !origQueue._cbHooked) {
+      window.renderQueue = function(...args) {
+        origQueue.apply(this, args);
+        if (typeof window.renderQueueCommentBadges === 'function') {
+          window.renderQueueCommentBadges();
+        }
+      };
+      window.renderQueue._cbHooked = true;
+    }
+  }
+  // Run after all scripts have loaded
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', hookBadges);
+  } else {
+    hookBadges();
+  }
+  // Also run on a short delay as a safety net for late-loading scripts
+  setTimeout(hookBadges, 500);
+})();
