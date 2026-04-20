@@ -722,7 +722,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:14px 12p
 
 .sidebar-toggle{display:none}
 .assembly-command-stats{grid-template-columns:repeat(6,minmax(0,1fr));margin-bottom:18px}
-.assembly-compact-shell{padding:16px 16px 18px;border-radius:16px;box-shadow:0 6px 14px rgba(29,73,111,0.08)}
+.assembly-compact-shell{padding:16px 16px 18px;border-radius:16px;box-shadow:0 6px 14px rgba(29,73,111,0.08);width:100%;box-sizing:border-box;overflow:visible}
 .assembly-card-tight{padding:14px;border-radius:14px;box-shadow:0 4px 10px rgba(29,73,111,0.06)}
 .assembly-card-tight .stat-value{font-size:28px}
 .assembly-grid-tight{grid-template-columns:1fr;gap:16px}
@@ -741,6 +741,9 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:14px 12p
 .assembly-edit-subgrid{grid-template-columns:1fr 1fr 1fr auto;align-items:end;gap:10px;margin-bottom:14px}
 .assembly-card-side{padding:16px;border-radius:16px;box-shadow:0 6px 14px rgba(29,73,111,0.08)}
 .assembly-board-section .table-wrap th,.assembly-board-section .table-wrap td{padding:10px 10px}
+.assembly-board-section .table-wrap{overflow-x:auto;width:100%}
+.assembly-board-section .table-wrap table{width:100%;min-width:0;table-layout:auto}
+.assembly-board-section .table-wrap th{white-space:normal}
 .assembly-board-section .row-actions{display:flex;gap:8px;flex-wrap:wrap}
 .assembly-board-section select,.assembly-board-section input{width:100%;border:1px solid #c9d7e6;border-radius:12px;padding:8px 10px;background:#fff;color:var(--text)}
 .assembly-board-section .btn{padding:10px 12px;border-radius:12px}
