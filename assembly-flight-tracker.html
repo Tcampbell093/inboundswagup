@@ -77,6 +77,50 @@
     </main>
   </div>
 
+  <!-- Comment modal -->
+  <div id="commentModal" class="cm-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="cmTitle">
+    <div class="cm-dialog">
+      <div class="cm-header">
+        <div>
+          <div class="eyebrow" id="cmEyebrow">Order communication</div>
+          <h2 class="cm-title" id="cmTitle">Comments</h2>
+          <p class="cm-subtitle" id="cmSubtitle"></p>
+        </div>
+        <button class="cm-close" id="cmClose" type="button" aria-label="Close">&#x2715;</button>
+      </div>
+
+      <div class="cm-thread" id="cmThread">
+        <p class="cm-loading">Loading comments…</p>
+      </div>
+
+      <div class="cm-compose">
+        <div class="cm-compose-row">
+          <label class="cm-field">
+            <span>Your name</span>
+            <input id="cmAuthor" type="text" maxlength="80" placeholder="e.g. Jane Smith" autocomplete="name" />
+          </label>
+          <label class="cm-field cm-field-cat">
+            <span>Type</span>
+            <select id="cmCategory">
+              <option value="general">General note</option>
+              <option value="priority">Priority request</option>
+              <option value="instructions">Special instructions</option>
+            </select>
+          </label>
+        </div>
+        <label class="cm-field">
+          <span>Message</span>
+          <textarea id="cmBody" rows="3" maxlength="2000" placeholder="Share a request or note for the assembly team…"></textarea>
+        </label>
+        <div class="cm-compose-footer">
+          <span class="cm-char-count" id="cmCharCount">0 / 2000</span>
+          <button class="cm-submit" id="cmSubmit" type="button">Send</button>
+        </div>
+        <p class="cm-error" id="cmError" hidden></p>
+      </div>
+    </div>
+  </div>
+
   <script src="assembly-flight-tracker.js"></script>
 </body>
 </html>

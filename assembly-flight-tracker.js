@@ -1,6 +1,15 @@
 
 const assemblyApiBase='/.netlify/functions/assembly';
+const commentsApiBase='/.netlify/functions/flight-tracker-comments';
 const REFRESH_MS = 60000;
+
+// ── Comment modal state ────────────────────────────────────────────────────
+const cmState = {
+  pbId: '',
+  pbName: '',
+  so: '',
+  account: '',
+};
 
 const state = {
   scheduled: [],
@@ -255,6 +264,7 @@ function renderBoard(rows){
                 <th>IHD</th>
                 <th>Revenue</th>
                 <th>Reschedule Note</th>
+                <th>Comments</th>
               </tr>
             </thead>
             <tbody>
@@ -275,6 +285,17 @@ function renderBoard(rows){
                     <td>${escapeHtml(row.ihd||'—')}</td>
                     <td>${formatCurrencyWhole(row.revenue||0)}</td>
                     <td class="note-cell">${escapeHtml(row.scheduleNote || row.rescheduleNote || '—')}</td>
+                    <td class="comment-cell">
+                      <button
+                        class="comment-btn"
+                        type="button"
+                        data-pbid="${escapeHtml(row.pbId||'')}"
+                        data-pbname="${escapeHtml(row.pb||'')}"
+                        data-so="${escapeHtml(row.so||'')}"
+                        data-account="${escapeHtml(row.account||'')}">
+                        💬 Comment
+                      </button>
+                    </td>
                   </tr>
                 `;
               }).join('')}
@@ -312,6 +333,140 @@ async function loadBoard(){
     els.refreshBtn.textContent = 'Refresh now';
   }
 }
+
+// ── Comment modal ──────────────────────────────────────────────────────────
+const cmEls = {
+  overlay:    document.getElementById('commentModal'),
+  title:      document.getElementById('cmTitle'),
+  eyebrow:    document.getElementById('cmEyebrow'),
+  subtitle:   document.getElementById('cmSubtitle'),
+  thread:     document.getElementById('cmThread'),
+  close:      document.getElementById('cmClose'),
+  author:     document.getElementById('cmAuthor'),
+  category:   document.getElementById('cmCategory'),
+  body:       document.getElementById('cmBody'),
+  charCount:  document.getElementById('cmCharCount'),
+  submit:     document.getElementById('cmSubmit'),
+  error:      document.getElementById('cmError'),
+};
+
+const CATEGORY_LABELS = {
+  priority:     '🔴 Priority Request',
+  instructions: '📋 Special Instructions',
+  general:      '💬 General Note',
+};
+
+function cmFormatTime(iso){
+  const d = new Date(iso);
+  if(Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+}
+
+function cmRenderThread(comments){
+  if(!comments.length){
+    cmEls.thread.innerHTML = `<p class="cm-empty">No comments yet. Be the first to leave a note for the assembly team.</p>`;
+    return;
+  }
+  cmEls.thread.innerHTML = comments.map(c=>`
+    <div class="cm-comment cm-cat-${escapeHtml(c.category)}">
+      <div class="cm-comment-meta">
+        <span class="cm-cat-badge">${escapeHtml(CATEGORY_LABELS[c.category]||c.category)}</span>
+        <span class="cm-comment-author">${escapeHtml(c.author_name||'Stakeholder')}</span>
+        <span class="cm-comment-time">${escapeHtml(cmFormatTime(c.created_at))}</span>
+      </div>
+      <p class="cm-comment-body">${escapeHtml(c.body)}</p>
+    </div>
+  `).join('');
+  cmEls.thread.scrollTop = cmEls.thread.scrollHeight;
+}
+
+async function cmLoadComments(){
+  cmEls.thread.innerHTML = `<p class="cm-loading">Loading comments…</p>`;
+  try{
+    const key = cmState.pbId ? `pb_id=${encodeURIComponent(cmState.pbId)}` : `so=${encodeURIComponent(cmState.so)}`;
+    const res = await fetch(`${commentsApiBase}?${key}`,{headers:{Accept:'application/json'}});
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error||`Load failed (${res.status})`);
+    cmRenderThread(data.comments||[]);
+  }catch(err){
+    cmEls.thread.innerHTML = `<p class="cm-empty cm-err-text">Could not load comments: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function cmOpenModal(pbId, pbName, so, account){
+  cmState.pbId    = pbId;
+  cmState.pbName  = pbName;
+  cmState.so      = so;
+  cmState.account = account;
+  cmEls.title.textContent   = pbName || so || 'Order';
+  cmEls.subtitle.textContent = [so ? `SO: ${so}` : '', account ? `Account: ${account}` : ''].filter(Boolean).join(' · ');
+  cmEls.error.hidden  = true;
+  cmEls.overlay.hidden = false;
+  document.body.style.overflow = 'hidden';
+  cmLoadComments();
+}
+
+function cmCloseModal(){
+  cmEls.overlay.hidden = true;
+  document.body.style.overflow = '';
+}
+
+async function cmSubmitComment(){
+  const body = cmEls.body.value.trim();
+  const author = cmEls.author.value.trim() || 'Stakeholder';
+  const category = cmEls.category.value;
+  cmEls.error.hidden = true;
+  if(!body){ cmEls.error.textContent='Please write a message before sending.'; cmEls.error.hidden=false; return; }
+  cmEls.submit.disabled = true;
+  cmEls.submit.textContent = 'Sending…';
+  try{
+    const res = await fetch(commentsApiBase,{
+      method:'POST',
+      headers:{'Content-Type':'application/json',Accept:'application/json'},
+      body: JSON.stringify({
+        pb_id:      cmState.pbId,
+        pb_name:    cmState.pbName,
+        so:         cmState.so,
+        account:    cmState.account,
+        author_name: author,
+        category,
+        body,
+      }),
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error||`Submit failed (${res.status})`);
+    cmEls.body.value = '';
+    cmEls.charCount.textContent = '0 / 2000';
+    await cmLoadComments();
+  }catch(err){
+    cmEls.error.textContent = err.message||'Failed to send comment.';
+    cmEls.error.hidden = false;
+  }finally{
+    cmEls.submit.disabled = false;
+    cmEls.submit.textContent = 'Send';
+  }
+}
+
+// Wire modal events
+cmEls.close.addEventListener('click', cmCloseModal);
+cmEls.overlay.addEventListener('click', e=>{ if(e.target===cmEls.overlay) cmCloseModal(); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !cmEls.overlay.hidden) cmCloseModal(); });
+cmEls.submit.addEventListener('click', cmSubmitComment);
+cmEls.body.addEventListener('input', ()=>{
+  cmEls.charCount.textContent = `${cmEls.body.value.length} / 2000`;
+});
+
+// Delegate comment button clicks from the board (rows re-render on load)
+document.getElementById('boardContent').addEventListener('click', e=>{
+  const btn = e.target.closest('.comment-btn');
+  if(!btn) return;
+  cmOpenModal(
+    btn.dataset.pbid||'',
+    btn.dataset.pbname||'',
+    btn.dataset.so||'',
+    btn.dataset.account||''
+  );
+});
 
 ['input','change'].forEach(evt=>{
   els.searchInput.addEventListener(evt, applyFilters);
