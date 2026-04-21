@@ -217,3 +217,19 @@
 .assembly-board-section select,.assembly-board-section input{width:100%;border:1px solid #c9d7e6;border-radius:12px;padding:8px 10px;background:#fff;color:var(--text)}
 .assembly-board-section .btn{padding:10px 12px;border-radius:12px}
 .assembly-grid-tight{grid-template-columns:1fr;gap:16px}
+
+/* ── Pass 1: keep 2-col command stats between 480-700px ── */
+@media (min-width: 481px) and (max-width: 700px) {
+  .assembly-command-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+/* Below 480px go single col */
+@media (max-width: 480px) {
+  .assembly-command-stats {
+    grid-template-columns: 1fr !important;
+  }
+  .assembly-revenue-stat {
+    grid-column: auto;
+  }
+}
