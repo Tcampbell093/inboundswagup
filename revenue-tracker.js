@@ -7,6 +7,8 @@
   const STORAGE_KEY = 'ops_hub_rev_tracker_v1';
   const GOAL_KEY = 'ops_hub_rev_goal_v1';
 
+  const REV_SYNC_API = '/.netlify/functions/rev-tracker-sync';
+
   // ── Persistence ──────────────────────────────────────────────────────────
   function loadState() {
     try {
@@ -20,7 +22,18 @@
   }
 
   function saveState(state) {
+    // 1. Local cache immediately
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+    // 2. Push to backend (fire-and-forget, no blocking)
+    fetch(REV_SYNC_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rows:       state.rows || [],
+        importedAt: state.importedAt || null,
+        fileName:   state.fileName  || null,
+      }),
+    }).catch(() => {}); // silent — local copy is the fallback
   }
 
   function loadGoal() {
@@ -31,7 +44,33 @@
   }
 
   function saveGoal(amount) {
-    try { localStorage.setItem(GOAL_KEY, JSON.stringify({ amount: Number(amount) || 0 })); } catch {}
+    const n = Number(amount) || 0;
+    // 1. Local cache immediately
+    try { localStorage.setItem(GOAL_KEY, JSON.stringify({ amount: n })); } catch {}
+    // 2. Push to backend
+    fetch(REV_SYNC_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ goal: n }),
+    }).catch(() => {});
+  }
+
+  // Load state from backend and overwrite local cache if newer
+  async function loadFromBackend() {
+    try {
+      const res  = await fetch(REV_SYNC_API, { headers: { Accept: 'application/json' } });
+      if (!res.ok) return;
+      const data = await res.json();
+      // Only apply if backend has actual data
+      if (Array.isArray(data.rows) && data.rows.length > 0) {
+        const state = { rows: data.rows, importedAt: data.importedAt || null, fileName: data.fileName || null };
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+      }
+      if (data.goal > 0) {
+        try { localStorage.setItem(GOAL_KEY, JSON.stringify({ amount: Number(data.goal) })); } catch {}
+      }
+      render();
+    } catch { /* stay on local copy */ }
   }
 
   // ── Import parsing ────────────────────────────────────────────────────────
@@ -319,7 +358,8 @@
   window.renderRevTracker = render;
 
   window.clearRevTrackerSilent = function () {
-    saveState(emptyState());
+    const empty = emptyState();
+    saveState(empty);  // clears local + pushes empty to backend
     render();
   };
 
@@ -330,14 +370,15 @@
     }
   });
 
-  // Init
+  // Init — render immediately from local cache, then hydrate from backend
   document.addEventListener('DOMContentLoaded', () => {
     bind();
-    render();
+    render();           // instant — uses localStorage
+    loadFromBackend();  // async — overwrites with backend data if newer, re-renders
   });
 
   // Also render on subsequent calls (e.g. after assembly stage change)
   if (document.readyState !== 'loading') {
-    setTimeout(() => { bind(); render(); }, 0);
+    setTimeout(() => { bind(); render(); loadFromBackend(); }, 0);
   }
 })();
