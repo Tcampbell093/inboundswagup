@@ -496,3 +496,80 @@ if (_origRenderAssembly) {
   window.renderAssemblyCommentBadges = renderAssemblyCommentBadges;
 }
 window.renderAssemblyCommentBadges = renderAssemblyCommentBadges;
+
+// ── Phase 2: Mobile card view for Assembly board ──────────────────────────
+function buildAssemblyCard(row, priority) {
+  const units    = getAssemblyUnits(row);
+  const revenue  = Number(getEffectiveSubtotalForRow(row)||0);
+  const ihd      = getEffectiveIhdForRow(row)||'—';
+  const stage    = row.stage||'aa';
+  const stageMap = {aa:'A.A.',print:'Print',picked:'Picked',line:'Line',dpmo:'DPMO',done:'Done'};
+  const stageLabel = stageMap[stage]||stage;
+  const stageCls   = stage==='done'?'stage-done':(stage==='aa'||stage==='print'||stage==='picked'?'stage-risk':'stage-mid');
+  const cbKey    = row.pbId||row.so||'';
+  const openLink = getAssemblyOpenLink(row);
+  const actionLabel = isPackBuilderWorkType(row.workType)?'Unschedule':'Delete';
+  const priorityBadge = priority&&priority.label ? `<span class="mini-label ${priority.cls}" style="font-size:10px;padding:2px 7px;border-radius:999px;margin-left:4px">${priority.label}</span>` : '';
+  const revenueStr = new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(revenue);
+
+  return `<div class="mob-card${priority&&priority.cls?' mob-card-'+priority.risk:''}">
+    <div class="mob-card-header">
+      <div class="mob-card-title">
+        <span class="mob-card-pb">${escapeHtml(row.pb||'—')}</span>${priorityBadge}
+        <span class="mob-card-account">${escapeHtml(row.account||'—')}</span>
+      </div>
+      <span class="mob-stage-badge mob-stage-${stageCls}">${escapeHtml(stageLabel)}</span>
+    </div>
+    <div class="mob-card-meta">
+      <div class="mob-meta-item"><span class="mob-meta-label">Units</span><strong>${units.toLocaleString()}</strong></div>
+      <div class="mob-meta-item"><span class="mob-meta-label">Revenue</span><strong>${revenueStr}</strong></div>
+      <div class="mob-meta-item"><span class="mob-meta-label">IHD</span><strong>${escapeHtml(ihd)}</strong></div>
+      <div class="mob-meta-item"><span class="mob-meta-label">Status</span><strong>${escapeHtml(row.status||'—')}</strong></div>
+    </div>
+    <div class="mob-card-stage-row">
+      <label class="mob-meta-label" style="margin-right:8px">Stage</label>
+      <select class="mob-stage-select" onchange="setAssemblyStage(${row.id},this.value)">
+        <option value="aa" ${stage==='aa'?'selected':''}>A.A.</option>
+        <option value="print" ${stage==='print'?'selected':''}>Print</option>
+        <option value="picked" ${stage==='picked'?'selected':''}>Picked</option>
+        <option value="line" ${stage==='line'?'selected':''}>Line</option>
+        <option value="dpmo" ${stage==='dpmo'?'selected':''}>DPMO</option>
+        <option value="done" ${stage==='done'?'selected':''}>Done</option>
+      </select>
+    </div>
+    <div class="mob-card-actions">
+      ${openLink?`<a class="mob-action-btn mob-action-secondary" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:''}
+      <button class="mob-action-btn mob-action-secondary" onclick="editAssemblyBoardRow(${row.id})">Edit</button>
+      ${isPackBuilderWorkType(row.workType)?`<button class="mob-action-btn mob-action-warn" onclick="openIssueHoldModal(${row.id},'assembly')">Hold</button>`:''}
+      <button class="mob-action-btn mob-action-warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button>
+      <span class="cb-cell cb-badge cb-loading" data-cbkey="${escapeHtml(cbKey)}" style="margin-left:auto">…</span>
+    </div>
+  </div>`;
+}
+
+function renderAssemblyCards(sortedWithPriority) {
+  const container = document.getElementById('assemblyBoardCards');
+  if (!container) return;
+  if (!sortedWithPriority.length) {
+    container.innerHTML = '<p class="mob-empty">No assembly board rows for the selected day.</p>';
+    return;
+  }
+  container.innerHTML = sortedWithPriority.map(({row, priority}) => buildAssemblyCard(row, priority)).join('');
+}
+
+// Patch renderAssembly to also call renderAssemblyCards
+const _origRenderAssemblyPhase2 = renderAssembly;
+renderAssembly = function() {
+  _origRenderAssemblyPhase2.apply(this, arguments);
+  // Re-derive sorted rows for card view
+  const selectedDate = assemblyDateInput ? (assemblyDateInput.value||new Date().toISOString().slice(0,10)) : new Date().toISOString().slice(0,10);
+  const filteredRows = typeof sanitizeRows==='function'
+    ? sanitizeRows(assemblyBoardRows.filter(r=>r.date===selectedDate))
+    : assemblyBoardRows.filter(r=>r.date===selectedDate);
+  const sortedWithPriority = typeof prioritySortRows==='function'
+    ? prioritySortRows(filteredRows)
+    : filteredRows.map(row=>({row, priority:{rank:3,risk:'none',label:'',cls:''}}));
+  renderAssemblyCards(sortedWithPriority);
+  if (typeof renderAssemblyCommentBadges === 'function') renderAssemblyCommentBadges();
+};
+window.renderAssembly = renderAssembly;

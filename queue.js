@@ -969,3 +969,98 @@ if (_origRenderQueue && !window._queueCommentHooked) {
   };
   window.renderQueue = _patchedRenderQueue;
 }
+
+// ── Phase 2: Mobile card views for Queue sections ─────────────────────────
+function buildReadyQueueCard(row, source) {
+  const link = buildSalesforcePbLink(row.pbId, row.pdfUrl);
+  const id   = escapeJs(String(row.id));
+  const ihd  = escapeHtml(getEffectiveIhdForRow(row)||'—');
+  const scheduleLabel = source==='incomplete' ? 'Schedule' : 'Schedule';
+  return `<div class="mob-card">
+    <div class="mob-card-header">
+      <div class="mob-card-title">
+        <span class="mob-card-pb">${escapeHtml(row.pb||'—')}${row.priority?' ⭐':''}</span>
+        <span class="mob-card-account">${escapeHtml(row.account||'—')}</span>
+      </div>
+      <span class="mob-stage-badge mob-stage-stage-mid">${escapeHtml(row.status||'—')}</span>
+    </div>
+    <div class="mob-card-meta">
+      <div class="mob-meta-item"><span class="mob-meta-label">Units</span><strong>${Number(row.units||0).toLocaleString()}</strong></div>
+      <div class="mob-meta-item"><span class="mob-meta-label">IHD</span><strong>${ihd}</strong></div>
+      <div class="mob-meta-item"><span class="mob-meta-label">SO</span><strong>${escapeHtml(row.so||'—')}</strong></div>
+      <div class="mob-meta-item"><span class="mob-meta-label">Owner</span><strong>${escapeHtml(row.accountOwner||'—')}</strong></div>
+    </div>
+    <div class="mob-card-actions">
+      ${link?`<a class="mob-action-btn mob-action-secondary" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open</a>`:''}
+      <button class="mob-action-btn mob-action-secondary" onclick="toggleQueuePriority('${id}','${source}')">${row.priority?'Unmark':'Priority'}</button>
+      <button class="mob-action-btn mob-action-warn" onclick="openIssueHoldModal('${id}','${source}')">Hold</button>
+      <button class="mob-action-btn mob-action-primary" onclick="scheduleQueueRow('${id}','${source}')">${scheduleLabel}</button>
+    </div>
+  </div>`;
+}
+
+function buildScheduledQueueCard(row) {
+  const link = buildSalesforcePbLink(row.pbId, row.pdfUrl);
+  const id   = escapeJs(String(row.id));
+  const cbKey = escapeHtml(row.pbId||row.so||'');
+  return `<div class="mob-card" data-cbkey="${cbKey}">
+    <div class="mob-card-header">
+      <div class="mob-card-title">
+        <span class="mob-card-pb">${escapeHtml(row.pb||'—')}</span>
+        <span class="mob-card-account">${escapeHtml(row.account||'—')}</span>
+      </div>
+      <span class="mob-stage-badge mob-stage-stage-mid">${escapeHtml(row.scheduledFor||'—')}</span>
+    </div>
+    <div class="mob-card-meta">
+      <div class="mob-meta-item"><span class="mob-meta-label">Units</span><strong>${Number(row.units||0).toLocaleString()}</strong></div>
+      <div class="mob-meta-item"><span class="mob-meta-label">SO</span><strong>${escapeHtml(row.so||'—')}</strong></div>
+      <div class="mob-meta-item"><span class="mob-meta-label">Note</span><strong>${escapeHtml(row.scheduleNote||'—')}</strong></div>
+      <div class="mob-meta-item"><span class="mob-meta-label">Comments</span><span class="cb-cell cb-badge cb-loading" data-cbkey="${cbKey}">…</span></div>
+    </div>
+    <div class="mob-card-actions">
+      ${link?`<a class="mob-action-btn mob-action-secondary" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open</a>`:''}
+      <button class="mob-action-btn mob-action-secondary" onclick="viewScheduledInAssembly('${id}')">View</button>
+      <button class="mob-action-btn mob-action-warn" onclick="openIssueHoldModal('${id}','scheduled')">Hold</button>
+      <button class="mob-action-btn mob-action-secondary" onclick="unscheduleQueueRow('${id}')">Unschedule</button>
+      <button class="mob-action-btn mob-action-danger" onclick="deleteScheduledQueueRow('${id}')">Delete</button>
+    </div>
+  </div>`;
+}
+
+function renderQueueCardViews(readyRows, incompleteRows, scheduledRows) {
+  const rc = document.getElementById('readyQueueCards');
+  const ic = document.getElementById('incompleteQueueCards');
+  const sc = document.getElementById('scheduledQueueCards');
+  if (rc) rc.innerHTML = readyRows.length
+    ? readyRows.map(r=>buildReadyQueueCard(r,'ready')).join('')
+    : '<p class="mob-empty">No ready pack builders.</p>';
+  if (ic) ic.innerHTML = incompleteRows.length
+    ? incompleteRows.map(r=>buildReadyQueueCard(r,'incomplete')).join('')
+    : '<p class="mob-empty">No incomplete pack builders.</p>';
+  if (sc) sc.innerHTML = scheduledRows.length
+    ? scheduledRows.map(r=>buildScheduledQueueCard(r)).join('')
+    : '<p class="mob-empty">Nothing scheduled yet.</p>';
+}
+window.renderQueueCardViews = renderQueueCardViews;
+
+// Hook into renderQueue
+const _origRenderQueuePhase2 = window.renderQueue || (typeof renderQueue!=='undefined'?renderQueue:null);
+if (_origRenderQueuePhase2 && !window._queuePhase2Hooked) {
+  window._queuePhase2Hooked = true;
+  const _patchedQueue = function(...args) {
+    _origRenderQueuePhase2.apply(this, args);
+    // Pass current visible rows for cards
+    if (typeof availableQueueRows !== 'undefined' &&
+        typeof incompleteQueueRows !== 'undefined' &&
+        typeof scheduledQueueRows !== 'undefined') {
+      const limit = v => { try { return v; } catch(e) { return v; } };
+      renderQueueCardViews(
+        limit(availableQueueRows),
+        limit(incompleteQueueRows),
+        limit(scheduledQueueRows)
+      );
+      if (typeof renderQueueCommentBadges === 'function') renderQueueCommentBadges();
+    }
+  };
+  window.renderQueue = _patchedQueue;
+}

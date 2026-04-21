@@ -481,3 +481,76 @@ els.refreshBtn.addEventListener('click', loadBoard);
 
 loadBoard();
 setInterval(loadBoard, REFRESH_MS);
+
+// ── Phase 2: Mobile card view for Flight Tracker ──────────────────────────
+function renderBoardCards(rows) {
+  const container = document.getElementById('boardContentCards');
+  if (!container) return;
+  if (!rows.length) {
+    container.innerHTML = '<section class="empty-state"><h2>No scheduled pack builders match this view</h2><p>Try clearing a filter or refreshing.</p></section>';
+    return;
+  }
+  const groups = new Map();
+  rows.forEach(row => {
+    const key = row.scheduledFor || 'unscheduled';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  });
+  const sortedKeys = Array.from(groups.keys()).sort((a,b) => a.localeCompare(b));
+  container.innerHTML = sortedKeys.map(dateKey => {
+    const dayRows = groups.get(dateKey).slice().sort((a,b) =>
+      String(a.account||'').localeCompare(String(b.account||'')) ||
+      String(a.pb||'').localeCompare(String(b.pb||''))
+    );
+    const dayRevenue = dayRows.reduce((s,r) => s + Number(r.revenue||0), 0);
+    const dayUnits   = dayRows.reduce((s,r) => s + getUnits(r), 0);
+    return `<section class="mob-day-group">
+      <div class="mob-day-header">
+        <h3 class="mob-day-title">${escapeHtml(formatDateLabel(dateKey))}</h3>
+        <div class="mob-day-chips">
+          <span class="summary-chip">${formatNumber(dayRows.length)} PBs</span>
+          <span class="summary-chip">${formatNumber(dayUnits)} units</span>
+          <span class="summary-chip">${formatCurrencyWhole(dayRevenue)}</span>
+        </div>
+      </div>
+      ${dayRows.map(row => {
+        const stageLabel = getStageLabel(row.stage);
+        const stageCls   = row.stage==='done' ? 'stage-done' : classifyStage(row.stage)==='' ? 'stage-mid' : classifyStage(row.stage);
+        const pbContent  = row.rowLink
+          ? `<a class="row-link" href="${escapeHtml(row.rowLink)}" target="_blank" rel="noreferrer">${escapeHtml(row.pb||'—')}</a>`
+          : escapeHtml(row.pb||'—');
+        const ihdStr = row.ihd || '—';
+        return `<div class="mob-card mob-ft-card">
+          <div class="mob-card-header">
+            <div class="mob-card-title">
+              <span class="mob-card-pb">${pbContent}</span>
+              <span class="mob-card-account">${escapeHtml(row.account||'—')}</span>
+            </div>
+            <span class="mob-stage-badge ${stageCls}">${escapeHtml(stageLabel)}</span>
+          </div>
+          <div class="mob-card-meta">
+            <div class="mob-meta-item"><span class="mob-meta-label">SO</span><strong>${escapeHtml(row.so||'—')}</strong></div>
+            <div class="mob-meta-item"><span class="mob-meta-label">Units</span><strong>${formatNumber(getUnits(row))}</strong></div>
+            <div class="mob-meta-item"><span class="mob-meta-label">Revenue</span><strong>${formatCurrencyWhole(row.revenue||0)}</strong></div>
+            <div class="mob-meta-item"><span class="mob-meta-label">IHD</span><strong>${escapeHtml(ihdStr)}</strong></div>
+          </div>
+          <div class="mob-card-actions">
+            <span class="status-badge" style="font-size:11px">${escapeHtml(getStatusLabel(row.status))}</span>
+            <button class="comment-btn" type="button"
+              data-pbid="${escapeHtml(row.pbId||'')}"
+              data-pbname="${escapeHtml(row.pb||'')}"
+              data-so="${escapeHtml(row.so||'')}"
+              data-account="${escapeHtml(row.account||'')}">💬 Comment</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </section>`;
+  }).join('');
+}
+
+// Hook renderBoard to also call renderBoardCards
+const _origRenderBoard = renderBoard;
+renderBoard = function(rows) {
+  _origRenderBoard(rows);
+  renderBoardCards(rows);
+};
