@@ -295,6 +295,42 @@
 
         <div id="homeAlertBanner" class="home-alert-banner" hidden></div>
 
+        <section class="mc-panel" id="revTrackerPanel">
+          <div class="mc-panel-head">
+            <div>
+              <div class="eyebrow">Monthly Revenue Tracker</div>
+              <h3>Month-to-date revenue vs goal</h3>
+            </div>
+            <div class="rev-goal-form">
+              <input id="revGoalInput" type="text" placeholder="Set monthly goal e.g. 2500000" class="rev-goal-input" />
+              <button id="revSaveGoalBtn" class="btn secondary" type="button">Set Goal</button>
+            </div>
+          </div>
+
+          <div class="rev-total-row">
+            <span class="rev-grand-total" id="revGrandTotal">$0.00</span>
+            <span class="rev-goal-display">Goal: <strong id="revGoalDisplay">No goal set</strong></span>
+            <span class="rev-pct-badge" id="revPctDisplay">—</span>
+            <span class="rev-remaining" id="revRemainingDisplay">—</span>
+          </div>
+
+          <div class="rev-progress-bar" id="revProgressBar">
+            <div class="rev-progress-fill" id="revProgressFill" style="width:0%"></div>
+          </div>
+
+          <div class="rev-breakdown">
+            <div class="rev-line" id="revImportedLine">No monthly revenue report imported yet.</div>
+            <div class="rev-line rev-line-asm" id="revAssemblyLine">+ $0.00 from 0 assembly-completed SORDs</div>
+          </div>
+
+          <div class="rev-import-meta" id="revImportMeta">Import a monthly revenue estimate report via the Import Hub below.</div>
+
+          <div class="rev-asm-section">
+            <div class="rev-asm-header">Assembly-completed SORDs not yet in report</div>
+            <div id="revAssemblyDetail"><p class="rev-empty">No assembly-completed SORDs to add yet.</p></div>
+          </div>
+        </section>
+
         <section class="mc-health-strip">
           <article class="mc-health-card mc-clickable-card" id="mcAttendanceHealthCard" data-home-jump="attendancePage" role="button" tabindex="0"><span class="mc-label">Attendance Health</span><strong id="mcAttendanceHealth">—</strong><p id="mcAttendanceHealthSub">No data</p></article>
           <article class="mc-health-card mc-clickable-card" id="mcInboundHealthCard" data-home-jump="workflowInboundPage" role="button" tabindex="0"><span class="mc-label">Inbound Health</span><strong id="mcInboundHealth">—</strong><p id="mcInboundHealthSub">No data</p></article>
@@ -367,41 +403,6 @@
           </div>
         </section>
 
-        <section class="mc-panel" id="revTrackerPanel">
-          <div class="mc-panel-head">
-            <div>
-              <div class="eyebrow">Monthly Revenue Tracker</div>
-              <h3>Month-to-date revenue vs goal</h3>
-            </div>
-            <div class="rev-goal-form">
-              <input id="revGoalInput" type="text" placeholder="Set monthly goal e.g. 2500000" class="rev-goal-input" />
-              <button id="revSaveGoalBtn" class="btn secondary" type="button">Set Goal</button>
-            </div>
-          </div>
-
-          <div class="rev-total-row">
-            <span class="rev-grand-total" id="revGrandTotal">$0.00</span>
-            <span class="rev-goal-display">Goal: <strong id="revGoalDisplay">No goal set</strong></span>
-            <span class="rev-pct-badge" id="revPctDisplay">—</span>
-            <span class="rev-remaining" id="revRemainingDisplay">—</span>
-          </div>
-
-          <div class="rev-progress-bar" id="revProgressBar">
-            <div class="rev-progress-fill" id="revProgressFill" style="width:0%"></div>
-          </div>
-
-          <div class="rev-breakdown">
-            <div class="rev-line" id="revImportedLine">No monthly revenue report imported yet.</div>
-            <div class="rev-line rev-line-asm" id="revAssemblyLine">+ $0.00 from 0 assembly-completed SORDs</div>
-          </div>
-
-          <div class="rev-import-meta" id="revImportMeta">Import a monthly revenue estimate report via the Import Hub below.</div>
-
-          <div class="rev-asm-section">
-            <div class="rev-asm-header">Assembly-completed SORDs not yet in report</div>
-            <div id="revAssemblyDetail"><p class="rev-empty">No assembly-completed SORDs to add yet.</p></div>
-          </div>
-        </section>
 
         <section class="mc-panel">
           <div class="mc-panel-head">
