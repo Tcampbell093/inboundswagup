@@ -3911,3 +3911,241 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 .cb-has, .cb-none{cursor:pointer}
 .cb-has:hover{background:#2c6be0;color:#fff;border-color:#2c6be0}
 .cb-none:hover{background:#eaf4ff;color:#2c6be0;border:1px solid #cfe3fb;border-radius:999px;padding:4px 9px}
+
+/* ═══════════════════════════════════════════════════════
+   PASS 1 — MOBILE POLISH  (≤768px only — desktop untouched)
+   All rules scoped inside this media query. Nothing above
+   this line is changed.
+═══════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* ── 1. Touch targets ─────────────────────────────────
+     All interactive elements get a minimum 44px tap area.
+     Padding is increased; existing layouts absorb it via
+     flex-wrap on toolbars.                               */
+  .btn,
+  button,
+  .nav-btn,
+  select,
+  .mobile-menu-btn,
+  .dept-btn,
+  .returns-type-btn,
+  .queue-link,
+  .comment-btn,
+  .cb-badge,
+  .secondary-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Inline action buttons in table rows: stack in a column
+     so they don't crowd each other horizontally           */
+  .row-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: stretch;
+  }
+  .row-actions .btn,
+  .row-actions button,
+  .row-actions a.btn {
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+    min-height: 40px;
+    font-size: 13px;
+  }
+
+  /* ── 2. Form inputs ────────────────────────────────────
+     Larger hit area, proper font size to prevent iOS zoom */
+  .field input,
+  .field select,
+  .field textarea,
+  input[type="text"],
+  input[type="number"],
+  input[type="date"],
+  input[type="search"],
+  input[type="email"],
+  select,
+  textarea {
+    font-size: 16px; /* prevents iOS auto-zoom on focus */
+    min-height: 44px;
+    padding: 10px 12px;
+    border-radius: 12px;
+  }
+
+  /* ── 3. Hero sections ──────────────────────────────────
+     Stack the title + button row vertically               */
+  .hero {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .hero .toolbar.right,
+  .hero > .toolbar {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  /* ── 4. Stat cards ─────────────────────────────────────
+     Tighter font so 2-column grid fits without overflow   */
+  .stat-value {
+    font-size: 24px;
+  }
+  .assembly-card-tight .stat-value {
+    font-size: 20px;
+  }
+  /* Assembly command stats: 2-col on mobile */
+  .assembly-command-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px;
+  }
+
+  /* ── 5. Assembly toolbar ───────────────────────────────
+     Previous Day / Next Day / toggles wrap into two rows  */
+  .assembly-toolbar-stack {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .assembly-toolbar-stack .left,
+  .assembly-toolbar-stack .right {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .assembly-toolbar-stack .btn,
+  .assembly-toolbar-stack button {
+    flex: 1 1 auto;
+    min-width: 120px;
+    text-align: center;
+    justify-content: center;
+  }
+
+  /* Planning bar (Date/Headcount/Hours etc): 2-col */
+  .assembly-planning-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* ── 6. Modals — bottom sheet on mobile ───────────────
+     Modals slide up from bottom instead of centring,
+     giving more thumb-friendly access to close button    */
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .modal {
+    border-radius: 24px 24px 0 0;
+    max-height: 90vh;
+    width: 100%;
+    padding: 20px 16px 32px;
+  }
+  /* Comment modal */
+  .cm-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .cm-dialog {
+    border-radius: 24px 24px 0 0;
+    max-height: 88vh;
+    width: 100%;
+    max-width: 100%;
+  }
+  /* Internal comment modal in index.html */
+  #internalCommentModal {
+    align-items: flex-end;
+    padding: 0;
+  }
+  #internalCommentModal .cm-dialog {
+    border-radius: 24px 24px 0 0;
+    max-height: 88vh;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* ── 7. Toolbar general ────────────────────────────────
+     All toolbars stack vertically; left/right groups
+     each become full-width rows                          */
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .toolbar .left,
+  .toolbar .right {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .toolbar .btn,
+  .toolbar button {
+    flex: 1 1 auto;
+    min-width: 100px;
+    text-align: center;
+    justify-content: center;
+  }
+
+  /* Exception: simple single-action toolbars like
+     "Today's work" heading + pill should stay inline     */
+  .assembly-board-section .toolbar {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  /* ── 8. Card padding ───────────────────────────────────
+     Tighter on small screens to maximise content space   */
+  .card {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  /* ── 9. Dept tabs ──────────────────────────────────────
+     Horizontal scroll strip instead of wrapping grid     */
+  .dept-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 10px;
+    gap: 8px;
+    border-radius: 16px;
+  }
+  .dept-btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+    min-width: auto;
+  }
+
+  /* ── 10. Queue table toolbar ───────────────────────────
+     Show/limit selectors stay compact                    */
+  .queue-sticky-bar .queue-sticky-inner {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* ── 11. Page hero subtitle ────────────────────────────
+     Truncate very long subtitles on phone to save space  */
+  .subtitle {
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  /* ── 12. Table horizontal scroll ──────────────────────
+     Tables scroll horizontally — they don't try to
+     reflow at this breakpoint (that's Pass 2)            */
+  .table-wrap {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* ── 13. Stats grid general ────────────────────────────*/
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  /* ── 14. Mini cards (assembly sidebar stats) ───────────*/
+  .mini-value {
+    font-size: 18px;
+  }
+
+} /* end @media (max-width: 768px) */
