@@ -38,6 +38,7 @@ const assemblyDoneUnits=document.getElementById('assemblyDoneUnits');
 const assemblyHoursElapsedInput=document.getElementById('assemblyHoursElapsed');
 const assemblyCurrentUphDisplay=document.getElementById('assemblyCurrentUphDisplay');
 const assemblyGoalProgressDisplay=document.getElementById('assemblyGoalProgressDisplay');
+const assemblyScheduledRevenueStat=document.getElementById('assemblyScheduledRevenueStat');
 const assemblyBoardHead=document.getElementById('assemblyBoardHead');
 const assemblyWeekViewBody=document.getElementById('assemblyWeekViewBody');
 const assemblyBreakdownToggleBtn=document.getElementById('assemblyBreakdownToggleBtn');
@@ -132,6 +133,10 @@ function renderAssembly(){
   assemblyCompletionStat.textContent=`${completionPct.toFixed(0)}%`;
   if(assemblyCurrentUphDisplay) assemblyCurrentUphDisplay.textContent=currentUph.toFixed(0);
   if(assemblyGoalProgressDisplay) assemblyGoalProgressDisplay.textContent=`${goalProgress.toFixed(0)}%`;
+  if(assemblyScheduledRevenueStat){
+    const totalRev = filteredRows.reduce((sum,row)=>sum+Number(getEffectiveSubtotalForRow(row)||0),0);
+    assemblyScheduledRevenueStat.textContent = new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(totalRev);
+  }
 
   if(assemblyWeekViewBody){
     const weekRows=[];

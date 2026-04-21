@@ -28,8 +28,11 @@ h1{margin:0;font-size:clamp(28px,4vw,44px);line-height:1.03}
 .meta-pill{padding:10px 14px}
 .meta-label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800}
 .secondary-btn{border:1px solid var(--line);background:#fff;color:var(--text);padding:11px 14px;border-radius:12px;font-weight:800;cursor:pointer}
-.board-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
+.board-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) minmax(160px,1.3fr);gap:12px;margin-bottom:18px}
 .stat-chip{padding:12px 14px;background:var(--surface-soft)}
+.stat-chip-revenue{background:linear-gradient(135deg,#eaf4ff 0%,#f0f9ff 100%);border-color:#b8d9f5 !important}
+.stat-chip-revenue .stat-label{color:#2c6be0}
+.stat-chip-revenue .stat-value{color:#1a4fa8;font-size:22px}
 .stat-label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800;margin-bottom:6px}
 .stat-value{display:block;font-size:26px;line-height:1.05;font-weight:900}
 .filters-card{padding:14px 16px;margin-bottom:18px}

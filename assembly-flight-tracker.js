@@ -72,6 +72,7 @@ const els = {
   statUnits: document.getElementById('statUnits'),
   statCompleted: document.getElementById('statCompleted'),
   statAtRisk: document.getElementById('statAtRisk'),
+  statRevenue: document.getElementById('statRevenue'),
 };
 
 function escapeHtml(v){return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;')}
@@ -214,6 +215,8 @@ function renderStats(rows){
   els.statUnits.textContent = formatNumber(rows.reduce((sum,row)=>sum+getUnits(row),0));
   els.statCompleted.textContent = formatNumber(rows.filter(row=>getStageLabel(row.stage)==='Complete').length);
   els.statAtRisk.textContent = formatNumber(getAtRiskCount(rows));
+  const totalRevenue = rows.reduce((sum,row)=>sum+Number(row.revenue||0),0);
+  els.statRevenue.textContent = formatCurrencyWhole(totalRevenue);
 }
 function renderBoard(rows){
   if(!rows.length){
