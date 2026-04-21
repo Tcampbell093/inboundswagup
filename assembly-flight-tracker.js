@@ -460,7 +460,9 @@ cmEls.body.addEventListener('input', ()=>{
 });
 
 // Delegate comment button clicks from the board (rows re-render on load)
-document.getElementById('boardContent').addEventListener('click', e=>{
+// Comment button click — delegated on document so it catches both
+// the desktop table (#boardContent) and mobile cards (#boardContentCards)
+document.addEventListener('click', e=>{
   const btn = e.target.closest('.comment-btn');
   if(!btn) return;
   cmOpenModal(

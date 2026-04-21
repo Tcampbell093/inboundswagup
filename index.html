@@ -2422,12 +2422,14 @@
   });
 
   // Delegated click — catches any comment badge (.cb-has, .cb-none) in Assembly board and Queue
+  // Works for both desktop table rows (<tr>) and mobile cards (.mob-card)
   document.addEventListener('click', function(e){
     const badge = e.target.closest('.cb-badge');
     if(!badge || badge.classList.contains('cb-loading')) return;
     const cell = badge.closest('.cb-cell');
     if(!cell) return;
-    const row = cell.closest('tr');
+    // Try table row first, then mobile card div
+    const row = cell.closest('tr') || cell.closest('.mob-card');
     if(!row) return;
     const cbKey   = row.dataset.cbkey || cell.dataset.cbkey || '';
     const pbName  = row.dataset.pbname || '';

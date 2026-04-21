@@ -512,7 +512,7 @@ function buildAssemblyCard(row, priority) {
   const priorityBadge = priority&&priority.label ? `<span class="mini-label ${priority.cls}" style="font-size:10px;padding:2px 7px;border-radius:999px;margin-left:4px">${priority.label}</span>` : '';
   const revenueStr = new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(revenue);
 
-  return `<div class="mob-card${priority&&priority.cls?' mob-card-'+priority.risk:''}">
+  return `<div class="mob-card${priority&&priority.cls?' mob-card-'+priority.risk:''}" data-cbkey="${escapeHtml(cbKey)}" data-pbname="${escapeHtml(row.pb||'')}">
     <div class="mob-card-header">
       <div class="mob-card-title">
         <span class="mob-card-pb">${escapeHtml(row.pb||'—')}</span>${priorityBadge}
