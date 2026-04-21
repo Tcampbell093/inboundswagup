@@ -232,3 +232,91 @@ a.row-link:hover{text-decoration:underline}
 .cm-submit:disabled { opacity: .5; cursor: not-allowed; }
 .cm-submit:not(:disabled):hover { opacity: .88; }
 .cm-error { margin: 0; color: var(--danger); font-size: 13px; font-weight: 600; }
+
+/* ── Pass 1 mobile polish for Flight Tracker (≤768px) ── */
+@media (max-width: 768px) {
+
+  /* Touch targets */
+  .secondary-btn,
+  .comment-btn,
+  .cb-badge {
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Header stacks vertically */
+  .board-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .header-meta {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  /* Stat chips: 2 col */
+  .board-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  /* Revenue chip spans full width on its own row */
+  .stat-chip-revenue {
+    grid-column: 1 / -1;
+  }
+
+  /* Filters stack */
+  .filters-row {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px;
+  }
+  .filters-row .field:first-child {
+    grid-column: 1 / -1;
+  }
+
+  /* Inputs */
+  .filters-row input,
+  .filters-row select {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  /* Day summary chips wrap */
+  .day-summary {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* Comment modal bottom-sheet */
+  .cm-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .cm-dialog {
+    border-radius: 24px 24px 0 0;
+    max-height: 88vh;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* Compose row stacks */
+  .cm-compose-row {
+    grid-template-columns: 1fr;
+  }
+  .cm-field-cat {
+    min-width: unset;
+  }
+  .cm-field input,
+  .cm-field select,
+  .cm-field textarea {
+    font-size: 16px;
+    min-height: 44px;
+  }
+  .cm-submit {
+    min-height: 44px;
+    padding: 10px 20px;
+  }
+
+} /* end @media (max-width: 768px) */
