@@ -1729,3 +1729,248 @@
   font-size: 0.78rem;
   font-weight: 600;
 }
+
+/* ============================================================
+   PREP CARD REDESIGN — zone-based layout v2
+   Three horizontal bands: count · routing · overstock
+   ============================================================ */
+
+/* ── Zone row base ── */
+.po-card .prep-zone-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.po-card .prep-zone {
+  padding: 10px 12px;
+  border-right: 1px solid var(--border, #e5e7eb);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.po-card .prep-zone:last-child { border-right: none; }
+
+.prep-zone-lbl {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-secondary, #6b7280);
+}
+
+/* Count row: large input + status displays */
+.po-card .prep-count-row .prep-zone-display {
+  justify-content: center;
+}
+
+.prep-big-input {
+  font-size: 1.5rem !important;
+  font-weight: 700 !important;
+  text-align: center;
+  padding: 8px 10px !important;
+}
+
+/* ── Route zone row ── */
+.po-card .prep-route-row {
+  background: var(--surface, #fff);
+}
+
+.po-card .prep-route-zone {
+  padding: 10px 12px;
+  border-right: 1px solid var(--border, #e5e7eb);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+}
+.po-card .prep-route-zone:last-child { border-right: none; }
+.po-card .prep-route-zone::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  border-radius: 0;
+}
+.po-card .prep-rz-sts::before  { background: #1d4ed8; }
+.po-card .prep-rz-lts::before  { background: #7c3aed; }
+.po-card .prep-rz-total::before { background: #16a34a; }
+
+.prep-rz-sts-lbl   { color: #1d4ed8 !important; }
+.prep-rz-lts-lbl   { color: #7c3aed !important; }
+.prep-rz-total-lbl { color: #166534 !important; }
+
+.prep-rz-sub {
+  font-size: 0.68rem;
+  color: var(--text-secondary, #9ca3af);
+  text-align: center;
+  margin-top: 2px;
+}
+
+.prep-total-val {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text-secondary, #9ca3af);
+}
+
+.prep-rz-confirm {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-align: center;
+  min-height: 14px;
+  color: var(--text-secondary, #9ca3af);
+}
+.prep-rz-ok    { color: #166534; }
+.prep-rz-over  { color: #854d0e; }
+.prep-rz-short { color: #991b1b; }
+
+/* ── Overstock boxing row ── */
+.po-card .prep-overstock-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  background: #fffbeb;
+  border-bottom: 1px solid #f0d080;
+  flex-wrap: wrap;
+}
+
+.prep-os-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #92400e;
+  white-space: nowrap;
+}
+
+.prep-os-qty {
+  font-size: 0.88rem;
+  font-weight: 700;
+  background: white;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1.5px solid #d97706;
+  color: #854d0e;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.prep-os-select {
+  flex: 1;
+  min-width: 130px;
+  font-size: 0.8rem;
+  padding: 6px 8px;
+  border: 1.5px solid #d97706;
+  border-radius: 8px;
+  background: white;
+  color: var(--text-primary, #111);
+  cursor: pointer;
+}
+
+.prep-os-btn {
+  font-size: 0.75rem !important;
+  padding: 5px 10px !important;
+  white-space: nowrap;
+}
+
+/* ── Previous counts toggle ── */
+.prep-ref-toggle-wrap {
+  padding: 6px 12px 4px;
+}
+
+/* ── Mobile adjustments ── */
+@media (max-width: 520px) {
+  .po-card .prep-zone-row,
+  .po-card .prep-route-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .po-card .prep-zone:nth-child(3),
+  .po-card .prep-route-zone:nth-child(3) {
+    grid-column: 1 / -1;
+    border-right: none;
+    border-top: 1px solid var(--border, #e5e7eb);
+  }
+  .po-card .prep-overstock-row {
+    flex-wrap: wrap;
+  }
+}
+
+/* ============================================================
+   MODAL PROGRESS STRIP — compact horizontal bar below header
+   ============================================================ */
+.plt-progress-strip {
+  display: flex;
+  align-items: center;
+  padding: 0 22px;
+  height: 44px;
+  background: var(--surface-alt, #f8f9fa);
+  border-bottom: 1px solid var(--border, #eee);
+  flex-shrink: 0;
+  gap: 0;
+  overflow-x: auto;
+}
+
+/* Override old .pallet-progress margin when inside strip */
+.plt-progress-strip .pallet-progress {
+  margin-bottom: 0;
+  width: 100%;
+}
+
+/* ============================================================
+   PO CARD — updated base styles for zone layout
+   ============================================================ */
+.po-card {
+  border: 1.5px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  background: var(--surface-alt, #fafafa);
+  position: relative;
+  overflow: hidden;
+}
+
+/* po-card-head: slight gradient, compact */
+.po-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: linear-gradient(to right, var(--surface-alt, #f8f9fa), var(--surface, #fff));
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+/* Zone rows remove their padding from po-card (zones handle own padding) */
+.po-card .prep-zone-row,
+.po-card .prep-route-row {
+  border-radius: 0;
+}
+
+/* ============================================================
+   ROUTING SUMMARY — zone-style
+   ============================================================ */
+.pallet-routing-summary {
+  background: var(--surface-alt, #f8fafc);
+  border-radius: 10px;
+  padding: 0;
+  margin-top: 12px;
+  font-size: 0.85rem;
+  border: 1.5px solid var(--border, #e5e7eb);
+  overflow: hidden;
+}
+
+.pallet-routing-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  font-size: 0.85rem;
+}
+
+.pallet-routing-summary-row:last-child { border-bottom: none; }
+.pallet-routing-summary-row strong { font-family: monospace; font-size: 0.95rem; }
