@@ -434,12 +434,16 @@ function plt_cardHtml(p,dept) {
   const pos=p.pos||[];
   const received=pos.filter(po=>po.receivingDone).length;
   const routed=pos.filter(po=>po.destination).length;
+  // For putaway: count PO lines that have STS qty set
+  const putawayLines=pos.filter(po=>Number(po.stsQty||0)>0).length;
   const progress=dept==='receiving'&&pos.length>0
     ?`<div class="pallet-card-meta">${received}/${pos.length} ${plt_t('received','recibidas')}</div>`
     :dept==='prep'&&pos.length>0
     ?`<div class="pallet-card-meta">${routed}/${pos.length} ${plt_t('routed','enrutadas')}</div>`
+    :dept==='putaway'&&putawayLines>0
+    ?`<div class="pallet-card-meta">${putawayLines} ${plt_t('PO line(s) to place','OC(s) por ubicar')}</div>`
     :`<div class="pallet-card-meta">${pos.length} ${plt_t('PO(s)','OC(s)')}</div>`;
-  const action={dock:plt_t('Open →','Abrir →'),receiving:plt_t('Receive →','Recepcionar →'),prep:plt_t('Route →','Enrutar →')}[dept]||'→';
+  const action={dock:plt_t('Open →','Abrir →'),receiving:plt_t('Receive →','Recepcionar →'),prep:plt_t('Route →','Enrutar →'),putaway:plt_t('Assign →','Ubicar →')}[dept]||'→';
 
   // Day color — from date field first, then inferred from label text
   const col = plt_getColor(p);
@@ -454,19 +458,349 @@ function plt_cardHtml(p,dept) {
     : '';
 
   return`<div class="pallet-card" data-pid="${p.id}" role="button" tabindex="0" style="${cardStyle}">
-    <div class="pallet-card-num" style="${col?`color:${col.border};`:''}">${plt_esc(p.label)||'—'}</div>
+    <div class="pallet-card-num" style="${col?`color:${col.border};`:''}">${ plt_esc(p.label)||'—'}</div>
     ${dayBadge}
     <span class="pallet-status ${plt_sc(p.status)}">${plt_esc(plt_sl(p.status))}</span>
     ${progress}
     ${dateStr}
     <div class="pallet-card-meta act-dim">${plt_t('Created','Creada')} ${plt_fmtTime(p.createdAt)}</div>
-    <div class="pallet-card-action" style="${col?`color:${col.border};font-weight:700;`:''}">${action}</div>
+    <div class="pallet-card-action" style="${col?`color:${col.border};font-weight:700;`:''}"> ${action}</div>
   </div>`;
 }
 
+function plt_renderPutawayPanel() {
+  const c=document.getElementById('palletPutawayPanel'); if(!c)return;
+  // Show done pallets that have at least one STS-routed PO line still needing placement
+  const allDone=plt_all().filter(p=>p.status==='done');
+  // Filter to those with open lines (delegate to app.js helper if available)
+  const pallets = typeof window.getOpenPutawayLinesForPallet === 'function'
+    ? allDone.filter(p=>window.getOpenPutawayLinesForPallet(p).length>0)
+    : allDone.filter(p=>(p.pos||[]).some(po=>Number(po.stsQty||0)>0));
+
+  c.innerHTML=`
+    <div class="pallet-panel">
+      <div class="pallet-panel-header">
+        <div><h2>📦 ${plt_t('Pallets for Put-Away','Tarimas para Ubicación')}</h2>
+          <p>${plt_t('Pick a pallet, select a PO line, then assign it to a storage location.','Elige una tarima, selecciona una OC y asígnala a su ubicación.')}</p></div>
+        <span class="pallet-status pallet-status-done">${pallets.length} ${plt_t('ready','lista(s)')}</span>
+      </div>
+      ${pallets.length===0
+        ?`<div class="pallet-empty"><div class="pallet-empty-icon">✅</div>${plt_t('No pallets pending put-away. Complete Prep on a pallet to see it here.','Sin tarimas pendientes. Completa Prep en una tarima para verla aquí.')}</div>`
+        :`<div class="pallet-grid">${pallets.map(p=>plt_cardHtml(p,'putaway')).join('')}</div>`}
+    </div>`;
+
+  c.querySelectorAll('.pallet-card[data-pid]').forEach(el=>{
+    el.addEventListener('click',()=>{
+      if(typeof window.plt_openPutawayPallet==='function') window.plt_openPutawayPallet(el.dataset.pid);
+    });
+  });
+}
+
 /* ------------------------------------------------------------------
-   PANEL RENDERERS
+   PUTAWAY PALLET MODAL
+   Opens when a putaway pallet card is clicked.
+   Each PO line stays inside the same modal with its own
+   location search / suggestion area, units, status, notes,
+   and assign action.
    ------------------------------------------------------------------ */
+function plt_getGeneratedPutawayLocationSuggestions(query) {
+  const q = String(query || '').toUpperCase().trim();
+  const rows = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map(ch => `Q${ch}`);
+  const bays = Array.from({ length: 10 }, (_, i) => String(i + 1));
+  const levels = ["A","B","C","D"];
+  const halves = ["1","2"];
+  const all = [];
+  rows.forEach(row => bays.forEach(bay => levels.forEach(level => halves.forEach(half => {
+    all.push(`${row}${bay}-${level}${half}`);
+  }))));
+  if (!q) return all.slice(0, 8);
+  return all.filter(loc => loc.includes(q)).slice(0, 12);
+}
+
+function plt_getPutawayLocationSuggestions(query) {
+  const manual = typeof state !== 'undefined' && Array.isArray(state?.masters?.putawayLocations)
+    ? state.masters.putawayLocations
+    : [];
+  const existing = typeof state !== 'undefined' && Array.isArray(state.data?.putawayEntries)
+    ? state.data.putawayEntries.map(e => e.location || '')
+    : [];
+  const pool = [...new Set([...manual, ...existing].map(v => String(v || '').toUpperCase().trim()).filter(Boolean))].sort();
+  const q = String(query || '').toUpperCase().trim();
+  const matches = !q ? pool.slice(0, 8) : pool.filter(loc => loc.includes(q)).slice(0, 12);
+  if (matches.length) return matches;
+  return plt_getGeneratedPutawayLocationSuggestions(q);
+}
+window.getPutawayLocationSuggestions = plt_getPutawayLocationSuggestions;
+
+
+function plt_renderPutawayPalletModalBody(overlay, pallet, lines, baselineByPo = null) {
+  const body = overlay.querySelector('#putawayPalletModalBody');
+  if (!body) return;
+
+  const baseline = baselineByPo || overlay._putawayBaselineByPo || new Map();
+  overlay._putawayBaselineByPo = baseline;
+
+  const totalLines = (lines || []).length;
+  const alreadyPlacedParts = (lines || []).reduce((sum, line) => {
+    const key = String(line.po || '').trim().toUpperCase();
+    const prior = baseline.get(key);
+    return sum + Number(prior?.count || 0);
+  }, 0);
+
+  body.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:18px;">
+      <div style="background:#f7fafc;border:1px solid #d7e4ef;border-radius:12px;padding:10px 12px;">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6d879d;font-weight:800;margin-bottom:2px;">Open PO Lines</div>
+        <strong style="font-size:20px;color:#16324a;">${totalLines}</strong>
+      </div>
+      <div style="background:#fff8ef;border:1px solid #f5d8a8;border-radius:12px;padding:10px 12px;">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#9a5a03;font-weight:800;margin-bottom:2px;">Prior Parts Logged</div>
+        <strong style="font-size:20px;color:#d97706;">${alreadyPlacedParts}</strong>
+      </div>
+      <div style="background:#f5fbff;border:1px solid #d0e8f8;border-radius:12px;padding:10px 12px;">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6d879d;font-weight:800;margin-bottom:2px;">Source Container</div>
+        <strong style="font-size:16px;color:#16324a;">${plt_esc(`pac-${pallet.id}`)}</strong>
+      </div>
+    </div>
+
+    ${!lines.length ? `<div class="pallet-empty"><div class="pallet-empty-icon">✅</div>${plt_t('All PO lines on this pallet have been completed.','Todas las líneas de esta tarima ya fueron completadas.')}</div>` : `
+      <div style="display:grid;gap:12px;">
+        ${lines.map((line, idx) => {
+          const sizes = line.sizeBreakdown ? Object.entries(line.sizeBreakdown).map(([s,q])=>`${s}:${q}`).join(' · ') : '';
+          const poKey = String(line.po || '').trim().toUpperCase();
+          const baselinePrior = baseline.get(poKey) || { count: 0, locations: [] };
+          const priorLocations = Array.isArray(baselinePrior.locations) ? baselinePrior.locations : [];
+          const warningHtml = priorLocations.length
+            ? `<div style="margin-top:10px;padding:10px 12px;border-radius:12px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;font-size:12px;">
+                <strong>${plt_t('Warning: this PO already has parts in putaway.','Advertencia: esta OC ya tiene partes en ubicación.')}</strong>
+                <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+                  ${priorLocations.map((item, partIdx) => `<span style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#ffffff;border:1px solid #fdba74;font-weight:800;">${plt_esc(item.location)} · part ${partIdx + 1}</span>`).join('')}
+                </div>
+              </div>`
+            : '';
+          return `
+            <section class="putaway-modal-line-card" data-line-idx="${idx}" style="border:1px solid #d7e4ef;border-radius:14px;padding:14px;background:#fff;">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
+                <div style="min-width:0;flex:1;">
+                  <div style="font-size:16px;font-weight:900;color:#16324a;">PO# ${plt_esc(line.po)}</div>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px;">
+                    <span style="font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px;color:#9a5a03;background:#fff4e6;border:1px solid #f5d8a8;">${plt_t('Short-Term Storage','Almac. Corto Plazo')}</span>
+                    ${line.category ? `<span style="font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px;background:#f0f4f8;color:#456080;border:1px solid #d0dce8;">${plt_esc(line.category)}</span>` : ''}
+                    ${baselinePrior.count ? `<span style="font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;">${baselinePrior.count} prior part${baselinePrior.count === 1 ? '' : 's'}</span>` : ''}
+                  </div>
+                  ${sizes ? `<div style="font-size:11px;color:#7a8fa5;margin-top:6px;">👕 ${plt_esc(sizes)}</div>` : ''}
+                  ${warningHtml}
+                </div>
+              </div>
+
+              <div style="display:grid;grid-template-columns:minmax(220px,1fr) 180px;gap:10px;align-items:end;">
+                <div style="position:relative;">
+                  <label style="display:block;font-size:11px;font-weight:800;color:#6d879d;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">${plt_t('Location Code','Código de Ubicación')}</label>
+                  <input type="text" class="putaway-modal-loc-input"
+                    placeholder="${plt_t('Type location…','Escribe ubicación…')}"
+                    autocomplete="off" autocapitalize="characters"
+                    style="width:100%;border:1px solid #c9d7e6;border-radius:12px;padding:10px 12px;font-size:14px;font-family:monospace;text-transform:uppercase;" />
+                  <div class="putaway-modal-loc-hint" style="font-size:11px;min-height:16px;margin-top:3px;"></div>
+                  <div class="putaway-modal-loc-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #c9d7e6;border-radius:12px;box-shadow:0 8px 24px rgba(29,73,111,.15);margin-top:4px;overflow:hidden;"></div>
+                </div>
+                <div>
+                  <label style="display:block;font-size:11px;font-weight:800;color:#6d879d;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">${plt_t('Status','Estado')}</label>
+                  <select class="putaway-modal-status" style="width:100%;border:1px solid #c9d7e6;border-radius:12px;padding:10px 12px;font-size:14px;">
+                    <option>${plt_t('Put Away','Ubicado')}</option>
+                    <option>${plt_t('Reserved for Assembly','Reservado para Ensamble')}</option>
+                    <option>${plt_t('Partial','Parcial')}</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="display:grid;grid-template-columns:minmax(220px,1fr) auto auto;gap:10px;align-items:end;margin-top:10px;">
+                <div>
+                  <label style="display:block;font-size:11px;font-weight:800;color:#6d879d;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">${plt_t('Notes (optional)','Notas (opcional)')}</label>
+                  <input type="text" class="putaway-modal-notes" placeholder="${plt_t('Add a note for this placement…','Agrega una nota para esta ubicación…')}"
+                    style="width:100%;border:1px solid #c9d7e6;border-radius:12px;padding:10px 12px;font-size:14px;" />
+                </div>
+                <button type="button" class="pallet-btn-secondary putaway-modal-complete-btn">${plt_t('Mark Complete','Marcar completa')}</button>
+                <button type="button" class="pallet-btn-primary putaway-modal-assign-btn">${plt_t('Assign Location →','Asignar ubicación →')}</button>
+              </div>
+
+              <div class="putaway-modal-row-error" style="display:none;color:#b42318;font-size:13px;font-weight:700;margin-top:8px;padding:8px 12px;background:#fff1f0;border-radius:10px;border:1px solid #ffd6d4;"></div>
+            </section>
+          `;
+        }).join('')}
+      </div>
+    `}
+  `;
+
+  const lineCards = body.querySelectorAll('.putaway-modal-line-card');
+  lineCards.forEach(card => {
+    const idx = Number(card.getAttribute('data-line-idx'));
+    const line = lines[idx];
+    const locInput = card.querySelector('.putaway-modal-loc-input');
+    const locHint = card.querySelector('.putaway-modal-loc-hint');
+    const locDropdown = card.querySelector('.putaway-modal-loc-dropdown');
+    const statusSel = card.querySelector('.putaway-modal-status');
+    const notesInput = card.querySelector('.putaway-modal-notes');
+    const assignBtn = card.querySelector('.putaway-modal-assign-btn');
+    const completeBtn = card.querySelector('.putaway-modal-complete-btn');
+    const errorEl = card.querySelector('.putaway-modal-row-error');
+
+    function validateLoc(v) {
+      if (!v) { locHint.textContent = ''; locHint.style.color = ''; return false; }
+      const valid = typeof pa_isValidLocCode === 'function'
+        ? pa_isValidLocCode(v)
+        : /^Q[A-Z](\d{1,2})-[A-D][12]$/.test(String(v).toUpperCase());
+      if (valid) {
+        locHint.textContent = '✓ Valid';
+        locHint.style.color = '#127c4f';
+      } else {
+        locHint.textContent = plt_t('Invalid format','Formato inválido');
+        locHint.style.color = '#b42318';
+      }
+      return valid;
+    }
+
+    function renderDropdown(items) {
+      if (!items.length) {
+        locDropdown.style.display = 'none';
+        locDropdown.innerHTML = '';
+        return;
+      }
+      locDropdown.innerHTML = items.map(loc => `
+        <button type="button" class="putaway-modal-loc-option" data-loc="${plt_esc(loc)}"
+          style="display:block;width:100%;text-align:left;padding:10px 14px;cursor:pointer;font-family:monospace;font-size:13px;font-weight:700;border:0;border-bottom:1px solid #f0f4f8;background:#fff;color:#16324a;">
+          ${plt_esc(loc)}
+        </button>
+      `).join('');
+      locDropdown.style.display = 'block';
+      locDropdown.querySelectorAll('.putaway-modal-loc-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+          locInput.value = btn.dataset.loc;
+          locDropdown.style.display = 'none';
+          validateLoc(btn.dataset.loc);
+        });
+      });
+    }
+
+    locInput.addEventListener('input', () => {
+      const v = locInput.value.toUpperCase();
+      locInput.value = v;
+      validateLoc(v);
+      renderDropdown(plt_getPutawayLocationSuggestions(v));
+    });
+    locInput.addEventListener('focus', () => {
+      renderDropdown(plt_getPutawayLocationSuggestions(locInput.value));
+    });
+    locInput.addEventListener('blur', () => {
+      setTimeout(() => { locDropdown.style.display = 'none'; }, 150);
+    });
+
+    assignBtn.addEventListener('click', () => {
+      errorEl.style.display = 'none';
+      const locCode = String(locInput.value || '').trim().toUpperCase();
+      if (!validateLoc(locCode)) {
+        errorEl.textContent = plt_t('Enter a valid location code (e.g. QA5-C1).','Ingresa un código de ubicación válido (p.ej. QA5-C1).');
+        errorEl.style.display = '';
+        return;
+      }
+
+      if (typeof window.plt_confirmPutawayPlacement === 'function') {
+        window.plt_confirmPutawayPlacement({
+          line,
+          locCode,
+          status: statusSel.value,
+          notes: notesInput.value.trim(),
+        });
+      }
+
+      const palletNow = (typeof plt_get === 'function' ? plt_get(pallet.id) : (state.data?.pallets || []).find(p => p.id === pallet.id)) || pallet;
+      const refreshedLines = typeof window.getOpenPutawayLinesForPallet === 'function'
+        ? window.getOpenPutawayLinesForPallet(palletNow)
+        : [];
+      if (!refreshedLines.length) {
+        plt_closeAll();
+        return;
+      }
+      plt_renderPutawayPalletModalBody(overlay, palletNow, refreshedLines, overlay._putawayBaselineByPo);
+    });
+
+    completeBtn.addEventListener('click', () => {
+      errorEl.style.display = 'none';
+      const latestPlacements = (typeof window.getPutawayPlacementsForPo === 'function')
+        ? window.getPutawayPlacementsForPo(line.po)
+        : [];
+      if (!latestPlacements.length) {
+        errorEl.textContent = plt_t('Assign at least one location before marking this PO complete.','Asigna al menos una ubicación antes de marcar esta OC como completa.');
+        errorEl.style.display = '';
+        return;
+      }
+      if (typeof window.plt_closePutawayLine === 'function') window.plt_closePutawayLine(line);
+
+      const palletNow = (typeof plt_get === 'function' ? plt_get(pallet.id) : (state.data?.pallets || []).find(p => p.id === pallet.id)) || pallet;
+      const refreshedLines = typeof window.getOpenPutawayLinesForPallet === 'function'
+        ? window.getOpenPutawayLinesForPallet(palletNow)
+        : [];
+      if (!refreshedLines.length) {
+        plt_closeAll();
+        return;
+      }
+      plt_renderPutawayPalletModalBody(overlay, palletNow, refreshedLines, overlay._putawayBaselineByPo);
+    });
+  });
+}
+
+function plt_openPutawayPalletModal(pallet, initialLines) {
+  if (!pallet) return;
+  plt_closeAll();
+
+  const lines = Array.isArray(initialLines)
+    ? initialLines
+    : (typeof window.getOpenPutawayLinesForPallet === 'function' ? window.getOpenPutawayLinesForPallet(pallet) : []);
+
+  const baselineByPo = new Map(
+    (lines || []).map((line) => {
+      const key = String(line.po || '').trim().toUpperCase();
+      return [key, {
+        count: Number(line.placementCount || 0),
+        locations: Array.isArray(line.priorLocations) ? line.priorLocations.map(item => ({ ...item })) : [],
+      }];
+    })
+  );
+
+  const overlay = plt_overlay('putawayPalletOverlay');
+  overlay.innerHTML = `
+    <div class="pallet-modal pallet-modal-wide" role="dialog" aria-modal="true" style="max-width:920px;border-top:4px solid #cf6b3c;">
+      <div class="pallet-modal-header">
+        <div>
+          <h3>🗂️ ${plt_t('Putaway Pallet','Tarima de Ubicación')} — ${plt_esc(pallet.label || pallet.id)}</h3>
+          <p class="pallet-modal-sub">${plt_esc(pallet.date || '—')} · ${plt_esc(`pac-${pallet.id}`)} · ${plt_t('Type a location, assign each part, and mark the PO complete when all its parts are placed.','Escribe una ubicación y elige sugerencias para cada línea de OC.')}</p>
+        </div>
+        <button class="pallet-modal-close">✕</button>
+      </div>
+      <div class="pallet-modal-body" id="putawayPalletModalBody"></div>
+      <div class="pallet-modal-footer">
+        <button class="pallet-btn-secondary" id="putawayPalletCloseBtn">${plt_t('Close','Cerrar')}</button>
+      </div>
+    </div>
+  `;
+
+  plt_push(overlay);
+  const closeModal = () => { plt_closeAll(); if (typeof plt_renderPutawayPanel === 'function') plt_renderPutawayPanel(); };
+  overlay.querySelector('.pallet-modal-close').addEventListener('click', closeModal);
+  overlay.querySelector('#putawayPalletCloseBtn').addEventListener('click', closeModal);
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+
+  plt_renderPutawayPalletModalBody(overlay, pallet, lines, baselineByPo);
+}
+
+window.plt_openPutawayPalletModal = plt_openPutawayPalletModal;
+window.plt_openPutawayAssignModal = function(line) {
+  if (!line) return;
+  const pallet = (typeof plt_get === 'function' ? plt_get(line.palletId) : null) || (state.data?.pallets || []).find(p => p.id === line.palletId);
+  if (pallet) {
+    plt_openPutawayPalletModal(pallet, typeof window.getOpenPutawayLinesForPallet === 'function' ? window.getOpenPutawayLinesForPallet(pallet) : [line]);
+  }
+};
+
 function plt_renderDockPanel() {
   const c=document.getElementById('palletDockPanel'); if(!c)return;
   const pallets=plt_all().filter(p=>p.status==='draft');
@@ -889,12 +1223,13 @@ function plt_buildPalletModal(pallet,dept){
 
   overlay.innerHTML=`
     <div class="pallet-modal pallet-modal-wide" role="dialog" aria-modal="true" style="${modalTopStyle}">
-      <div class="pallet-modal-header">
+      <div class="pallet-modal-header" style="padding:16px 22px 12px;">
         <div>
           <div class="plt-label-row">
             <h3 id="plt_palletTitle">📦 ${plt_esc(pallet.label)}</h3>
             ${modalDayBadge}
-            ${!isDone?`<button class="pallet-btn-ghost plt-tiny" id="plt_renameLabelBtn">✏️ ${plt_t('Edit','Editar')}</button>`:''}          </div>
+            ${!isDone?`<button class="pallet-btn-ghost plt-tiny" id="plt_renameLabelBtn">✏️ ${plt_t('Edit','Editar')}</button>`:''}
+          </div>
           <p class="pallet-modal-sub">
             <span class="pallet-status ${plt_sc(pallet.status)}">${plt_esc(plt_sl(pallet.status))}</span>
             &nbsp;📅 <strong>${palletDate}</strong>
@@ -902,6 +1237,11 @@ function plt_buildPalletModal(pallet,dept){
           </p>
         </div>
         <button class="pallet-modal-close">✕</button>
+      </div>
+
+      <!-- Compact progress strip -->
+      <div class="plt-progress-strip">
+        ${progressHtml}
       </div>
 
       <div class="pallet-modal-body">
@@ -925,8 +1265,6 @@ function plt_buildPalletModal(pallet,dept){
           </div>
         </div>
 
-        <div class="pallet-progress">${progressHtml}</div>
-
         <div class="pallet-section-title">
           ${plt_t('Purchase Orders','Órdenes de Compra')}
           <span style="font-weight:400;text-transform:none;margin-left:6px;">(${pos.length} ${plt_t('total','total')})</span>
@@ -939,7 +1277,7 @@ function plt_buildPalletModal(pallet,dept){
         </div>
 
         ${showAddPo?plt_addPoFormHtml(catOpts):''}
-        ${pallet.status==='prep'?plt_routingSummaryHtml(pallet):''}
+        ${pallet.status==='prep'?`<div id="plt_routingSummaryWrap">${plt_routingSummaryHtml(pallet)}</div>`:''}
 
         <div class="pallet-section-title" style="margin-top:20px;">
           🕐 ${plt_t('History','Historial')}
@@ -1063,25 +1401,26 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
   // Shows what the Docker entered: PO#, ordered qty, category. Clean read-only.
   const hasBoxes = plt_hasVal(po.boxes);
   const dockView = `
-    <div class="po-card-grid">
-      <div class="po-field">
-        <label>${plt_t('Ordered Qty','Cant. Ordenada')}</label>
-        <span class="plt-qty-big">${hasOrd ? po.orderedQty : '—'}</span>
+    <!-- Dock zone row: ordered qty, boxes, category -->
+    <div class="prep-zone-row">
+      <div class="prep-zone" style="border-top:3px solid #6366f1;">
+        <div class="prep-zone-lbl" style="color:#4338ca;">${plt_t('Ordered Qty','Cant. Ordenada')}</div>
+        <div class="prep-total-val">${hasOrd ? `<strong>${po.orderedQty}</strong>` : '<span class="act-dim">—</span>'}</div>
       </div>
-      <div class="po-field">
-        <label>${plt_t('Boxes','Cajas')}</label>
-        <span class="plt-qty-big">${hasBoxes ? po.boxes : '—'}</span>
+      <div class="prep-zone" style="border-top:3px solid #7c3aed;">
+        <div class="prep-zone-lbl" style="color:#6d28d9;">${plt_t('Boxes','Cajas')}</div>
+        <div class="prep-total-val">${hasBoxes ? `<strong>${po.boxes}</strong>` : '<span class="act-dim">—</span>'}</div>
       </div>
-      <div class="po-field">
-        <label>${plt_t('Category','Categoría')}</label>
-        <span>${plt_esc(po.category)||'—'}</span>
+      <div class="prep-zone" style="border-top:3px solid #0891b2;">
+        <div class="prep-zone-lbl" style="color:#0e7490;">${plt_t('Category','Categoría')}</div>
+        <div style="font-size:0.9rem;font-weight:600;color:var(--text-primary,#111);padding:6px 0;">${plt_esc(po.category)||'—'}</div>
+        ${po.sizeBreakdown && Object.keys(po.sizeBreakdown).length
+          ? `<div style="font-size:0.68rem;color:var(--text-secondary,#888);">👕 ${Object.entries(po.sizeBreakdown).map(([s,q])=>`${plt_esc(s)}:${q}`).join(' · ')}</div>`
+          : ''}
       </div>
     </div>
-    ${po.dockNotes?`<p class="po-note">📦 ${plt_esc(po.dockNotes)}</p>`:''}
-    ${po.sizeBreakdown && Object.keys(po.sizeBreakdown).length
-      ? `<p class="po-note" style="color:#6b7280;">👕 ${plt_t('Sizes','Tallas')}: ${Object.entries(po.sizeBreakdown).map(([s,q])=>`${plt_esc(s)}:${q}`).join(' · ')}</p>`
-      : ''}
-    <div class="po-card-actions">
+    ${po.dockNotes?`<p class="po-note" style="padding:8px 14px;margin:0;border-bottom:1px solid var(--border,#eee);">📦 ${plt_esc(po.dockNotes)}</p>`:''}
+    <div class="po-card-actions" style="padding:8px 12px;">
       <button class="pallet-btn-ghost plt-tiny plt-po-edit">${plt_t('Edit','Editar')}</button>
       ${canTransfer?`<button class="pallet-btn-ghost plt-tiny plt-po-transfer">⇄ ${plt_t('Transfer','Transferir')}</button>`:''}
       <button class="pallet-btn-danger plt-tiny plt-po-delete">✕ ${plt_t('Remove','Eliminar')}</button>
@@ -1092,17 +1431,34 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
   // Dock numbers only revealed on demand to prevent count anchoring/bias.
   const recvRevealId = `recvReveal_${po.id}`;
   const recvView = `
-    <div class="plt-recv-meta-strip">
-      <span class="plt-recv-cat">📦 ${plt_esc(po.category)||'—'}</span>
-      ${hasOrd
-        ? `<span class="plt-ordered-badge">📋 ${plt_t('Ordered','Ordenado')}: <strong>${po.orderedQty}</strong></span>`
-        : `<span class="plt-ordered-badge plt-ordered-missing">📋 ${plt_t('Ordered: not set','Ordenado: no ingresado')}</span>`}
+    <!-- Receiving: count input + vs ordered display -->
+    <div class="prep-zone-row">
+      <div class="prep-zone" style="border-top:3px solid #1d4ed8;">
+        <div class="prep-zone-lbl" style="color:#1d4ed8;">${plt_t('Your count — Qty Received','Tu conteo — Cant. Recibida')} ✏️</div>
+        <input type="number" min="0"
+          class="plt-qty-input plt-received-qty prep-big-input" data-po-id="${po.id}"
+          value="${hasRecv?po.receivedQty:''}" placeholder="0"/>
+      </div>
+      <div class="prep-zone prep-zone-display" style="border-top:3px solid #16a34a;">
+        <div class="prep-zone-lbl" style="color:#166534;">${plt_t('vs Ordered','vs Ordenado')}</div>
+        <div class="plt-extras-display" id="extrasDisplay_${po.id}">
+          ${plt_extrasHtml(po)||'<span class="act-dim">—</span>'}
+        </div>
+      </div>
+      <div class="prep-zone" style="border-top:3px solid #0891b2;justify-content:center;">
+        <div class="prep-zone-lbl" style="color:#0e7490;">${plt_t('Ordered','Ordenado')}</div>
+        <div class="prep-total-val">${hasOrd ? `<strong style="color:#0e7490;">${po.orderedQty}</strong>` : '<span class="act-dim">—</span>'}</div>
+      </div>
+    </div>
+    ${plt_fulfillmentBadge(po)?`<div style="padding:6px 12px;border-bottom:1px solid var(--border,#eee);">${plt_fulfillmentBadge(po)}</div>`:''}
+    <!-- Reference: dock numbers hidden by default -->
+    <div class="prep-ref-toggle-wrap">
       <button type="button" class="plt-reveal-toggle plt-recv-reveal-btn" data-target="${recvRevealId}">
         👁 ${plt_t('Show dock details','Ver detalles del muelle')}
       </button>
     </div>
     <div class="plt-prev-dept-block hidden" id="${recvRevealId}">
-      <div class="plt-prev-dept-label">⚠️ ${plt_t('Dock reference — verify only after your own count. Do not let these numbers anchor your count.','Referencia del muelle — verifica solo después de tu propio conteo.')}</div>
+      <div class="plt-prev-dept-label">⚠️ ${plt_t('Dock reference — verify only after your own count.','Referencia del muelle — verifica solo después de tu propio conteo.')}</div>
       <div class="plt-ref-row">
         <span class="plt-ref-label">📋 ${plt_t('Ordered (Dock)','Ordenado (Muelle)')}</span>
         <span class="plt-ref-value">${hasOrd ? po.orderedQty : plt_t('Not set','No ingresado')}</span>
@@ -1113,25 +1469,8 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
       </div>
       ${po.dockNotes?`<p class="po-note" style="margin:4px 0 0;">📦 ${plt_esc(po.dockNotes)}</p>`:''}
     </div>
-    <div class="plt-recv-entry">
-      <div class="plt-recv-inputs">
-        <div class="plt-recv-field">
-          <label>${plt_t('Your count — Qty Received','Tu conteo — Cant. Recibida')} ✏️</label>
-          <input type="number" min="0"
-            class="plt-qty-input plt-received-qty" data-po-id="${po.id}"
-            value="${hasRecv?po.receivedQty:''}" placeholder="0"/>
-        </div>
-        <div class="plt-recv-field plt-extras-field">
-          <label>${plt_t('vs Ordered','vs Ordenado')}</label>
-          <div class="plt-extras-display" id="extrasDisplay_${po.id}">
-            ${plt_extrasHtml(po)||'<span class="act-dim">—</span>'}
-          </div>
-        </div>
-      </div>
-      ${plt_fulfillmentBadge(po)?`<div style="margin-top:6px;">${plt_fulfillmentBadge(po)}</div>`:''}
-      ${po.receivingNotes?`<p class="po-note">📝 ${plt_esc(po.receivingNotes)}</p>`:''}
-    </div>
-    <div class="po-card-actions">
+    ${po.receivingNotes?`<p class="po-note" style="padding:4px 12px 6px;margin:0;">📝 ${plt_esc(po.receivingNotes)}</p>`:''}
+    <div class="po-card-actions" style="padding:8px 12px;">
       <label class="plt-check-label">
         <input type="checkbox" class="plt-recv-check" ${po.receivingDone?'checked':''}/>
         ${po.receivingDone
@@ -1152,20 +1491,77 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
   const prepRevealId = `prepReveal_${po.id}`;
 
   const prepView = `
-    <!-- Identity strip — ordered qty always visible, counts hidden by default -->
-    <div class="plt-recv-meta-strip">
-      <span class="plt-recv-cat">📦 ${plt_esc(po.category)||'—'}</span>
-      ${hasOrd
-        ? `<span class="plt-ordered-badge">📋 ${plt_t('Ordered','Ordenado')}: <strong>${po.orderedQty}</strong></span>`
-        : `<span class="plt-ordered-badge plt-ordered-missing">📋 ${plt_t('Ordered: not set','Ordenado: no ingresado')}</span>`}
+    <!-- ── NEW PREP CARD LAYOUT ─────────────────────────────────────────── -->
+
+    <!-- Row 1: Count zone (3 columns) -->
+    <div class="prep-zone-row prep-count-row">
+      <div class="prep-zone">
+        <div class="prep-zone-lbl">${plt_t('Your prep count','Tu conteo Prep')} ✏️</div>
+        <input type="number" min="0" class="plt-qty-input plt-prep-qty prep-big-input" data-po-id="${po.id}"
+          value="${hasPrep?po.prepReceivedQty:''}" placeholder="0"/>
+      </div>
+      <div class="prep-zone prep-zone-display">
+        <div class="prep-zone-lbl">${plt_t('Prep vs Receiving','Prep vs Recepción')}</div>
+        <div class="plt-extras-display" id="prepDiscrepDisplay_${po.id}">
+          ${plt_discrepancyHtml(po)||'<span class="act-dim">—</span>'}
+        </div>
+      </div>
+      <div class="prep-zone prep-zone-display">
+        <div class="prep-zone-lbl">${plt_t('Prep vs Ordered','Prep vs Ordenado')}</div>
+        <div class="plt-extras-display" id="prepOrderVarianceDisplay_${po.id}">
+          ${plt_prepVsOrderedHtml(po)||'<span class="act-dim">—</span>'}
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 2: Routing zone (3 columns with colored top accents) -->
+    <div class="prep-zone-row prep-route-row">
+      <div class="prep-route-zone prep-rz-sts">
+        <div class="prep-zone-lbl prep-rz-sts-lbl">📦 ${plt_rl('sts')}</div>
+        <input type="number" min="0" class="plt-qty-input plt-sts-qty prep-big-input" data-po-id="${po.id}"
+          value="${hasSts?po.stsQty:''}" placeholder="0"/>
+        <div class="prep-rz-sub">${plt_t('units → STS','uds → CP')}</div>
+      </div>
+      <div class="prep-route-zone prep-rz-lts">
+        <div class="prep-zone-lbl prep-rz-lts-lbl">🏭 ${plt_rl('lts')}</div>
+        <input type="number" min="0" class="plt-qty-input plt-lts-qty prep-big-input" data-po-id="${po.id}"
+          value="${hasLts?po.ltsQty:''}" placeholder="0"/>
+        <div class="prep-rz-sub">${plt_t('units → LTS','uds → CL')}</div>
+      </div>
+      <div class="prep-route-zone prep-rz-total">
+        <div class="prep-zone-lbl prep-rz-total-lbl">${plt_t('Storage total','Total almacenado')}</div>
+        <div class="prep-total-val" id="routedTotalDisplay_${po.id}"><span class="act-dim">—</span></div>
+        <div class="prep-rz-confirm" id="prepRouteConfirm_${po.id}"></div>
+      </div>
+    </div>
+
+    <!-- Row 3: Overstock boxing (amber tinted) -->
+    <div class="prep-overstock-row">
+      <span class="prep-os-label">📤 ${plt_t('Overstock','Exceso')}</span>
+      <span class="prep-os-qty" id="prepOverstockBoxQty_${po.id}">
+        ${overstockQty!==null ? (overstockQty>0 ? `+${overstockQty}` : '0') : '—'}
+      </span>
+      <select class="plt-overstock-box-select prep-os-select" data-po-id="${po.id}">
+        <option value="">${plt_t('Select open box…','Selecciona caja…')}</option>
+      </select>
+      <button type="button" class="pallet-btn-ghost prep-os-btn plt-overstock-refresh-btn" data-po-id="${po.id}" title="${plt_t('Refresh','Actualizar')}">↺</button>
+      <button type="button" class="pallet-btn-ghost prep-os-btn plt-overstock-new-box-btn" data-po-id="${po.id}">+ ${plt_t('New box','Nueva caja')}</button>
+      <button type="button" class="pallet-btn-primary prep-os-btn plt-overstock-assign-btn" data-po-id="${po.id}">${plt_t('Add to box','Agregar')}</button>
+    </div>
+    <div id="prepOverstockAssignStatus_${po.id}" class="po-note" style="padding:4px 14px 8px;font-size:11px;color:#92400e;">
+      ${po.overstockContainerCode
+        ? `📦 ${plt_t('Assigned to box','Asignado a caja')}: <strong>${plt_esc(po.overstockContainerCode)}</strong>`
+        : `${plt_t('When extras exist, assign them to a shared open box here.','Cuando haya excedentes, asígnalos aquí a una caja abierta compartida.')}`}
+    </div>
+
+    <!-- Row 4: Previous counts (collapsible) -->
+    <div class="prep-ref-toggle-wrap">
       <button type="button" class="plt-reveal-toggle plt-prep-reveal-btn" data-target="${prepRevealId}">
         👁 ${plt_t('Show previous counts','Ver conteos anteriores')}
       </button>
     </div>
-
-    <!-- Hidden reference block — receiving count + notes, shown on demand -->
     <div class="plt-prev-dept-block hidden" id="${prepRevealId}">
-      <div class="plt-prev-dept-label">⚠️ ${plt_t('Previous dept numbers — enter your own count first, then compare.','Números de deptamento anterior — ingresa tu conteo primero, luego compara.')}</div>
+      <div class="plt-prev-dept-label">⚠️ ${plt_t('Previous dept numbers — enter your own count first, then compare.','Números anteriores — ingresa tu conteo primero, luego compara.')}</div>
       <div class="plt-ref-row">
         <span class="plt-ref-label">📋 ${plt_t('Ordered (Dock)','Ordenado (Muelle)')}</span>
         <span class="plt-ref-value">${hasOrd ? po.orderedQty : '—'}</span>
@@ -1174,68 +1570,11 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
         <span class="plt-ref-label">📦 ${plt_t('Receiving count','Conteo Recepción')}</span>
         <span class="plt-ref-value">${hasRecv ? po.receivedQty : '—'}</span>
       </div>
-      <div class="plt-ref-row plt-overstock-auto">
-        <span class="plt-ref-label">📤 ${plt_t('To Overstock (from Prep count)','A Exceso (desde Prep)')}</span>
-        <span class="plt-ref-value">
-          ${overstockQty!==null
-            ? (overstockQty>0
-                ? `<span class="plt-extras plt-extras-over">+${overstockQty} ${plt_t('units → Overstock','unidades → Exceso')}</span>`
-                : `<span class="plt-extras plt-extras-exact">0 — ${plt_t('no extras','sin excedentes')}</span>`)
-            : `<span class="act-dim">${plt_t('Enter Prep count first','Ingresa conteo de Prep primero')}</span>`}
-        </span>
-      </div>
       ${plt_fulfillmentBadge(po)?`<div style="margin:6px 0;">${plt_fulfillmentBadge(po)}</div>`:''}
     </div>
 
-    <!-- Prep's own independent count -->
-    <div class="plt-recv-entry" style="margin-top:8px;">
-      <div class="plt-recv-inputs" style="grid-template-columns:1fr 1fr 1fr;">
-        <div class="plt-recv-field">
-          <label>${plt_t('Your count — Prep Count','Tu conteo — Conteo Prep')} ✏️</label>
-          <input type="number" min="0" class="plt-qty-input plt-prep-qty" data-po-id="${po.id}"
-            value="${hasPrep?po.prepReceivedQty:''}" placeholder="0"/>
-        </div>
-        <div class="plt-recv-field plt-extras-field">
-          <label>${plt_t('Prep vs Receiving','Prep vs Recepción')}</label>
-          <div class="plt-extras-display" id="prepDiscrepDisplay_${po.id}">
-            ${plt_discrepancyHtml(po)||'<span class="act-dim">—</span>'}
-          </div>
-        </div>
-        <div class="plt-recv-field plt-extras-field">
-          <label>${plt_t('Prep vs Ordered / To Overstock','Prep vs Ordenado / A Exceso')}</label>
-          <div class="plt-extras-display" id="prepOrderVarianceDisplay_${po.id}">
-            ${plt_prepVsOrderedHtml(po)||'<span class="act-dim">—</span>'}
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Storage split -->
-    <div class="plt-routing-split">
-      <div class="plt-routing-split-title">
-        ${plt_t('Storage routing — enter qty for each (can split between both):','Enrutamiento — cantidad para cada destino (puede dividirse):')}
-      </div>
-      <div class="plt-routing-split-row">
-        <div class="plt-recv-field">
-          <label>📦 ${plt_rl('sts')}</label>
-          <input type="number" min="0" class="plt-qty-input plt-sts-qty" data-po-id="${po.id}"
-            value="${hasSts?po.stsQty:''}" placeholder="0"/>
-        </div>
-        <div class="plt-recv-field">
-          <label>🏭 ${plt_rl('lts')}</label>
-          <input type="number" min="0" class="plt-qty-input plt-lts-qty" data-po-id="${po.id}"
-            value="${hasLts?po.ltsQty:''}" placeholder="0"/>
-        </div>
-        <div class="plt-recv-field">
-          <label>${plt_t('Storage total','Total almacenado')}</label>
-          <div class="plt-extras-display" id="routedTotalDisplay_${po.id}">
-            <span class="act-dim">—</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="po-card-actions" style="flex-wrap:wrap;gap:8px;margin-top:10px;">
+    <!-- Row 5: Actions -->
+    <div class="po-card-actions" style="flex-wrap:wrap;gap:8px;padding:10px 14px;">
       <label class="plt-check-label">
         <input type="checkbox" class="plt-prep-verify-check" ${po.prepVerified?'checked':''}/>
         ${po.prepVerified
@@ -1250,34 +1589,54 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
 
   // ── READ-ONLY summary (done state or non-active dept) ─────────────────────
   const readonlyView = `
-    <div class="po-card-grid">
-      <div class="po-field"><label>${plt_t('Category','Categoría')}</label><span>${plt_esc(po.category)||'—'}</span></div>
-      <div class="po-field"><label>${plt_t('Ordered','Ordenado')}</label><span>${hasOrd?po.orderedQty:'—'}</span></div>
-      <div class="po-field"><label>${plt_t('Received','Recibido')}</label><span>${hasRecv?po.receivedQty:'—'}</span></div>
-      <div class="po-field"><label>${plt_t('Prep Count','Prep')}</label><span>${hasPrep?po.prepReceivedQty:'—'}</span></div>
-      ${po.destination?`<div class="po-field"><label>${plt_t('Destination','Destino')}</label><span>${plt_esc(plt_rl(po.destination))}</span></div>`:''}
+    <!-- Readonly summary zone row -->
+    <div class="prep-zone-row">
+      <div class="prep-zone">
+        <div class="prep-zone-lbl">${plt_t('Category','Categoría')}</div>
+        <div style="font-size:0.9rem;font-weight:600;color:var(--text-primary,#111);padding:4px 0;">${plt_esc(po.category)||'—'}</div>
+      </div>
+      <div class="prep-zone" style="border-top:3px solid #6366f1;">
+        <div class="prep-zone-lbl" style="color:#4338ca;">${plt_t('Ordered','Ordenado')}</div>
+        <div class="prep-total-val">${hasOrd?`<strong>${po.orderedQty}</strong>`:'<span class="act-dim">—</span>'}</div>
+      </div>
+      <div class="prep-zone" style="border-top:3px solid #1d4ed8;">
+        <div class="prep-zone-lbl" style="color:#1d4ed8;">${plt_t('Received','Recibido')}</div>
+        <div class="prep-total-val">${hasRecv?`<strong>${po.receivedQty}</strong>`:'<span class="act-dim">—</span>'}</div>
+      </div>
     </div>
-    ${plt_discrepancyHtml(po)?`<div style="margin:6px 0;">${plt_discrepancyHtml(po)}</div>`:''}
-    ${(plt_hasVal(po.stsQty)||plt_hasVal(po.ltsQty))?`<div class="plt-recv-summary" style="margin-top:6px;">
-      ${plt_hasVal(po.stsQty)?`<span class="plt-recv-pair"><span class="plt-recv-pair-label">📦 STS</span><strong>${po.stsQty}</strong></span>`:''}
-      ${plt_hasVal(po.ltsQty)?`<span class="plt-recv-pair"><span class="plt-recv-pair-label">🏭 LTS</span><strong>${po.ltsQty}</strong></span>`:''}
-      ${(plt_prepOverstockQty(po) && plt_prepOverstockQty(po)>0)?`<span class="plt-recv-pair"><span class="plt-recv-pair-label" style="color:#854d0e;">📤 Overstock</span><strong>+${plt_prepOverstockQty(po)}</strong></span>`:''}
-    </div>`:''}
-    ${plt_discrepancyHtml(po)?`<div style="margin:4px 0;">${plt_discrepancyHtml(po)}</div>`:''}
-    ${plt_prepVsOrderedHtml(po)?`<div style="margin:4px 0;">${plt_prepVsOrderedHtml(po)}</div>`:''}
-    ${po.receivingNotes?`<p class="po-note">📝 ${plt_esc(po.receivingNotes)}</p>`:''}
-    ${po.prepNotes     ?`<p class="po-note">🔀 ${plt_esc(po.prepNotes)}</p>`:''}
-    ${!isDone?`<div class="po-card-actions">
+    ${(plt_hasVal(po.stsQty)||plt_hasVal(po.ltsQty))?`
+    <div class="prep-zone-row">
+      <div class="prep-zone" style="border-top:3px solid #1d4ed8;">
+        <div class="prep-zone-lbl" style="color:#1d4ed8;">📦 ${plt_rl('sts')}</div>
+        <div class="prep-total-val" style="color:#1d4ed8;">${plt_hasVal(po.stsQty)?`<strong>${po.stsQty}</strong>`:'<span class="act-dim">—</span>'}</div>
+      </div>
+      <div class="prep-zone" style="border-top:3px solid #7c3aed;">
+        <div class="prep-zone-lbl" style="color:#7c3aed;">🏭 ${plt_rl('lts')}</div>
+        <div class="prep-total-val" style="color:#7c3aed;">${plt_hasVal(po.ltsQty)?`<strong>${po.ltsQty}</strong>`:'<span class="act-dim">—</span>'}</div>
+      </div>
+      <div class="prep-zone" style="border-top:3px solid #d97706;">
+        <div class="prep-zone-lbl" style="color:#854d0e;">📤 ${plt_t('Overstock','Exceso')}</div>
+        <div class="prep-total-val" style="color:#854d0e;">${(plt_prepOverstockQty(po)&&plt_prepOverstockQty(po)>0)?`<strong>+${plt_prepOverstockQty(po)}</strong>`:'<span class="act-dim">0</span>'}</div>
+      </div>
+    </div>`:
+    `${plt_discrepancyHtml(po)?`<div style="padding:6px 12px;border-bottom:1px solid var(--border,#eee);">${plt_discrepancyHtml(po)}</div>`:''}`}
+    ${po.receivingNotes?`<p class="po-note" style="padding:6px 12px;margin:0;border-bottom:1px solid var(--border,#eee);">📝 ${plt_esc(po.receivingNotes)}</p>`:''}
+    ${po.prepNotes?`<p class="po-note" style="padding:6px 12px;margin:0;border-bottom:1px solid var(--border,#eee);">🔀 ${plt_esc(po.prepNotes)}</p>`:''}
+    ${!isDone?`<div class="po-card-actions" style="padding:8px 12px;">
       <button class="pallet-btn-ghost plt-tiny plt-po-edit">${plt_t('Edit','Editar')}</button>
       ${canTransfer?`<button class="pallet-btn-ghost plt-tiny plt-po-transfer">⇄ ${plt_t('Transfer','Transferir')}</button>`:''}
       <button class="pallet-btn-danger plt-tiny plt-po-delete">✕</button>
-    </div>`:`<div class="po-card-actions">
+    </div>`:`<div class="po-card-actions" style="padding:8px 12px;">
       <button class="pallet-btn-ghost plt-tiny plt-po-edit">${plt_t('View / Edit','Ver / Editar')}</button>
     </div>`}`;
 
   return `<div class="po-card" data-po-id="${po.id}">
     <div class="po-card-head">
-      <span class="po-card-number">PO# ${plt_esc(po.po)}</span>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span class="po-card-number">PO# ${plt_esc(po.po)}</span>
+        ${po.category?`<span style="font-size:0.72rem;font-weight:500;padding:2px 8px;border-radius:999px;background:var(--surface-alt,#f3f4f6);color:var(--text-secondary,#666);border:1px solid var(--border,#e5e7eb);">${plt_esc(po.category)}</span>`:''}
+        ${hasOrd?`<span style="font-size:0.8rem;font-weight:600;color:var(--text-secondary,#555);">${plt_t('Ordered','Ordenado')}: <strong style="color:var(--text-primary,#111);font-variant-numeric:tabular-nums;">${po.orderedQty}</strong></span>`:''}
+      </div>
       <span class="po-card-status ${stCls}">${stLbl}</span>
     </div>
     ${isRecv ? recvView : isPrep ? prepView : isDock ? dockView : readonlyView}
@@ -1519,14 +1878,39 @@ function plt_bindPoCardEvents(container, pallet, dept){
       if(val === po.prepReceivedQty) return;
       plt_updatePo(pallet.id, poId, {prepReceivedQty: val});
       plt_renderAllPanels();
+      // Update routing summary in-place
+      const wrap = document.getElementById('plt_routingSummaryWrap');
+      if(wrap){ const p=plt_get(pallet.id); if(p) wrap.innerHTML=plt_routingSummaryHtml(p); }
+    }
+
+    function plt_updateSummaryFromInputs() {
+      // Update routing summary live from current input values without saving
+      const wrap = document.getElementById('plt_routingSummaryWrap');
+      if(!wrap) return;
+      const p = plt_get(pallet.id); if(!p) return;
+      // Build a temporary view of the pallet with live input values applied
+      const livePo = (p.pos||[]).find(r=>r.id===poId);
+      if(!livePo) return;
+      const tempPallet = {
+        ...p,
+        pos: p.pos.map(po => po.id===poId ? {
+          ...po,
+          prepReceivedQty: prepInput && prepInput.value!=='' ? Number(prepInput.value) : po.prepReceivedQty,
+          stsQty: stsInput && stsInput.value!=='' ? Number(stsInput.value) : po.stsQty,
+          ltsQty: ltsInput && ltsInput.value!=='' ? Number(ltsInput.value) : po.ltsQty,
+        } : po)
+      };
+      wrap.innerHTML = plt_routingSummaryHtml(tempPallet);
     }
 
     if(prepInput) {
-      prepInput.addEventListener('input',  plt_recalcPrepDisplays);
-      prepInput.addEventListener('blur',   plt_savePrepQty);
+      // input: update displays live, NO save (save only on blur to avoid event spam)
+      prepInput.addEventListener('input',  () => { plt_recalcPrepDisplays(); plt_recalcRouted(); plt_updateSummaryFromInputs(); plt_refreshPrepOverstockBoxing(); });
+      prepInput.addEventListener('blur',   () => { plt_savePrepQty(); plt_refreshPrepOverstockBoxing(); });
     }
     // Kick off display if value already set (e.g. re-opening pallet modal)
     plt_recalcPrepDisplays();
+    plt_refreshPrepOverstockBoxing();
     // Inline receiving qty inputs
     const ordInput  = card.querySelector('.plt-ordered-qty');
     const recvInput = card.querySelector('.plt-received-qty');
@@ -1587,7 +1971,8 @@ function plt_bindPoCardEvents(container, pallet, dept){
     // ── STS / LTS qty inputs (Prep tab) ────────────────────────────────────
     const stsInput   = card.querySelector('.plt-sts-qty');
     const ltsInput   = card.querySelector('.plt-lts-qty');
-    const routedDisp = card.querySelector(`#routedTotalDisplay_${poId}`);
+    const routedDisp    = card.querySelector(`#routedTotalDisplay_${poId}`);
+    const routeConfirm  = card.querySelector(`#prepRouteConfirm_${poId}`);
 
     function plt_recalcRouted(){
       if(!routedDisp) return;
@@ -1596,27 +1981,94 @@ function plt_bindPoCardEvents(container, pallet, dept){
       const total = sts + lts;
       const po = (plt_get(pallet.id)?.pos||[]).find(r=>r.id===poId);
       if(!po || (!stsInput?.value && !ltsInput?.value)) {
-        routedDisp.innerHTML='<span class="act-dim">—</span>'; return;
+        routedDisp.innerHTML='<span class="act-dim">—</span>';
+        if(routeConfirm) { routeConfirm.textContent=''; routeConfirm.className='prep-rz-confirm'; }
+        return;
       }
-      // Use Prep count as authoritative; fall back to Receiving count
-      const countQty = plt_hasVal(po.prepReceivedQty)
-        ? Number(po.prepReceivedQty)
-        : (plt_hasVal(po.receivedQty) ? Number(po.receivedQty) : null);
+      // Read live prep input value first — user may not have blurred yet
+      const livePrepQty = prepInput && prepInput.value!==''
+        ? Number(prepInput.value)
+        : (plt_hasVal(po.prepReceivedQty) ? Number(po.prepReceivedQty) : null);
       const ordered = plt_hasVal(po.orderedQty) ? Number(po.orderedQty) : null;
-      const over    = countQty!==null && ordered!==null ? Math.max(0, countQty-ordered) : 0;
-      const expected = countQty!==null ? countQty - over : null;
-      if(expected!==null && total===expected)
-        routedDisp.innerHTML=`<span class="plt-extras plt-extras-exact">✓ ${total}</span>`;
-      else if(expected!==null && total>expected)
-        routedDisp.innerHTML=`<span class="plt-extras plt-extras-over">${total} (+${total-expected})</span>`;
-      else if(expected!==null && total<expected)
-        routedDisp.innerHTML=`<span class="plt-extras plt-extras-short">${total} (${total-expected})</span>`;
-      else
-        routedDisp.innerHTML=`<strong>${total}</strong>`;
+      const over    = livePrepQty!==null && ordered!==null ? Math.max(0, livePrepQty-ordered) : 0;
+      const expected = livePrepQty!==null ? livePrepQty - over : null;
+      routedDisp.innerHTML = `<strong style="font-size:1.4rem;color:${expected!==null&&total===expected?'#166534':expected!==null&&total>expected?'#854d0e':expected!==null&&total<expected?'#991b1b':'inherit'}">${total}</strong>`;
+      if(routeConfirm) {
+        if(expected!==null && total===expected) { routeConfirm.textContent=`✓ ${plt_t('matches order qty','igual a pedido')}`; routeConfirm.className='prep-rz-confirm prep-rz-ok'; }
+        else if(expected!==null && total>expected) { routeConfirm.textContent=`+${total-expected} ${plt_t('over','extra')}`; routeConfirm.className='prep-rz-confirm prep-rz-over'; }
+        else if(expected!==null && total<expected) { routeConfirm.textContent=`${total-expected} ${plt_t('short','faltan')}`; routeConfirm.className='prep-rz-confirm prep-rz-short'; }
+        else { routeConfirm.textContent=`${plt_t('of','de')} ${expected||0} ${plt_t('to route','por ubicar')}`; routeConfirm.className='prep-rz-confirm'; }
+      }
     }
 
-    if(stsInput) stsInput.addEventListener('input', plt_recalcRouted);
-    if(ltsInput) ltsInput.addEventListener('input', plt_recalcRouted);
+    const overstockBoxQtyDisp = card.querySelector(`#prepOverstockBoxQty_${poId}`);
+    const overstockBoxSelect  = card.querySelector('.plt-overstock-box-select');
+    const overstockAssignBtn  = card.querySelector('.plt-overstock-assign-btn');
+    const overstockNewBtn     = card.querySelector('.plt-overstock-new-box-btn');
+    const overstockStatusEl   = card.querySelector(`#prepOverstockAssignStatus_${poId}`);
+
+    function plt_refreshPrepOverstockBoxing() {
+      // Always re-query from live DOM — captured closure refs go stale if cards rebuild
+      const liveCard      = document.querySelector(`.po-card[data-po-id="${poId}"]`);
+      const liveBoxQtyDisp = liveCard ? liveCard.querySelector(`#prepOverstockBoxQty_${poId}`) : null;
+      const liveBoxSelect  = liveCard ? liveCard.querySelector('.plt-overstock-box-select') : null;
+      const liveStatusEl   = liveCard ? liveCard.querySelector(`#prepOverstockAssignStatus_${poId}`) : null;
+      const liveAssignBtn  = liveCard ? liveCard.querySelector('.plt-overstock-assign-btn') : null;
+      const livePrepInput  = liveCard ? liveCard.querySelector('.plt-prep-qty') : prepInput;
+
+      const po = (plt_get(pallet.id)?.pos||[]).find(r=>r.id===poId);
+      if(!po) return;
+
+      const livePrepQty = livePrepInput && livePrepInput.value!=='' ? Number(livePrepInput.value) : (plt_hasVal(po.prepReceivedQty) ? Number(po.prepReceivedQty) : null);
+      const liveOrdQty  = plt_hasVal(po.orderedQty) ? Number(po.orderedQty) : null;
+      const overstockQty = (livePrepQty!==null && liveOrdQty!==null)
+        ? Math.max(0, livePrepQty - liveOrdQty)
+        : null;
+
+      if (liveBoxQtyDisp) {
+        if(overstockQty===null) liveBoxQtyDisp.innerHTML = `<span class="act-dim">${plt_t('Enter Prep count first','Ingresa conteo de Prep primero')}</span>`;
+        else if(overstockQty>0) liveBoxQtyDisp.innerHTML = `<span class="plt-extras plt-extras-over">+${overstockQty}</span>`;
+        else liveBoxQtyDisp.innerHTML = `<span class="plt-extras plt-extras-exact">0</span>`;
+      }
+
+      // Read directly from state — containers in same document context
+      const openBoxes = (Array.isArray(state.data.overstockContainers) ? state.data.overstockContainers : [])
+        .filter(box => String(box?.status || '').trim().toLowerCase() === 'open')
+        .sort((a,b) => (b.updatedAt||b.createdAt||0) - (a.updatedAt||a.createdAt||0));
+
+      const existingAssignment = typeof window.getPrepPoOverstockAssignment === 'function'
+        ? window.getPrepPoOverstockAssignment(pallet.id, poId) : null;
+
+      if(liveBoxSelect){
+        const current = liveBoxSelect.value;
+        liveBoxSelect.innerHTML = `<option value="">${plt_t('Select open box','Selecciona caja abierta')}</option>` +
+          openBoxes.map(box => `<option value="${box.id}">${plt_esc(box.code)}${box.currentLocation ? ' · '+plt_esc(box.currentLocation) : ''}</option>`).join('');
+        if(existingAssignment?.container?.id && openBoxes.some(b => b.id===existingAssignment.container.id)) {
+          liveBoxSelect.value = existingAssignment.container.id;
+        } else if(current && openBoxes.some(b => b.id===current)) {
+          liveBoxSelect.value = current;
+        }
+      }
+
+      if(liveStatusEl){
+        if(overstockQty===null){
+          liveStatusEl.innerHTML = plt_t('Enter Prep count first to calculate overstock.','Ingresa el conteo de Prep primero para calcular excedente.');
+        } else if(overstockQty<=0){
+          liveStatusEl.innerHTML = plt_t('No overstock to box for this PO.','No hay excedente para encajar en esta OC.');
+        } else if(existingAssignment?.container){
+          liveStatusEl.innerHTML = `📦 ${plt_t('Assigned to box','Asignado a caja')}: <strong>${plt_esc(existingAssignment.container.code)}</strong>${existingAssignment.container.currentLocation ? ' · '+plt_esc(existingAssignment.container.currentLocation) : ''}`;
+        } else {
+          liveStatusEl.innerHTML = openBoxes.length
+            ? `${plt_t('Select an open shared box, or create one now.','Selecciona una caja abierta compartida, o crea una ahora.')} <strong>(${openBoxes.length} ${plt_t('open box(es) available','caja(s) abierta(s) disponible(s)')})</strong>`
+            : `⚠️ ${plt_t('No open overstock boxes found. Create a new box now.','No se encontraron cajas abiertas. Crea una caja nueva ahora.')}`;
+        }
+      }
+
+      if(liveAssignBtn) liveAssignBtn.disabled = !(overstockQty && overstockQty > 0);
+    }
+
+    if(stsInput) stsInput.addEventListener('input', () => { plt_recalcRouted(); plt_updateSummaryFromInputs(); plt_refreshPrepOverstockBoxing(); });
+    if(ltsInput) ltsInput.addEventListener('input', () => { plt_recalcRouted(); plt_updateSummaryFromInputs(); plt_refreshPrepOverstockBoxing(); });
 
     function plt_saveRouting(){
       const po=(plt_get(pallet.id)?.pos||[]).find(r=>r.id===poId); if(!po) return;
@@ -1625,13 +2077,63 @@ function plt_bindPoCardEvents(container, pallet, dept){
       if(sVal===po.stsQty && lVal===po.ltsQty) return;
       plt_updatePo(pallet.id, poId, {stsQty:sVal, ltsQty:lVal});
       plt_renderAllPanels();
+      // Update routing summary in-place
+      const wrap = document.getElementById('plt_routingSummaryWrap');
+      if(wrap){ const p=plt_get(pallet.id); if(p) wrap.innerHTML=plt_routingSummaryHtml(p); }
     }
 
-    if(stsInput) stsInput.addEventListener('blur', plt_saveRouting);
-    if(ltsInput) ltsInput.addEventListener('blur', plt_saveRouting);
+    if(stsInput) stsInput.addEventListener('blur', () => { plt_saveRouting(); plt_refreshPrepOverstockBoxing(); });
+    if(ltsInput) ltsInput.addEventListener('blur', () => { plt_saveRouting(); plt_refreshPrepOverstockBoxing(); });
+
+    overstockNewBtn?.addEventListener('click', () => {
+      if(typeof window.createPrepOpenOverstockContainer !== 'function') return;
+      const box = window.createPrepOpenOverstockContainer();
+      plt_refreshPrepOverstockBoxing();
+      if(overstockBoxSelect && box?.id) overstockBoxSelect.value = box.id;
+      if(overstockStatusEl && box?.code) {
+        overstockStatusEl.innerHTML = `📦 ${plt_t('New open box created','Nueva caja abierta creada')}: <strong>${plt_esc(box.code)}</strong>`;
+      }
+    });
+
+    // Refresh button — re-populates the box list on demand
+    const overstockRefreshBtn = card.querySelector('.plt-overstock-refresh-btn');
+    overstockRefreshBtn?.addEventListener('click', () => { plt_refreshPrepOverstockBoxing(); });
+
+    // Also re-populate when the select is focused (catches cases where containers were added after modal opened)
+    overstockBoxSelect?.addEventListener('focus', () => { plt_refreshPrepOverstockBoxing(); });
+
+    overstockAssignBtn?.addEventListener('click', () => {
+      const po = (plt_get(pallet.id)?.pos||[]).find(r=>r.id===poId);
+      const overstockQty = po ? plt_prepOverstockQty(po) : null;
+      if(!overstockQty || overstockQty <= 0){
+        plt_refreshPrepOverstockBoxing();
+        return;
+      }
+      const targetBoxId = overstockBoxSelect?.value || '';
+      if(!targetBoxId){
+        if(overstockStatusEl) overstockStatusEl.innerHTML = `⚠️ ${plt_t('Select an open box first. If none appear, click New box.','Selecciona primero una caja abierta. Si no aparece ninguna, haz clic en Nueva caja.')}`;
+        return;
+      }
+      if(typeof window.assignPrepOverstockToContainer !== 'function') return;
+      const res = window.assignPrepOverstockToContainer({ palletId: pallet.id, poId, containerId: targetBoxId });
+      if(res?.ok){
+        const currentPo = (plt_get(pallet.id)?.pos||[]).find(r=>r.id===poId);
+        if(currentPo && res.container){
+          currentPo.overstockContainerId = res.container.id;
+          currentPo.overstockContainerCode = res.container.code;
+        }
+        plt_refreshPrepOverstockBoxing();
+        if(typeof renderOverstockPage === 'function') renderOverstockPage();
+      }
+    });
 
     // Kick off display if values already set
+    plt_recalcPrepDisplays();
     plt_recalcRouted();
+    plt_refreshPrepOverstockBoxing();
+    // Retry overstock box list after backend sync completes (catches late-loading data)
+    setTimeout(() => { plt_refreshPrepOverstockBoxing(); }, 600);
+    setTimeout(() => { plt_refreshPrepOverstockBoxing(); }, 2000);
   });
 }
 
@@ -1860,6 +2362,7 @@ function plt_renderAllPanels(){
   plt_renderDockPanel();
   plt_renderReceivingPanel();
   plt_renderPrepPanel();
+  plt_renderPutawayPanel();
   plt_renderAllActivity();
   if(typeof renderStats==='function') renderStats();
 }

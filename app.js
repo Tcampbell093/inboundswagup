@@ -170,7 +170,12 @@ function applyWorkflowSyncPayload(payload={}){
       receivingSections: Array.isArray(parsed.receivingSections) ? parsed.receivingSections : defaults.receivingSections,
       prepSections: Array.isArray(parsed.prepSections) ? parsed.prepSections : defaults.prepSections,
       overstockEntries: Array.isArray(parsed.overstockEntries) ? parsed.overstockEntries : defaults.overstockEntries,
+      overstockContainers: Array.isArray(parsed.overstockContainers) ? parsed.overstockContainers : defaults.overstockContainers,
+      overstockContainerUi: { ...defaults.overstockContainerUi, ...(parsed.overstockContainerUi || {}) },
       putawayEntries: Array.isArray(parsed.putawayEntries) ? parsed.putawayEntries : defaults.putawayEntries,
+      putawayClosedLines: Array.isArray(parsed.putawayClosedLines) ? parsed.putawayClosedLines : defaults.putawayClosedLines,
+      putawayAuditSessions: Array.isArray(parsed.putawayAuditSessions) ? parsed.putawayAuditSessions : defaults.putawayAuditSessions,
+      putawayAuditUi: { ...defaults.putawayAuditUi, ...(parsed.putawayAuditUi || {}) },
       workflowUi: { ...defaults.workflowUi, ...(parsed.workflowUi || {}) },
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
@@ -241,6 +246,13 @@ const defaultMasters = {
     "Dock-1 Fri","Dock-2 Fri","Dock-3 Fri","QA-1 Mon","QA-2 Mon","QA-3 Mon",
     "QA-1 Tue","QA-2 Tue","QA-3 Tue","Prep-1 Mon","Prep-2 Mon","Prep-3 Mon",
     "Prep-1 Tue","Prep-2 Tue","Prep-3 Tue",
+  ],
+  putawayLocations: [
+    "QA1-A1","QA1-A2","QA1-B1","QA1-B2","QA1-C1","QA1-C2","QA1-D1","QA1-D2",
+    "QA2-A1","QA2-A2","QA2-B1","QA2-B2","QA2-C1","QA2-C2","QA2-D1","QA2-D2",
+    "QA3-A1","QA3-A2","QA3-B1","QA3-B2","QA3-C1","QA3-C2","QA3-D1","QA3-D2",
+    "QA4-A1","QA4-A2","QA4-B1","QA4-B2","QA4-C1","QA4-C2","QA4-D1","QA4-D2",
+    "QA5-A1","QA5-A2","QA5-B1","QA5-B2","QA5-C1","QA5-C2","QA5-D1","QA5-D2",
   ],
 };
 
@@ -424,6 +436,8 @@ const statNotes = document.getElementById("statNotes");
 const todayLabel = document.getElementById("todayLabel");
 const sectionTemplate = document.getElementById("sectionTemplate");
 
+window.state = state;
+
 const associateForm = document.getElementById("associateForm");
 const associateInput = document.getElementById("associateInput");
 const associatesList = document.getElementById("associatesList");
@@ -433,6 +447,9 @@ const categoriesList = document.getElementById("categoriesList");
 const locationForm = document.getElementById("locationForm");
 const locationInput = document.getElementById("locationInput");
 const locationsList = document.getElementById("locationsList");
+const putawayLocationForm = document.getElementById("putawayLocationForm");
+const putawayLocationInput = document.getElementById("putawayLocationInput");
+const putawayLocationsList = document.getElementById("putawayLocationsList");
 const langEnBtn = document.getElementById("langEnBtn");
 const langEsBtn = document.getElementById("langEsBtn");
 
@@ -2437,6 +2454,7 @@ async function init() {
   bindPageEvents();
   bindMasterEvents();
   bindOverstockEvents();
+  osBindModalClose();
   bindPutawayEvents();
   bindPerformanceEvents();
   bindImportControls();
@@ -2646,6 +2664,13 @@ function bindMasterEvents() {
       event.preventDefault();
       addMasterItem("locations", locationInput.value);
       locationInput.value = "";
+    });
+  }
+  if (putawayLocationForm && putawayLocationInput) {
+    putawayLocationForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      addMasterItem("putawayLocations", putawayLocationInput.value.toUpperCase());
+      putawayLocationInput.value = "";
     });
   }
 }
@@ -3196,139 +3221,886 @@ function populateOverstockFilterSelects() {
 }
 
 
-function renderOverstockPage() {
-  if (!Array.isArray(state.data.overstockEntries)) state.data.overstockEntries = [];
-  if (!state.data.overstockFilters) state.data.overstockFilters = { date: "", associate: "All", location: "All", status: "All", search: "", mineOnly: false };
 
-  // ── Pallet-sourced overstock queue ───────────────────────────────────────
-  const overstockQueueEl = document.getElementById("overstockPalletQueue");
-  if (overstockQueueEl) {
-    const pallets = Array.isArray(state.data.pallets) ? state.data.pallets : [];
-    const palletOverstockPOs = [];
-    pallets.filter(p => p.status === 'prep' || p.status === 'done').forEach(pallet => {
-      (pallet.pos || []).forEach(po => {
-        const ref = getPoPrepVarianceRef(po);
-        // Only show as overstock if Prep actually counted AND prep count > ordered qty
-        // (not just "receiving > ordered" — Prep is the verification step)
-        const over = ref.extras;
-        if (over > 0 && ref.extrasSource === 'prep') palletOverstockPOs.push({
-          po: po.po,
-          overstock: over,
-          ordered: ref.ordered || 0,
-          received: ref.received || 0,
-          prep: ref.prep || 0,
-          prepVsReceiving: ref.prepVsReceiving,
-          extrasSource: ref.extrasSource,
-          category: po.category || '—',
-          pallet: pallet.label,
-          palletDate: pallet.date || '',
-          status: pallet.status
-        });
+const overstockContainerStatusOptions = ["Open", "Full", "On Cart", "Stored", "Closed"];
+
+
+function getOverstockPalletCandidates() {
+  const pallets = Array.isArray(state.data.pallets) ? state.data.pallets : [];
+  const results = [];
+  const entries = Array.isArray(state.data.overstockEntries) ? state.data.overstockEntries : [];
+
+  pallets.filter(p => p.status === 'prep' || p.status === 'done').forEach((pallet) => {
+    (pallet.pos || []).forEach((po) => {
+      const ordered = plt_hasVal(po?.orderedQty) ? Number(po.orderedQty) : 0;
+      const received = plt_hasVal(po?.receivedQty) ? Number(po.receivedQty) : 0;
+      const prep = plt_hasVal(po?.prepReceivedQty) ? Number(po.prepReceivedQty) : received;
+      const sts = plt_hasVal(po?.stsQty) ? Number(po.stsQty) : 0;
+      const lts = plt_hasVal(po?.ltsQty) ? Number(po.ltsQty) : 0;
+
+      const explicitOverstock = plt_hasVal(po?.overstockQty) ? Number(po.overstockQty) : null;
+      const byPrepMinusOrdered = prep > 0 && ordered > 0 ? Math.max(0, prep - ordered) : 0;
+      const byRoutingRemainder = prep > 0 ? Math.max(0, prep - sts - lts) : 0;
+      const ref = getPoPrepVarianceRef(po);
+      const computed = Math.max(
+        explicitOverstock !== null ? explicitOverstock : 0,
+        byPrepMinusOrdered,
+        byRoutingRemainder,
+        Number(ref?.extras || 0)
+      );
+
+      if (computed <= 0) return;
+
+      const alreadyBoxedQty = entries
+        .filter((row) => row.sourceType === 'prep-extra' && row.po === po.po && row.sourcePalletId === pallet.id)
+        .reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+
+      const availableQty = Math.max(0, computed - alreadyBoxedQty);
+      if (availableQty <= 0) return;
+
+      results.push({
+        sourcePalletId: pallet.id,
+        sourcePalletLabel: pallet.label || '',
+        sourcePalletDate: pallet.date || '',
+        po: po.po,
+        quantity: availableQty,
+        totalOverstock: computed,
+        alreadyBoxedQty,
+        ordered,
+        received,
+        prep,
+        sts,
+        lts,
+        prepVsReceiving: ref?.prepVsReceiving ?? null,
+        category: po.category || '',
+      });
+    });
+  });
+
+  return results.sort((a, b) => {
+    const da = String(a.sourcePalletDate || '');
+    const db = String(b.sourcePalletDate || '');
+    if (da !== db) return db.localeCompare(da);
+    return String(a.po || '').localeCompare(String(b.po || ''));
+  });
+}
+
+function getNextOverstockContainerCode() {
+  const containers = Array.isArray(state.data.overstockContainers) ? state.data.overstockContainers : [];
+  let maxNum = 0;
+  containers.forEach((container) => {
+    const m = String(container.code || '').match(/OSC-(\d+)/i);
+    if (m) maxNum = Math.max(maxNum, Number(m[1] || 0));
+  });
+  return `OSC-${String(maxNum + 1).padStart(4, '0')}`;
+}
+
+function getOverstockContainerItems(containerId) {
+  return [...(state.data.overstockEntries || [])]
+    .filter((row) => row.containerId === containerId)
+    .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+}
+
+function getSelectedOverstockContainer() {
+  const id = state.data.overstockContainerUi?.selectedId || "";
+  return (state.data.overstockContainers || []).find((c) => c.id === id) || null;
+}
+
+function createOverstockContainer({ status = "Open", notes = "" } = {}) {
+  if (!Array.isArray(state.data.overstockContainers)) state.data.overstockContainers = [];
+  if (!state.data.overstockContainerUi) state.data.overstockContainerUi = { selectedId: "", search: "" };
+  const container = {
+    id: makeId(),
+    code: getNextOverstockContainerCode(),
+    barcode: "",
+    status,
+    currentLocation: "",
+    notes: notes || "",
+    createdBy: state.currentUser || "",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  state.data.overstockContainers.unshift(container);
+  state.data.overstockContainerUi.selectedId = container.id;
+  persistData();
+  return container;
+}
+
+function updateOverstockContainer(containerId, updates = {}) {
+  const container = (state.data.overstockContainers || []).find((c) => c.id === containerId);
+  if (!container) return false;
+  Object.assign(container, updates, { updatedAt: Date.now() });
+  if (Object.prototype.hasOwnProperty.call(updates, 'currentLocation')) {
+    const nextLocation = String(updates.currentLocation || "").trim();
+    (state.data.overstockEntries || []).forEach((row) => {
+      if (row.containerId === containerId) {
+        row.location = nextLocation;
+        row.containerCode = container.code;
+        row.updatedAt = Date.now();
+      }
+    });
+  }
+  persistData();
+  return true;
+}
+
+function addPalletCandidateToOverstockContainer(candidate, containerId) {
+  const container = (state.data.overstockContainers || []).find((c) => c.id === containerId);
+  if (!container || !candidate) return { ok: false, reason: "missing" };
+  if (!Array.isArray(state.data.overstockEntries)) state.data.overstockEntries = [];
+  const exists = state.data.overstockEntries.some((row) =>
+    row.containerId === containerId &&
+    row.po === candidate.po &&
+    row.sourcePalletId === candidate.sourcePalletId &&
+    row.sourceType === 'prep-extra'
+  );
+  if (exists) return { ok: false, reason: "exists" };
+
+  state.data.overstockEntries.unshift({
+    id: makeId(),
+    date: new Date().toISOString().slice(0, 10),
+    po: candidate.po,
+    quantity: Number(candidate.quantity || 0),
+    category: candidate.category || "",
+    status: "Not Donation",
+    action: "Required",
+    location: container.currentLocation || "",
+    associate: state.currentUser || "",
+    sourceType: "prep-extra",
+    sourcePalletId: candidate.sourcePalletId,
+    sourcePalletLabel: candidate.sourcePalletLabel,
+    containerId: container.id,
+    containerCode: container.code,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  });
+  container.updatedAt = Date.now();
+  persistData();
+  return { ok: true };
+}
+
+function getOverstockContainerSearchResults(query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return [];
+  const containers = Array.isArray(state.data.overstockContainers) ? state.data.overstockContainers : [];
+  const entries = Array.isArray(state.data.overstockEntries) ? state.data.overstockEntries : [];
+  return containers.map((container) => {
+    const items = entries.filter((row) => row.containerId === container.id);
+    return { container, items };
+  }).filter(({ container, items }) => {
+    const hay = [
+      container.code,
+      container.status,
+      container.currentLocation,
+      ...items.flatMap((row) => [row.po, row.location, row.category, row.sourcePalletLabel]),
+    ].join(" ").toLowerCase();
+    return hay.includes(q);
+  });
+}
+
+
+function computePrepPoOverstockCandidate(palletId, poId) {
+  const pallet = (state.data.pallets || []).find((p) => p.id === palletId);
+  const po = (pallet?.pos || []).find((row) => row.id === poId);
+  if (!pallet || !po) return null;
+
+  const ordered = plt_hasVal(po?.orderedQty) ? Number(po.orderedQty) : 0;
+  const received = plt_hasVal(po?.receivedQty) ? Number(po.receivedQty) : 0;
+  const prep = plt_hasVal(po?.prepReceivedQty) ? Number(po.prepReceivedQty) : received;
+  const sts = plt_hasVal(po?.stsQty) ? Number(po.stsQty) : 0;
+  const lts = plt_hasVal(po?.ltsQty) ? Number(po.ltsQty) : 0;
+  const explicitOverstock = plt_hasVal(po?.overstockQty) ? Number(po.overstockQty) : null;
+  const byPrepMinusOrdered = prep > 0 && ordered > 0 ? Math.max(0, prep - ordered) : 0;
+  const byRoutingRemainder = prep > 0 ? Math.max(0, prep - sts - lts) : 0;
+  const ref = typeof getPoPrepVarianceRef === "function" ? getPoPrepVarianceRef(po) : { extras: 0, prepVsReceiving: null };
+  const computed = Math.max(
+    explicitOverstock !== null ? explicitOverstock : 0,
+    byPrepMinusOrdered,
+    byRoutingRemainder,
+    Number(ref?.extras || 0)
+  );
+  if (computed <= 0) return null;
+
+  return {
+    sourcePalletId: pallet.id,
+    sourcePalletLabel: pallet.label || '',
+    sourcePalletDate: pallet.date || '',
+    poId: po.id,
+    po: po.po,
+    quantity: computed,
+    ordered,
+    received,
+    prep,
+    sts,
+    lts,
+    prepVsReceiving: ref?.prepVsReceiving ?? null,
+    category: po.category || '',
+  };
+}
+
+window.getPrepAllOverstockContainers = function() {
+  return [...(state.data.overstockContainers || [])]
+    .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+};
+
+window.getPrepOpenOverstockContainers = function() {
+  return window.getPrepAllOverstockContainers()
+    .filter((c) => String(c.status || '').trim().toLowerCase() === 'open');
+};
+
+window.createPrepOpenOverstockContainer = function() {
+  return createOverstockContainer({ status: "Open" });
+};
+
+window.getPrepPoOverstockAssignment = function(palletId, poId) {
+  const candidate = computePrepPoOverstockCandidate(palletId, poId);
+  if (!candidate) return null;
+  const row = (state.data.overstockEntries || []).find((entry) =>
+    entry.sourceType === 'prep-extra' &&
+    entry.sourcePalletId === palletId &&
+    entry.po === candidate.po
+  );
+  if (!row) return null;
+  const container = (state.data.overstockContainers || []).find((c) => c.id === row.containerId) || null;
+  return { row, container, candidate };
+};
+
+window.assignPrepOverstockToContainer = function({ palletId, poId, containerId }) {
+  const candidate = computePrepPoOverstockCandidate(palletId, poId);
+  if (!candidate || !containerId) return { ok: false, reason: "missing" };
+  const container = (state.data.overstockContainers || []).find((c) => c.id === containerId);
+  if (!container) return { ok: false, reason: "container_missing" };
+
+  let row = (state.data.overstockEntries || []).find((entry) =>
+    entry.sourceType === 'prep-extra' &&
+    entry.sourcePalletId === palletId &&
+    entry.po === candidate.po
+  );
+
+  if (row) {
+    row.containerId = container.id;
+    row.containerCode = container.code;
+    row.location = container.currentLocation || "";
+    row.quantity = Number(candidate.quantity || 0);
+    row.category = candidate.category || row.category || "";
+    row.updatedAt = Date.now();
+    container.updatedAt = Date.now();
+    persistData();
+    return { ok: true, moved: true, container };
+  }
+
+  const res = addPalletCandidateToOverstockContainer(candidate, containerId);
+  if (!res.ok) return res;
+
+  const pallet = (state.data.pallets || []).find((p) => p.id === palletId);
+  const po = (pallet?.pos || []).find((item) => item.id === poId);
+  if (po) {
+    po.overstockContainerId = container.id;
+    po.overstockContainerCode = container.code;
+  }
+  persistData();
+  return { ok: true, moved: false, container };
+};
+
+function renderOverstockContainerHub(candidates) {
+  // Legacy function - now just triggers the new page render
+  renderOverstockPage();
+}
+
+function osOpenModal(id) {
+  const bd = document.getElementById(id);
+  if (bd) bd.classList.add('os-modal-open');
+}
+
+function osCloseModal(id) {
+  const bd = document.getElementById(id);
+  if (bd) bd.classList.remove('os-modal-open');
+}
+
+function osBindModalClose() {
+  document.querySelectorAll('[data-close]').forEach(btn => {
+    btn.addEventListener('click', () => osCloseModal(btn.dataset.close));
+  });
+  document.querySelectorAll('.os-modal-backdrop').forEach(bd => {
+    bd.addEventListener('click', e => { if (e.target === bd) osCloseModal(bd.id); });
+  });
+}
+
+function osBuildLocGrid(gridId, onTap) {
+  const g = document.getElementById(gridId);
+  if (!g) return;
+  g.innerHTML = '';
+  const containers = Array.isArray(state.data.overstockContainers) ? state.data.overstockContainers : [];
+  overstockLocations.forEach(loc => {
+    const boxes = containers.filter(c => c.currentLocation === loc && c.status !== 'Closed');
+    const d = document.createElement('div');
+    d.className = 'os-loc' + (boxes.length ? ' os-loc-occ' : ' os-loc-empty');
+    d.innerHTML = `<div class="os-loc-name">${loc}</div><div class="os-loc-count">${boxes.length ? boxes.length + ' box' : 'free'}</div>`;
+    d.addEventListener('click', () => onTap(loc, d));
+    g.appendChild(d);
+  });
+}
+
+function osOpenPutaway(containerId) {
+  const c = (state.data.overstockContainers || []).find(x => x.id === containerId);
+  if (!c) return;
+  const items = getOverstockContainerItems(containerId);
+  const unitTotal = items.reduce((s, r) => s + Number(r.quantity || 0), 0);
+  const cats = [...new Set(items.map(r => r.category).filter(Boolean))].join(', ') || '—';
+  const pos = [...new Set(items.map(r => r.po).filter(Boolean))].map(p => `PO# ${escapeHtml(p)}`).join(' · ') || '—';
+
+  document.getElementById('osPaTitle').textContent = `Put away ${c.code}`;
+  document.getElementById('osPaSub').textContent = `${unitTotal} units · ${cats}`;
+  document.getElementById('osPaPos').textContent = pos;
+  document.getElementById('osPaLocInput').value = '';
+  const toast = document.getElementById('osPaToast');
+  if (toast) { toast.style.display = 'none'; toast.textContent = ''; }
+
+  osBuildLocGrid('osPaLocGrid', (loc, el) => {
+    document.querySelectorAll('#osPaLocGrid .os-loc').forEach(x => x.classList.remove('os-loc-sel'));
+    el.classList.add('os-loc-sel');
+    document.getElementById('osPaLocInput').value = loc;
+  });
+
+  const confirmBtn = document.getElementById('osPaConfirmBtn');
+  confirmBtn.textContent = 'Confirm put away';
+  confirmBtn.onclick = () => {
+    const loc = (document.getElementById('osPaLocInput').value || '').trim().toUpperCase();
+    if (!loc) { document.getElementById('osPaLocInput').focus(); return; }
+    updateOverstockContainer(containerId, { status: 'Stored', currentLocation: loc });
+    const toast = document.getElementById('osPaToast');
+    toast.textContent = `${c.code} stored at ${loc} ✓`;
+    toast.style.display = 'block';
+    confirmBtn.textContent = 'Done';
+    confirmBtn.onclick = () => { osCloseModal('osMdPutaway'); renderOverstockPage(); };
+  };
+  osOpenModal('osMdPutaway');
+}
+
+function osOpenLocation(loc) {
+  const containers = (state.data.overstockContainers || []).filter(c => c.currentLocation === loc && c.status !== 'Closed');
+  document.getElementById('osLocTitle').textContent = loc;
+  document.getElementById('osLocSub').textContent = containers.length
+    ? `${containers.length} box${containers.length > 1 ? 'es' : ''} stored here`
+    : 'Empty location';
+
+  const body = document.getElementById('osLocBody');
+  if (!containers.length) {
+    body.innerHTML = `<div style="text-align:center;padding:24px 0;color:var(--muted);font-size:13px;">Nothing stored at ${escapeHtml(loc)} right now.</div>`;
+  } else {
+    body.innerHTML = containers.map(c => {
+      const items = getOverstockContainerItems(c.id);
+      const units = items.reduce((s, r) => s + Number(r.quantity || 0), 0);
+      const cats = [...new Set(items.map(r => r.category).filter(Boolean))].join(', ') || '—';
+      const pos = items.slice(0, 3).map(r => `PO# ${escapeHtml(r.po)}`).join(' · ') + (items.length > 3 ? ` +${items.length - 3} more` : '');
+      const statusBadge = { 'Open': 'os-badge-blue', 'On Cart': 'os-badge-amber', 'Stored': 'os-badge-green', 'Full': 'os-badge-gray' }[c.status] || 'os-badge-gray';
+      return `<div class="os-loc-detail-row">
+        <div>
+          <div style="font-size:15px;font-weight:700;font-family:monospace;color:var(--navy);">${escapeHtml(c.code)}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:3px;">${units} units · ${cats}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;">${pos}</div>
+        </div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;">
+          <span class="os-badge ${statusBadge}">${escapeHtml(c.status)}</span>
+          <button class="os-ghost-btn" data-audit-container="${escapeAttribute(c.id)}" data-audit-loc="${escapeAttribute(loc)}" type="button" style="font-size:11px;padding:5px 10px;">Audit box</button>
+          <button class="os-ghost-btn" data-merge-id="${escapeAttribute(c.id)}" type="button" style="font-size:11px;padding:5px 10px;">Merge</button>
+        </div>
+      </div>`;
+    }).join('') +
+    // Audit-all option at the bottom when there are multiple containers
+    (containers.length > 1
+      ? `<div style="padding:12px 0 0;border-top:1px solid var(--line);margin-top:4px;">
+           <button class="os-ghost-btn" data-audit-all-loc="${escapeAttribute(loc)}" type="button" style="width:100%;font-size:12px;color:var(--navy);font-weight:600;">
+             Audit all POs at ${escapeHtml(loc)} →
+           </button>
+         </div>`
+      : '');
+
+    body.querySelectorAll('[data-audit-container]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        osCloseModal('osMdLocation');
+        osOpenAudit(btn.dataset.auditLoc, btn.dataset.auditContainer);
+      });
+    });
+    body.querySelectorAll('[data-audit-all-loc]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        osCloseModal('osMdLocation');
+        osOpenAudit(btn.dataset.auditAllLoc, null);
+      });
+    });
+    body.querySelectorAll('[data-merge-id]').forEach(btn => {
+      btn.addEventListener('click', () => { osCloseModal('osMdLocation'); osOpenMerge(btn.dataset.mergeId); });
+    });
+  }
+  osOpenModal('osMdLocation');
+}
+
+function osOpenMerge(containerId) {
+  const c = (state.data.overstockContainers || []).find(x => x.id === containerId);
+  if (!c) return;
+  const items = getOverstockContainerItems(containerId);
+  const units = items.reduce((s, r) => s + Number(r.quantity || 0), 0);
+  const pos = items.map(r => `PO# ${escapeHtml(r.po)}`).join(', ') || '—';
+
+  document.getElementById('osMgTitle').textContent = `Merge ${c.code}`;
+  document.getElementById('osMgContents').innerHTML = `<strong>${units} units</strong> · ${pos}`;
+
+  const sel = document.getElementById('osMgInto');
+  sel.innerHTML = '<option value="">— select destination box —</option>';
+  (state.data.overstockContainers || [])
+    .filter(x => x.id !== containerId && x.status !== 'Closed')
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+    .forEach(x => {
+      const xItems = getOverstockContainerItems(x.id);
+      const xUnits = xItems.reduce((s, r) => s + Number(r.quantity || 0), 0);
+      const opt = document.createElement('option');
+      opt.value = x.id;
+      opt.textContent = `${x.code} · ${x.status}${x.currentLocation ? ' · ' + x.currentLocation : ''} · ${xUnits} units`;
+      sel.appendChild(opt);
+    });
+
+  const toast = document.getElementById('osMgToast');
+  if (toast) { toast.style.display = 'none'; toast.textContent = ''; }
+
+  const confirmBtn = document.getElementById('osMgConfirmBtn');
+  confirmBtn.textContent = 'Merge boxes';
+  confirmBtn.onclick = () => {
+    const destId = sel.value;
+    if (!destId) { sel.focus(); return; }
+    const dest = (state.data.overstockContainers || []).find(x => x.id === destId);
+    if (!dest) return;
+    // Move all entries from source to destination
+    (state.data.overstockEntries || []).forEach(row => {
+      if (row.containerId === containerId) {
+        row.containerId = destId;
+        row.containerCode = dest.code;
+        row.location = dest.currentLocation || '';
+        row.updatedAt = Date.now();
+      }
+    });
+    // Close source container
+    updateOverstockContainer(containerId, { status: 'Closed' });
+    persistData();
+    const toast = document.getElementById('osMgToast');
+    toast.textContent = `${c.code} merged into ${dest.code}. Source box closed. ✓`;
+    toast.style.display = 'block';
+    confirmBtn.textContent = 'Done';
+    confirmBtn.onclick = () => { osCloseModal('osMdMerge'); renderOverstockPage(); };
+  };
+  osOpenModal('osMdMerge');
+}
+
+function osOpenAudit(loc, containerId) {
+  // containerId: audit just that box. null/undefined: audit all POs at location.
+  const container = containerId
+    ? (state.data.overstockContainers || []).find(c => c.id === containerId)
+    : null;
+
+  const scopeLabel = container ? `${container.code} at ${loc}` : `all of ${loc}`;
+  document.getElementById('osAuTitle').textContent = container
+    ? `Audit ${container.code}`
+    : `Audit ${loc} — all boxes`;
+  document.getElementById('osAuSub').textContent = `Confirm each PO is still in ${scopeLabel}`;
+
+  const body = document.getElementById('osAuBody');
+
+  function renderAuditBody() {
+    const entries = (state.data.overstockEntries || [])
+      .filter(r => {
+        if (r.action === 'Missing from Box' || r.action === 'Lost' || r.action === 'Replaced') return false;
+        // Scope: specific container OR all POs at location
+        return containerId ? r.containerId === containerId : r.location === loc;
+      });
+
+    if (!entries.length) {
+      const scopeDesc = container ? `in ${container.code}` : `at ${escapeHtml(loc)}`;
+      body.innerHTML = `<div style="text-align:center;padding:24px 0;color:var(--muted);font-size:13px;">No active POs logged ${scopeDesc}.</div>`;
+      return;
+    }
+
+    body.innerHTML = entries.map(r => {
+      const containerLabel = r.containerCode ? ` · ${escapeHtml(r.containerCode)}` : '';
+      return `<div class="os-audit-row" id="osAuRow_${escapeAttribute(r.id)}">
+        <div class="os-audit-info">
+          <div class="os-audit-code">PO# ${escapeHtml(r.po)}</div>
+          <div class="os-audit-meta">${Number(r.quantity || 0)} units · ${escapeHtml(r.category || '—')}${containerLabel}</div>
+          ${r.sourcePalletLabel ? `<div class="os-audit-pos">${escapeHtml(r.sourcePalletLabel)}</div>` : ''}
+        </div>
+        <div class="os-audit-actions">
+          <button class="os-audit-btn os-audit-btn-ok" data-audit-confirm="${escapeAttribute(r.id)}" type="button">Still here</button>
+          <button class="os-audit-btn os-audit-btn-missing" data-audit-remove="${escapeAttribute(r.id)}" type="button">Not here</button>
+        </div>
+      </div>
+      <!-- Removal reason panel — hidden by default -->
+      <div class="os-audit-reason-panel" id="osAuReason_${escapeAttribute(r.id)}" style="display:none;">
+        <div class="os-audit-reason-title">Why is PO# ${escapeHtml(r.po)} no longer here?</div>
+        <div class="os-audit-reason-grid">
+          <button class="os-audit-reason-btn" data-reason="Pulled for Assembly" data-entry="${escapeAttribute(r.id)}">Pulled for Assembly</button>
+          <button class="os-audit-reason-btn" data-reason="Replaced" data-entry="${escapeAttribute(r.id)}">Used as Replacement</button>
+          <button class="os-audit-reason-btn" data-reason="Donated" data-entry="${escapeAttribute(r.id)}">Donated</button>
+          <button class="os-audit-reason-btn" data-reason="Missing from Box" data-entry="${escapeAttribute(r.id)}">Missing / Unknown</button>
+          <button class="os-audit-reason-btn os-audit-reason-move" data-reason="moved" data-entry="${escapeAttribute(r.id)}">Moved to another location</button>
+        </div>
+        <div class="os-audit-move-row" id="osAuMove_${escapeAttribute(r.id)}" style="display:none;">
+          <select class="os-input os-audit-move-sel" id="osAuMoveSel_${escapeAttribute(r.id)}" style="font-size:13px;">
+            <option value="">— Select new location —</option>
+            ${overstockLocations.map(l => `<option value="${escapeAttribute(l)}">${escapeHtml(l)}</option>`).join('')}
+          </select>
+          <button class="os-audit-btn os-audit-btn-ok" data-confirm-move="${escapeAttribute(r.id)}" type="button" style="flex-shrink:0;">Confirm move</button>
+        </div>
+        <button class="os-audit-reason-cancel" data-cancel="${escapeAttribute(r.id)}" type="button">↩ Cancel</button>
+      </div>`;
+    }).join('');
+
+    // Wire confirm (still here)
+    body.querySelectorAll('[data-audit-confirm]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const row = document.getElementById(`osAuRow_${btn.dataset.auditConfirm}`);
+        if (!row) return;
+        row.classList.remove('au-ok', 'au-missing', 'au-wrong');
+        row.classList.add('au-ok');
+        row.querySelector('.os-audit-actions').innerHTML =
+          `<div class="os-audit-status-label">✓ Confirmed</div>`;
       });
     });
 
-    if (palletOverstockPOs.length === 0) {
-      overstockQueueEl.innerHTML = '';
-    } else {
-      const rows = palletOverstockPOs.map(item => `
-        <tr>
-          <td><strong>PO# ${escapeHtml(item.po)}</strong></td>
-          <td>${escapeHtml(item.category)}</td>
-          <td>${item.ordered}</td>
-          <td>${item.received}</td>
-          <td>${item.prep || '—'}</td>
-          <td>${item.prepVsReceiving == null ? '—' : `${item.prepVsReceiving > 0 ? '+' : ''}${item.prepVsReceiving}`}</td>
-          <td><span style="font-weight:700;color:#854d0e;background:#fef9c3;padding:2px 8px;border-radius:6px;">+${item.overstock}</span></td>
-          <td>${escapeHtml(item.pallet)}${item.palletDate ? ' · ' + item.palletDate : ''}</td>
-          <td><span style="font-size:0.75rem;color:#555;">${item.status === 'done' ? '✅ Done' : '🔀 In Prep'}</span></td>
-        </tr>`).join('');
-      overstockQueueEl.innerHTML = `
-        <section class="panel" style="border-left:4px solid #d97706;">
-          <div class="panel-header">
-            <div>
-              <h2>📤 Overstock from Pallets</h2>
-              <p>These POs have true extras after Prep. Overstock is based on Prep count minus Ordered quantity, while Prep vs Receiving is shown separately for comparison.</p>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table class="sheet-table">
-              <thead><tr>
-                <th>PO #</th><th>Category</th>
-                <th>Ordered</th><th>Receiving</th><th>Prep</th><th>Prep vs Recv</th><th>Overstock Qty</th>
-                <th>Pallet</th><th>Stage</th>
-              </tr></thead>
-              <tbody>${rows}</tbody>
-            </table>
-          </div>
-        </section>`;
-    }
+    // Wire "not here" — show reason panel
+    body.querySelectorAll('[data-audit-remove]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const entryId = btn.dataset.auditRemove;
+        const row = document.getElementById(`osAuRow_${entryId}`);
+        const panel = document.getElementById(`osAuReason_${entryId}`);
+        if (row) { row.classList.add('au-missing'); }
+        if (panel) panel.style.display = 'block';
+        btn.closest('.os-audit-actions').innerHTML =
+          `<div class="os-audit-status-label" style="color:#991b1b;">Select reason ↓</div>`;
+      });
+    });
+
+    // Wire reason buttons
+    body.querySelectorAll('[data-reason]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const entryId = btn.dataset.entry;
+        const reason = btn.dataset.reason;
+        if (reason === 'moved') {
+          document.getElementById(`osAuMove_${entryId}`).style.display = 'flex';
+          return;
+        }
+        applyAuditRemoval(entryId, reason, null);
+      });
+    });
+
+    // Wire confirm move
+    body.querySelectorAll('[data-confirm-move]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const entryId = btn.dataset.confirmMove;
+        const newLoc = document.getElementById(`osAuMoveSel_${entryId}`)?.value;
+        if (!newLoc) return;
+        applyAuditRemoval(entryId, 'Moved', newLoc);
+      });
+    });
+
+    // Wire cancel
+    body.querySelectorAll('[data-cancel]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const entryId = btn.dataset.cancel;
+        const row = document.getElementById(`osAuRow_${entryId}`);
+        const panel = document.getElementById(`osAuReason_${entryId}`);
+        if (row) row.classList.remove('au-missing', 'au-ok', 'au-wrong');
+        if (panel) panel.style.display = 'none';
+        // Restore buttons
+        if (row) row.querySelector('.os-audit-actions').innerHTML = `
+          <button class="os-audit-btn os-audit-btn-ok" data-audit-confirm="${escapeAttribute(entryId)}" type="button">Still here</button>
+          <button class="os-audit-btn os-audit-btn-missing" data-audit-remove="${escapeAttribute(entryId)}" type="button">Not here</button>`;
+        // Re-wire the restored buttons
+        row?.querySelector('[data-audit-confirm]')?.addEventListener('click', () => {
+          row.classList.add('au-ok');
+          row.querySelector('.os-audit-actions').innerHTML = `<div class="os-audit-status-label">✓ Confirmed</div>`;
+        });
+        row?.querySelector('[data-audit-remove]')?.addEventListener('click', () => {
+          row.classList.add('au-missing');
+          if (panel) panel.style.display = 'block';
+          row.querySelector('.os-audit-actions').innerHTML = `<div class="os-audit-status-label" style="color:#991b1b;">Select reason ↓</div>`;
+        });
+      });
+    });
   }
 
+  function applyAuditRemoval(entryId, reason, newLocation) {
+    const entry = (state.data.overstockEntries || []).find(r => r.id === entryId);
+    if (!entry) return;
+
+    if (newLocation) {
+      // Just a location move — update location, don't change action
+      entry.location = newLocation;
+      entry.updatedAt = Date.now();
+      // Also update containerCode's location if it's a container-tracked entry
+      const container = (state.data.overstockContainers || []).find(c => c.id === entry.containerId);
+      if (container) updateOverstockContainer(container.id, { currentLocation: newLocation });
+    } else {
+      // Map reason to the existing action options
+      const actionMap = {
+        'Pulled for Assembly': 'Replaced',
+        'Used as Replacement': 'Replaced',
+        'Donated':             'Donated',
+        'Missing from Box':    'Missing from Box',
+        'Moved':               'Required',
+      };
+      entry.action   = actionMap[reason] || reason;
+      entry.status   = reason === 'Donated' ? 'Donation' : entry.status;
+      entry.location = ''; // removed from this location
+      entry.updatedAt = Date.now();
+    }
+    persistData();
+
+    // Mark the row visually done
+    const row = document.getElementById(`osAuRow_${entryId}`);
+    const panel = document.getElementById(`osAuReason_${entryId}`);
+    if (row) {
+      row.classList.remove('au-missing');
+      row.classList.add(newLocation ? 'au-ok' : 'au-wrong');
+      row.querySelector('.os-audit-actions').innerHTML =
+        `<div class="os-audit-status-label">${newLocation ? `Moved to ${newLocation}` : reason}</div>`;
+    }
+    if (panel) panel.style.display = 'none';
+  }
+
+  renderAuditBody();
+  osOpenModal('osMdAudit');
+}
+
+function renderOverstockPage() {
+  if (!Array.isArray(state.data.overstockEntries)) state.data.overstockEntries = [];
+  if (!state.data.overstockFilters) state.data.overstockFilters = { date: '', associate: 'All', location: 'All', status: 'All', search: '', mineOnly: false };
+  if (!Array.isArray(state.data.overstockContainers)) state.data.overstockContainers = [];
+
+  const containers = state.data.overstockContainers;
+  // "On cart" = any non-closed box without a location yet — regardless of status label.
+  // Preppers never set "On Cart" explicitly; they create Open boxes and add POs.
+  const cartBoxes    = containers.filter(c => c.status !== 'Stored' && c.status !== 'Closed' && !c.currentLocation);
+  const openBoxes    = containers.filter(c => c.status === 'Open' || c.status === 'On Cart');
+  const storedBoxes  = containers.filter(c => (c.status === 'Stored' || c.status === 'Full') && c.currentLocation);
+  const usedLocs     = new Set(storedBoxes.map(c => c.currentLocation).filter(Boolean));
+
+  // ── Stat cards ──────────────────────────────────────────────────────────
+  document.getElementById('overstockStatRows').textContent     = cartBoxes.length;
+  document.getElementById('overstockStatDonation').textContent = openBoxes.length;
+  document.getElementById('overstockStatRequired').textContent = storedBoxes.length;
+  document.getElementById('overstockStatAssociates').textContent = usedLocs.size;
+
+  // ── Unboxed-from-prep warning banner ────────────────────────────────────
+  const banner = document.getElementById('overstockUnboxedBanner');
+  if (banner) {
+    const pallets = Array.isArray(state.data.pallets) ? state.data.pallets : [];
+    const unboxed = [];
+    pallets.filter(p => p.status === 'prep' || p.status === 'done').forEach(pallet => {
+      (pallet.pos || []).forEach(po => {
+        const ref = getPoPrepVarianceRef(po);
+        if (ref.extras > 0 && ref.extrasSource === 'prep' && !po.overstockContainerCode) {
+          unboxed.push({ po: po.po, over: ref.extras, pallet: pallet.label });
+        }
+      });
+    });
+    banner.innerHTML = unboxed.length
+      ? `<div class="os-warn-banner">⚠ ${unboxed.length} PO${unboxed.length > 1 ? 's' : ''} from Prep have unassigned overstock (${unboxed.map(u => `PO# ${escapeHtml(u.po)}`).join(', ')}). Assign them a box in the <strong>Prep tab</strong>.</div>`
+      : '';
+  }
+
+  // ── Cart queue ──────────────────────────────────────────────────────────
+  const hub = document.getElementById('overstockContainerHub');
+  if (hub) {
+    hub.innerHTML = `
+      <section class="os-panel">
+        <div class="os-panel-head">
+          <div>
+            <div class="os-panel-title">📦 Put away — boxes on the cart</div>
+            <div class="os-panel-sub">Tap a box to assign it a storage location.</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <span class="os-badge os-badge-amber">${cartBoxes.length} waiting</span>
+            <button id="osNewBoxBtn" class="os-ghost-btn" type="button">+ New box</button>
+          </div>
+        </div>
+        <div class="os-panel-body">
+          ${cartBoxes.length
+            ? `<div class="os-card-grid">${cartBoxes.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0)).map(c => {
+                const items = getOverstockContainerItems(c.id);
+                const units = items.reduce((s,r)=>s+Number(r.quantity||0),0);
+                const cats = [...new Set(items.map(r=>r.category).filter(Boolean))].slice(0,2).join(', ') || '—';
+                const pos = items.slice(0,2).map(r=>`PO# ${escapeHtml(r.po)}`).join(', ') + (items.length > 2 ? ` +${items.length-2}` : '');
+                return `<div class="os-box-card" data-putaway-id="${escapeAttribute(c.id)}" role="button" tabindex="0">
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+                    <div class="os-cc-code">${escapeHtml(c.code)}</div>
+                    <span class="os-badge os-badge-amber">On cart</span>
+                  </div>
+                  <div class="os-cc-meta">${units} units · ${cats}</div>
+                  <div class="os-cc-loc" style="margin-top:3px;font-size:11px;color:var(--muted);">${pos}</div>
+                  <div class="os-cc-cta">Assign location →</div>
+                </div>`;
+              }).join('')}</div>`
+            : `<div class="os-empty-state"><div class="os-empty-icon">✓</div>No boxes on the cart right now. All clear.</div>`}
+        </div>
+      </section>`;
+
+    hub.querySelector('#osNewBoxBtn')?.addEventListener('click', () => {
+      createOverstockContainer({ status: 'Open' });
+      renderOverstockPage();
+    });
+    hub.querySelectorAll('[data-putaway-id]').forEach(card => {
+      card.addEventListener('click', () => osOpenPutaway(card.dataset.putawayId));
+    });
+  }
+
+  // ── Location map ────────────────────────────────────────────────────────
+  const mapEl = document.getElementById('overstockLocationMap');
+  if (mapEl) {
+    const locBoxMap = {};
+    containers.filter(c => c.currentLocation && c.status !== 'Closed').forEach(c => {
+      if (!locBoxMap[c.currentLocation]) locBoxMap[c.currentLocation] = [];
+      locBoxMap[c.currentLocation].push(c);
+    });
+    const locCards = overstockLocations.map(loc => {
+      const boxes = locBoxMap[loc] || [];
+      const units = boxes.flatMap(c => getOverstockContainerItems(c.id)).reduce((s,r)=>s+Number(r.quantity||0),0);
+      const isEmpty = boxes.length === 0;
+      return `<div class="os-loc${isEmpty ? ' os-loc-empty' : ' os-loc-occ'}" data-loc="${escapeAttribute(loc)}" role="button" tabindex="0">
+        <div class="os-loc-name">${loc}</div>
+        <div class="os-loc-count">${boxes.length ? boxes.length+'bx' : 'free'}</div>
+        ${units ? `<div style="font-size:9px;color:var(--muted);">${units}u</div>` : ''}
+      </div>`;
+    }).join('');
+
+    mapEl.innerHTML = `
+      <section class="os-panel">
+        <div class="os-panel-head">
+          <div>
+            <div class="os-panel-title">📍 Location map</div>
+            <div class="os-panel-sub">Tap any location to see what's stored there, audit it, or merge boxes.</div>
+          </div>
+          <span class="os-badge os-badge-blue">${usedLocs.size} / 24 used</span>
+        </div>
+        <div class="os-panel-body">
+          <div class="os-loc-grid">${locCards}</div>
+        </div>
+      </section>`;
+
+    mapEl.querySelectorAll('[data-loc]').forEach(el => {
+      el.addEventListener('click', () => osOpenLocation(el.dataset.loc));
+    });
+  }
+
+  // ── Consolidate ─────────────────────────────────────────────────────────
+  const conEl = document.getElementById('overstockConsolidate');
+  if (conEl) {
+    const partialBoxes = containers.filter(c => {
+      if (c.status === 'Closed') return false;
+      const items = getOverstockContainerItems(c.id);
+      const units = items.reduce((s,r)=>s+Number(r.quantity||0),0);
+      return units > 0 && units < 40; // flag boxes with fewer than 40 units as potential consolidation candidates
+    }).sort((a,b)=>(a.updatedAt||0)-(b.updatedAt||0));
+
+    conEl.innerHTML = `
+      <section class="os-panel">
+        <div class="os-panel-head">
+          <div>
+            <div class="os-panel-title">🔀 Consolidate boxes</div>
+            <div class="os-panel-sub">Merge two partial boxes into one to free up space. Tap any box to merge it.</div>
+          </div>
+          <span class="os-badge os-badge-purple">${partialBoxes.length} partial box${partialBoxes.length !== 1 ? 'es' : ''}</span>
+        </div>
+        <div class="os-panel-body">
+          ${partialBoxes.length
+            ? `<div class="os-card-grid">${partialBoxes.map(c => {
+                const items = getOverstockContainerItems(c.id);
+                const units = items.reduce((s,r)=>s+Number(r.quantity||0),0);
+                const cats = [...new Set(items.map(r=>r.category).filter(Boolean))].join(', ') || '—';
+                const statusBadge = {'Open':'os-badge-blue','On Cart':'os-badge-amber','Stored':'os-badge-green'}[c.status]||'os-badge-gray';
+                return `<div class="os-box-card" data-merge-id="${escapeAttribute(c.id)}" role="button" tabindex="0">
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+                    <div class="os-cc-code">${escapeHtml(c.code)}</div>
+                    <span class="os-badge ${statusBadge}">${escapeHtml(c.status)}</span>
+                  </div>
+                  <div class="os-cc-meta">${units} units · ${cats}</div>
+                  ${c.currentLocation ? `<div class="os-cc-loc">${escapeHtml(c.currentLocation)}</div>` : ''}
+                  <div class="os-cc-cta" style="color:#6d28d9;">Merge →</div>
+                </div>`;
+              }).join('')}</div>`
+            : `<div class="os-empty-state"><div class="os-empty-icon">✓</div>No partial boxes to consolidate right now.</div>`}
+        </div>
+      </section>`;
+
+    conEl.querySelectorAll('[data-merge-id]').forEach(card => {
+      card.addEventListener('click', () => osOpenMerge(card.dataset.mergeId));
+    });
+  }
+
+  // ── Legacy pallet queue (hidden, kept for compat) ────────────────────────
+  const queueEl = document.getElementById('overstockPalletQueue');
+  if (queueEl) queueEl.innerHTML = '';
+
+  // ── Form / filters / log table ──────────────────────────────────────────
   populateOverstockFormSelects();
   populateOverstockFilterSelects();
 
-  // #9 default date to today if blank, #10 restore any in-progress draft
-  const entryDateEl2 = document.getElementById("overstockEntryDate");
-  if (entryDateEl2 && !entryDateEl2.value) {
-    entryDateEl2.value = new Date().toISOString().slice(0, 10);
-  }
+  const entryDateEl2 = document.getElementById('overstockEntryDate');
+  if (entryDateEl2 && !entryDateEl2.value) entryDateEl2.value = new Date().toISOString().slice(0, 10);
   overstockRestoreDraft();
 
   const entries = getFilteredOverstockEntries();
-  document.getElementById("overstockStatRows").textContent = entries.length;
-  document.getElementById("overstockStatDonation").textContent = entries.filter(r => r.status === "Donation").length;
-  document.getElementById("overstockStatRequired").textContent = entries.filter(r => r.action === "Required").length;
-  document.getElementById("overstockStatAssociates").textContent = new Set(entries.map(r => r.associate)).size;
+  // Note: stat card IDs repurposed above — log count goes to a separate element if present
+  const logCountEl = document.getElementById('overstockLogCount');
+  if (logCountEl) logCountEl.textContent = entries.length;
 
-  const tbody = document.getElementById("overstockTableBody");
-  tbody.innerHTML = "";
+  const tbody = document.getElementById('overstockTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
   if (!entries.length) {
-    tbody.innerHTML = `<tr><td colspan="9" class="empty-state-cell">${t("noRows")}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state-cell">${t('noRows')}</td></tr>`;
     return;
   }
 
-  entries.forEach((row) => {
+  entries.forEach(row => {
     const isAutoRow = row.sourceType === 'auto' || (!!row.po && !row.manualPo);
     const ownerLocked = isAutoRow || !!(state.currentUser && state.currentUser !== LEADERSHIP_USER && row.associate && row.associate !== state.currentUser);
-    const tr = document.createElement("tr");
-    const batchCount = getPoHistoryCount("overstock", row.po);
+    const tr = document.createElement('tr');
+    const batchCount = getPoHistoryCount('overstock', row.po);
     const batchBtn = batchCount >= 1
-      ? `<button class="tiny-btn history-row" type="button">${t("viewTimeline")}</button>`
+      ? `<button class="tiny-btn history-row" type="button">${t('viewTimeline')}</button>`
       : `<span class="lock-note">—</span>`;
     const sizesHtml = row.sizeBreakdown && Object.keys(row.sizeBreakdown).length
-      ? `<div style="font-size:10px;color:#6b7280;margin-top:2px;">${Object.entries(row.sizeBreakdown).map(([s,q])=>`${s}:${q}`).join(' · ')}</div>`
-      : '';
+      ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">${Object.entries(row.sizeBreakdown).map(([s,q])=>`${s}:${q}`).join(' · ')}</div>` : '';
     const adjBadge = row.autoQtyAdjusted
-      ? `<div style="font-size:10px;color:#92400e;background:#fef3c7;padding:1px 5px;border-radius:4px;margin-top:2px;display:inline-block;">⚠️ adj. from ${row.originalAutoQty}</div>`
-      : '';
+      ? `<div style="font-size:10px;color:#92400e;background:#fef3c7;padding:1px 5px;border-radius:4px;margin-top:2px;display:inline-block;">⚠️ adj. from ${row.originalAutoQty}</div>` : '';
+    const statusClass = row.status === 'Donation' ? 'os-badge-green' : 'os-badge-gray';
+    const actionClass = row.action === 'Required' ? 'os-badge-amber' : row.action === 'Donated' ? 'os-badge-green' : 'os-badge-blue';
     tr.innerHTML = `
       <td><span class="day-pill ${getDayClass(formatDayCode(row.date))}">${formatDate(row.date)}</span></td>
-      <td>${escapeHtml(row.po)} ${isAutoRow ? '<span class="lock-note" style="margin-left:6px;">Auto</span>' : ''}</td>
+      <td><span class="os-mono">${escapeHtml(row.po)}</span>${isAutoRow ? ' <span class="lock-note">Auto</span>' : ''}</td>
       <td>${escapeHtml(row.category || '—')}</td>
-      <td>${Number(row.quantity || 0) || 0}${sizesHtml}${adjBadge}</td>
-      <td>${translateStatus(row.status)}</td>
-      <td>${translateStatus(row.action)}</td>
-      <td>${escapeHtml(row.location)}</td>
+      <td><span class="os-qty-badge">+${Number(row.quantity || 0)}</span>${sizesHtml}${adjBadge}</td>
+      <td><span class="os-badge ${statusClass}">${translateStatus(row.status)}</span></td>
+      <td><span class="os-badge ${actionClass}">${translateStatus(row.action)}</span></td>
+      <td><span class="os-mono">${escapeHtml(row.location)}</span>${row.containerCode ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">${escapeHtml(row.containerCode)}</div>` : ''}</td>
       <td>${escapeHtml(row.associate)}</td>
       <td class="action-stack">
         ${batchBtn}
-        <button class="tiny-btn overstock-edit-btn" type="button" ${ownerLocked ? "disabled" : ""}>${state.language === "es" ? "Editar" : "Edit"}</button>
-        <button class="tiny-btn ghost-btn overstock-delete-btn" type="button" ${ownerLocked ? "disabled" : ""}>${state.language === "es" ? "Eliminar" : "Delete"}</button>
+        <button class="tiny-btn overstock-edit-btn" type="button" ${ownerLocked ? 'disabled' : ''}>${state.language === 'es' ? 'Editar' : 'Edit'}</button>
+        <button class="tiny-btn ghost-btn overstock-delete-btn" type="button" ${ownerLocked ? 'disabled' : ''}>${state.language === 'es' ? 'Eliminar' : 'Delete'}</button>
       </td>
     `;
-    const histBtn = tr.querySelector(".history-row");
-    if (histBtn) histBtn.addEventListener("click", () => openBatchHistoryModal("overstock", row.po));
+    const histBtn = tr.querySelector('.history-row');
+    if (histBtn) histBtn.addEventListener('click', () => openBatchHistoryModal('overstock', row.po));
     if (!ownerLocked) {
-      tr.querySelector(".overstock-delete-btn").addEventListener("click", () => {
-        state.data.overstockEntries = state.data.overstockEntries.filter(item => item.id !== row.id);
-        persistData();
-        renderOverstockPage();
+      tr.querySelector('.overstock-delete-btn').addEventListener('click', () => {
+        state.data.overstockEntries = state.data.overstockEntries.filter(i => i.id !== row.id);
+        persistData(); renderOverstockPage();
       });
-      tr.querySelector(".overstock-edit-btn").addEventListener("click", () => toggleOverstockEditRow(tr, row.id));
+      tr.querySelector('.overstock-edit-btn').addEventListener('click', () => toggleOverstockEditRow(tr, row.id));
     }
     tbody.appendChild(tr);
   });
 }
+
 
 function toggleOverstockEditRow(tableRow, rowId) {
   const tbody = tableRow.parentElement;
@@ -4649,6 +5421,7 @@ function renderMasterLists() {
   syncAssociatesFromAttendance();
   if (categoriesList) renderSingleMasterList("categories", categoriesList);
   if (locationsList) renderSingleMasterList("locations", locationsList);
+  if (putawayLocationsList) renderSingleMasterList("putawayLocations", putawayLocationsList);
 }
 
 function renderSingleMasterList(type, container) {
@@ -4670,14 +5443,15 @@ function renderSingleMasterList(type, container) {
     `;
     const input = item.querySelector("input");
     const [saveBtn, deleteBtn] = item.querySelectorAll("button");
-    saveBtn.addEventListener("click", () => renameMasterItem(type, value, input.value.trim()));
+    saveBtn.addEventListener("click", () => renameMasterItem(type, value, type === "putawayLocations" ? input.value.trim().toUpperCase() : input.value.trim()));
     deleteBtn.addEventListener("click", () => removeMasterItem(type, value));
     container.appendChild(item);
   });
 }
 
 function addMasterItem(type, rawValue) {
-  const value = rawValue.trim();
+  const value = String(rawValue || "").trim();
+  if (!Array.isArray(state.masters[type])) state.masters[type] = [];
   if (!value || state.masters[type].includes(value)) return;
   state.masters[type].push(value);
   persistMasters();
@@ -4694,6 +5468,11 @@ function renameMasterItem(type, oldValue, newValue) {
     state.data[key].forEach((section) => {
       if (type === "associates" && section.name === oldValue) section.name = newValue;
       if (type === "locations" && section.location === oldValue) section.location = newValue;
+      if (type === "putawayLocations") {
+        (state.data.putawayEntries || []).forEach((entry) => {
+          if (entry.location === oldValue) entry.location = newValue;
+        });
+      }
       if (type === "categories") {
         section.rows.forEach((row) => {
           if (row.category === oldValue) row.category = newValue;
@@ -4715,9 +5494,11 @@ function removeMasterItem(type, value) {
         ? section.name === value
         : type === "locations"
           ? section.location === value
-          : section.rows.some((row) => row.category === value)
+          : type === "putawayLocations"
+            ? false
+            : section.rows.some((row) => row.category === value)
     );
-  });
+  }) || (type === "putawayLocations" && (state.data.putawayEntries || []).some((entry) => entry.location === value));
 
   if (inUse) {
     const ok = window.confirm(`${value} is currently in use. Remove it anyway?`);
@@ -4990,6 +5771,9 @@ function loadWorkflowData() {
       prepSections: Array.isArray(parsed.prepSections) ? parsed.prepSections : defaults.prepSections,
       overstockEntries: Array.isArray(parsed.overstockEntries) ? parsed.overstockEntries : defaults.overstockEntries,
       putawayEntries: Array.isArray(parsed.putawayEntries) ? parsed.putawayEntries : defaults.putawayEntries,
+      putawayClosedLines: Array.isArray(parsed.putawayClosedLines) ? parsed.putawayClosedLines : defaults.putawayClosedLines,
+      putawayAuditSessions: Array.isArray(parsed.putawayAuditSessions) ? parsed.putawayAuditSessions : defaults.putawayAuditSessions,
+      putawayAuditUi: { ...defaults.putawayAuditUi, ...(parsed.putawayAuditUi || {}) },
       workflowUi: { ...defaults.workflowUi, ...(parsed.workflowUi || {}) },
     };
   } catch {
@@ -5007,8 +5791,13 @@ function getDefaultData() {
     prepSections: [],
     prepFilters: { person: "All", day: "", search: "", mineOnly: false },
     overstockEntries: [],
+    overstockContainers: [],
+    overstockContainerUi: { selectedId: "", search: "" },
     overstockFilters: { date: "", associate: "All", location: "All", status: "All", search: "", mineOnly: false },
     putawayEntries: [],
+    putawayClosedLines: [],
+    putawayAuditSessions: [],
+    putawayAuditUi: { activeSessionId: "", selectedSessionId: "", selectedLocation: "", collapsed: true },
     putawayFilters: { date: "", associate: "All", zone: "All", status: "All", search: "", mineOnly: false },
   };
 }
@@ -5021,12 +5810,14 @@ function loadMasters() {
     return {
       ...defaultMasters,
       ...base,
+      putawayLocations: Array.isArray(base.putawayLocations) ? base.putawayLocations : defaultMasters.putawayLocations,
       associates: attendanceNames.length ? attendanceNames : (Array.isArray(base.associates) ? base.associates : defaultMasters.associates)
     };
   } catch {
     const attendanceNames = [...new Set(readAttendanceEmployees())].sort((a, b) => a.localeCompare(b));
     return {
       ...defaultMasters,
+      putawayLocations: defaultMasters.putawayLocations,
       associates: attendanceNames.length ? attendanceNames : defaultMasters.associates
     };
   }
@@ -5341,125 +6132,999 @@ function getFilteredPutawayEntries() {
 
 function renderPutawayPage() {
   if (!Array.isArray(state.data.putawayEntries)) state.data.putawayEntries = [];
-  if (!state.data.putawayFilters) state.data.putawayFilters = { date: "", associate: "All", status: "All", search: "", mineOnly: false };
-  if (!state.data.putawayUi) state.data.putawayUi = { expandedPos: {} };
+  if (!Array.isArray(state.data.putawayAuditSessions)) state.data.putawayAuditSessions = [];
+  if (!state.data.putawayUi) state.data.putawayUi = { selectedContainerId: "" };
+  if (!("selectedContainerId" in state.data.putawayUi)) state.data.putawayUi.selectedContainerId = "";
+  if (!state.data.putawayAuditUi) state.data.putawayAuditUi = { activeSessionId: "", selectedSessionId: "", selectedLocation: "", collapsed: true, lastActionMessage: "", lastActionTone: "info" };
+  if (typeof state.data.putawayAuditUi.collapsed !== "boolean") state.data.putawayAuditUi.collapsed = true;
+  if (!("lastActionMessage" in state.data.putawayAuditUi)) state.data.putawayAuditUi.lastActionMessage = "";
+  if (!("lastActionTone" in state.data.putawayAuditUi)) state.data.putawayAuditUi.lastActionTone = "info";
+  renderPutawayAuditPanel();
+  renderPutawayLocationContainers();
+  renderPutawayPlacementFeed();
+}
 
-  populatePutawayFormSelects();
-  populatePutawayFilterSelects();
 
-  const entries = getFilteredPutawayEntries();
-  const uniqueLocations = new Set(entries.map(r => r.location).filter(Boolean));
+function getPutawayAuditActiveSession() {
+  const id = state.data.putawayAuditUi?.activeSessionId || "";
+  return (state.data.putawayAuditSessions || []).find(session => session.id === id) || null;
+}
 
-  const setText = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = String(value); };
-  setText("putawayStatRows", entries.length);
-  setText("putawayStatUnits", entries.length);
-  setText("putawayStatLocations", uniqueLocations.size);
-  setText("putawayStatOpenLocations", uniqueLocations.size);
+function summarizePutawayAuditSession(session) {
+  const checks = Array.isArray(session?.checks) ? session.checks : [];
+  const incorrectChecks = checks.filter(check => check.result === "incorrect");
+  const correctedChecks = checks.filter(check => String(check.actionTaken || "").includes("moved"));
+  const uniqueLocations = new Set(checks.map(check => String(check.locationChecked || "").trim().toUpperCase()).filter(Boolean));
+  const uniqueWrongLocations = new Set(incorrectChecks.map(check => String(check.locationChecked || "").trim().toUpperCase()).filter(Boolean));
+  return {
+    totalChecks: checks.length,
+    incorrectCount: incorrectChecks.length,
+    correctedCount: correctedChecks.length,
+    uniqueLocations: uniqueLocations.size,
+    uniqueWrongLocations: uniqueWrongLocations.size,
+    areas: session?.area ? [session.area] : [],
+  };
+}
 
-  const groups = new Map();
-  entries.forEach((row) => {
-    const po = String(row.po || "").trim() || "No PO";
-    if (!groups.has(po)) groups.set(po, []);
-    groups.get(po).push(row);
+function startPutawayAuditSession({ area = "", notes = "" } = {}) {
+  const auditor = state.currentUser || "Unknown";
+  const session = {
+    id: makeId(),
+    auditor,
+    area: String(area || "").trim().toUpperCase(),
+    notes: String(notes || "").trim(),
+    startedAt: Date.now(),
+    endedAt: null,
+    checks: [],
+  };
+  if (!Array.isArray(state.data.putawayAuditSessions)) state.data.putawayAuditSessions = [];
+  state.data.putawayAuditSessions.unshift(session);
+  state.data.putawayAuditUi = {
+    ...(state.data.putawayAuditUi || {}),
+    activeSessionId: session.id,
+    selectedSessionId: session.id,
+    collapsed: false,
+  };
+  persistData();
+  return session;
+}
+
+function endPutawayAuditSession(sessionId) {
+  const session = (state.data.putawayAuditSessions || []).find(item => item.id === sessionId);
+  if (!session) return;
+  session.endedAt = Date.now();
+  if (!state.data.putawayAuditUi) state.data.putawayAuditUi = { activeSessionId: "", selectedSessionId: "", selectedLocation: "", collapsed: true };
+  if (state.data.putawayAuditUi.activeSessionId === sessionId) state.data.putawayAuditUi.activeSessionId = "";
+  state.data.putawayAuditUi.selectedSessionId = sessionId;
+  persistData();
+}
+
+function deletePutawayAuditSession(sessionId) {
+  const sessions = state.data.putawayAuditSessions || [];
+  const index = sessions.findIndex(item => item.id === sessionId);
+  if (index === -1) return false;
+  sessions.splice(index, 1);
+  if (!state.data.putawayAuditUi) state.data.putawayAuditUi = { activeSessionId: "", selectedSessionId: "", selectedLocation: "", collapsed: true };
+  if (state.data.putawayAuditUi.activeSessionId === sessionId) state.data.putawayAuditUi.activeSessionId = "";
+  if (state.data.putawayAuditUi.selectedSessionId === sessionId) {
+    state.data.putawayAuditUi.selectedSessionId = sessions[0]?.id || "";
+  }
+  persistData();
+  return true;
+}
+
+function logPutawayAuditCheck(sessionId, payload) {
+  const session = (state.data.putawayAuditSessions || []).find(item => item.id === sessionId);
+  if (!session) return false;
+  if (!Array.isArray(session.checks)) session.checks = [];
+  const poFound = String(payload.poFound || "").trim().toUpperCase();
+  const systemEntries = poFound ? getPutawayPlacementsForPo(poFound) : [];
+  const check = {
+    id: makeId(),
+    createdAt: Date.now(),
+    auditor: state.currentUser || session.auditor || "Unknown",
+    locationChecked: String(payload.locationChecked || "").trim().toUpperCase(),
+    poFound,
+    expectedLocations: systemEntries.map(entry => String(entry.location || "").trim().toUpperCase()).filter(Boolean),
+    result: payload.result || "correct",
+    actionTaken: payload.actionTaken || "no_action",
+    finalLocation: String(payload.finalLocation || "").trim().toUpperCase(),
+    currentSystemLocation: String(payload.currentSystemLocation || "").trim().toUpperCase(),
+    notes: String(payload.notes || "").trim(),
+  };
+  session.checks.unshift(check);
+
+  if (check.actionTaken === "moved_in_system_to_physical" && poFound && check.finalLocation) {
+    const match = systemEntries.find(entry => {
+      const location = String(entry.location || "").trim().toUpperCase();
+      return !check.currentSystemLocation || location === check.currentSystemLocation;
+    });
+    if (match) movePutawayEntry(match.id, check.finalLocation, `Audit session ${session.id}`);
+  }
+
+  persistData();
+  return true;
+}
+
+
+
+function aggregatePutawayAuditSessions(sessions) {
+  const list = Array.isArray(sessions) ? sessions : [];
+  const allChecks = list.flatMap(session => Array.isArray(session?.checks) ? session.checks.map(check => ({ ...check, __session: session })) : []);
+  const incorrectChecks = allChecks.filter(check => check.result === "incorrect" || check.result === "missing_from_location" || check.result === "not_in_system");
+  const correctedChecks = allChecks.filter(check => String(check.actionTaken || "").includes("moved"));
+  const sessionsWithChecks = list.filter(session => (session?.checks || []).length);
+
+  const byAuditorMap = new Map();
+  const byAreaMap = new Map();
+  const byErrorTypeMap = new Map();
+  const byLocationMap = new Map();
+
+  list.forEach((session) => {
+    const summary = summarizePutawayAuditSession(session);
+    const auditorKey = String(session?.auditor || "Unknown").trim() || "Unknown";
+    if (!byAuditorMap.has(auditorKey)) byAuditorMap.set(auditorKey, { label: auditorKey, sessions: 0, checks: 0, incorrect: 0 });
+    const auditorBucket = byAuditorMap.get(auditorKey);
+    auditorBucket.sessions += 1;
+    auditorBucket.checks += summary.totalChecks;
+    auditorBucket.incorrect += summary.incorrectCount;
+
+    const areaKey = String(session?.area || "Unspecified").trim() || "Unspecified";
+    if (!byAreaMap.has(areaKey)) byAreaMap.set(areaKey, { label: areaKey, sessions: 0, checks: 0, incorrect: 0 });
+    const areaBucket = byAreaMap.get(areaKey);
+    areaBucket.sessions += 1;
+    areaBucket.checks += summary.totalChecks;
+    areaBucket.incorrect += summary.incorrectCount;
   });
 
-  const tbody = document.getElementById("putawayTableBody");
-  if (!tbody) return;
-  tbody.innerHTML = "";
-  if (!groups.size) {
-    tbody.innerHTML = `<tr><td colspan="7" class="empty-state-cell">${t("noRows")}</td></tr>`;
+  incorrectChecks.forEach((check) => {
+    const errorKey = String(check.result || "unknown").replaceAll("_", " ");
+    if (!byErrorTypeMap.has(errorKey)) byErrorTypeMap.set(errorKey, { label: errorKey, count: 0 });
+    byErrorTypeMap.get(errorKey).count += 1;
+
+    const locationKey = String(check.locationChecked || "Unknown").trim().toUpperCase() || "Unknown";
+    if (!byLocationMap.has(locationKey)) byLocationMap.set(locationKey, { label: locationKey, count: 0 });
+    byLocationMap.get(locationKey).count += 1;
+  });
+
+  return {
+    totalSessions: list.length,
+    sessionsWithChecks: sessionsWithChecks.length,
+    totalChecks: allChecks.length,
+    incorrectCount: incorrectChecks.length,
+    correctedCount: correctedChecks.length,
+    avgErrorRate: allChecks.length ? (incorrectChecks.length / allChecks.length) * 100 : 0,
+    byAuditor: [...byAuditorMap.values()].sort((a, b) => b.incorrect - a.incorrect || b.checks - a.checks || a.label.localeCompare(b.label)).slice(0, 5),
+    byArea: [...byAreaMap.values()].sort((a, b) => b.incorrect - a.incorrect || b.checks - a.checks || a.label.localeCompare(b.label)).slice(0, 5),
+    byErrorType: [...byErrorTypeMap.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)).slice(0, 5),
+    topProblemLocations: [...byLocationMap.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)).slice(0, 5),
+    recentTrend: list.slice(0, 6).map((session) => {
+      const summary = summarizePutawayAuditSession(session);
+      return {
+        label: `${session?.area || "General"} · ${formatDate(new Date(session.startedAt).toISOString().slice(0, 10))}`,
+        checks: summary.totalChecks,
+        incorrect: summary.incorrectCount,
+      };
+    }).reverse(),
+  };
+}
+
+
+function getPutawayAuditChecksForLocation(session, locationCode) {
+  const checks = Array.isArray(session?.checks) ? session.checks : [];
+  const loc = String(locationCode || "").trim().toUpperCase();
+  return checks.filter(check => String(check.locationChecked || "").trim().toUpperCase() === loc);
+}
+
+function getPutawayAuditLocationProgress(session, locationCode, expectedRows = []) {
+  const checks = getPutawayAuditChecksForLocation(session, locationCode);
+  const checkedPoSet = new Set(checks.map(check => `${String(check.locationChecked || "").trim().toUpperCase()}__${String(check.poFound || "").trim().toUpperCase()}`));
+  const expectedCount = Array.isArray(expectedRows) ? expectedRows.length : 0;
+  const checkedExpectedCount = Array.isArray(expectedRows)
+    ? expectedRows.filter(entry => checkedPoSet.has(`${String(locationCode || "").trim().toUpperCase()}__${String(entry.po || "").trim().toUpperCase()}`)).length
+    : 0;
+  const incorrectCount = checks.filter(check => check.result !== "correct").length;
+  return { checks, checkedPoSet, expectedCount, checkedExpectedCount, incorrectCount };
+}
+
+function logPutawayAuditCheckForEntry(sessionId, entry, locationChecked, result, actionTaken, notes = "") {
+  if (!entry) return false;
+  return logPutawayAuditCheck(sessionId, {
+    locationChecked,
+    poFound: entry.po,
+    result,
+    actionTaken,
+    currentSystemLocation: String(locationChecked || "").trim().toUpperCase(),
+    finalLocation: "",
+    notes,
+  });
+}
+
+function markAllPutawayAuditCorrect(sessionId, locationChecked, expectedRows = []) {
+  const session = (state.data.putawayAuditSessions || []).find(item => item.id === sessionId);
+  if (!session) return 0;
+  const progress = getPutawayAuditLocationProgress(session, locationChecked, expectedRows);
+  let added = 0;
+  (expectedRows || []).forEach((entry) => {
+    const key = `${String(locationChecked || "").trim().toUpperCase()}__${String(entry.po || "").trim().toUpperCase()}`;
+    if (progress.checkedPoSet.has(key)) return;
+    const ok = logPutawayAuditCheckForEntry(sessionId, entry, locationChecked, "correct", "no_action", "Bulk verified in location");
+    if (ok) added += 1;
+  });
+  return added;
+}
+
+
+function setPutawayAuditFeedback(message, tone = "info") {
+  if (!state.data.putawayAuditUi) state.data.putawayAuditUi = { activeSessionId: "", selectedSessionId: "", selectedLocation: "", collapsed: true };
+  state.data.putawayAuditUi.lastActionMessage = message || "";
+  state.data.putawayAuditUi.lastActionTone = tone || "info";
+}
+
+function clearPutawayAuditFeedback() {
+  if (!state.data.putawayAuditUi) return;
+  state.data.putawayAuditUi.lastActionMessage = "";
+  state.data.putawayAuditUi.lastActionTone = "info";
+}
+
+function renderPutawayAuditPanel() {
+  const mount = document.getElementById("putawayAuditPanel");
+  if (!mount) return;
+  if (!Array.isArray(state.data.putawayAuditSessions)) state.data.putawayAuditSessions = [];
+  if (!state.data.putawayAuditUi) state.data.putawayAuditUi = { activeSessionId: "", selectedSessionId: "", selectedLocation: "", collapsed: true, lastActionMessage: "", lastActionTone: "info" };
+  if (typeof state.data.putawayAuditUi.collapsed !== "boolean") state.data.putawayAuditUi.collapsed = true;
+  if (!("lastActionMessage" in state.data.putawayAuditUi)) state.data.putawayAuditUi.lastActionMessage = "";
+  if (!("lastActionTone" in state.data.putawayAuditUi)) state.data.putawayAuditUi.lastActionTone = "info";
+
+  const active = getPutawayAuditActiveSession();
+  const isCollapsed = state.data.putawayAuditUi.collapsed === true;
+  const selectedId = state.data.putawayAuditUi.selectedSessionId || active?.id || "";
+  const selected = (state.data.putawayAuditSessions || []).find(session => session.id === selectedId) || active || state.data.putawayAuditSessions[0] || null;
+  const recentOptions = (state.data.putawayAuditSessions || []).slice(0, 8);
+
+  const locationGroups = new Map();
+  [...(state.data.putawayEntries || [])].forEach((entry) => {
+    const location = String(entry.location || "").trim().toUpperCase();
+    if (!location) return;
+    if (!locationGroups.has(location)) locationGroups.set(location, []);
+    locationGroups.get(location).push(entry);
+  });
+  const locationCards = [...locationGroups.entries()]
+    .map(([location, rows]) => ({ location, rows }))
+    .sort((a, b) => a.location.localeCompare(b.location));
+
+  const activeSummary = summarizePutawayAuditSession(active);
+  const selectedSummary = summarizePutawayAuditSession(selected);
+  const auditPhase2 = aggregatePutawayAuditSessions(state.data.putawayAuditSessions || []);
+
+  if (active && !state.data.putawayAuditUi.selectedLocation && locationCards.length) {
+    state.data.putawayAuditUi.selectedLocation = locationCards[0].location;
+  }
+  const selectedLocation = state.data.putawayAuditUi.selectedLocation || "";
+  const selectedLocationRows = selectedLocation ? (locationGroups.get(selectedLocation) || []) : [];
+  const selectedLocationProgress = active ? getPutawayAuditLocationProgress(active, selectedLocation, selectedLocationRows) : { checks: [], checkedPoSet: new Set(), expectedCount: selectedLocationRows.length, checkedExpectedCount: 0, incorrectCount: 0 };
+  const auditActionMessage = state.data.putawayAuditUi.lastActionMessage || "";
+  const auditActionTone = state.data.putawayAuditUi.lastActionTone || "info";
+
+  mount.innerHTML = `
+    <section class="pallet-panel">
+      <div class="pallet-panel-header">
+        <div>
+          <h2>🧾 Putaway Audit</h2>
+          <p>${isCollapsed ? "Audit tools are collapsed. Open only when needed." : "Run audits by location. Pick a location card, verify what should be there, and log only what is wrong."}</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          ${active ? `<span class="pallet-status pallet-status-receiving">ACTIVE AUDIT</span>` : `<span class="pallet-status pallet-status-draft">NO ACTIVE AUDIT</span>`}
+          <button id="putawayAuditToggleBtn" class="secondary-btn" type="button">${isCollapsed ? "Open Audit" : "Collapse Audit"}</button>
+        </div>
+      </div>
+
+      ${isCollapsed ? `
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid #d7e4ef;border-radius:12px;background:#f8fbff;">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            ${active ? `<span class="putaway-feed-pill">Audit live</span>` : `<span class="putaway-feed-pill">Closed</span>`}
+            <span class="putaway-feed-pill">${auditPhase2.totalSessions} sessions</span>
+            <span class="putaway-feed-pill">${auditPhase2.incorrectCount} issues</span>
+          </div>
+          <div style="font-size:12px;color:#6d879d;">Open audit to view sessions, reports, and trends.</div>
+        </div>
+      ` : !active ? `
+        <div style="display:grid;grid-template-columns:minmax(180px,.9fr) minmax(220px,1.3fr) auto;gap:12px;align-items:end;">
+          <div>
+            <label style="display:block;font-size:11px;font-weight:800;color:#6d879d;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Area / Row Range</label>
+            <input id="putawayAuditAreaInput" type="text" placeholder="ex. QA1-QA5" style="width:100%;border:1px solid #c9d7e6;border-radius:12px;padding:10px 12px;font-size:14px;" />
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:800;color:#6d879d;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Session Notes (optional)</label>
+            <input id="putawayAuditNotesInput" type="text" placeholder="What are we checking?" style="width:100%;border:1px solid #c9d7e6;border-radius:12px;padding:10px 12px;font-size:14px;" />
+          </div>
+          <button id="putawayAuditStartBtn" class="primary-btn" type="button">Start Audit Session</button>
+        </div>
+      ` : `
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px;">
+          <div style="background:#f7fafc;border:1px solid #d7e4ef;border-radius:12px;padding:10px 12px;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6d879d;font-weight:800;margin-bottom:2px;">Auditor</div><strong style="font-size:18px;color:#16324a;">${escapeHtml(active.auditor || "—")}</strong></div>
+          <div style="background:#f7fafc;border:1px solid #d7e4ef;border-radius:12px;padding:10px 12px;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6d879d;font-weight:800;margin-bottom:2px;">Locations Checked</div><strong style="font-size:18px;color:#16324a;">${activeSummary.uniqueLocations}</strong></div>
+          <div style="background:#fff8ef;border:1px solid #f5d8a8;border-radius:12px;padding:10px 12px;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#9a5a03;font-weight:800;margin-bottom:2px;">Incorrect Checks</div><strong style="font-size:18px;color:#d97706;">${activeSummary.incorrectCount}</strong></div>
+          <div style="background:#f5fbff;border:1px solid #d0e8f8;border-radius:12px;padding:10px 12px;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6d879d;font-weight:800;margin-bottom:2px;">Corrections Logged</div><strong style="font-size:18px;color:#16324a;">${activeSummary.correctedCount}</strong></div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+          <div>
+            <div class="eyebrow">Audit by location</div>
+            <strong style="font-size:18px;color:#16324a;">${selectedLocation ? escapeHtml(selectedLocation) : "Select a location"}</strong>
+            <div style="font-size:12px;color:#6d879d;">Choose a location container below, then verify what should be in it.</div>
+          </div>
+          <button id="putawayAuditEndBtn" class="secondary-btn" type="button">End Audit Session</button>
+        </div>
+
+        ${locationCards.length ? `
+          <div class="pallet-grid putaway-location-grid" style="margin-bottom:16px;">
+            ${locationCards.map((container) => {
+              const placementCount = container.rows.length;
+              const poCount = new Set(container.rows.map(row => row.po).filter(Boolean)).size;
+              const isActive = selectedLocation === container.location;
+              return `<div class="pallet-card putaway-location-card${isActive ? ' putaway-location-card-active' : ''}" data-audit-location="${escapeAttribute(container.location)}" role="button" tabindex="0">
+                <div class="pallet-card-num">${escapeHtml(container.location)}</div>
+                <span class="pallet-status pallet-status-prep">AUDIT LOCATION</span>
+                <div class="pallet-card-meta">${poCount} PO(s)</div>
+                <div class="pallet-card-meta">${placementCount} placement${placementCount === 1 ? '' : 's'}</div>
+                <div class="pallet-card-action">${isActive ? 'Auditing now' : 'Audit location'}</div>
+              </div>`;
+            }).join("")}
+          </div>
+        ` : `<div class="pallet-empty"><div class="pallet-empty-icon">📭</div>No putaway locations available to audit yet.</div>`}
+
+        ${auditActionMessage ? `
+          <div style="margin-bottom:12px;padding:12px 14px;border-radius:12px;border:1px solid ${auditActionTone === "success" ? "#b7e2cb" : auditActionTone === "warning" ? "#f5d8a8" : "#d7e4ef"};background:${auditActionTone === "success" ? "#f2fff8" : auditActionTone === "warning" ? "#fff7ed" : "#f8fbff"};display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+            <div style="font-size:13px;font-weight:800;color:${auditActionTone === "success" ? "#127c4f" : auditActionTone === "warning" ? "#9a5a03" : "#16324a"};">${escapeHtml(auditActionMessage)}</div>
+            <button id="putawayAuditClearFeedbackBtn" class="secondary-btn" type="button" style="padding:6px 10px;font-size:11px;">Dismiss</button>
+          </div>
+        ` : ``}
+
+        ${selectedLocation ? `
+          <div style="display:grid;grid-template-columns:1.25fr .95fr;gap:14px;align-items:start;">
+            <div style="border:1px solid #d7e4ef;border-radius:14px;background:#fff;padding:14px;">
+              <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+                <div>
+                  <div class="eyebrow">Expected in this location</div>
+                  <strong style="font-size:18px;color:#16324a;">${escapeHtml(selectedLocation)}</strong>
+                </div>
+                <span class="putaway-feed-pill">${selectedLocationRows.length} record${selectedLocationRows.length === 1 ? '' : 's'}</span>
+              </div>
+
+              ${selectedLocationRows.length ? `
+                <div style="display:grid;gap:10px;">
+                  ${selectedLocationRows.map((entry) => `
+                    <div style="border:1px solid #e3ebf3;border-radius:12px;padding:12px;background:#fbfdff;">
+                      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;">
+                        <div>
+                          <strong style="color:#16324a;font-size:15px;">PO# ${escapeHtml(entry.po || "—")}</strong>
+                          <div style="font-size:12px;color:#6d879d;margin-top:4px;">${escapeHtml(entry.palletLabel || entry.sourceContainerId || "—")} · ${escapeHtml(entry.associate || "Unknown")}</div>
+                        </div>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                          <button type="button" class="secondary-btn" data-audit-correct-id="${escapeAttribute(entry.id)}" style="padding:6px 10px;font-size:11px;">Correct</button>
+                          <button type="button" class="secondary-btn" data-audit-missing-id="${escapeAttribute(entry.id)}" style="padding:6px 10px;font-size:11px;">Missing</button>
+                          <button type="button" class="secondary-btn" data-audit-escalate-id="${escapeAttribute(entry.id)}" style="padding:6px 10px;font-size:11px;">Escalate</button>
+                        </div>
+                      </div>
+                    </div>
+                  `).join("")}
+                </div>
+              ` : `<div class="pallet-empty"><div class="pallet-empty-icon">📝</div>No system entries found for this location.</div>`}
+            </div>
+
+            <div style="border:1px solid #d7e4ef;border-radius:14px;background:#fff;padding:14px;">
+              <div class="eyebrow">Found something else here?</div>
+              <strong style="font-size:18px;color:#16324a;display:block;margin-bottom:10px;">Quick extra-PO log</strong>
+
+              <div>
+                <label style="display:block;font-size:11px;font-weight:800;color:#6d879d;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">PO found in ${escapeHtml(selectedLocation)}</label>
+                <input id="putawayAuditExtraPoInput" type="text" placeholder="Scan or type PO" style="width:100%;border:1px solid #c9d7e6;border-radius:12px;padding:10px 12px;font-size:14px;" />
+              </div>
+
+              <div id="putawayAuditExtraExpected" style="display:none;margin-top:10px;"></div>
+
+              <div style="display:grid;gap:8px;margin-top:10px;">
+                <button id="putawayAuditExtraLogBtn" class="secondary-btn" type="button">Log Found Here</button>
+                <button id="putawayAuditExtraMoveSystemBtn" class="primary-btn" type="button">Move System Here</button>
+                <button id="putawayAuditExtraEscalateBtn" class="secondary-btn" type="button">Escalate</button>
+              </div>
+
+              <div>
+                <label style="display:block;font-size:11px;font-weight:800;color:#6d879d;text-transform:uppercase;letter-spacing:.06em;margin:10px 0 4px;">Note (optional)</label>
+                <input id="putawayAuditExtraNoteInput" type="text" placeholder="Short note" style="width:100%;border:1px solid #c9d7e6;border-radius:12px;padding:10px 12px;font-size:14px;" />
+              </div>
+
+              <div id="putawayAuditFormError" style="display:none;color:#b42318;font-size:13px;font-weight:700;padding:8px 12px;background:#fff1f0;border-radius:10px;border:1px solid #ffd6d4;margin-top:10px;"></div>
+            </div>
+          </div>
+        ` : ""}
+      `}
+
+      ${!isCollapsed && (recentOptions.length || selected) ? `
+        <div style="margin-top:18px;padding-top:16px;border-top:1px solid #e6edf5;">
+          <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
+            <div>
+              <div class="eyebrow">Audit report</div>
+              <h3 style="margin:0;font-size:18px;color:#16324a;">${selected ? `Session by ${escapeHtml(selected.auditor || "Unknown")}` : "No session selected"}</h3>
+            </div>
+            <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+              <div>
+                <label style="display:block;font-size:11px;font-weight:800;color:#6d879d;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Recent Sessions</label>
+                <select id="putawayAuditSessionSelect" style="min-width:260px;border:1px solid #c9d7e6;border-radius:12px;padding:10px 12px;font-size:14px;">
+                  ${recentOptions.map(session => `<option value="${escapeAttribute(session.id)}" ${selected?.id === session.id ? 'selected' : ''}>${escapeHtml((session.area || "General") + " · " + (session.auditor || "Unknown") + " · " + formatDate(new Date(session.startedAt).toISOString().slice(0,10)))}</option>`).join("")}
+                </select>
+              </div>
+              ${selected ? `<button id="putawayAuditDeleteSelectedBtn" class="secondary-btn" type="button" style="margin-bottom:0;">Delete Session</button>` : ``}
+            </div>
+          </div>
+
+          ${selected ? `
+            <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:12px;">
+              <div style="background:#f7fafc;border:1px solid #d7e4ef;border-radius:12px;padding:10px 12px;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6d879d;font-weight:800;margin-bottom:2px;">Area</div><strong style="font-size:17px;color:#16324a;">${escapeHtml(selected.area || "—")}</strong></div>
+              <div style="background:#f7fafc;border:1px solid #d7e4ef;border-radius:12px;padding:10px 12px;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6d879d;font-weight:800;margin-bottom:2px;">Checks</div><strong style="font-size:17px;color:#16324a;">${selectedSummary.totalChecks}</strong></div>
+              <div style="background:#fff8ef;border:1px solid #f5d8a8;border-radius:12px;padding:10px 12px;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#9a5a03;font-weight:800;margin-bottom:2px;">Wrong Locations</div><strong style="font-size:17px;color:#d97706;">${selectedSummary.uniqueWrongLocations}</strong></div>
+              <div style="background:#f5fbff;border:1px solid #d0e8f8;border-radius:12px;padding:10px 12px;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6d879d;font-weight:800;margin-bottom:2px;">Corrections</div><strong style="font-size:17px;color:#16324a;">${selectedSummary.correctedCount}</strong></div>
+              <div style="background:#f8fafc;border:1px solid #d7e4ef;border-radius:12px;padding:10px 12px;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6d879d;font-weight:800;margin-bottom:2px;">Error Rate</div><strong style="font-size:17px;color:#16324a;">${selectedSummary.totalChecks ? ((selectedSummary.incorrectCount / selectedSummary.totalChecks) * 100).toFixed(1) : "0.0"}%</strong></div>
+            </div>
+
+            <div style="font-size:12px;color:#6d879d;margin-bottom:10px;">Started ${selected?.startedAt ? new Date(selected.startedAt).toLocaleString() : "—"}${selected?.endedAt ? ` · Ended ${new Date(selected.endedAt).toLocaleString()}` : active?.id === selected?.id ? " · Active now" : ""}</div>
+
+            <div style="display:grid;gap:8px;max-height:260px;overflow:auto;">
+              ${(selected.checks || []).length ? selected.checks.map(check => `
+                <div style="padding:10px 12px;border:1px solid #d7e4ef;border-radius:12px;background:#fff;">
+                  <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;">
+                    <div>
+                      <strong style="color:#16324a;">${escapeHtml(check.locationChecked || "—")}</strong> · <span style="color:#456080;">PO# ${escapeHtml(check.poFound || "—")}</span>
+                      <div style="font-size:12px;color:#6d879d;margin-top:4px;">Expected: ${(check.expectedLocations || []).length ? check.expectedLocations.map(loc => `<span class="putaway-feed-pill">${escapeHtml(loc)}</span>`).join(" ") : "<span class='putaway-feed-pill'>Not found in system</span>"}</div>
+                    </div>
+                    <div style="text-align:right;font-size:12px;color:#6d879d;">
+                      <div>${escapeHtml(String(check.result || "").replaceAll("_", " "))}</div>
+                      <div>${escapeHtml(String(check.actionTaken || "").replaceAll("_", " "))}</div>
+                    </div>
+                  </div>
+                  ${(check.finalLocation || check.notes) ? `<div style="font-size:12px;color:#456080;margin-top:6px;">${check.finalLocation ? `Final: ${escapeHtml(check.finalLocation)}` : ""}${check.finalLocation && check.notes ? " · " : ""}${check.notes ? escapeHtml(check.notes) : ""}</div>` : ""}
+                </div>
+              `).join("") : `<div class="pallet-empty"><div class="pallet-empty-icon">📝</div>No audit checks logged yet.</div>`}
+            </div>
+          ` : ""}
+        </div>
+      ` : ""}
+
+      ${!isCollapsed ? `
+      <div style="margin-top:18px;padding-top:16px;border-top:1px solid #e6edf5;">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
+          <div>
+            <div class="eyebrow">Phase 2 insights</div>
+            <h3 style="margin:0;font-size:18px;color:#16324a;">Putaway audit trends</h3>
+          </div>
+          <span class="putaway-feed-pill">${auditPhase2.totalSessions} session${auditPhase2.totalSessions === 1 ? "" : "s"}</span>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:12px;">
+          <div style="background:#f7fafc;border:1px solid #d7e4ef;border-radius:12px;padding:10px 12px;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6d879d;font-weight:800;margin-bottom:2px;">Total Sessions</div><strong style="font-size:17px;color:#16324a;">${auditPhase2.totalSessions}</strong></div>
+          <div style="background:#f7fafc;border:1px solid #d7e4ef;border-radius:12px;padding:10px 12px;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6d879d;font-weight:800;margin-bottom:2px;">Sessions w/ Checks</div><strong style="font-size:17px;color:#16324a;">${auditPhase2.sessionsWithChecks}</strong></div>
+          <div style="background:#f7fafc;border:1px solid #d7e4ef;border-radius:12px;padding:10px 12px;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6d879d;font-weight:800;margin-bottom:2px;">Total Checks</div><strong style="font-size:17px;color:#16324a;">${auditPhase2.totalChecks}</strong></div>
+          <div style="background:#fff8ef;border:1px solid #f5d8a8;border-radius:12px;padding:10px 12px;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#9a5a03;font-weight:800;margin-bottom:2px;">Issues Found</div><strong style="font-size:17px;color:#d97706;">${auditPhase2.incorrectCount}</strong></div>
+          <div style="background:#f5fbff;border:1px solid #d0e8f8;border-radius:12px;padding:10px 12px;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#6d879d;font-weight:800;margin-bottom:2px;">Avg Error Rate</div><strong style="font-size:17px;color:#16324a;">${auditPhase2.avgErrorRate.toFixed(1)}%</strong></div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;">
+          <div style="border:1px solid #d7e4ef;border-radius:14px;background:#fff;padding:14px;">
+            <div class="eyebrow">By auditor</div>
+            <div style="display:grid;gap:8px;margin-top:8px;">
+              ${auditPhase2.byAuditor.length ? auditPhase2.byAuditor.map(item => `
+                <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+                  <span style="font-size:13px;color:#16324a;">${escapeHtml(item.label)}</span>
+                  <span class="putaway-feed-pill">${item.incorrect}/${item.checks}</span>
+                </div>
+              `).join("") : `<div class="pallet-empty" style="padding:10px 8px;">No audit data yet.</div>`}
+            </div>
+          </div>
+
+          <div style="border:1px solid #d7e4ef;border-radius:14px;background:#fff;padding:14px;">
+            <div class="eyebrow">By area</div>
+            <div style="display:grid;gap:8px;margin-top:8px;">
+              ${auditPhase2.byArea.length ? auditPhase2.byArea.map(item => `
+                <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+                  <span style="font-size:13px;color:#16324a;">${escapeHtml(item.label)}</span>
+                  <span class="putaway-feed-pill">${item.incorrect}/${item.checks}</span>
+                </div>
+              `).join("") : `<div class="pallet-empty" style="padding:10px 8px;">No audit data yet.</div>`}
+            </div>
+          </div>
+
+          <div style="border:1px solid #d7e4ef;border-radius:14px;background:#fff;padding:14px;">
+            <div class="eyebrow">Common error types</div>
+            <div style="display:grid;gap:8px;margin-top:8px;">
+              ${auditPhase2.byErrorType.length ? auditPhase2.byErrorType.map(item => `
+                <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+                  <span style="font-size:13px;color:#16324a;text-transform:capitalize;">${escapeHtml(item.label)}</span>
+                  <span class="putaway-feed-pill">${item.count}</span>
+                </div>
+              `).join("") : `<div class="pallet-empty" style="padding:10px 8px;">No issues logged yet.</div>`}
+            </div>
+          </div>
+
+          <div style="border:1px solid #d7e4ef;border-radius:14px;background:#fff;padding:14px;">
+            <div class="eyebrow">Top problem locations</div>
+            <div style="display:grid;gap:8px;margin-top:8px;">
+              ${auditPhase2.topProblemLocations.length ? auditPhase2.topProblemLocations.map(item => `
+                <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+                  <span style="font-size:13px;color:#16324a;">${escapeHtml(item.label)}</span>
+                  <span class="putaway-feed-pill">${item.count}</span>
+                </div>
+              `).join("") : `<div class="pallet-empty" style="padding:10px 8px;">No repeat problem locations yet.</div>`}
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;border:1px solid #d7e4ef;border-radius:14px;background:#fff;padding:14px;">
+          <div class="eyebrow">Recent session trend</div>
+          <div style="display:grid;gap:8px;margin-top:8px;">
+            ${auditPhase2.recentTrend.length ? auditPhase2.recentTrend.map(item => `
+              <div style="display:grid;grid-template-columns:minmax(180px,1fr) 90px 90px;gap:10px;align-items:center;">
+                <span style="font-size:13px;color:#16324a;">${escapeHtml(item.label)}</span>
+                <span class="putaway-feed-pill">${item.checks} checks</span>
+                <span class="putaway-feed-pill">${item.incorrect} issues</span>
+              </div>
+            `).join("") : `<div class="pallet-empty" style="padding:10px 8px;">No recent audit sessions yet.</div>`}
+          </div>
+        </div>
+      </div>
+      ` : ``}
+    </section>
+  `;
+
+  mount.querySelector("#putawayAuditToggleBtn")?.addEventListener("click", () => {
+    if (!state.data.putawayAuditUi) state.data.putawayAuditUi = { activeSessionId: "", selectedSessionId: "", selectedLocation: "", collapsed: true };
+    state.data.putawayAuditUi.collapsed = !state.data.putawayAuditUi.collapsed;
+    persistData();
+    renderPutawayPage();
+  });
+
+  mount.querySelector("#putawayAuditStartBtn")?.addEventListener("click", () => {
+    const area = mount.querySelector("#putawayAuditAreaInput")?.value || "";
+    const notes = mount.querySelector("#putawayAuditNotesInput")?.value || "";
+    startPutawayAuditSession({ area, notes });
+    setPutawayAuditFeedback("Audit session started.", "success");
+    renderPutawayPage();
+  });
+
+  mount.querySelector("#putawayAuditSessionSelect")?.addEventListener("change", (event) => {
+    if (!state.data.putawayAuditUi) state.data.putawayAuditUi = { activeSessionId: "", selectedSessionId: "", selectedLocation: "", collapsed: true };
+    state.data.putawayAuditUi.selectedSessionId = event.target.value;
+    persistData();
+    renderPutawayPage();
+  });
+
+  mount.querySelectorAll("[data-audit-location]").forEach((card) => {
+    card.addEventListener("click", () => {
+      state.data.putawayAuditUi.selectedLocation = card.getAttribute("data-audit-location") || "";
+      clearPutawayAuditFeedback();
+      persistData();
+      renderPutawayPage();
+    });
+  });
+
+  mount.querySelector("[data-audit-location]")?.addEventListener?.("keydown", (event) => {});
+  mount.querySelector("#putawayAuditMarkAllCorrectBtn")?.addEventListener("click", () => {
+    const session = getPutawayAuditActiveSession();
+    if (!session || !selectedLocation) return;
+    const added = markAllPutawayAuditCorrect(session.id, selectedLocation, selectedLocationRows);
+    setPutawayAuditFeedback(added ? `${added} PO${added === 1 ? "" : "s"} marked correct in ${selectedLocation}.` : `Everything in ${selectedLocation} was already checked.`, added ? "success" : "info");
+    renderPutawayPage();
+  });
+
+  mount.querySelector("#putawayAuditClearFeedbackBtn")?.addEventListener("click", () => {
+    clearPutawayAuditFeedback();
+    renderPutawayPage();
+  });
+
+  mount.querySelector("#putawayAuditFocusScanBtn")?.addEventListener("click", () => {
+    mount.querySelector("#putawayAuditExtraPoInput")?.focus();
+    mount.querySelector("#putawayAuditExtraPoInput")?.select?.();
+  });
+
+
+  mount.querySelectorAll("[data-audit-correct-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const session = getPutawayAuditActiveSession();
+      const entry = (state.data.putawayEntries || []).find(item => item.id === btn.getAttribute("data-audit-correct-id"));
+      if (!session || !entry) return;
+      logPutawayAuditCheck(session.id, {
+        locationChecked: selectedLocation,
+        poFound: entry.po,
+        result: "correct",
+        actionTaken: "no_action",
+        currentSystemLocation: selectedLocation,
+        finalLocation: selectedLocation,
+        notes: "Verified in location",
+      });
+      setPutawayAuditFeedback(`PO ${entry.po} verified in ${selectedLocation}.`, "success");
+      renderPutawayPage();
+    });
+  });
+
+  mount.querySelectorAll("[data-audit-missing-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const session = getPutawayAuditActiveSession();
+      const entry = (state.data.putawayEntries || []).find(item => item.id === btn.getAttribute("data-audit-missing-id"));
+      if (!session || !entry) return;
+      logPutawayAuditCheck(session.id, {
+        locationChecked: selectedLocation,
+        poFound: entry.po,
+        result: "missing_from_location",
+        actionTaken: "no_action",
+        currentSystemLocation: selectedLocation,
+        finalLocation: "",
+        notes: "Expected here but not found during audit",
+      });
+      setPutawayAuditFeedback(`PO ${entry.po} marked missing from ${selectedLocation}.`, "warning");
+      renderPutawayPage();
+    });
+  });
+
+  mount.querySelectorAll("[data-audit-escalate-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const session = getPutawayAuditActiveSession();
+      const entry = (state.data.putawayEntries || []).find(item => item.id === btn.getAttribute("data-audit-escalate-id"));
+      if (!session || !entry) return;
+      logPutawayAuditCheck(session.id, {
+        locationChecked: selectedLocation,
+        poFound: entry.po,
+        result: "incorrect",
+        actionTaken: "escalated",
+        currentSystemLocation: selectedLocation,
+        finalLocation: "",
+        notes: "Escalated during location audit",
+      });
+      setPutawayAuditFeedback(`PO ${entry.po} escalated from ${selectedLocation}.`, "warning");
+      renderPutawayPage();
+    });
+  });
+
+  const extraPoInput = mount.querySelector("#putawayAuditExtraPoInput");
+  const extraExpectedMount = mount.querySelector("#putawayAuditExtraExpected");
+  const syncExtraPoContext = () => {
+    if (!extraPoInput || !extraExpectedMount) return;
+    const po = String(extraPoInput.value || "").trim().toUpperCase();
+    extraPoInput.value = po;
+    const placements = po ? getPutawayPlacementsForPo(po) : [];
+    const locations = [...new Set(placements.map(entry => String(entry.location || "").trim().toUpperCase()).filter(Boolean))];
+    if (!po) {
+      extraExpectedMount.style.display = "none";
+      extraExpectedMount.innerHTML = "";
+      return;
+    }
+    extraExpectedMount.style.display = "";
+    extraExpectedMount.innerHTML = `
+      <div style="padding:10px 12px;border:1px solid #d7e4ef;border-radius:12px;background:#fbfdff;">
+        <div style="font-size:11px;font-weight:800;color:#6d879d;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">System says PO# ${escapeHtml(po)} is in:</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${locations.length ? locations.map(loc => `<span class="putaway-feed-pill">${escapeHtml(loc)}</span>`).join("") : `<span class="putaway-feed-pill">Not found in system</span>`}
+        </div>
+      </div>
+    `;
+  };
+  extraPoInput?.addEventListener("input", syncExtraPoContext);
+  extraPoInput?.addEventListener("blur", syncExtraPoContext);
+  extraPoInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      logExtra("moved_in_system_to_physical");
+    }
+  });
+
+  const logExtra = (actionTaken) => {
+    const session = getPutawayAuditActiveSession();
+    const errorEl = mount.querySelector("#putawayAuditFormError");
+    if (errorEl) { errorEl.style.display = "none"; errorEl.textContent = ""; }
+    if (!session || !selectedLocation) return;
+    const po = String(extraPoInput?.value || "").trim().toUpperCase();
+    const note = mount.querySelector("#putawayAuditExtraNoteInput")?.value || "";
+    if (!po) {
+      if (errorEl) { errorEl.textContent = "Enter the PO found in this location."; errorEl.style.display = ""; }
+      return;
+    }
+    logPutawayAuditCheck(session.id, {
+      locationChecked: selectedLocation,
+      poFound: po,
+      result: "incorrect",
+      actionTaken,
+      currentSystemLocation: "",
+      finalLocation: actionTaken === "moved_in_system_to_physical" ? selectedLocation : "",
+      notes: note,
+    });
+    setPutawayAuditFeedback(
+      actionTaken === "moved_in_system_to_physical"
+        ? `PO ${po} was moved in system to ${selectedLocation}.`
+        : actionTaken === "escalated"
+          ? `PO ${po} was escalated from ${selectedLocation}.`
+          : `PO ${po} was logged as wrong in ${selectedLocation}.`,
+      actionTaken === "moved_in_system_to_physical" ? "success" : "warning"
+    );
+    renderPutawayPage();
+  };
+
+  mount.querySelector("#putawayAuditExtraLogBtn")?.addEventListener("click", () => logExtra("no_action"));
+  mount.querySelector("#putawayAuditExtraMoveSystemBtn")?.addEventListener("click", () => logExtra("moved_in_system_to_physical"));
+  mount.querySelector("#putawayAuditExtraEscalateBtn")?.addEventListener("click", () => logExtra("escalated"));
+
+  mount.querySelector("#putawayAuditCancelBtn")?.addEventListener("click", () => {
+    const session = getPutawayAuditActiveSession();
+    if (!session) return;
+    const count = (session.checks || []).length;
+    const ok = window.confirm(`Cancel this audit and delete ${count} logged check${count === 1 ? "" : "s"}?`);
+    if (!ok) return;
+    deletePutawayAuditSession(session.id);
+    setPutawayAuditFeedback("Audit session canceled and deleted.", "warning");
+    renderPutawayPage();
+  });
+
+  mount.querySelector("#putawayAuditEndBtn")?.addEventListener("click", () => {
+    const session = getPutawayAuditActiveSession();
+    if (!session) return;
+    endPutawayAuditSession(session.id);
+    setPutawayAuditFeedback("Audit session ended.", "success");
+    renderPutawayPage();
+  });
+
+  mount.querySelector("#putawayAuditDeleteSelectedBtn")?.addEventListener("click", () => {
+    const sessionId = state.data.putawayAuditUi?.selectedSessionId || "";
+    const session = (state.data.putawayAuditSessions || []).find(item => item.id === sessionId);
+    if (!session) return;
+    const count = (session.checks || []).length;
+    const ok = window.confirm(`Delete this audit session and remove ${count} logged check${count === 1 ? "" : "s"}?`);
+    if (!ok) return;
+    deletePutawayAuditSession(session.id);
+    setPutawayAuditFeedback("Audit session deleted.", "warning");
+    renderPutawayPage();
+  });
+}
+
+function getPutawayLocationContainerId(locationCode) {
+  const normalized = String(locationCode || "").trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-");
+  return normalized ? `loc-${normalized}` : "";
+}
+
+function renderPutawayLocationContainers() {
+  const mount = document.getElementById("putawayLocationContainers");
+  if (!mount) return;
+  const rows = [...(state.data.putawayEntries || [])];
+  const groups = new Map();
+  rows.forEach((row) => {
+    const location = String(row.location || "").trim().toUpperCase();
+    if (!location) return;
+    const containerId = row.containerId || getPutawayLocationContainerId(location);
+    const key = containerId || location;
+    if (!groups.has(key)) groups.set(key, { containerId, location, rows: [] });
+    groups.get(key).rows.push(row);
+  });
+  const cards = [...groups.values()]
+    .sort((a, b) => {
+      const aLatest = Math.max(...a.rows.map(r => r.updatedAt || r.createdAt || 0));
+      const bLatest = Math.max(...b.rows.map(r => r.updatedAt || r.createdAt || 0));
+      return bLatest - aLatest;
+    });
+  const selected = state.data.putawayUi?.selectedContainerId || "";
+
+  mount.innerHTML = `
+    <div class="pallet-panel">
+      <div class="pallet-panel-header">
+        <div>
+          <h2>📦 Putaway Location Containers</h2>
+          <p>Each digital location is treated as a container for routed STS units.</p>
+        </div>
+        ${selected ? '<button id="putawayClearContainerFilter" class="pallet-btn-secondary" type="button">Show All</button>' : ''}
+      </div>
+
+      <div class="putaway-po-search-shell" style="margin-bottom:16px;padding:14px;border:1px solid #d7e4ef;border-radius:14px;background:#fbfdff;">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+          <div style="min-width:240px;flex:1;">
+            <label style="display:block;font-size:11px;font-weight:800;color:#6d879d;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Search PO</label>
+            <input id="putawayGlobalPoSearchInput" type="text" placeholder="Type PO and search all putaway locations…" style="width:100%;border:1px solid #c9d7e6;border-radius:12px;padding:10px 12px;font-size:14px;" />
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button id="putawayGlobalPoSearchBtn" class="secondary-btn" type="button">Find PO</button>
+            <button id="putawayGlobalPoSearchClear" class="secondary-btn" type="button">Clear</button>
+          </div>
+        </div>
+        <div id="putawayGlobalPoSearchResults" style="display:none;margin-top:12px;"></div>
+      </div>
+
+      ${cards.length === 0
+        ? `<div class="pallet-empty"><div class="pallet-empty-icon">📭</div>No location containers created yet.</div>`
+        : `<div class="pallet-grid putaway-location-grid">
+            ${cards.map((container) => {
+              const placementCount = container.rows.length;
+              const poCount = new Set(container.rows.map(row => row.po).filter(Boolean)).size;
+              const latestTs = Math.max(...container.rows.map(r => r.updatedAt || r.createdAt || 0));
+              const isActive = selected === container.containerId;
+              return `<div class="pallet-card putaway-location-card${isActive ? ' putaway-location-card-active' : ''}" data-putaway-container-id="${escapeAttribute(container.containerId)}" role="button" tabindex="0">
+                <div class="pallet-card-num">${escapeHtml(container.location || "—")}</div>
+                <span class="pallet-status pallet-status-prep">STS Container</span>
+                <div class="pallet-card-meta">${escapeHtml(container.containerId || "—")}</div>
+                <div class="pallet-card-meta">${poCount} PO(s) · ${placementCount} placement${placementCount === 1 ? '' : 's'}</div>
+                <div class="pallet-card-meta act-dim">Updated ${formatDate(new Date(latestTs).toISOString().slice(0,10))}</div>
+                <div class="pallet-card-action">${isActive ? "Viewing placements" : "View placements"}</div>
+              </div>`;
+            }).join("")}
+          </div>`
+      }
+    </div>
+  `;
+
+  mount.querySelector("#putawayClearContainerFilter")?.addEventListener("click", () => {
+    state.data.putawayUi.selectedContainerId = "";
+    renderPutawayPage();
+  });
+
+  const globalSearchInput = mount.querySelector("#putawayGlobalPoSearchInput");
+  const globalSearchBtn = mount.querySelector("#putawayGlobalPoSearchBtn");
+  const globalSearchClear = mount.querySelector("#putawayGlobalPoSearchClear");
+  const globalSearchResults = mount.querySelector("#putawayGlobalPoSearchResults");
+
+  const runPutawayPoSearch = () => {
+    const q = String(globalSearchInput?.value || "").trim().toUpperCase();
+    if (!globalSearchResults) return;
+    if (!q) {
+      globalSearchResults.style.display = "none";
+      globalSearchResults.innerHTML = "";
+      return;
+    }
+    const matches = [...(state.data.putawayEntries || [])]
+      .filter(entry => String(entry.po || "").toUpperCase().includes(q))
+      .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+
+    if (!matches.length) {
+      globalSearchResults.style.display = "";
+      globalSearchResults.innerHTML = `<div style="padding:12px 14px;border:1px solid #ffd6d4;border-radius:12px;background:#fff1f0;color:#b42318;font-weight:700;">No putaway placements found for PO "${escapeHtml(q)}".</div>`;
+      return;
+    }
+
+    const grouped = new Map();
+    matches.forEach((entry) => {
+      const poKey = String(entry.po || "").trim();
+      if (!grouped.has(poKey)) grouped.set(poKey, []);
+      grouped.get(poKey).push(entry);
+    });
+
+    globalSearchResults.style.display = "";
+    globalSearchResults.innerHTML = [...grouped.entries()].map(([po, entries]) => {
+      const locations = [...new Set(entries.map(e => String(e.location || "").trim().toUpperCase()).filter(Boolean))];
+      return `
+        <div style="padding:12px 14px;border:1px solid #d7e4ef;border-radius:12px;background:#fff;margin-top:8px;">
+          <div style="font-size:15px;font-weight:900;color:#16324a;">PO# ${escapeHtml(po)}</div>
+          <div style="font-size:12px;color:#6d879d;margin-top:4px;">Found in ${locations.length} location${locations.length === 1 ? '' : 's'}:</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
+            ${locations.map(location => `<span class="putaway-feed-pill">${escapeHtml(location)}</span>`).join("")}
+          </div>
+          <div style="display:grid;gap:6px;margin-top:10px;">
+            ${entries.map(entry => `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px;color:#456080;"><span>${escapeHtml(entry.location || "—")} · ${escapeHtml(entry.status || "Put Away")} · ${escapeHtml(entry.palletLabel || entry.sourceContainerId || "—")} · ${escapeHtml(formatDate(entry.date))} · ${escapeHtml(entry.associate || "Unknown")}</span><div style="display:flex;gap:6px;flex-wrap:wrap;"><button type="button" class="secondary-btn putaway-pick-btn" data-putaway-pick-id="${escapeAttribute(entry.id)}" style="padding:6px 10px;font-size:11px;">Picked</button><button type="button" class="secondary-btn putaway-move-btn" data-putaway-move-id="${escapeAttribute(entry.id)}" style="padding:6px 10px;font-size:11px;">Move</button><button type="button" class="secondary-btn putaway-delete-btn" data-putaway-delete-id="${escapeAttribute(entry.id)}" style="padding:6px 10px;font-size:11px;">Delete</button></div></div>`).join("")}
+          </div>
+        </div>
+      `;
+    }).join("");
+    globalSearchResults.querySelectorAll("[data-putaway-move-id]").forEach((btn) => {
+      btn.addEventListener("click", () => openPutawayMoveModal(btn.getAttribute("data-putaway-move-id")));
+    });
+    globalSearchResults.querySelectorAll("[data-putaway-pick-id]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        updatePutawayEntryStatus(btn.getAttribute("data-putaway-pick-id"), "Picked");
+        runPutawayPoSearch();
+        renderPutawayPage();
+      });
+    });
+    globalSearchResults.querySelectorAll("[data-putaway-delete-id]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-putaway-delete-id");
+        const row = (state.data.putawayEntries || []).find(item => item.id === id);
+        const ok = window.confirm(`Delete PO ${row?.po || ""} from ${row?.location || "this location"}?`);
+        if (!ok) return;
+        deletePutawayEntry(id);
+        runPutawayPoSearch();
+        renderPutawayPage();
+      });
+    });
+  };
+
+  globalSearchBtn?.addEventListener("click", runPutawayPoSearch);
+  globalSearchInput?.addEventListener("keydown", (event) => { if (event.key === "Enter") runPutawayPoSearch(); });
+  globalSearchClear?.addEventListener("click", () => {
+    if (globalSearchInput) globalSearchInput.value = "";
+    if (globalSearchResults) {
+      globalSearchResults.style.display = "none";
+      globalSearchResults.innerHTML = "";
+    }
+  });
+  mount.querySelectorAll("[data-putaway-container-id]").forEach((card) => {
+    const cid = card.getAttribute("data-putaway-container-id");
+    card.addEventListener("click", () => {
+      state.data.putawayUi.selectedContainerId = (state.data.putawayUi.selectedContainerId === cid) ? "" : cid;
+      renderPutawayPage();
+    });
+  });
+}
+
+function renderPutawayPlacementFeed() {
+  const mount = document.getElementById("putawayLocationActivity");
+  if (!mount) return;
+
+  const selected = state.data.putawayUi?.selectedContainerId || "";
+  let rows = [...(state.data.putawayEntries || [])]
+    .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0))
+    .slice(0, 30);
+  if (selected) rows = rows.filter((row) => (row.containerId || getPutawayLocationContainerId(row.location)) === selected);
+
+  if (!rows.length) {
+    mount.innerHTML = `
+      <div class="pallet-panel act-panel">
+        <div class="pallet-panel-header">
+          <div>
+            <h2>📊 Putaway Placement Activity</h2>
+            <p>${selected ? "No placements yet for this location container." : "Latest short-term storage placements."}</p>
+          </div>
+        </div>
+        <div class="pallet-empty"><div class="pallet-empty-icon">📭</div>No putaway placements logged yet.</div>
+      </div>
+    `;
     return;
   }
 
-  [...groups.entries()]
-    .sort((a,b) => {
-      const aLatest = Math.max(...a[1].map(r => r.updatedAt || r.createdAt || 0));
-      const bLatest = Math.max(...b[1].map(r => r.updatedAt || r.createdAt || 0));
-      return bLatest - aLatest;
-    })
-    .forEach(([po, rows]) => {
-      const latest = [...rows].sort((a,b)=> (b.updatedAt||b.createdAt||0) - (a.updatedAt||a.createdAt||0))[0];
-      const locations = [...new Set(rows.map(r => r.location).filter(Boolean))];
-      const expanded = !!state.data.putawayUi.expandedPos[po];
-
-      const parentTr = document.createElement("tr");
-      parentTr.className = "putaway-parent-row";
-      parentTr.innerHTML = `
-        <td>
-          <div class="putaway-parent-main">
-            <div class="putaway-parent-title">${escapeHtml(po)}</div>
-            <div class="putaway-parent-sub">${rows.length > 1 ? "Multi-batch PO" : "Single batch PO"}</div>
-          </div>
-        </td>
-        <td>${rows.length}</td>
-        <td><span class="day-pill ${getDayClass(formatDayCode(latest.date))}">${formatDate(latest.date)}</span></td>
-        <td>${escapeHtml(locations.join(", ") || "—")}</td>
-        <td>${escapeHtml(latest.status || "")}</td>
-        <td>${escapeHtml(latest.notes || "")}</td>
-        <td class="action-stack">
-          <button class="tiny-btn putaway-expand-btn" type="button">${expanded ? t("hidePutawayEntries") : t("viewPutawayEntries")}</button>
-          <button class="tiny-btn ghost-btn putaway-history-btn" type="button">${t("fullPoHistory")}</button>
-        </td>
-      `;
-      parentTr.querySelector(".putaway-expand-btn").addEventListener("click", () => {
-        state.data.putawayUi.expandedPos[po] = !state.data.putawayUi.expandedPos[po];
-        persistData();
-        renderPutawayPage();
-      });
-      const historyBtn = parentTr.querySelector(".putaway-history-btn");
-      if (historyBtn) {
-        historyBtn.addEventListener("click", () => openBatchHistoryModal("putaway", po));
-      }
-      tbody.appendChild(parentTr);
-
-      if (expanded) {
-        const childTr = document.createElement("tr");
-        childTr.className = "putaway-child-shell";
-        childTr.innerHTML = `<td colspan="7"><div class="putaway-child-list"></div></td>`;
-        const shell = childTr.querySelector(".putaway-child-list");
-
-        [...rows]
-          .sort((a,b)=> (b.updatedAt||b.createdAt||0) - (a.updatedAt||a.createdAt||0))
-          .forEach((row) => {
-            const child = document.createElement("div");
-            child.className = "putaway-child-row";
-            child.innerHTML = `
-              <div>
-                <div class="putaway-parent-title">${formatDate(row.date)}</div>
-                <div class="putaway-child-meta">Batch entry</div>
-              </div>
-              <div>
-                <div class="putaway-parent-title">${escapeHtml(row.location || "—")}</div>
-                <div class="putaway-child-meta">Location</div>
-              </div>
-              <div>
-                <div class="putaway-parent-title">${escapeHtml(row.status || "—")}</div>
-                <div class="putaway-child-meta">Status</div>
-              </div>
-              <div>
-                <div class="putaway-parent-title">${escapeHtml(row.notes || "No notes")}</div>
-                <div class="putaway-child-meta">${escapeHtml(row.associate || "Unknown associate")}</div>
-              </div>
-              <div class="action-stack">
-                <button class="tiny-btn putaway-edit-btn" type="button">${state.language === "es" ? "Editar" : "Edit"}</button>
-                <button class="tiny-btn ghost-btn putaway-delete-btn" type="button">${state.language === "es" ? "Eliminar" : "Delete"}</button>
-              </div>
-            `;
-            child.querySelector(".putaway-delete-btn").addEventListener("click", () => {
-              state.data.putawayEntries = state.data.putawayEntries.filter(item => item.id !== row.id);
-              persistData();
-              renderPutawayPage();
-            });
-            child.querySelector(".putaway-edit-btn").addEventListener("click", () => {
-              const parentTableRow = childTr.previousElementSibling;
-              if (parentTableRow) togglePutawayEditRow(parentTableRow, row.id);
-            });
-            shell.appendChild(child);
-          });
-
-        tbody.appendChild(childTr);
-      }
+  mount.innerHTML = `
+    <div class="pallet-panel act-panel">
+      <div class="pallet-panel-header">
+        <div>
+          <h2>📊 Putaway Placement Activity</h2>
+          <p>${selected ? `Showing assignments for ${escapeHtml(selected)}.` : "Latest short-term storage placements."}</p>
+        </div>
+      </div>
+      <div class="putaway-placement-feed">
+        ${rows.map((row) => {
+    const containerId = row.containerId || getPutawayLocationContainerId(row.location) || "—";
+    const sourceContainerId = row.sourceContainerId || (row.palletId ? `pac-${row.palletId}` : "—");
+    const placementLabel = row.partIndex ? `Part ${row.partIndex}` : "Placement";
+    return `
+      <article class="putaway-feed-row">
+        <div class="putaway-feed-main">
+          <strong>PO# ${escapeHtml(row.po || "—")}</strong>
+          <span>${escapeHtml(row.location || "—")} · ${escapeHtml(row.status || "Put Away")} · ${placementLabel} · ${escapeHtml(row.associate || "Unknown")}</span>
+        </div>
+        <div class="putaway-feed-meta">
+          <span class="day-pill ${getDayClass(formatDayCode(row.date))}">${formatDate(row.date)}</span>
+          <span class="putaway-feed-pill">STS</span>
+          <span class="putaway-feed-pill">${escapeHtml(sourceContainerId)}</span>
+          <span class="putaway-feed-pill">${escapeHtml(containerId)}</span>
+          <button type="button" class="secondary-btn putaway-pick-btn" data-putaway-pick-id="${escapeAttribute(row.id)}" style="padding:6px 10px;font-size:11px;">Picked</button>
+          <button type="button" class="secondary-btn putaway-move-btn" data-putaway-move-id="${escapeAttribute(row.id)}" style="padding:6px 10px;font-size:11px;">Move</button>
+          <button type="button" class="secondary-btn putaway-delete-btn" data-putaway-delete-id="${escapeAttribute(row.id)}" style="padding:6px 10px;font-size:11px;">Delete</button>
+        </div>
+      </article>
+    `;
+  }).join("")}
+      </div>
+    </div>
+  `;
+  mount.querySelectorAll('[data-putaway-move-id]').forEach((btn) => {
+    btn.addEventListener('click', () => openPutawayMoveModal(btn.getAttribute('data-putaway-move-id')));
+  });
+  mount.querySelectorAll('[data-putaway-pick-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      updatePutawayEntryStatus(btn.getAttribute('data-putaway-pick-id'), 'Picked');
+      renderPutawayPage();
     });
+  });
+  mount.querySelectorAll('[data-putaway-delete-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-putaway-delete-id');
+      const row = (state.data.putawayEntries || []).find(item => item.id === id);
+      const ok = window.confirm(`Delete PO ${row?.po || ""} from ${row?.location || "this location"}?`);
+      if (!ok) return;
+      deletePutawayEntry(id);
+      renderPutawayPage();
+    });
+  });
 }
 
 function togglePutawayEditRow(tableRow, rowId) {
@@ -5632,7 +7297,407 @@ function bindPutawayEvents() {
     populatePutawayFormSelects();
     renderPutawayPage();
   });
+
+  // ── Pallet-based assignment panel ────────────────────────────────────
+  bindPutawayPalletPanel();
 }
+
+// Location code validator: Q[A-Z][1-10]-[A-D][1-2]
+function pa_isValidLocCode(code) {
+  if (!code) return false;
+  const m = String(code).toUpperCase().trim().match(/^Q([A-Z])(\d{1,2})-([A-D])([12])$/);
+  if (!m) return false;
+  return parseInt(m[2]) >= 1 && parseInt(m[2]) <= 10;
+}
+
+
+function getPutawayLineKey(lineOrParts) {
+  if (!lineOrParts) return "";
+  const palletId = lineOrParts.palletId || "";
+  const po = lineOrParts.po || "";
+  const destType = lineOrParts.destType || "sts";
+  return `${palletId}__${po}__${destType}`;
+}
+
+function getPutawayPlacementsForPo(po) {
+  const needle = String(po || "").trim().toUpperCase();
+  return [...(state.data.putawayEntries || [])]
+    .filter(entry => String(entry.po || "").trim().toUpperCase() === needle)
+    .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+}
+
+function getPutawayLocationSummaryForPo(po) {
+  const placements = getPutawayPlacementsForPo(po);
+  const grouped = new Map();
+  placements.forEach((entry) => {
+    const location = String(entry.location || "").trim().toUpperCase();
+    if (!location) return;
+    if (!grouped.has(location)) grouped.set(location, { location, count: 0, lastDate: entry.date || "" });
+    const bucket = grouped.get(location);
+    bucket.count += 1;
+    if (entry.date) bucket.lastDate = entry.date;
+  });
+  return [...grouped.values()].sort((a, b) => a.location.localeCompare(b.location));
+}
+
+function closePutawayLine(line) {
+  if (!line) return;
+  if (!Array.isArray(state.data.putawayClosedLines)) state.data.putawayClosedLines = [];
+  const key = getPutawayLineKey(line);
+  if (!state.data.putawayClosedLines.includes(key)) state.data.putawayClosedLines.push(key);
+  persistData();
+}
+
+
+function movePutawayEntry(entryId, newLocation, note = "") {
+  const row = (state.data.putawayEntries || []).find(item => item.id === entryId);
+  if (!row) return false;
+  const oldLocation = String(row.location || "").trim().toUpperCase();
+  const normalized = String(newLocation || "").trim().toUpperCase();
+  if (!normalized || normalized === oldLocation) return false;
+  if (!Array.isArray(row.moveHistory)) row.moveHistory = [];
+  row.moveHistory.unshift({
+    from: oldLocation,
+    to: normalized,
+    movedAt: Date.now(),
+    movedBy: state.currentUser || "",
+    note: note || "",
+  });
+  row.location = normalized;
+  row.containerId = getPutawayLocationContainerId(normalized);
+  row.updatedAt = Date.now();
+  if (note) {
+    row.notes = row.notes ? `${row.notes} | Move: ${note}` : `Move: ${note}`;
+  }
+  persistData();
+  return true;
+}
+
+
+function deletePutawayEntry(entryId) {
+  const index = (state.data.putawayEntries || []).findIndex(item => item.id === entryId);
+  if (index === -1) return false;
+  state.data.putawayEntries.splice(index, 1);
+  persistData();
+  return true;
+}
+
+function updatePutawayEntryStatus(entryId, nextStatus) {
+  const row = (state.data.putawayEntries || []).find(item => item.id === entryId);
+  if (!row) return false;
+  row.status = String(nextStatus || "").trim() || row.status || "Put Away";
+  row.updatedAt = Date.now();
+  persistData();
+  return true;
+}
+
+function openPutawayMoveModal(entryId) {
+  const entry = (state.data.putawayEntries || []).find(item => item.id === entryId);
+  if (!entry) return;
+  const suggestionsFn = window.getPutawayLocationSuggestions || ((q) => []);
+  const overlay = document.createElement("div");
+  overlay.className = "pallet-overlay";
+  overlay.id = "putawayMoveOverlay";
+  overlay.innerHTML = `
+    <div class="pallet-modal" role="dialog" aria-modal="true" style="max-width:560px;border-top:4px solid #2563eb;">
+      <div class="pallet-modal-header">
+        <div>
+          <h3>↔️ Move PO Location</h3>
+          <p class="pallet-modal-sub">PO# ${escapeHtml(entry.po || "—")} · Current location ${escapeHtml(String(entry.location || "—").toUpperCase())}</p>
+        </div>
+        <button class="pallet-modal-close" type="button">✕</button>
+      </div>
+      <div class="pallet-modal-body">
+        <div style="display:grid;gap:12px;">
+          <div style="padding:12px;border:1px solid #dbeafe;border-radius:12px;background:#f8fbff;font-size:12px;color:#456080;">
+            <strong style="display:block;color:#16324a;font-size:13px;margin-bottom:4px;">Move details</strong>
+            <div>PO# ${escapeHtml(entry.po || "—")}</div>
+            <div>From: ${escapeHtml(String(entry.location || "—").toUpperCase())}</div>
+            <div>Placed by: ${escapeHtml(entry.associate || "Unknown")}</div>
+          </div>
+          <div style="position:relative;">
+            <label style="display:block;font-size:11px;font-weight:800;color:#6d879d;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">New Location</label>
+            <input id="putawayMoveLocationInput" type="text" placeholder="Type new location…" autocomplete="off" autocapitalize="characters" style="width:100%;border:1px solid #c9d7e6;border-radius:12px;padding:10px 12px;font-size:14px;font-family:monospace;text-transform:uppercase;" />
+            <div id="putawayMoveLocationHint" style="font-size:11px;min-height:16px;margin-top:3px;"></div>
+            <div id="putawayMoveLocationDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #c9d7e6;border-radius:12px;box-shadow:0 8px 24px rgba(29,73,111,.15);margin-top:4px;overflow:hidden;"></div>
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:800;color:#6d879d;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Reason / Note (optional)</label>
+            <input id="putawayMoveNoteInput" type="text" placeholder="Why is it being moved?" style="width:100%;border:1px solid #c9d7e6;border-radius:12px;padding:10px 12px;font-size:14px;" />
+          </div>
+          <div id="putawayMoveError" style="display:none;color:#b42318;font-size:13px;font-weight:700;padding:8px 12px;background:#fff1f0;border-radius:10px;border:1px solid #ffd6d4;"></div>
+        </div>
+      </div>
+      <div class="pallet-modal-footer">
+        <button class="pallet-btn-secondary" id="putawayMoveCancelBtn" type="button">Cancel</button>
+        <button class="pallet-btn-primary" id="putawayMoveConfirmBtn" type="button">Move PO</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const input = overlay.querySelector('#putawayMoveLocationInput');
+  const hint = overlay.querySelector('#putawayMoveLocationHint');
+  const dropdown = overlay.querySelector('#putawayMoveLocationDropdown');
+  const noteInput = overlay.querySelector('#putawayMoveNoteInput');
+  const errorEl = overlay.querySelector('#putawayMoveError');
+  const close = () => overlay.remove();
+
+  function validateLoc(v) {
+    const val = String(v || "").trim().toUpperCase();
+    if (!val) { hint.textContent = ""; hint.style.color = ""; return false; }
+    const valid = typeof pa_isValidLocCode === 'function' ? pa_isValidLocCode(val) : true;
+    if (valid) {
+      hint.textContent = "✓ Valid";
+      hint.style.color = "#127c4f";
+    } else {
+      hint.textContent = "Invalid format";
+      hint.style.color = "#b42318";
+    }
+    return valid;
+  }
+
+  function renderDropdown(items) {
+    const filtered = items.filter(loc => String(loc).toUpperCase() !== String(entry.location || "").toUpperCase());
+    if (!filtered.length) {
+      dropdown.style.display = 'none';
+      dropdown.innerHTML = '';
+      return;
+    }
+    dropdown.innerHTML = filtered.map(loc => `
+      <button type="button" data-loc="${escapeAttribute(loc)}" style="display:block;width:100%;text-align:left;padding:10px 14px;cursor:pointer;font-family:monospace;font-size:13px;font-weight:700;border:0;border-bottom:1px solid #f0f4f8;background:#fff;color:#16324a;">${escapeHtml(loc)}</button>
+    `).join('');
+    dropdown.style.display = '';
+    dropdown.querySelectorAll('[data-loc]').forEach(btn => btn.addEventListener('click', () => {
+      input.value = btn.getAttribute('data-loc');
+      dropdown.style.display = 'none';
+      validateLoc(input.value);
+    }));
+  }
+
+  input.addEventListener('input', () => {
+    input.value = input.value.toUpperCase();
+    validateLoc(input.value);
+    renderDropdown(suggestionsFn(input.value));
+  });
+  input.addEventListener('focus', () => renderDropdown(suggestionsFn(input.value)));
+  input.addEventListener('blur', () => setTimeout(() => { dropdown.style.display = 'none'; }, 150));
+
+  overlay.querySelector('.pallet-modal-close').addEventListener('click', close);
+  overlay.querySelector('#putawayMoveCancelBtn').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('#putawayMoveConfirmBtn').addEventListener('click', () => {
+    errorEl.style.display = 'none';
+    const nextLoc = String(input.value || '').trim().toUpperCase();
+    if (!validateLoc(nextLoc)) {
+      errorEl.textContent = 'Enter a valid new location.';
+      errorEl.style.display = '';
+      return;
+    }
+    if (nextLoc === String(entry.location || '').trim().toUpperCase()) {
+      errorEl.textContent = 'Choose a different location.';
+      errorEl.style.display = '';
+      return;
+    }
+    const ok = movePutawayEntry(entryId, nextLoc, noteInput.value.trim());
+    if (!ok) {
+      errorEl.textContent = 'Could not move this PO.';
+      errorEl.style.display = '';
+      return;
+    }
+    close();
+    renderPutawayPage();
+  });
+}
+
+function bindPutawayPalletPanel() {
+  const detail         = document.getElementById("putawayPalletDetail");
+  const linesList      = document.getElementById("putawayPalletLinesList");
+  const poSearchInput  = document.getElementById("putawayPoSearchGlobal");
+  const poSearchBtn    = document.getElementById("putawayPoSearchBtn");
+  const poSearchResult = document.getElementById("putawayPoSearchResult");
+
+  if (!linesList) return;
+
+  let activeLine = null;
+  let activePalletId = null;
+
+  // Exposed globally so plt_renderPutawayPanel can filter by open lines
+  function getOpenPutawayLinesForPallet(pallet) {
+    if (!pallet) return [];
+    const closed = new Set(state.data.putawayClosedLines || []);
+    const lines = [];
+    (pallet.pos || []).forEach(po => {
+      const stsQty = Number(po.stsQty || 0);
+      if (stsQty <= 0) return;
+      const line = {
+        po: po.po,
+        destType: 'sts',
+        totalUnits: stsQty,
+        category: po.category || '',
+        sizeBreakdown: po.sizeBreakdown || null,
+        palletLabel: pallet.label,
+        palletId: pallet.id,
+        containerId: `pac-${pallet.id}`,
+        placements: getPutawayPlacementsForPo(po.po),
+        priorLocations: getPutawayLocationSummaryForPo(po.po),
+      };
+      line.placementCount = line.placements.length;
+      line.isAdditionalPart = line.priorLocations.length > 0;
+      if (!closed.has(getPutawayLineKey(line))) lines.push(line);
+    });
+    return lines;
+  }
+  window.getOpenPutawayLinesForPallet = getOpenPutawayLinesForPallet;
+  window.getPutawayPlacementsForPo = getPutawayPlacementsForPo;
+  window.getPutawayLocationSummaryForPo = getPutawayLocationSummaryForPo;
+  window.plt_closePutawayLine = closePutawayLine;
+
+  // Called by pallet card click in plt_renderPutawayPanel
+  window.plt_openPutawayPallet = function(palletId) {
+    activePalletId = palletId;
+    if (detail) detail.style.display = 'none';
+    const pallet = (state.data.pallets || []).find(p => p.id === palletId);
+    if (!pallet) return;
+    if (typeof window.plt_openPutawayPalletModal === 'function') {
+      window.plt_openPutawayPalletModal(pallet, getOpenPutawayLinesForPallet(pallet));
+      return;
+    }
+    showPalletLines(palletId);
+  };
+
+  // Expose placement save so the putaway modal can call it
+  window.plt_confirmPutawayPlacement = function({ line, locCode, status, notes }) {
+    if (!Array.isArray(state.data.putawayEntries)) state.data.putawayEntries = [];
+    const currentPartCount = getPutawayPlacementsForPo(line.po).length;
+    state.data.putawayEntries.unshift({
+      id: makeId(),
+      date: new Date().toISOString().slice(0,10),
+      po: line.po,
+      palletId: line.palletId,
+      palletLabel: line.palletLabel,
+      sourceContainerId: line.containerId || `pac-${line.palletId}`,
+      containerId: getPutawayLocationContainerId(locCode),
+      destType: line.destType,
+      category: line.category || '',
+      location: locCode,
+      units: null,
+      partIndex: currentPartCount + 1,
+      status: status || 'Put Away',
+      notes: notes || '',
+      associate: state.currentUser || '',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    persistData();
+    if (detail) detail.style.display = 'none';
+    if (typeof plt_renderPutawayPanel === 'function') plt_renderPutawayPanel();
+    renderPutawayPage();
+  };
+
+  function showPalletLines(palletId) {
+    activeLine = null;
+    const pallet = (state.data.pallets || []).find(p => p.id === palletId);
+    if (!pallet) { linesList.innerHTML = ''; return; }
+
+    const lines = getOpenPutawayLinesForPallet(pallet);
+    const existing = (state.data.putawayEntries || []);
+
+    if (!lines.length) {
+      linesList.innerHTML = '<p style="color:#9db2c4;font-size:13px;padding:10px 0;">All PO lines on this pallet have been fully placed. ✓</p>';
+      return;
+    }
+
+    linesList.innerHTML = lines.map((line, idx) => {
+      const destLabel = 'Short-Term Storage';
+      const destCls   = 'color:#9a5a03;background:#fff4e6;border:1px solid #f5d8a8;';
+      const placed = existing.filter(e => e.po === line.po && e.palletId === line.palletId && e.destType === line.destType);
+      const placedUnits = placed.reduce((s,e) => s + Number(e.units||0), 0);
+      const remaining = line.remainingUnits;
+      const sizes = line.sizeBreakdown ? Object.entries(line.sizeBreakdown).map(([s,q])=>`${s}:${q}`).join(' · ') : '';
+      const isComplete = remaining === 0;
+
+      return `<div class="putaway-po-line${isComplete?' putaway-po-line-complete':''}" data-idx="${idx}"
+          style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border-radius:12px;border:1px solid ${isComplete?'#9ee8c8':'#c9d7e6'};background:${isComplete?'#f0fff8':'#fff'};margin-bottom:8px;cursor:${isComplete?'default':'pointer'};">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:900;font-size:15px;margin-bottom:2px;">PO# ${escapeHtml(line.po)}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
+            <span style="font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px;${destCls}">${destLabel}</span>
+            ${line.category ? `<span style="font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px;background:#f0f4f8;color:#456080;border:1px solid #d0dce8;">${escapeHtml(line.category)}</span>` : ''}
+          </div>
+          ${sizes ? `<div style="font-size:11px;color:#9db2c4;margin-top:4px;">${escapeHtml(sizes)}</div>` : ''}
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-size:13px;color:#9db2c4;">${line.totalUnits.toLocaleString()} total</div>
+          ${placedUnits > 0 ? `<div style="font-size:12px;color:#9db2c4;">${placedUnits.toLocaleString()} placed</div>` : ''}
+          <div style="font-size:15px;font-weight:900;color:${isComplete?'#127c4f':remaining<line.totalUnits?'#d97706':'#16324a'};">
+            ${isComplete ? '✓ Complete' : remaining.toLocaleString()+' remaining'}
+          </div>
+        </div>
+        ${!isComplete ? `<button class="pallet-btn-primary" style="flex-shrink:0;font-size:12px;padding:8px 14px;" data-line-idx="${idx}">Assign →</button>` : ''}
+      </div>`;
+    }).join('');
+
+    linesList._lines = lines;
+
+    linesList.querySelectorAll('[data-line-idx]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const line = linesList._lines[parseInt(btn.dataset.lineIdx)];
+        if (typeof window.plt_openPutawayAssignModal === 'function') window.plt_openPutawayAssignModal(line);
+      });
+    });
+    linesList.querySelectorAll('.putaway-po-line:not(.putaway-po-line-complete)').forEach(row => {
+      row.addEventListener('click', () => {
+        const line = linesList._lines[parseInt(row.dataset.idx)];
+        if (line && typeof window.plt_openPutawayAssignModal === 'function') window.plt_openPutawayAssignModal(line);
+      });
+    });
+  }
+
+  // PO search → find which pallet it's on
+  function runPoSearch() {
+    const q = poSearchInput.value.trim().toUpperCase();
+    if (!q) { poSearchResult.style.display = 'none'; return; }
+    const pallets = (Array.isArray(state.data.pallets) ? state.data.pallets : []).filter(p => p.status === 'done');
+    const matches = [];
+    pallets.forEach(p => {
+      const openLines = getOpenPutawayLinesForPallet(p);
+      const openPos = new Set(openLines.map(line => line.po));
+      (p.pos||[]).forEach(po => {
+        if (String(po.po||'').toUpperCase().includes(q) && openPos.has(po.po)) {
+          matches.push({ pallet: p, po });
+        }
+      });
+    });
+    if (!matches.length) {
+      poSearchResult.textContent = `No pallet found containing PO "${q}".`;
+      poSearchResult.style.background = '#fff1f0';
+      poSearchResult.style.borderColor = '#ffd6d4';
+      poSearchResult.style.color = '#b42318';
+      poSearchResult.style.display = '';
+      return;
+    }
+    const parts = matches.map(m => {
+      const sts = Number(m.po.stsQty||0);
+      const routing = sts ? `STS: ${sts}` : '';
+      return `<strong>PO# ${escapeHtml(m.po.po)}</strong> → Pallet <strong>${escapeHtml(m.pallet.label||m.pallet.id)}</strong> (${escapeHtml(m.pallet.date||'—')})${routing?' · '+routing:''}`;
+    });
+    poSearchResult.innerHTML = parts.join('<br>');
+    poSearchResult.style.background = '#eaf4ff';
+    poSearchResult.style.borderColor = '#cfe3fb';
+    poSearchResult.style.color = '#24598b';
+    poSearchResult.style.display = '';
+
+    // Auto-open the first matching pallet
+    if (matches.length >= 1 && typeof window.plt_openPutawayPallet === 'function') {
+      window.plt_openPutawayPallet(matches[0].pallet.id);
+    }
+  }
+  if (poSearchBtn) poSearchBtn.addEventListener('click', runPoSearch);
+  if (poSearchInput) poSearchInput.addEventListener('keydown', e => { if(e.key==='Enter') runPoSearch(); });
+}
+
 
 function demoPutawayEntries() {
   return [

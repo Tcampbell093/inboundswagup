@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>QA Inbound Workflow</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="Styles/workflow.css" />
   <link rel="stylesheet" href="Styles/pallets.css" />
 </head>
 <body class="workflow-page">
@@ -102,64 +103,239 @@
       <div id="palletPrepActivity"></div>
     </section>
 
-    <section class="page" id="page-overstock">
-      <div class="inbound-filter-bar"><div class="filter-bar-wrap"><button class="filter-toggle-btn" id="overstockFilterToggle" type="button" data-target="overstockFilterPanel" aria-expanded="false"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> <span data-i18n="filterResults">Filter</span></button><div class="filter-collapsible hidden" id="overstockFilterPanel"><div class="filter-inner"><div class="filter-field"><label for="overstockDateFilter" data-i18n="date">Date</label><input id="overstockDateFilter" type="date" /></div><div class="filter-field"><label for="overstockAssociateFilter" data-i18n="associate">Associate</label><select id="overstockAssociateFilter"></select></div><div class="filter-field"><label for="overstockLocationFilter" data-i18n="location">Location</label><select id="overstockLocationFilter"></select></div><div class="filter-field"><label for="overstockStatusFilter" data-i18n="status">Status</label><select id="overstockStatusFilter"></select></div><div class="filter-field search-field"><label for="overstockSearchInput" data-i18n="search">Search</label><input id="overstockSearchInput" type="text" /></div><div class="filter-field"><label>&nbsp;</label><button id="overstockMyItemsBtn" class="secondary-btn" type="button" data-i18n="myItemsOnly">My Items Only</button><button id="overstockClearFiltersBtn" class="secondary-btn" type="button" data-i18n="clearFilters">Clear Filters</button></div></div></div></div></div>
-      <section class="stats-grid"><article class="stat-card"><span class="stat-label">Entries</span><strong id="overstockStatRows">0</strong><p>Logged overstock lines</p></article><article class="stat-card"><span class="stat-label">Donation Candidates</span><strong id="overstockStatDonation">0</strong><p>Rows marked as donation</p></article><article class="stat-card"><span class="stat-label">Required Pulls</span><strong id="overstockStatRequired">0</strong><p>Rows still needed</p></article><article class="stat-card"><span class="stat-label">Auditors</span><strong id="overstockStatAssociates">0</strong><p>Unique associates logged</p></article></section>
-      <div id="overstockPalletQueue"></div>
-      <section class="panel"><div class="panel-header panel-header-split"><div><h2>Add Overstock Entry</h2><p>Use this when putting fresh overstock away or auditing a location for donations. POs now come directly from Prep so nobody has to type them manually.</p></div><div class="toolbar"><button id="overstockSeedBtn" class="secondary-btn" type="button">Load Demo Data</button></div></div><form id="overstockEntryForm" class="form-grid overstock-entry-grid">
-  <div class="field"><label for="overstockEntryDate">Date</label><input id="overstockEntryDate" type="date" required /></div>
-  <div class="field" style="grid-column:1/-1;">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
-      <label style="margin:0;">PO#</label>
-      <span style="display:flex;align-items:center;gap:6px;margin-left:auto;font-size:12px;color:var(--color-text-secondary,#666);">
-        <span id="overstockPoModeLabel">From Prep list</span>
-        <button type="button" id="overstockPoModeToggle"
-          style="font-size:11px;padding:2px 8px;border:1px solid #ccc;border-radius:6px;background:#f5f5f5;cursor:pointer;color:#555;">
-          Enter manually
-        </button>
-      </span>
-    </div>
-    <select id="overstockEntryPo" required></select>
-    <input id="overstockEntryPoManual" type="text" placeholder="Type PO number…"
-      style="display:none;width:100%;box-sizing:border-box;" autocomplete="off" />
-    <div id="overstockManualPoWarning"
-      style="display:none;margin-top:5px;padding:7px 10px;background:#fffbeb;border:1px solid #f59e0b;border-radius:6px;font-size:12px;color:#92400e;">
-      ⚠️ Manual entry — the overstock quantity will not be auto-filled. Enter it manually below.
-    </div>
-  </div>
-  <div class="field">
-    <label for="overstockEntryQty">
-      Overstock Qty
-      <span id="overstockQtyAutoLabel" style="font-weight:400;font-size:0.8em;color:#059669;"> (auto-filled from Prep)</span>
-    </label>
-    <input id="overstockEntryQty" type="number" min="0" step="1" />
-    <div id="overstockQtyAdjustedBadge" style="display:none;margin-top:4px;padding:4px 8px;background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;font-size:11px;color:#92400e;"></div>
-    <div id="overstockAutoQtyWarn" style="display:none;margin-top:4px;padding:7px 10px;background:#fef2f2;border:1px solid #f87171;border-radius:6px;font-size:12px;color:#991b1b;">
-      ⚠️ You are adjusting an automated quantity. The system calculated this from the Prep count minus the ordered quantity. Please confirm this adjustment is intentional.
-    </div>
-  </div>
-  <div class="field"><label for="overstockEntryCategory">Category</label><select id="overstockEntryCategory"></select></div>
-  <div class="field"><label for="overstockEntryStatus">Status</label><select id="overstockEntryStatus" required></select></div>
-  <div class="field"><label for="overstockEntryAction">Action</label><select id="overstockEntryAction" required></select></div>
-  <div class="field"><label for="overstockEntryLocation">Location</label><select id="overstockEntryLocation" required></select></div>
-  <div class="field"><label for="overstockEntryAssociate">Associate Name</label><select id="overstockEntryAssociate" required></select></div>
-  <!-- Apparel size breakdown — shown only when category = Apparel -->
-  <div class="field full" id="overstockApparelSizes" style="display:none;">
-    <label>Size Breakdown <span style="font-weight:400;font-size:0.8em;">(optional — total should match Overstock Qty)</span></label>
-    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;">
-      <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><label style="font-size:11px;">XS</label><input type="number" min="0" class="overstock-size-input" data-size="XS" style="width:56px;text-align:center;" placeholder="0"/></div>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><label style="font-size:11px;">S</label><input type="number" min="0" class="overstock-size-input" data-size="S" style="width:56px;text-align:center;" placeholder="0"/></div>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><label style="font-size:11px;">M</label><input type="number" min="0" class="overstock-size-input" data-size="M" style="width:56px;text-align:center;" placeholder="0"/></div>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><label style="font-size:11px;">L</label><input type="number" min="0" class="overstock-size-input" data-size="L" style="width:56px;text-align:center;" placeholder="0"/></div>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><label style="font-size:11px;">XL</label><input type="number" min="0" class="overstock-size-input" data-size="XL" style="width:56px;text-align:center;" placeholder="0"/></div>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><label style="font-size:11px;">2XL</label><input type="number" min="0" class="overstock-size-input" data-size="2XL" style="width:56px;text-align:center;" placeholder="0"/></div>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><label style="font-size:11px;">3XL</label><input type="number" min="0" class="overstock-size-input" data-size="3XL" style="width:56px;text-align:center;" placeholder="0"/></div>
-    </div>
-    <div id="overstockSizeTotalHint" style="margin-top:5px;font-size:11px;color:#6b7280;"></div>
-  </div>
-  <div class="field full"><button class="primary-btn" type="submit">Add Entry</button></div>
-</form></section>
-      <section class="panel os-tool-panel" id="overstockAuditPanel">
+        <section class="page" id="page-overstock">
+
+      <!-- ── Stat strip ── -->
+      <div class="os-stat-strip">
+        <div class="os-stat-card os-sc-amber">
+          <div class="os-stat-label">On Cart</div>
+          <strong class="os-stat-val" id="overstockStatRows">0</strong>
+          <div class="os-stat-sub">Boxes waiting to be stored</div>
+        </div>
+        <div class="os-stat-card os-sc-blue">
+          <div class="os-stat-label">Open Boxes</div>
+          <strong class="os-stat-val" id="overstockStatDonation">0</strong>
+          <div class="os-stat-sub">Still being filled in Prep</div>
+        </div>
+        <div class="os-stat-card os-sc-green">
+          <div class="os-stat-label">Stored</div>
+          <strong class="os-stat-val" id="overstockStatRequired">0</strong>
+          <div class="os-stat-sub">Boxes in a location</div>
+        </div>
+        <div class="os-stat-card os-sc-purple">
+          <div class="os-stat-label">Locations used</div>
+          <strong class="os-stat-val" id="overstockStatAssociates">0</strong>
+          <div class="os-stat-sub">Out of E-1 through E-24</div>
+        </div>
+      </div>
+
+      <!-- ── Unboxed from Prep warning banner (rendered by JS) ── -->
+      <div id="overstockUnboxedBanner"></div>
+
+      <!-- ── Put Away — cart queue (rendered by JS) ── -->
+      <div id="overstockContainerHub"></div>
+
+      <!-- ── Location map (rendered by JS) ── -->
+      <div id="overstockLocationMap"></div>
+
+      <!-- ── Consolidate section (rendered by JS) ── -->
+      <div id="overstockConsolidate"></div>
+
+      <!-- ── Hidden filter bar — kept for log table ── -->
+      <div class="os-filter-bar" style="margin-top:4px;">
+        <input id="overstockSearchInput" type="text" class="os-filter-input" placeholder="Search log: PO, location, associate…" />
+        <select id="overstockAssociateFilter" class="os-filter-select"></select>
+        <select id="overstockLocationFilter" class="os-filter-select"></select>
+        <select id="overstockStatusFilter" class="os-filter-select"></select>
+        <input id="overstockDateFilter" type="date" class="os-filter-input os-filter-date" />
+        <button id="overstockMyItemsBtn" class="os-ghost-btn" type="button">Mine Only</button>
+        <button id="overstockClearFiltersBtn" class="os-ghost-btn" type="button">Clear</button>
+      </div>
+
+      <!-- ── Pallet queue placeholder (kept for JS compat) ── -->
+      <div id="overstockPalletQueue" style="display:none;"></div>
+
+      <!-- ── MODALS ── -->
+
+      <!-- Put Away modal -->
+      <div class="os-modal-backdrop" id="osMdPutaway">
+        <div class="os-modal" role="dialog" aria-modal="true">
+          <div class="os-modal-head">
+            <div>
+              <div class="os-modal-title" id="osPaTitle">Put away box</div>
+              <div class="os-modal-sub" id="osPaSub"></div>
+            </div>
+            <button class="os-modal-close" data-close="osMdPutaway">✕</button>
+          </div>
+          <div class="os-modal-body">
+            <div class="os-modal-pos" id="osPaPos"></div>
+            <div class="os-eyebrow" style="margin-bottom:8px;">Select an empty location</div>
+            <div class="os-loc-grid" id="osPaLocGrid"></div>
+            <div class="os-field" style="margin-top:14px;">
+              <div class="os-detail-lbl">Location</div>
+              <input type="text" id="osPaLocInput" class="os-input" placeholder="Tap above or type E-1 through E-24…" autocomplete="off" style="font-family:monospace;font-size:15px;font-weight:600;" />
+            </div>
+            <div class="os-toast" id="osPaToast"></div>
+          </div>
+          <div class="os-modal-foot">
+            <button class="os-submit-btn" id="osPaConfirmBtn" type="button">Confirm put away</button>
+            <button class="os-ghost-btn" data-close="osMdPutaway" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Location detail modal -->
+      <div class="os-modal-backdrop" id="osMdLocation">
+        <div class="os-modal" role="dialog" aria-modal="true">
+          <div class="os-modal-head">
+            <div>
+              <div class="os-modal-title" id="osLocTitle">Location</div>
+              <div class="os-modal-sub" id="osLocSub"></div>
+            </div>
+            <button class="os-modal-close" data-close="osMdLocation">✕</button>
+          </div>
+          <div class="os-modal-body" id="osLocBody"></div>
+          <div class="os-modal-foot">
+            <button class="os-ghost-btn" data-close="osMdLocation" type="button">Close</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Merge modal -->
+      <div class="os-modal-backdrop" id="osMdMerge">
+        <div class="os-modal" role="dialog" aria-modal="true">
+          <div class="os-modal-head">
+            <div>
+              <div class="os-modal-title" id="osMgTitle">Merge box</div>
+              <div class="os-modal-sub">Move all contents into another box. Source box will be closed.</div>
+            </div>
+            <button class="os-modal-close" data-close="osMdMerge">✕</button>
+          </div>
+          <div class="os-modal-body">
+            <div class="os-field-group" style="background:var(--line,#eee);border-radius:10px;padding:10px 12px;margin-bottom:14px;">
+              <div class="os-detail-lbl" style="margin-bottom:4px;">Moving contents from</div>
+              <div id="osMgContents" style="font-size:13px;color:var(--navy,#12324a);"></div>
+            </div>
+            <div class="os-field">
+              <div class="os-detail-lbl">Merge into</div>
+              <select id="osMgInto" class="os-input">
+                <option value="">— select destination box —</option>
+              </select>
+            </div>
+            <div class="os-toast" id="osMgToast"></div>
+          </div>
+          <div class="os-modal-foot">
+            <button class="os-submit-btn" id="osMgConfirmBtn" type="button">Merge boxes</button>
+            <button class="os-ghost-btn" data-close="osMdMerge" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audit modal -->
+      <div class="os-modal-backdrop" id="osMdAudit">
+        <div class="os-modal os-modal-wide" role="dialog" aria-modal="true">
+          <div class="os-modal-head">
+            <div>
+              <div class="os-modal-title" id="osAuTitle">Audit location</div>
+              <div class="os-modal-sub" id="osAuSub">Verify each box is physically present</div>
+            </div>
+            <button class="os-modal-close" data-close="osMdAudit">✕</button>
+          </div>
+          <div class="os-modal-body" id="osAuBody"></div>
+          <div class="os-modal-foot">
+            <button class="os-submit-btn" data-close="osMdAudit" type="button">Done</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Log Entry form ── -->
+      <section class="os-panel">
+        <div class="os-panel-head">
+          <div>
+            <div class="os-panel-title">+ Log Overstock Entry</div>
+            <div class="os-panel-sub">POs come directly from Prep — no manual typing needed. Select a PO and the quantity auto-fills.</div>
+          </div>
+          <button id="overstockSeedBtn" class="os-ghost-btn" type="button">Load Demo Data</button>
+        </div>
+        <div class="os-panel-body">
+          <form id="overstockEntryForm" class="os-entry-form">
+            <div class="os-field">
+              <label class="os-field-lbl" for="overstockEntryDate">Date</label>
+              <input id="overstockEntryDate" type="date" class="os-input" required />
+            </div>
+
+            <div class="os-field os-field-wide">
+              <div class="os-field-lbl-row">
+                <label class="os-field-lbl" for="overstockEntryPo">PO Number</label>
+                <span class="os-mode-toggle-wrap">
+                  <span id="overstockPoModeLabel" class="os-auto-tag">Auto from Prep</span>
+                  <button type="button" id="overstockPoModeToggle" class="os-ghost-btn os-ghost-btn-xs">Enter manually</button>
+                </span>
+              </div>
+              <select id="overstockEntryPo" class="os-input" required></select>
+              <input id="overstockEntryPoManual" type="text" class="os-input" placeholder="Type PO number…" style="display:none;" autocomplete="off" />
+              <div id="overstockManualPoWarning" class="os-warn-box" style="display:none;">
+                ⚠️ Manual entry — overstock quantity will not be auto-filled. Enter it manually below.
+              </div>
+            </div>
+
+            <div class="os-field">
+              <label class="os-field-lbl" for="overstockEntryQty">
+                Qty
+                <span id="overstockQtyAutoLabel" class="os-auto-tag">auto-filled</span>
+              </label>
+              <input id="overstockEntryQty" type="number" min="0" step="1" class="os-input os-qty-input" />
+              <div id="overstockQtyAdjustedBadge" class="os-warn-badge" style="display:none;"></div>
+              <div id="overstockAutoQtyWarn" class="os-warn-box" style="display:none;">
+                ⚠️ Adjusting an automated quantity — confirm this is intentional.
+              </div>
+            </div>
+
+            <div class="os-field">
+              <label class="os-field-lbl" for="overstockEntryCategory">Category</label>
+              <select id="overstockEntryCategory" class="os-input"></select>
+            </div>
+            <div class="os-field">
+              <label class="os-field-lbl" for="overstockEntryStatus">Status</label>
+              <select id="overstockEntryStatus" class="os-input" required></select>
+            </div>
+            <div class="os-field">
+              <label class="os-field-lbl" for="overstockEntryAction">Action</label>
+              <select id="overstockEntryAction" class="os-input" required></select>
+            </div>
+            <div class="os-field">
+              <label class="os-field-lbl" for="overstockEntryLocation">Location</label>
+              <select id="overstockEntryLocation" class="os-input" required></select>
+            </div>
+            <div class="os-field">
+              <label class="os-field-lbl" for="overstockEntryAssociate">Associate</label>
+              <select id="overstockEntryAssociate" class="os-input" required></select>
+            </div>
+
+            <!-- Apparel sizes — shown only when category = Apparel -->
+            <div class="os-field os-field-full" id="overstockApparelSizes" style="display:none;">
+              <label class="os-field-lbl">Size Breakdown <span style="font-weight:400;opacity:.7;">(optional)</span></label>
+              <div class="os-sizes-row">
+                <div class="os-size-cell"><span class="os-size-lbl">XS</span><input type="number" min="0" class="overstock-size-input os-size-input" data-size="XS" placeholder="0"/></div>
+                <div class="os-size-cell"><span class="os-size-lbl">S</span><input type="number" min="0" class="overstock-size-input os-size-input" data-size="S" placeholder="0"/></div>
+                <div class="os-size-cell"><span class="os-size-lbl">M</span><input type="number" min="0" class="overstock-size-input os-size-input" data-size="M" placeholder="0"/></div>
+                <div class="os-size-cell"><span class="os-size-lbl">L</span><input type="number" min="0" class="overstock-size-input os-size-input" data-size="L" placeholder="0"/></div>
+                <div class="os-size-cell"><span class="os-size-lbl">XL</span><input type="number" min="0" class="overstock-size-input os-size-input" data-size="XL" placeholder="0"/></div>
+                <div class="os-size-cell"><span class="os-size-lbl">2XL</span><input type="number" min="0" class="overstock-size-input os-size-input" data-size="2XL" placeholder="0"/></div>
+                <div class="os-size-cell"><span class="os-size-lbl">3XL</span><input type="number" min="0" class="overstock-size-input os-size-input" data-size="3XL" placeholder="0"/></div>
+              </div>
+              <div id="overstockSizeTotalHint" class="os-size-hint"></div>
+            </div>
+
+            <div class="os-field os-field-full">
+              <button class="os-submit-btn" type="submit">Add Entry</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- ── Location Audit tool ── -->
+      <section class="os-panel os-tool-panel" id="overstockAuditPanel">
         <div class="os-tool-header">
           <div class="os-tool-icon">📋</div>
           <div class="os-tool-meta">
@@ -180,7 +356,8 @@
         <div id="overstockAuditResults"></div>
       </section>
 
-      <section class="panel os-tool-panel">
+      <!-- ── PO Lookup tool ── -->
+      <section class="os-panel os-tool-panel">
         <div class="os-tool-header">
           <div class="os-tool-icon">🔍</div>
           <div class="os-tool-meta">
@@ -191,113 +368,70 @@
         <div class="os-tool-bar">
           <div class="os-search-wrap os-search-wrap-text">
             <span class="os-search-icon">🏷️</span>
-            <input id="overstockPoLookupInput" type="text" class="os-search-input"
-              placeholder="Enter PO number…" autocomplete="off" />
+            <input id="overstockPoLookupInput" type="text" class="os-search-input" placeholder="Enter PO number…" autocomplete="off" />
           </div>
           <button id="overstockPoLookupBtn" class="os-action-btn" type="button">Search</button>
           <button id="overstockPoLookupClear" class="os-ghost-btn" type="button" style="display:none;">✕ Clear</button>
         </div>
         <div id="overstockPoLookupResults"></div>
       </section>
-      <section class="panel"><div class="panel-header"><div><h2>Overstock Log</h2><p>Simple audit table for what is there, what can be donated, and what still needs to stay.</p></div></div><div class="table-wrap overstock-wrap"><table class="sheet-table overstock-table"><thead><tr><th>Date</th><th>PO#</th><th>Category</th><th>Quantity</th><th>Status</th><th>Action</th><th>Location</th><th>Associate Name</th><th>Action</th></tr></thead><tbody id="overstockTableBody"></tbody></table></div></section>
-    </section>
 
-
-    <section class="page" id="page-putaway">
-      <section class="panel">
-        <div class="panel-header panel-header-split">
+      <!-- ── Overstock Log ── -->
+      <section class="os-panel">
+        <div class="os-panel-head">
           <div>
-            <h2>Putaway Controls</h2>
-            <p>Track what Prep handed off, where it was staged, and make it easy to find later for Assembly.</p>
-          </div>
-          <div class="filter-bar-wrap"><button class="filter-toggle-btn" id="putawayFilterToggle" type="button" data-target="putawayFilterPanel" aria-expanded="false"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg> <span data-i18n="filterResults">Filter</span></button><div class="filter-collapsible hidden" id="putawayFilterPanel"><div class="filter-inner"><div class="filter-field"><label for="putawayDateFilter" data-i18n="date">Date</label><input id="putawayDateFilter" type="date" /></div><div class="filter-field"><label for="putawayAssociateFilter" data-i18n="associate">Associate</label><select id="putawayAssociateFilter"></select></div><div class="filter-field"><label for="putawayStatusFilter" data-i18n="status">Status</label><select id="putawayStatusFilter"></select></div><div class="filter-field search-field"><label for="putawaySearchInput" data-i18n="search">Search</label><input id="putawaySearchInput" type="text" /></div><div class="filter-field"><label>&nbsp;</label><button id="putawayMyItemsBtn" class="secondary-btn" type="button" data-i18n="myItemsOnly">My Items Only</button><button id="putawayClearFiltersBtn" class="secondary-btn" type="button" data-i18n="clearFilters">Clear Filters</button></div></div></div></div>
-        </div>
-      </section>
-
-      <section class="stats-grid">
-        <article class="stat-card"><span class="stat-label">Entries</span><strong id="putawayStatRows">0</strong><p>Total putaway lines logged</p></article>
-        <article class="stat-card"><span class="stat-label">Units</span><strong id="putawayStatUnits">0</strong><p>Total units in filtered view</p></article>
-        <article class="stat-card"><span class="stat-label">Locations</span><strong id="putawayStatLocations">0</strong><p>Unique temporary locations used</p></article>
-        <article class="stat-card"><span class="stat-label">Open Locations</span><strong id="putawayStatOpenLocations">0</strong><p>Locations currently in use</p></article>
-      </section>
-
-      <section class="panel">
-        <div class="panel-header panel-header-split">
-          <div>
-            <h2>Add Putaway Entry</h2>
-            <p>Use this when items are placed into short-term storage after Prep.</p>
-          </div>
-          <div class="toolbar">
-            <button id="putawaySeedBtn" class="secondary-btn" type="button">Load Demo Data</button>
+            <div class="os-panel-title">📋 Overstock Log</div>
+            <div class="os-panel-sub">Everything logged — what's there, what can be donated, what still needs to stay.</div>
           </div>
         </div>
-        <form id="putawayEntryForm" class="form-grid putaway-entry-grid">
-          <div class="field">
-            <label for="putawayEntryDate">Date</label>
-            <input id="putawayEntryDate" type="date" required />
-          </div>
-          <div class="field" style="grid-column:span 2;">
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
-              <label style="margin:0;">PO#</label>
-              <span style="display:flex;align-items:center;gap:6px;margin-left:auto;font-size:12px;color:#666;">
-                <span id="putawayPoModeLabel">From list</span>
-                <button type="button" id="putawayPoModeToggle"
-                  style="font-size:11px;padding:2px 8px;border:1px solid #ccc;border-radius:6px;background:#f5f5f5;cursor:pointer;color:#555;">
-                  Enter manually
-                </button>
-              </span>
-            </div>
-            <input id="putawayEntryPoSearch" type="text" placeholder="Type to filter PO list" style="margin-bottom:4px;" />
-            <select id="putawayEntryPo" required></select>
-            <input id="putawayEntryPoManual" type="text" placeholder="Type PO number…"
-              style="display:none;width:100%;box-sizing:border-box;margin-top:4px;" autocomplete="off" />
-            <div id="putawayManualPoWarning"
-              style="display:none;margin-top:5px;padding:7px 10px;background:#fffbeb;border:1px solid #f59e0b;border-radius:6px;font-size:12px;color:#92400e;">
-              ⚠️ Prefer selecting from the list when possible — manual entries won't auto-fill qty or category.
-            </div>
-          </div>
-          <div class="field">
-            <label for="putawayEntryLocation">Location</label>
-            <input id="putawayEntryLocation" type="text" placeholder="Ex: ST-A-03" required />
-          </div>
-          <div class="field">
-            <label for="putawayEntryStatus">Status</label>
-            <select id="putawayEntryStatus" required></select>
-          </div>
-          <div class="field full">
-            <label for="putawayEntryNotes">Notes</label>
-            <input id="putawayEntryNotes" type="text" placeholder="Optional notes about the pallet or location" />
-          </div>
-          <div class="field full">
-            <button class="primary-btn" type="submit">Add Entry</button>
-          </div>
-        </form>
-      </section>
-
-      <section class="panel">
-        <div class="panel-header">
-          <div>
-            <h2>Putaway Log</h2>
-            <p>Searchable log of what was placed into short-term storage and where it lives now.</p>
-          </div>
-        </div>
-        <div class="table-wrap putaway-wrap">
-          <table class="sheet-table putaway-table">
+        <div class="os-table-wrap">
+          <table class="os-table">
             <thead>
               <tr>
-                <th>PO#</th>
-                <th>Batches</th>
-                <th>Latest Date</th>
-                <th>Locations</th>
-                <th>Latest Status</th>
-                <th>Latest Notes</th>
-                <th>Action</th>
+                <th>Date</th><th>PO#</th><th>Category</th><th>Qty</th>
+                <th>Status</th><th>Action</th><th>Location</th><th>Associate</th><th></th>
               </tr>
             </thead>
-            <tbody id="putawayTableBody"></tbody>
+            <tbody id="overstockTableBody"></tbody>
           </table>
         </div>
       </section>
+
+    </section>
+
+<section class="page" id="page-putaway">
+
+      <!-- Pallet cards — rendered by plt_renderPutawayPanel(), same pattern as Dock/Receiving/Prep -->
+      <div id="palletPutawayPanel"></div>
+
+      <!-- PO lines for selected pallet (shown after card click) -->
+      <div id="putawayPalletDetail" style="display:none;">
+        <section class="pallet-panel" style="margin-top:16px;">
+          <div class="pallet-panel-header">
+            <div>
+              <div id="putawayDetailPalletName" class="pallet-card-num" style="font-size:1.3rem;margin-bottom:4px;"></div>
+              <p id="putawayDetailPalletSub" style="margin:0;font-size:13px;color:#6d879d;"></p>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+              <input id="putawayPoSearchGlobal" type="text" placeholder="Find PO → pallet…"
+                class="putaway-pallet-search-input" />
+              <button id="putawayPoSearchBtn" class="secondary-btn" type="button">Find</button>
+              <button id="putawayDetailBack" class="secondary-btn" type="button">← All Pallets</button>
+            </div>
+          </div>
+
+          <!-- PO search result message -->
+          <div id="putawayPoSearchResult" class="putaway-po-search-result" style="display:none;"></div>
+
+          <!-- PO line list — Assign → buttons open a modal overlay -->
+          <div class="putaway-pallet-lines-title" style="margin-bottom:8px;">PO Lines — select one to assign a location</div>
+          <div id="putawayPalletLinesList"></div>
+        </section>
+      </div>
+
+      <div id="putawayAuditPanel"></div>
+      <div id="putawayLocationContainers"></div>
+      <div id="putawayLocationActivity"></div>
     </section>
 
 
@@ -357,7 +491,7 @@
     </section>
 
     <section class="page" id="page-settings">
-      <section class="panel"><div class="panel-header"><div><h2 data-i18n="settingsMasterLists">Settings / Master Lists</h2><p data-i18n="settingsHelp">Associate names now come from Attendance. Manage categories and locations here so the rest of the workflow can use dropdowns.</p></div></div><div class="performance-grid three-up"><div class="settings-card"><div class="settings-card-header"><h3 data-i18n="categories">Categories</h3><form id="categoryForm" class="inline-master-form"><input id="categoryInput" type="text" /><button class="tiny-btn" type="submit" data-i18n="add">Add</button></form></div><div id="categoriesList" class="master-list"></div></div><div class="settings-card"><div class="settings-card-header"><h3 data-i18n="locations">Locations</h3><form id="locationForm" class="inline-master-form"><input id="locationInput" type="text" /><button class="tiny-btn" type="submit" data-i18n="add">Add</button></form></div><div id="locationsList" class="master-list"></div></div><div class="settings-card"><div class="settings-card-header"><h3>UPH Pace Images</h3></div>
+      <section class="panel"><div class="panel-header"><div><h2 data-i18n="settingsMasterLists">Settings / Master Lists</h2><p data-i18n="settingsHelp">Associate names now come from Attendance. Manage categories and locations here so the rest of the workflow can use dropdowns.</p></div></div><div class="performance-grid three-up"><div class="settings-card"><div class="settings-card-header"><h3 data-i18n="categories">Categories</h3><form id="categoryForm" class="inline-master-form"><input id="categoryInput" type="text" /><button class="tiny-btn" type="submit" data-i18n="add">Add</button></form></div><div id="categoriesList" class="master-list"></div></div><div class="settings-card"><div class="settings-card-header"><h3 data-i18n="locations">Locations</h3><form id="locationForm" class="inline-master-form"><input id="locationInput" type="text" /><button class="tiny-btn" type="submit" data-i18n="add">Add</button></form></div><div id="locationsList" class="master-list"></div></div><div class="settings-card"><div class="settings-card-header"><h3>Putaway Locations</h3><form id="putawayLocationForm" class="inline-master-form"><input id="putawayLocationInput" type="text" placeholder="QA5-C1" /><button class="tiny-btn" type="submit">Add</button></form></div><div class="uph-pace-settings-copy" style="margin-bottom:10px;">Format: QA-QZ rows, bays 1-10, levels A-D, halves 1-2.</div><div id="putawayLocationsList" class="master-list"></div></div><div class="settings-card"><div class="settings-card-header"><h3>UPH Pace Images</h3></div>
         <div class="uph-pace-settings-copy">Upload custom images for the 4 UPH stages. These replace the default pace icons for this browser.</div>
         <div class="uph-pace-upload-grid settings-upload-grid">
           <label class="uph-upload-item">Stage 1<input id="uphStageUpload1" type="file" accept="image/png,image/jpeg,image/webp"></label>
@@ -437,6 +571,57 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="app.js"></script>
   <script src="inbound-pallets.js"></script>
+  <script>
+  // ── Put-Away auto-container creation hook ─────────────────────────────
+  // Patches plt_advance so that when a pallet moves to 'done',
+  // a Put-Away container is automatically created in the backend.
+  (function(){
+    const PUTAWAY_API = '/.netlify/functions/putaway-sync';
+    const _orig = window.plt_advance;
+    if(typeof _orig !== 'function') return;
+    window.plt_advance = function(id){
+      const pallet = typeof plt_get === 'function' ? plt_get(id) : null;
+      const wasPrepStage = pallet && pallet.status === 'prep';
+      _orig.call(this, id);
+      const after = typeof plt_get === 'function' ? plt_get(id) : null;
+      if(wasPrepStage && after && after.status === 'done'){
+        // Build container payload from pallet routing data
+        const containerId = 'pac-' + after.id;
+        const lines = [];
+        (after.pos || []).forEach(po => {
+          const stsQty = Number(po.stsQty||0);
+          const totalQty = Number(po.prepReceivedQty||po.orderedQty||0);
+          const mkId = () => 'pal'+Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-4);
+          if(stsQty > 0){
+            lines.push({
+              id: mkId(), po_number: po.po, category: po.category||'',
+              destination_type: 'sts', total_units: stsQty,
+              total_boxes: po.boxes && totalQty > 0 ? Math.ceil(Number(po.boxes)*stsQty/totalQty) : null,
+              size_breakdown: po.sizeBreakdown||null,
+            });
+          }
+        });
+        if(lines.length){
+          fetch(PUTAWAY_API, {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+              action:'create_container',
+              container:{
+                id: containerId,
+                pallet_id: after.id,
+                pallet_label: after.label||after.id,
+                pallet_date: after.date||'',
+                notes:'',
+              },
+              lines,
+            }),
+          }).catch(e=>console.warn('Put-Away container creation failed:',e.message));
+        }
+      }
+    };
+  })();
+  </script>
 
 <div class="batch-history-backdrop" id="batchHistoryBackdrop" hidden>
   <div class="batch-history-modal" role="dialog" aria-modal="true" aria-labelledby="batchHistoryTitle">

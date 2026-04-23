@@ -2844,6 +2844,182 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 
 
 /* Putaway module */
+.workflow-page .putaway-pallet-panel {
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(245,251,255,0.95));
+}
+.workflow-page .putaway-pallet-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.workflow-page .putaway-pallet-search-input {
+  border: 1px solid #c9d7e6;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  background: #fff;
+  color: var(--text, #16324a);
+  width: 220px;
+}
+.workflow-page .putaway-pallet-select-shell {
+  margin-bottom: 12px;
+  max-width: 420px;
+}
+.workflow-page .putaway-pallet-field-label {
+  font-size: 11px;
+  font-weight: 800;
+  color: #6d879d;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  display: block;
+  margin-bottom: 4px;
+}
+.workflow-page .putaway-pallet-select,
+.workflow-page .putaway-pallet-input {
+  width: 100%;
+  border: 1px solid #c9d7e6;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+  background: #fff;
+  color: var(--text, #16324a);
+}
+.workflow-page .putaway-pallet-input-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  text-transform: uppercase;
+}
+.workflow-page .putaway-po-search-result {
+  padding: 10px 14px;
+  background: #eaf4ff;
+  border: 1px solid #cfe3fb;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #24598b;
+  margin-bottom: 12px;
+}
+.workflow-page .putaway-pallet-lines-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: #6d879d;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: 8px;
+}
+.workflow-page .putaway-line-assign-form {
+  margin-top: 16px;
+  padding: 16px;
+  background: linear-gradient(180deg, #f5fbff 0%, #edf7ff 100%);
+  border: 1px solid #cfe3fb;
+  border-radius: 16px;
+}
+.workflow-page .putaway-line-assign-title {
+  font-weight: 900;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+.workflow-page .putaway-line-assign-sub {
+  font-size: 12px;
+  color: #6d879d;
+  margin-bottom: 14px;
+}
+.workflow-page .putaway-line-assign-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.workflow-page .putaway-loc-hint {
+  font-size: 11px;
+  margin-top: 3px;
+  min-height: 16px;
+}
+.workflow-page .putaway-loc-format-hint {
+  font-size: 10px;
+  color: #9db2c4;
+  margin-top: 2px;
+}
+.workflow-page .putaway-line-assign-notes {
+  margin-bottom: 12px;
+}
+.workflow-page .putaway-assign-error {
+  color: #b42318;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.workflow-page .putaway-line-assign-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.workflow-page .putaway-placement-feed {
+  display: grid;
+  gap: 10px;
+}
+.workflow-page .putaway-feed-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  padding: 12px 14px;
+}
+.workflow-page .putaway-feed-main {
+  display: grid;
+  gap: 2px;
+}
+.workflow-page .putaway-feed-main span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.workflow-page .putaway-feed-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.workflow-page .putaway-feed-pill {
+  font-size: 11px;
+  font-weight: 800;
+  border: 1px solid #d0dce8;
+  background: #f7fbff;
+  color: #456080;
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+.workflow-page .putaway-location-card-active {
+  border-color: #4f46e5;
+  box-shadow: 0 8px 20px rgba(79,70,229,0.16);
+}
+.workflow-page .putaway-location-grid {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.workflow-page .putaway-location-card {
+  border-radius: 12px;
+  padding: 10px;
+}
+.workflow-page .putaway-location-card .pallet-card-num {
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+.workflow-page .putaway-location-card .pallet-status {
+  font-size: 0.62rem;
+  padding: 2px 7px;
+  margin-bottom: 6px;
+}
+.workflow-page .putaway-location-card .pallet-card-meta {
+  font-size: 0.68rem;
+  margin-bottom: 4px;
+}
+.workflow-page .putaway-location-card .pallet-card-action {
+  font-size: 0.72rem;
+  margin-top: 4px;
+}
 .workflow-page .putaway-entry-grid {
   grid-template-columns: repeat(8, minmax(0, 1fr));
 }
@@ -2885,6 +3061,12 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   .workflow-page .putaway-entry-grid,
   .workflow-page .putaway-edit-grid {
     grid-template-columns: 1fr !important;
+  }
+  .workflow-page .putaway-line-assign-grid {
+    grid-template-columns: 1fr;
+  }
+  .workflow-page .putaway-pallet-search-input {
+    width: 100%;
   }
 }
 
