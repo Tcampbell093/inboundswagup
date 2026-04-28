@@ -4753,3 +4753,70 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   animation: cb-pulse 1.8s ease-in-out infinite;
   flex-shrink: 0;
 }
+
+/* ===== Houston Control Auth ===== */
+.hc-login-overlay{
+  position:fixed;inset:0;z-index:99999;
+  background:linear-gradient(135deg,#0a1628 0%,#0f2444 60%,#1a3a5c 100%);
+  display:flex;align-items:center;justify-content:center;
+  font-family:Inter,system-ui,sans-serif;
+}
+.hc-login-overlay[hidden]{display:none}
+.hc-login-card{
+  background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:24px;
+  padding:48px 40px;
+  width:100%;max-width:400px;
+  display:flex;flex-direction:column;align-items:center;gap:16px;
+  box-shadow:0 24px 64px rgba(0,0,0,.4);
+  backdrop-filter:blur(12px);
+}
+.hc-login-logo{
+  width:64px;height:64px;object-fit:contain;border-radius:16px;
+  box-shadow:0 4px 16px rgba(0,0,0,.3);
+}
+.hc-login-title{
+  margin:0;font-size:28px;font-weight:800;color:#fff;letter-spacing:-.5px;
+}
+.hc-login-sub{
+  margin:0;font-size:14px;color:rgba(255,255,255,.5);font-weight:500;
+}
+.hc-google-btn{
+  margin-top:8px;
+  display:flex;align-items:center;gap:12px;
+  background:#fff;color:#1f1f1f;
+  border:none;border-radius:12px;
+  padding:14px 24px;
+  font-size:15px;font-weight:700;cursor:pointer;
+  width:100%;justify-content:center;
+  box-shadow:0 2px 8px rgba(0,0,0,.2);
+  transition:background .15s,box-shadow .15s;
+}
+.hc-google-btn:hover{background:#f5f5f5;box-shadow:0 4px 16px rgba(0,0,0,.3);}
+.hc-login-notice{
+  margin:0;font-size:12px;color:rgba(255,255,255,.35);
+  text-align:center;line-height:1.6;
+}
+.hc-user-chip{
+  position:fixed;top:12px;right:16px;z-index:9000;
+  background:rgba(255,255,255,.1);
+  border:1px solid rgba(255,255,255,.15);
+  color:#fff;border-radius:999px;
+  padding:6px 14px;font-size:12px;font-weight:700;
+  backdrop-filter:blur(8px);
+  pointer-events:none;
+}
+.hc-logout-btn{
+  width:100%;margin-top:8px;
+  background:transparent;
+  border:1px solid rgba(255,255,255,.15);
+  color:rgba(255,255,255,.5);
+  border-radius:8px;padding:8px;
+  font-size:12px;font-weight:600;cursor:pointer;
+  transition:background .15s,color .15s;
+}
+.hc-logout-btn:hover{
+  background:rgba(255,255,255,.08);
+  color:rgba(255,255,255,.9);
+}
