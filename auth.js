@@ -20,18 +20,14 @@
       return;
     }
 
-    // Widget auto-initializes from the script tag in <head>
-    // Just set the API URL if not already set
-    if (!netlifyIdentity.currentUser()) {
-      netlifyIdentity.on('init', function(user) {
-        console.log('HC Auth: identity init, user =', user ? user.email : 'none');
-        if (user && !isSuspended(user)) {
-          applyUser(user);
-        } else {
-          showLogin();
-        }
-      });
-    }
+    // Must explicitly init with APIUrl because our app uses hash routing
+    // which conflicts with the widget's auto-detection
+    netlifyIdentity.init({
+      APIUrl: 'https://inboundswagup.netlify.app/.netlify/identity',
+      logo: false
+    });
+
+    console.log('HC Auth: init called with explicit APIUrl');
 
     // ── Bounce suspended users ──────────────────────────────────
     function isSuspended(user) {
@@ -107,6 +103,15 @@
     }
 
     // ── Identity events ─────────────────────────────────────────
+    netlifyIdentity.on('init', function(user) {
+      console.log('HC Auth: init event fired, user =', user ? user.email : 'none');
+      if (user && !isSuspended(user)) {
+        applyUser(user);
+      } else {
+        showLogin();
+      }
+    });
+
     netlifyIdentity.on('login', function (user) {
       netlifyIdentity.close();
       applyUser(user);
@@ -124,7 +129,7 @@
       console.error('HC Auth error:', err);
     });
 
-    // Session restore handled by the 'init' event above
+
   }
 
   // Run after all scripts have loaded
