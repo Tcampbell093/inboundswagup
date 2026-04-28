@@ -928,34 +928,27 @@ window.clearRevenueReferenceSilent = function(){
   setRevenueImportStatus('Revenue reference cleared.');
 };
 
-// ── Comment badge loader for Scheduled Queue ─────────────────────────────
+// ── Comment badge loader for Scheduled Queue (uses shared batch cache) ────
 async function renderQueueCommentBadges() {
-  const cells = document.querySelectorAll('#scheduledQueueTableBody .cb-cell');
-  if (!cells.length) return;
-  const keys = [...new Set([...cells].map(c => c.dataset.cbkey).filter(Boolean))];
-  await Promise.all(keys.map(async key => {
-    let count = 0;
-    try {
-      const isPbId = !key.startsWith('SORD') && key.length > 6;
-      const param  = isPbId ? `pb_id=${encodeURIComponent(key)}` : `so=${encodeURIComponent(key)}`;
-      const res    = await fetch(`/.netlify/functions/flight-tracker-comments?${param}`, { headers: { Accept: 'application/json' } });
-      if (res.ok) { const d = await res.json(); count = (d.comments || []).length; }
-    } catch { /* silent */ }
-    document.querySelectorAll(`#scheduledQueueTableBody .cb-cell[data-cbkey="${CSS.escape(key)}"]`).forEach(cell => {
-      const span = cell.querySelector('.cb-badge');
-      if (!span) return;
-      span.classList.remove('cb-loading');
-      if (count > 0) {
-        span.className = 'cb-badge cb-has';
-        span.textContent = `💬 ${count}`;
-        span.title = `${count} comment${count === 1 ? '' : 's'}`;
-      } else {
-        span.className = 'cb-badge cb-none';
-        span.textContent = '—';
-        span.title = 'No comments';
-      }
-    });
-  }));
+  // Use the shared batch loaded by assembly.js — triggers a load if stale
+  if (typeof _loadCommentBatch === 'function') await _loadCommentBatch();
+  _applyBadgesToCells('#scheduledQueueTableBody .cb-cell');
+  // Mobile cards in queue
+  document.querySelectorAll('#scheduledQueueMobCards .cb-cell, #scheduledQueueMobCards .cb-badge').forEach(el => {
+    const key = el.dataset.cbkey || '';
+    if (!key) return;
+    const data = window._cmBatchData || { counts:{}, hasPriority:{} };
+    const count = data.counts[key] || 0;
+    const isPri = data.hasPriority[key] || false;
+    el.classList.remove('cb-loading');
+    if (count > 0) {
+      el.className = `cb-badge cb-has${isPri ? ' cb-priority' : ''}`;
+      el.textContent = `💬 ${count}`;
+    } else {
+      el.className = 'cb-badge cb-none';
+      el.textContent = '—';
+    }
+  });
 }
 window.renderQueueCommentBadges = renderQueueCommentBadges;
 

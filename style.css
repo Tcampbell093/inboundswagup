@@ -13,6 +13,8 @@
   --radius:22px;
 }
 *{box-sizing:border-box}
+/* Ensure [hidden] always wins over display:flex/block set by classes or inline styles */
+[hidden]{display:none !important}
 body{margin:0;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:linear-gradient(180deg,var(--blue1) 0%, var(--bg) 220px);color:var(--text)}
 button,input,select,textarea{font:inherit}
 button{cursor:pointer}
@@ -2209,7 +2211,7 @@ font-weight:800
 .debug-status-strip.is-error .debug-dot{ background:#dc2626; }
 
 /* ===== Home Alert Banner ===== */
-.home-alert-banner{
+.home-alert-banner:not([hidden]){
   display:flex;
   flex-wrap:wrap;
   gap:10px;
@@ -4059,6 +4061,7 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 /* ── Internal Comment Modal (shared: Assembly & Queue) ───────────────────── */
 .cm-overlay{position:fixed;inset:0;z-index:900;background:rgba(16,32,48,.42);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(3px)}
 .cm-overlay[hidden]{display:none}
+#commentAlertBanner:not([hidden]){display:flex}
 .cm-dialog{background:#fff;border:1px solid #d9e8f4;border-radius:20px;box-shadow:0 24px 60px rgba(29,73,111,.18);width:100%;max-width:560px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
 .cm-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:20px 20px 14px;border-bottom:1px solid #d9e8f4;flex-shrink:0}
 .cm-title{margin:0;font-size:20px;font-weight:900}
@@ -4504,3 +4507,249 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   }
 
 } /* end @media (max-width: 768px) */
+
+/* ============================================================
+   HUDDLE MODULE REDESIGN — AM/PM/EOD tabs + lead cards
+   ============================================================ */
+
+/* ── Date bar ── */
+.huddle-datebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #dbe8f5;
+}
+
+/* ── Tab nav ── */
+.huddle-tab-nav {
+  display: flex;
+  gap: 0;
+  margin-bottom: 20px;
+  background: #f0f6fc;
+  border-radius: 14px;
+  padding: 4px;
+}
+.huddle-tab-btn {
+  flex: 1;
+  padding: 10px 8px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b88a6;
+  cursor: pointer;
+  transition: all .15s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.huddle-tab-btn:hover { color: #123d61; background: rgba(255,255,255,.6); }
+.huddle-tab-active {
+  background: #fff !important;
+  color: #123d61 !important;
+  box-shadow: 0 2px 8px rgba(30,80,140,.10);
+}
+
+/* ── Tab panels ── */
+.huddle-tab-panel { display: none; }
+.huddle-tab-visible { display: block; }
+
+/* ── Section intro ── */
+.huddle-section-intro {
+  font-size: 13px;
+  color: #4d6f8a;
+  background: #f4f9ff;
+  border-radius: 12px;
+  padding: 11px 15px;
+  margin-bottom: 18px;
+  line-height: 1.5;
+  border-left: 3px solid #93bde0;
+}
+
+/* ── Lead card grid ── */
+.huddle-leads-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.huddle-lead-card {
+  background: #fff;
+  border: 1px solid #dbe8f5;
+  border-radius: 18px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  box-shadow: 0 3px 10px rgba(30,80,140,.05);
+  transition: box-shadow .15s;
+}
+.huddle-lead-card:hover { box-shadow: 0 6px 18px rgba(30,80,140,.09); }
+.huddle-lead-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 8px;
+}
+.huddle-lead-name {
+  font-size: 14px;
+  font-weight: 800;
+  color: #123d61;
+  letter-spacing: -.01em;
+}
+.huddle-lead-emoji-row {
+  display: flex;
+  gap: 4px;
+}
+.huddle-mood-btn {
+  font-size: 18px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: 1.5px solid transparent;
+  background: #f0f6fc;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .12s;
+  padding: 0;
+}
+.huddle-mood-btn:hover { background: #dbeafe; border-color: #93bde0; transform: scale(1.1); }
+.huddle-mood-active {
+  background: #dbeafe !important;
+  border-color: #3b82b9 !important;
+  box-shadow: 0 0 0 2px rgba(59,130,185,.2);
+  transform: scale(1.08);
+}
+.huddle-field-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: #6b88a6;
+  margin-bottom: 5px;
+  display: block;
+}
+.huddle-input {
+  width: 100%;
+  padding: 8px 11px;
+  border: 1px solid #c5d9ee;
+  border-radius: 9px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #123d61;
+  background: #f8fcff;
+  transition: border-color .12s, box-shadow .12s;
+}
+.huddle-input:focus { outline: none; border-color: #3b82b9; box-shadow: 0 0 0 3px rgba(59,130,185,.12); background: #fff; }
+.huddle-textarea {
+  width: 100%;
+  padding: 8px 11px;
+  border: 1px solid #c5d9ee;
+  border-radius: 9px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #123d61;
+  background: #f8fcff;
+  resize: vertical;
+  line-height: 1.5;
+  transition: border-color .12s, box-shadow .12s;
+}
+.huddle-textarea:focus { outline: none; border-color: #3b82b9; box-shadow: 0 0 0 3px rgba(59,130,185,.12); background: #fff; }
+
+/* ── General update strip ── */
+.huddle-general-update {
+  background: #fffbf0;
+  border: 1px solid #f0d080;
+  border-radius: 14px;
+  padding: 15px 16px;
+  margin-bottom: 18px;
+}
+.huddle-general-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #854d0e;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
+
+/* ── Save row ── */
+.huddle-save-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+.huddle-status-msg {
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 20px;
+}
+
+/* ── History section ── */
+.huddle-history-section {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid #dbe8f5;
+}
+
+/* ── History card updates for new fields ── */
+.huddle-history-card .mc-mini-pill {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+@media (max-width: 640px) {
+  .huddle-leads-grid { grid-template-columns: 1fr; }
+  .huddle-tab-btn { font-size: 12px; padding: 9px 5px; }
+}
+
+/* ── Stage 2: Comment badge priority state ── */
+.cb-badge.cb-priority {
+  background: #fff1f0 !important;
+  color: #b42318 !important;
+  border: 1px solid #ffd6d4 !important;
+  animation: cb-pulse 1.8s ease-in-out infinite;
+}
+@keyframes cb-pulse { 0%,100%{opacity:1} 50%{opacity:.65} }
+
+/* ── Internal reply — visually distinct in thread ── */
+.cm-comment.cm-internal {
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+}
+.cm-comment.cm-internal .cm-cat-badge {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #7dd3fc;
+}
+.cm-comment.cm-internal .cm-comment-author::after {
+  content: ' · Team';
+  font-size: 10px;
+  color: #0369a1;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+/* ── Stage 3: Unread dot on comment badge ── */
+.cb-badge.cb-unread {
+  border: 1.5px solid #1a56db;
+}
+.cb-unread-dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  background: #dc2626;
+  border-radius: 50%;
+  margin-left: 3px;
+  vertical-align: middle;
+  animation: cb-pulse 1.8s ease-in-out infinite;
+  flex-shrink: 0;
+}

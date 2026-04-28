@@ -232,40 +232,18 @@
           <div class="huddle-incoming-grid" id="huddleIncoming"></div>
         </section>
 
-        <!-- ── SECTION 3: Today's Execution ──────────────────────── -->
-        <section class="mc-panel">
-          <div class="mc-panel-head">
-            <div>
-              <div class="eyebrow">Today's Execution</div>
-              <h3>What is actually moving</h3>
-            </div>
-          </div>
-          <div id="huddleTodayExec"></div>
-        </section>
-
-        <!-- ── SECTION 4: End-of-Day Recap ───────────────────────── -->
+        <!-- ── SECTION 3: Huddle Notes ────────────────────────────── -->
         <section class="mc-panel" id="huddleRecapPanel">
           <div class="mc-panel-head">
             <div>
-              <div class="eyebrow">End-of-Day Lead Recap</div>
-              <h3>Save today's notes for the record</h3>
+              <div class="eyebrow">Huddle Notes</div>
+              <h3>AM check-in · PM check-in · EOD recap</h3>
             </div>
           </div>
-          <div id="huddleRecapForm"></div>
+          <div id="huddleNotesContainer"></div>
         </section>
 
-        <!-- ── SECTION 5: Recap History ──────────────────────────── -->
-        <section class="mc-panel">
-          <div class="mc-panel-head">
-            <div>
-              <div class="eyebrow">Recap History</div>
-              <h3>Past end-of-day notes</h3>
-            </div>
-          </div>
-          <div class="huddle-history-list" id="huddleRecapHistory"></div>
-        </section>
-
-        <!-- ── SECTION 6: SORD Snapshot History ─────────────────── -->
+        <!-- ── SECTION 4: SORD Snapshot History ─────────────────── -->
         <section class="mc-panel">
           <div class="mc-panel-head">
             <div>
@@ -2314,10 +2292,11 @@
   </div>
 </div>
 
-<div id="commentAlertBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#1a56db;color:#fff;padding:12px 20px;display:none;align-items:center;gap:14px;font-size:14px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.18);">
-  <span style="font-size:20px;">💬</span>
-  <span id="commentAlertText">New comment on a scheduled order</span>
-  <button onclick="document.getElementById('commentAlertBanner').style.display='none'" style="margin-left:auto;background:rgba(255,255,255,.2);border:none;color:#fff;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:800;">Dismiss</button>
+<div id="commentAlertBanner" hidden style="position:fixed;top:0;left:0;right:0;z-index:9999;align-items:center;gap:12px;padding:12px 20px;font-size:14px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.18);">
+  <span id="commentAlertIcon" style="font-size:20px;">💬</span>
+  <span id="commentAlertText" style="flex:1;">New comment on a scheduled order</span>
+  <button id="commentAlertView" style="background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.4);color:inherit;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:800;font-size:13px;">View</button>
+  <button id="commentAlertDismiss" style="background:rgba(255,255,255,.15);border:none;color:inherit;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:800;font-size:13px;">Dismiss</button>
 </div>
 
 <script src="help.js"></script>
@@ -2361,15 +2340,18 @@
 
   function renderThread(comments){
     if(!comments.length){ thread.innerHTML='<p class="cm-empty">No comments yet.</p>'; return; }
-    thread.innerHTML = comments.map(c=>`
-      <div class="cm-comment cm-cat-${escHtml(c.category)}">
+    thread.innerHTML = comments.map(c=>{
+      const isInternal = String(c.author_name||'').toLowerCase().includes('(internal)') || String(c.author_name||'').toLowerCase().includes('[team]');
+      const displayName = String(c.author_name||'').replace(/\s*\(internal\)/i,'').replace(/\s*\[team\]/i,'').trim() || 'Team';
+      return `<div class="cm-comment cm-cat-${escHtml(c.category)}${isInternal?' cm-internal':''}">
         <div class="cm-comment-meta">
           <span class="cm-cat-badge">${escHtml(CATEGORY_LABELS[c.category]||c.category)}</span>
-          <span class="cm-comment-author">${escHtml(c.author_name||'Stakeholder')}</span>
+          <span class="cm-comment-author">${escHtml(displayName)}</span>
           <span class="cm-comment-time">${escHtml(fmtTime(c.created_at))}</span>
         </div>
         <p class="cm-comment-body">${escHtml(c.body)}</p>
-      </div>`).join('');
+      </div>`;
+    }).join('');
     thread.scrollTop = thread.scrollHeight;
   }
 
@@ -2391,7 +2373,19 @@
     errorEl.hidden = true;
     modal.hidden   = false;
     document.body.style.overflow = 'hidden';
+    // Pre-fill author from current user
+    if (!author.value) {
+      const user = localStorage.getItem('qaWorkflowCurrentUserV2') || '';
+      if (user) author.value = user;
+    }
     loadComments();
+    // Mark thread as read in background
+    if (typeof window._markCommentThreadRead === 'function') {
+      window._markCommentThreadRead(pbId||'', so||'').then(() => {
+        if (typeof window.renderAssemblyCommentBadges === 'function') window.renderAssemblyCommentBadges();
+        if (typeof window.renderQueueCommentBadges   === 'function') window.renderQueueCommentBadges();
+      });
+    }
   };
 
   function closeModal(){ modal.hidden=true; document.body.style.overflow=''; }
@@ -2403,7 +2397,7 @@
 
   submitBtn.addEventListener('click', async function(){
     const msg = body.value.trim();
-    const who = author.value.trim()||'Lead';
+    const who = (author.value.trim()||'Lead') + ' (internal)';
     errorEl.hidden = true;
     if(!msg){ errorEl.textContent='Please write a message.'; errorEl.hidden=false; return; }
     submitBtn.disabled=true; submitBtn.textContent='Sending…';
@@ -2416,6 +2410,7 @@
       if(!res.ok) throw new Error(data.error||'Submit failed');
       body.value=''; charCount.textContent='0 / 2000';
       await loadComments();
+      if(window._cmBatchData) window._cmBatchData.loadedAt = 0;
       if(typeof window.renderAssemblyCommentBadges==='function') window.renderAssemblyCommentBadges();
       if(typeof window.renderQueueCommentBadges==='function') window.renderQueueCommentBadges();
     }catch(err){ errorEl.textContent=err.message||'Failed to send.'; errorEl.hidden=false; }
@@ -2443,47 +2438,86 @@
 // ── New-comment global alert polling ─────────────────────────────────────
 (function(){
   const COMMENTS_API = '/.netlify/functions/flight-tracker-comments';
-  const POLL_MS = 20000; // 20 s
+  const POLL_MS  = 20000;
   const SEEN_KEY = 'hc_last_seen_comment_id';
 
-  let lastSeenId = parseInt(localStorage.getItem(SEEN_KEY) || '0', 10);
-  let bannerDismissed = false;
+  let lastSeenId      = parseInt(localStorage.getItem(SEEN_KEY) || '0', 10);
+  let pendingComments = [];
+  let alertPbId='', alertPbName='', alertSo='', alertAccount='';
 
   const banner    = document.getElementById('commentAlertBanner');
   const alertText = document.getElementById('commentAlertText');
+  const alertIcon = document.getElementById('commentAlertIcon');
+  const viewBtn   = document.getElementById('commentAlertView');
+  const dismissBtn= document.getElementById('commentAlertDismiss');
+
+  function escH(v){ return String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function showBanner(comments){
+    if(!banner||!comments.length) return;
+    const hasPri = comments.some(c=>c.category==='priority');
+    const latest = comments[0];
+    alertPbId    = latest.pb_id    || '';
+    alertPbName  = latest.pb_name  || '';
+    alertSo      = latest.so       || '';
+    alertAccount = latest.account  || '';
+    const label  = alertPbName || alertSo || 'an order';
+    const author = latest.author_name || 'A stakeholder';
+    const extra  = comments.length > 1 ? ` (+${comments.length - 1} more)` : '';
+    if(hasPri){
+      banner.style.background = '#dc2626';
+      if(alertIcon) alertIcon.textContent = '\uD83D\uDD34';
+      alertText.textContent = `Priority request from ${author} on ${escH(label)}${extra}`;
+    } else {
+      banner.style.background = '#1a56db';
+      if(alertIcon) alertIcon.textContent = '\uD83D\uDCAC';
+      alertText.textContent = `${author} commented on ${escH(label)}${extra}`;
+    }
+    banner.style.color = '#fff';
+    banner.hidden = false;
+  }
+
+  function dismissBanner(){
+    if(banner) banner.hidden = true;
+    pendingComments = [];
+  }
+
+  if(dismissBtn) dismissBtn.addEventListener('click', dismissBanner);
+  if(viewBtn) viewBtn.addEventListener('click', ()=>{
+    dismissBanner();
+    if(typeof window.openInternalCommentModal === 'function'){
+      window.openInternalCommentModal(alertPbId, alertPbName, alertSo, alertAccount);
+    }
+  });
 
   async function pollLatest(){
     try{
-      const res  = await fetch(COMMENTS_API + '?latest=1', { headers:{ Accept:'application/json' } });
+      const res  = await fetch(`${COMMENTS_API}?latest=10`, { headers:{ Accept:'application/json' } });
       if(!res.ok) return;
       const data = await res.json();
-      const latest = data.comment;
-      if(!latest) return;
-      const latestId = Number(latest.id || 0);
-      if(latestId > lastSeenId){
-        lastSeenId = latestId;
-        localStorage.setItem(SEEN_KEY, String(latestId));
-        // Show banner
-        const label = latest.pb_name || latest.so || 'an order';
-        const author = latest.author_name || 'A stakeholder';
-        alertText.textContent = `${author} left a comment on ${label}`;
-        banner.style.display = 'flex';
-        bannerDismissed = false;
-        // Re-render comment badges if queue/assembly are visible
-        if(typeof renderQueueCommentBadges === 'function') renderQueueCommentBadges();
-        if(typeof renderAssemblyCommentBadges === 'function') renderAssemblyCommentBadges();
-      }
+      const comments = (data.comments || []).filter(c => Number(c.id||0) > lastSeenId);
+      if(!comments.length) return;
+      const maxId = Math.max(...comments.map(c=>Number(c.id||0)));
+      lastSeenId  = maxId;
+      localStorage.setItem(SEEN_KEY, String(maxId));
+      const external = comments.filter(c => {
+        const a = String(c.author_name||'').toLowerCase();
+        return !a.includes('(internal)') && !a.includes('[team]');
+      });
+      if(!external.length) return;
+      pendingComments = external;
+      showBanner(pendingComments);
+      if(window._cmBatchData) window._cmBatchData.loadedAt = 0;
+      if(typeof window.renderQueueCommentBadges === 'function')   window.renderQueueCommentBadges();
+      if(typeof window.renderAssemblyCommentBadges === 'function') window.renderAssemblyCommentBadges();
     }catch(e){ /* silent */ }
   }
 
-  // Seed last-seen on first load (don't alert on old comments)
-  fetch(COMMENTS_API + '?latest=1', { headers:{ Accept:'application/json' } })
+  fetch(`${COMMENTS_API}?latest=1`, { headers:{ Accept:'application/json' } })
     .then(r=>r.ok?r.json():null)
     .then(data=>{
-      if(data?.comment) {
-        const id = Number(data.comment.id || 0);
-        if(id > lastSeenId){ lastSeenId = id; localStorage.setItem(SEEN_KEY, String(id)); }
-      }
+      const c = data && (data.comments ? data.comments[0] : data.comment);
+      if(c){ const id=Number(c.id||0); if(id>lastSeenId){ lastSeenId=id; localStorage.setItem(SEEN_KEY,String(id)); } }
       setInterval(pollLatest, POLL_MS);
     })
     .catch(()=>{ setInterval(pollLatest, POLL_MS); });

@@ -442,134 +442,111 @@ assemblyEditModalBackdrop?.addEventListener('click',(e)=>{if(e.target===assembly
 
 window.openIssueHoldModal=window.openIssueHoldModal||openIssueHoldModal;
 
-// ── Comment badge loader for Assembly board ───────────────────────────────
-const _assemblyCommentCache = new Map(); // cbKey → count
+// ── Comment badge loader for Assembly board (batch fetch) ─────────────
+window._cmBatchData = window._cmBatchData || { counts:{}, hasPriority:{}, unread:{}, loadedAt:0 };
 
-async function _fetchCommentCount(cbKey) {
-  if (!cbKey) return 0;
-  try {
-    const isPbId = !cbKey.startsWith('SORD') && cbKey.length > 6;
-    const param  = isPbId ? `pb_id=${encodeURIComponent(cbKey)}` : `so=${encodeURIComponent(cbKey)}`;
-    const res    = await fetch(`/.netlify/functions/flight-tracker-comments?${param}`, { headers: { Accept: 'application/json' } });
-    if (!res.ok) return 0;
-    const data = await res.json();
-    return (data.comments || []).length;
-  } catch { return 0; }
+function _getCurrentReader() {
+  try { if (typeof state !== 'undefined' && state.currentUser) return state.currentUser; } catch(_) {}
+  return localStorage.getItem('qaWorkflowCurrentUserV2') || '';
 }
 
-async function renderAssemblyCommentBadges() {
-  const cells = document.querySelectorAll('#assemblyBoardBody .cb-cell');
+async function _loadCommentBatch() {
+  const now = Date.now();
+  if (now - window._cmBatchData.loadedAt < 30000) return;
+  try {
+    const res = await fetch('/.netlify/functions/flight-tracker-comments?latest=500', { headers:{ Accept:'application/json' } });
+    if (!res.ok) return;
+    const data = await res.json();
+    const comments = data.comments || [];
+    const counts = {}, hasPri = {}, unread = {};
+    const reader = _getCurrentReader().toLowerCase();
+    comments.forEach(c => {
+      const key = c.pb_id || c.so || '';
+      if (!key) return;
+      counts[key] = (counts[key] || 0) + 1;
+      if (c.category === 'priority') hasPri[key] = true;
+      const readBy = (c.read_by || []).map(r => String(r).toLowerCase());
+      if (reader && !readBy.includes(reader)) unread[key] = (unread[key] || 0) + 1;
+      if (c.so && c.pb_id && c.so !== c.pb_id) {
+        counts[c.so] = (counts[c.so] || 0) + 1;
+        if (c.category === 'priority') hasPri[c.so] = true;
+        if (reader && !readBy.includes(reader)) unread[c.so] = (unread[c.so] || 0) + 1;
+      }
+    });
+    window._cmBatchData = { counts, hasPriority: hasPri, unread, loadedAt: Date.now() };
+  } catch { /* non-fatal */ }
+}
+
+async function _markRead(pbId, so) {
+  const reader = _getCurrentReader();
+  if (!reader) return;
+  try {
+    const body = { reader };
+    if (pbId) body.pb_id = pbId;
+    else if (so) body.so = so;
+    await fetch('/.netlify/functions/flight-tracker-comments', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    window._cmBatchData.loadedAt = 0;
+  } catch { /* non-fatal */ }
+}
+window._markCommentThreadRead = _markRead;
+
+function _applyBadgesToCells(selector) {
+  const cells = document.querySelectorAll(selector);
   if (!cells.length) return;
-  // Collect unique keys
-  const keys = [...new Set([...cells].map(c => c.dataset.cbkey).filter(Boolean))];
-  await Promise.all(keys.map(async key => {
-    const count = await _fetchCommentCount(key);
-    _assemblyCommentCache.set(key, count);
-  }));
+  const { counts, hasPriority, unread } = window._cmBatchData;
   cells.forEach(cell => {
-    const key   = cell.dataset.cbkey || '';
-    const count = _assemblyCommentCache.get(key) ?? 0;
-    const span  = cell.querySelector('.cb-badge');
-    if (!span) return;
+    const key     = cell.dataset.cbkey || '';
+    const count   = counts[key]       || 0;
+    const isPri   = hasPriority[key]  || false;
+    const nUnread = unread[key]       || 0;
+    const span    = cell.querySelector('.cb-badge') || cell;
     span.classList.remove('cb-loading');
     if (count > 0) {
-      span.className = 'cb-badge cb-has';
-      span.textContent = `💬 ${count}`;
-      span.title = `${count} comment${count === 1 ? '' : 's'}`;
+      span.className = 'cb-badge cb-has' + (isPri?' cb-priority':'') + (nUnread?' cb-unread':'');
+      span.innerHTML = nUnread
+        ? '\u{1F4AC} ' + count + '<span class="cb-unread-dot" title="' + nUnread + ' unread"></span>'
+        : '\u{1F4AC} ' + count;
+      span.title = count + ' comment' + (count===1?'':'s') + (nUnread?' \u00B7 '+nUnread+' unread':'') + (isPri?' \u00B7 includes Priority Request':'');
     } else {
       span.className = 'cb-badge cb-none';
-      span.textContent = '💬 Add';
+      span.textContent = '\u{1F4AC} Add';
       span.title = 'Click to add a comment';
     }
   });
 }
 
-// Run after every renderAssembly call
+async function renderAssemblyCommentBadges() {
+  await _loadCommentBatch();
+  _applyBadgesToCells('#assemblyBoardBody .cb-cell');
+  document.querySelectorAll('#assemblyBoardBodyCards .cb-cell, #assemblyBoardBodyCards .cb-badge').forEach(el => {
+    const key = el.dataset.cbkey || '';
+    if (!key) return;
+    const d = window._cmBatchData;
+    const count = d.counts[key] || 0;
+    const isPri = d.hasPriority[key] || false;
+    const nUnread = d.unread[key] || 0;
+    el.classList.remove('cb-loading');
+    if (count > 0) {
+      el.className = 'cb-badge cb-has' + (isPri?' cb-priority':'') + (nUnread?' cb-unread':'');
+      el.innerHTML = nUnread ? '\u{1F4AC} ' + count + '<span class="cb-unread-dot"></span>' : '\u{1F4AC} ' + count;
+    } else {
+      el.className = 'cb-badge cb-none';
+      el.textContent = '\u{1F4AC} Add';
+    }
+  });
+}
+
 const _origRenderAssembly = typeof renderAssembly === 'function' ? renderAssembly : null;
 if (_origRenderAssembly) {
   const _wrappedRenderAssembly = function(...args) {
     _origRenderAssembly.apply(this, args);
     renderAssemblyCommentBadges();
   };
-  // Only wrap if renderAssembly is directly accessible as a var in this scope
-  // (it is — defined above in this file). Reassign the module-level reference.
   window.renderAssemblyCommentBadges = renderAssemblyCommentBadges;
 }
 window.renderAssemblyCommentBadges = renderAssemblyCommentBadges;
 
-// ── Phase 2: Mobile card view for Assembly board ──────────────────────────
-function buildAssemblyCard(row, priority) {
-  const units    = getAssemblyUnits(row);
-  const revenue  = Number(getEffectiveSubtotalForRow(row)||0);
-  const ihd      = getEffectiveIhdForRow(row)||'—';
-  const stage    = row.stage||'aa';
-  const stageMap = {aa:'A.A.',print:'Print',picked:'Picked',line:'Line',dpmo:'DPMO',done:'Done'};
-  const stageLabel = stageMap[stage]||stage;
-  const stageCls   = stage==='done'?'stage-done':(stage==='aa'||stage==='print'||stage==='picked'?'stage-risk':'stage-mid');
-  const cbKey    = row.pbId||row.so||'';
-  const openLink = getAssemblyOpenLink(row);
-  const actionLabel = isPackBuilderWorkType(row.workType)?'Unschedule':'Delete';
-  const priorityBadge = priority&&priority.label ? `<span class="mini-label ${priority.cls}" style="font-size:10px;padding:2px 7px;border-radius:999px;margin-left:4px">${priority.label}</span>` : '';
-  const revenueStr = new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(revenue);
-
-  return `<div class="mob-card${priority&&priority.cls?' mob-card-'+priority.risk:''}" data-cbkey="${escapeHtml(cbKey)}" data-pbname="${escapeHtml(row.pb||'')}">
-    <div class="mob-card-header">
-      <div class="mob-card-title">
-        <span class="mob-card-pb">${escapeHtml(row.pb||'—')}</span>${priorityBadge}
-        <span class="mob-card-account">${escapeHtml(row.account||'—')}</span>
-      </div>
-      <span class="mob-stage-badge mob-stage-${stageCls}">${escapeHtml(stageLabel)}</span>
-    </div>
-    <div class="mob-card-meta">
-      <div class="mob-meta-item"><span class="mob-meta-label">Units</span><strong>${units.toLocaleString()}</strong></div>
-      <div class="mob-meta-item"><span class="mob-meta-label">Revenue</span><strong>${revenueStr}</strong></div>
-      <div class="mob-meta-item"><span class="mob-meta-label">IHD</span><strong>${escapeHtml(ihd)}</strong></div>
-      <div class="mob-meta-item"><span class="mob-meta-label">Status</span><strong>${escapeHtml(row.status||'—')}</strong></div>
-    </div>
-    <div class="mob-card-stage-row">
-      <label class="mob-meta-label" style="margin-right:8px">Stage</label>
-      <select class="mob-stage-select" onchange="setAssemblyStage(${row.id},this.value)">
-        <option value="aa" ${stage==='aa'?'selected':''}>A.A.</option>
-        <option value="print" ${stage==='print'?'selected':''}>Print</option>
-        <option value="picked" ${stage==='picked'?'selected':''}>Picked</option>
-        <option value="line" ${stage==='line'?'selected':''}>Line</option>
-        <option value="dpmo" ${stage==='dpmo'?'selected':''}>DPMO</option>
-        <option value="done" ${stage==='done'?'selected':''}>Done</option>
-      </select>
-    </div>
-    <div class="mob-card-actions">
-      ${openLink?`<a class="mob-action-btn mob-action-secondary" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:''}
-      <button class="mob-action-btn mob-action-secondary" onclick="editAssemblyBoardRow(${row.id})">Edit</button>
-      ${isPackBuilderWorkType(row.workType)?`<button class="mob-action-btn mob-action-warn" onclick="openIssueHoldModal(${row.id},'assembly')">Hold</button>`:''}
-      <button class="mob-action-btn mob-action-warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button>
-      <span class="cb-cell cb-badge cb-loading" data-cbkey="${escapeHtml(cbKey)}" style="margin-left:auto">…</span>
-    </div>
-  </div>`;
-}
-
-function renderAssemblyCards(sortedWithPriority) {
-  const container = document.getElementById('assemblyBoardCards');
-  if (!container) return;
-  if (!sortedWithPriority.length) {
-    container.innerHTML = '<p class="mob-empty">No assembly board rows for the selected day.</p>';
-    return;
-  }
-  container.innerHTML = sortedWithPriority.map(({row, priority}) => buildAssemblyCard(row, priority)).join('');
-}
-
-// Patch renderAssembly to also call renderAssemblyCards
-const _origRenderAssemblyPhase2 = renderAssembly;
-renderAssembly = function() {
-  _origRenderAssemblyPhase2.apply(this, arguments);
-  // Re-derive sorted rows for card view
-  const selectedDate = assemblyDateInput ? (assemblyDateInput.value||new Date().toISOString().slice(0,10)) : new Date().toISOString().slice(0,10);
-  const filteredRows = typeof sanitizeRows==='function'
-    ? sanitizeRows(assemblyBoardRows.filter(r=>r.date===selectedDate))
-    : assemblyBoardRows.filter(r=>r.date===selectedDate);
-  const sortedWithPriority = typeof prioritySortRows==='function'
-    ? prioritySortRows(filteredRows)
-    : filteredRows.map(row=>({row, priority:{rank:3,risk:'none',label:'',cls:''}}));
-  renderAssemblyCards(sortedWithPriority);
-  if (typeof renderAssemblyCommentBadges === 'function') renderAssemblyCommentBadges();
-};
-window.renderAssembly = renderAssembly;
