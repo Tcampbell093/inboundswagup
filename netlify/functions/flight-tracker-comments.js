@@ -55,15 +55,17 @@ exports.handler = async function handler(event) {
     if (event.httpMethod === 'GET') {
       const params = event.queryStringParameters || {};
 
-      // ?latest=1 — single most recent comment (used by alert poller)
-      if (params.latest === '1') {
+      // ?latest=N — most recent N comments (used by board to build comment counts)
+      if (params.latest) {
+        const limit = Math.min(Math.max(1, parseInt(params.latest, 10) || 1), 500);
         const result = await pool.query(
           `SELECT id, pb_id, pb_name, so, account, author_name, category, body, created_at
              FROM flight_tracker_comments
              ORDER BY id DESC
-             LIMIT 1;`
+             LIMIT $1;`,
+          [limit]
         );
-        return json(200, { comment: result.rows[0] || null });
+        return json(200, { comments: result.rows });
       }
       const pbId = (params.pb_id || '').trim();
       const so   = (params.so   || '').trim();
