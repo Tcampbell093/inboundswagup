@@ -1,33 +1,24 @@
 /* =========================================================
    auth.js — Houston Control Authentication
-   Uses Netlify Identity widget correctly
+   Redirects to login.html for auth, reads session on return
    ========================================================= */
 (function () {
   'use strict';
 
   const USER_KEY    = 'qaWorkflowCurrentUserV2';
   const HC_USER_KEY = 'hcAuthUser';
+  const API_URL     = 'https://inboundswagup.netlify.app/.netlify/identity';
 
   window.hcCurrentUser = null;
 
   function init() {
     const overlay     = document.getElementById('hcLoginOverlay');
-    const loginBtn    = document.getElementById('hcGoogleLoginBtn');
     const logoutBtn   = document.getElementById('hcLogoutBtn');
     const userDisplay = document.getElementById('hcUserDisplay');
 
-    if (!window.netlifyIdentity) {
-      console.error('HC Auth: netlifyIdentity not found');
-      return;
-    }
-
-    function isSuspended(user) {
-      return user?.app_metadata?.suspended === true;
-    }
-
     function showLogin() {
-      if (overlay) overlay.hidden = false;
-      document.body.style.overflow = 'hidden';
+      // Redirect to dedicated login page
+      window.location.href = 'login.html';
     }
 
     function hideLogin() {
@@ -35,84 +26,88 @@
       document.body.style.overflow = '';
     }
 
-    function applyUser(user) {
-      console.log('HC Auth: applyUser', user?.email);
-      if (!user || isSuspended(user)) { showLogin(); return; }
+    function applyUser(data) {
+      if (!data || data.suspended) { showLogin(); return; }
 
-      const name = user.user_metadata?.full_name
-                || user.user_metadata?.name
-                || user.email || 'User';
-      const role = user.app_metadata?.role || 'l1';
+      window.hcCurrentUser = {
+        id:        data.id,
+        email:     data.email,
+        name:      data.name,
+        role:      data.role || 'l1',
+        overrides: data.overrides || {},
+        tempAdmin: data.tempAdmin || false,
+        token:     data.token || null,
+      };
 
-      window.hcCurrentUser = { id: user.id, email: user.email, name, role,
-        overrides: user.app_metadata?.overrides || {},
-        tempAdmin: user.app_metadata?.tempAdmin || false,
-        token: user.token?.access_token || null };
-
-      localStorage.setItem(USER_KEY, name);
-      localStorage.setItem(HC_USER_KEY, JSON.stringify(window.hcCurrentUser));
-
+      localStorage.setItem(USER_KEY, data.name);
       hideLogin();
 
       if (userDisplay) {
-        const label = { admin:'Admin', manager:'Manager', l2:'Associate L2', l1:'Associate L1' }[role] || 'Associate';
-        userDisplay.textContent = `${name} · ${label}`;
+        const label = { admin:'Admin', manager:'Manager', l2:'Associate L2', l1:'Associate L1' }[data.role] || 'Associate';
+        userDisplay.textContent = `${data.name} · ${label}`;
         userDisplay.hidden = false;
       }
+
+      console.log('HC Auth: logged in as', data.name, '/', data.role);
     }
 
-    // ── Init widget with explicit API URL ──────────────────────
-    netlifyIdentity.init({
-      APIUrl: 'https://inboundswagup.netlify.app/.netlify/identity',
-      logo: false
-    });
-
-    // ── Events ─────────────────────────────────────────────────
-    netlifyIdentity.on('init', function(user) {
-      console.log('HC Auth: init event', user ? user.email : 'no user');
-      if (user && !isSuspended(user)) {
-        applyUser(user);
-      } else {
-        showLogin();
-      }
-    });
-
-    netlifyIdentity.on('login', function(user) {
-      console.log('HC Auth: login event', user?.email);
-      netlifyIdentity.close();
-      applyUser(user);
-    });
-
-    netlifyIdentity.on('logout', function() {
-      console.log('HC Auth: logout event');
-      window.hcCurrentUser = null;
-      localStorage.removeItem(USER_KEY);
-      localStorage.removeItem(HC_USER_KEY);
-      if (userDisplay) userDisplay.hidden = true;
-      showLogin();
-    });
-
-    netlifyIdentity.on('error', function(err) {
-      console.error('HC Auth: error', err);
-    });
-
-    // ── Button: open widget modal ──────────────────────────────
-    if (loginBtn) {
-      loginBtn.addEventListener('click', function() {
-        console.log('HC Auth: opening widget');
-        netlifyIdentity.open('login');
-      });
+    // ── Check for saved session ────────────────────────────────
+    const saved = localStorage.getItem(HC_USER_KEY);
+    if (saved) {
+      try {
+        const data = JSON.parse(saved);
+        if (data && data.token) {
+          // Verify token is still valid
+          fetch(API_URL + '/user', {
+            headers: { 'Authorization': 'Bearer ' + data.token }
+          })
+          .then(function(r) {
+            if (r.ok) return r.json();
+            throw new Error('Session expired');
+          })
+          .then(function(user) {
+            // Refresh user data from server
+            const name = (user.user_metadata && (user.user_metadata.full_name || user.user_metadata.name)) || user.email;
+            const role = (user.app_metadata && user.app_metadata.role) || 'l1';
+            const refreshed = { id: user.id, email: user.email, name, role,
+              overrides: (user.app_metadata && user.app_metadata.overrides) || {},
+              tempAdmin: (user.app_metadata && user.app_metadata.tempAdmin) || false,
+              token: data.token };
+            localStorage.setItem(HC_USER_KEY, JSON.stringify(refreshed));
+            applyUser(refreshed);
+          })
+          .catch(function() {
+            localStorage.removeItem(HC_USER_KEY);
+            localStorage.removeItem(USER_KEY);
+            showLogin();
+          });
+          return; // Wait for fetch
+        }
+      } catch(_) {}
     }
+
+    // No valid session — go to login
+    showLogin();
 
     // ── Logout button ──────────────────────────────────────────
     if (logoutBtn) {
       logoutBtn.addEventListener('click', function() {
-        netlifyIdentity.logout();
+        const d = JSON.parse(localStorage.getItem(HC_USER_KEY) || '{}');
+        localStorage.removeItem(HC_USER_KEY);
+        localStorage.removeItem(USER_KEY);
+        window.hcCurrentUser = null;
+        if (d.token) {
+          fetch(API_URL + '/logout', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + d.token }
+          }).finally(function() { window.location.href = 'login.html'; });
+        } else {
+          window.location.href = 'login.html';
+        }
       });
     }
   }
 
-  // Run after DOM + all scripts loaded
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
