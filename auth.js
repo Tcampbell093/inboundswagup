@@ -20,8 +20,10 @@
       return;
     }
 
-    // Init without container so widget uses its own modal
-    netlifyIdentity.init();
+    // Init with explicit site URL so widget knows where to authenticate
+    netlifyIdentity.init({
+      APIUrl: 'https://inboundswagup.netlify.app/.netlify/identity'
+    });
 
     // ── Bounce suspended users ──────────────────────────────────
     function isSuspended(user) {
