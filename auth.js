@@ -83,19 +83,29 @@
 
       console.log('HC Auth: OAuth callback detected, fetching user info');
 
-      // Exchange token for user info
+      // Clear token from URL immediately, redirect to home
+      history.replaceState(null, '', window.location.pathname + '#homePage');
+
+      // Show loading so login screen doesn't flash
+      if (overlay) {
+        overlay.hidden = false;
+        const card = overlay.querySelector('.hc-login-card');
+        if (card) card.innerHTML = '<p style="color:#fff;font-size:16px;font-weight:700;text-align:center;">Signing you in…</p>';
+      }
+
       fetch(`${API_URL}/user`, {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json'
         }
       })
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error('User fetch failed: ' + r.status);
+        return r.json();
+      })
       .then(data => {
         data.access_token = accessToken;
         applyUser(data);
-        // Clean the token from URL without reloading
-        history.replaceState(null, '', window.location.pathname);
       })
       .catch(err => {
         console.error('HC Auth: failed to get user info', err);
