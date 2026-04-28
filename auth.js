@@ -1,13 +1,12 @@
 /* =========================================================
    auth.js — Houston Control Authentication
-   Uses direct OAuth redirect instead of popup widget
+   Uses Netlify Identity widget correctly
    ========================================================= */
 (function () {
   'use strict';
 
   const USER_KEY    = 'qaWorkflowCurrentUserV2';
   const HC_USER_KEY = 'hcAuthUser';
-  const API_URL     = 'https://inboundswagup.netlify.app/.netlify/identity';
 
   window.hcCurrentUser = null;
 
@@ -16,6 +15,15 @@
     const loginBtn    = document.getElementById('hcGoogleLoginBtn');
     const logoutBtn   = document.getElementById('hcLogoutBtn');
     const userDisplay = document.getElementById('hcUserDisplay');
+
+    if (!window.netlifyIdentity) {
+      console.error('HC Auth: netlifyIdentity not found');
+      return;
+    }
+
+    function isSuspended(user) {
+      return user?.app_metadata?.suspended === true;
+    }
 
     function showLogin() {
       if (overlay) overlay.hidden = false;
@@ -27,40 +35,22 @@
       document.body.style.overflow = '';
     }
 
-    function isSuspended(data) {
-      return data?.suspended === true;
-    }
+    function applyUser(user) {
+      console.log('HC Auth: applyUser', user?.email);
+      if (!user || isSuspended(user)) { showLogin(); return; }
 
-    function applyUser(data) {
-      if (!data || isSuspended(data)) {
-        localStorage.removeItem(HC_USER_KEY);
-        localStorage.removeItem(USER_KEY);
-        showLogin();
-        return;
-      }
+      const name = user.user_metadata?.full_name
+                || user.user_metadata?.name
+                || user.email || 'User';
+      const role = user.app_metadata?.role || 'l1';
 
-      const name = data.user_metadata?.full_name
-                || data.user_metadata?.name
-                || data.email
-                || 'User';
-      const role = data.app_metadata?.role || 'l1';
-
-      window.hcCurrentUser = {
-        id:        data.id,
-        email:     data.email,
-        name,      role,
-        overrides: data.app_metadata?.overrides || {},
-        tempAdmin: data.app_metadata?.tempAdmin  || false,
-        token:     data.access_token || null,
-      };
+      window.hcCurrentUser = { id: user.id, email: user.email, name, role,
+        overrides: user.app_metadata?.overrides || {},
+        tempAdmin: user.app_metadata?.tempAdmin || false,
+        token: user.token?.access_token || null };
 
       localStorage.setItem(USER_KEY, name);
-      localStorage.setItem(HC_USER_KEY, JSON.stringify({
-        id: data.id, email: data.email, name, role,
-        overrides: data.app_metadata?.overrides || {},
-        tempAdmin: data.app_metadata?.tempAdmin  || false,
-        token:     data.access_token || null,
-      }));
+      localStorage.setItem(HC_USER_KEY, JSON.stringify(window.hcCurrentUser));
 
       hideLogin();
 
@@ -71,117 +61,58 @@
       }
     }
 
-    // ── Handle OAuth callback in URL hash ──────────────────────
-    // After Google redirects back, the token is in the URL hash
-    function handleOAuthCallback() {
-      const hash = window.location.hash;
-      if (!hash.includes('access_token=')) return false;
+    // ── Init widget with explicit API URL ──────────────────────
+    netlifyIdentity.init({
+      APIUrl: 'https://inboundswagup.netlify.app/.netlify/identity',
+      logo: false
+    });
 
-      const params = new URLSearchParams(hash.replace(/^#/, ''));
-      const accessToken = params.get('access_token');
-      if (!accessToken) return false;
-
-      console.log('HC Auth: OAuth callback detected, fetching user info');
-
-      // Clear token from URL immediately, redirect to home
-      history.replaceState(null, '', window.location.pathname + '#homePage');
-
-      // Show loading so login screen doesn't flash
-      if (overlay) {
-        overlay.hidden = false;
-        const card = overlay.querySelector('.hc-login-card');
-        if (card) card.innerHTML = '<p style="color:#fff;font-size:16px;font-weight:700;text-align:center;">Signing you in…</p>';
-      }
-
-      fetch(`${API_URL}/user`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        }
-      })
-      .then(r => {
-        if (!r.ok) throw new Error('User fetch failed: ' + r.status);
-        return r.json();
-      })
-      .then(data => {
-        data.access_token = accessToken;
-        applyUser(data);
-      })
-      .catch(err => {
-        console.error('HC Auth: failed to get user info', err);
+    // ── Events ─────────────────────────────────────────────────
+    netlifyIdentity.on('init', function(user) {
+      console.log('HC Auth: init event', user ? user.email : 'no user');
+      if (user && !isSuspended(user)) {
+        applyUser(user);
+      } else {
         showLogin();
-      });
+      }
+    });
 
-      return true;
-    }
+    netlifyIdentity.on('login', function(user) {
+      console.log('HC Auth: login event', user?.email);
+      netlifyIdentity.close();
+      applyUser(user);
+    });
 
-    // ── Google login via direct redirect ───────────────────────
+    netlifyIdentity.on('logout', function() {
+      console.log('HC Auth: logout event');
+      window.hcCurrentUser = null;
+      localStorage.removeItem(USER_KEY);
+      localStorage.removeItem(HC_USER_KEY);
+      if (userDisplay) userDisplay.hidden = true;
+      showLogin();
+    });
+
+    netlifyIdentity.on('error', function(err) {
+      console.error('HC Auth: error', err);
+    });
+
+    // ── Button: open widget modal ──────────────────────────────
     if (loginBtn) {
-      loginBtn.addEventListener('click', function () {
-        console.log('HC Auth: redirecting to Google via Netlify Identity');
-        const redirectTo = encodeURIComponent(window.location.origin + window.location.pathname);
-        window.location.href = `${API_URL}/authorize?provider=google&redirect_to=${redirectTo}`;
+      loginBtn.addEventListener('click', function() {
+        console.log('HC Auth: opening widget');
+        netlifyIdentity.open('login');
       });
     }
 
-    // ── Logout ─────────────────────────────────────────────────
+    // ── Logout button ──────────────────────────────────────────
     if (logoutBtn) {
-      logoutBtn.addEventListener('click', function () {
-        const saved = JSON.parse(localStorage.getItem(HC_USER_KEY) || '{}');
-        const token = saved.token;
-        if (token) {
-          fetch(`${API_URL}/logout`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}` }
-          }).finally(() => {
-            localStorage.removeItem(HC_USER_KEY);
-            localStorage.removeItem(USER_KEY);
-            window.hcCurrentUser = null;
-            if (userDisplay) userDisplay.hidden = true;
-            showLogin();
-          });
-        } else {
-          localStorage.removeItem(HC_USER_KEY);
-          localStorage.removeItem(USER_KEY);
-          window.hcCurrentUser = null;
-          if (userDisplay) userDisplay.hidden = true;
-          showLogin();
-        }
+      logoutBtn.addEventListener('click', function() {
+        netlifyIdentity.logout();
       });
     }
-
-    // ── On load: check for OAuth callback or existing session ──
-    if (handleOAuthCallback()) return; // token in URL, handled above
-
-    const saved = localStorage.getItem(HC_USER_KEY);
-    if (saved) {
-      try {
-        const data = JSON.parse(saved);
-        // Verify token is still valid
-        if (data.token) {
-          fetch(`${API_URL}/user`, {
-            headers: { 'Authorization': `Bearer ${data.token}` }
-          })
-          .then(r => {
-            if (r.ok) return r.json();
-            throw new Error('Token expired');
-          })
-          .then(freshData => {
-            freshData.access_token = data.token;
-            applyUser(freshData);
-          })
-          .catch(() => {
-            localStorage.removeItem(HC_USER_KEY);
-            showLogin();
-          });
-          return;
-        }
-      } catch (_) {}
-    }
-
-    showLogin();
   }
 
+  // Run after DOM + all scripts loaded
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
