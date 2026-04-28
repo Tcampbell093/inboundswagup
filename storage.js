@@ -24,6 +24,7 @@ function buildAssemblySyncPayload(){
     available:availableQueueRows,
     scheduled:scheduledQueueRows,
     incomplete:incompleteQueueRows,
+    held: typeof window.getIssueHoldQueueRows === 'function' ? window.getIssueHoldQueueRows() : [],
     revenue:revenueReferenceRows
   };
 }

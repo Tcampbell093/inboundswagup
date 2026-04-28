@@ -903,6 +903,7 @@ window.closeIssueHoldModal=closeIssueHoldModal;
 window.confirmIssueHold=confirmIssueHold;
 window.releaseIssueHoldRow=releaseIssueHoldRow;
 window.deleteIssueHoldRow=deleteIssueHoldRow;
+window.getIssueHoldQueueRows=function(){ return issueHoldQueueRows; };
 window.unscheduleQueueRow=unscheduleQueueRow;
 window.deleteScheduledQueueRow=deleteScheduledQueueRow;
 

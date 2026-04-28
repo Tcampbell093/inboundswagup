@@ -603,7 +603,7 @@ async function loadBoard(){
     const revLookup = buildRevenueLookup(sj.revenue||[]);
 
     state.board     = Array.isArray(sj.board)     ? sj.board     : [];
-    state.held      = Array.isArray(sj.incomplete) ? sj.incomplete : loadLocal(STORAGE_KEYS.held,[]);
+    state.held      = Array.isArray(sj.held) ? sj.held : [];
     const scheduled = Array.isArray(sj.scheduled)  ? sj.scheduled  : [];
     state.scheduled = scheduled.map(r=>hydrateRow(r,revLookup));
     state.updatedAt = payload.updated_at||null;
