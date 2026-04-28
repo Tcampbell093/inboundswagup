@@ -79,8 +79,17 @@
     // ── Button handlers ─────────────────────────────────────────
     if (loginBtn) {
       loginBtn.addEventListener('click', function () {
-        netlifyIdentity.open('login');
+        console.log('HC Auth: login button clicked');
+        console.log('HC Auth: netlifyIdentity =', typeof netlifyIdentity);
+        try {
+          netlifyIdentity.open('login');
+          console.log('HC Auth: open() called successfully');
+        } catch(e) {
+          console.error('HC Auth: open() failed', e);
+        }
       });
+    } else {
+      console.error('HC Auth: login button not found');
     }
 
     if (logoutBtn) {
