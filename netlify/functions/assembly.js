@@ -29,7 +29,7 @@ async function ensureSchema() {
   `);
   await pool.query(`
     INSERT INTO assembly_sync_state (state_key, state_json)
-    VALUES ('default', '{"board":[],"available":[],"scheduled":[],"incomplete":[],"revenue":[]}'::jsonb)
+    VALUES ('default', '{"board":[],"available":[],"scheduled":[],"incomplete":[],"held":[],"revenue":[]}'::jsonb)
     ON CONFLICT (state_key) DO NOTHING;
   `);
   schemaReady = true;
@@ -47,7 +47,7 @@ exports.handler = async function handler(event) {
       const result = await pool.query(
         `SELECT state_json, updated_at FROM assembly_sync_state WHERE state_key = 'default' LIMIT 1;`
       );
-      const row = result.rows[0] || { state_json: { board: [], available: [], scheduled: [], incomplete: [], revenue: [] }, updated_at: null };
+      const row = result.rows[0] || { state_json: { board: [], available: [], scheduled: [], incomplete: [], held: [], revenue: [] }, updated_at: null };
       return json(200, { state: row.state_json, updated_at: row.updated_at });
     }
 
@@ -59,6 +59,7 @@ exports.handler = async function handler(event) {
         available: Array.isArray(state.available) ? state.available : [],
         scheduled: Array.isArray(state.scheduled) ? state.scheduled : [],
         incomplete: Array.isArray(state.incomplete) ? state.incomplete : [],
+        held: Array.isArray(state.held) ? state.held : [],
         revenue: Array.isArray(state.revenue) ? state.revenue : [],
       };
       const result = await pool.query(
