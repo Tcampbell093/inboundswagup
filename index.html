@@ -197,7 +197,7 @@
     <!-- Footer -->
     <div class="sidebar-footer">
       <div class="sidebar-footer-label">Houston Control</div>
-      <button id="hcLogoutBtn" class="hc-logout-btn" type="button">Sign Out</button>
+      <button id="hcLogoutBtn" class="hc-logout-btn" type="button" onclick="(function(){localStorage.removeItem('hcAuthUser');localStorage.removeItem('qaWorkflowCurrentUserV2');window.location.href='login.html';})()">Sign Out</button>
     </div>
 
   </aside>
