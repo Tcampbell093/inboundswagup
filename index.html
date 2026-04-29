@@ -189,6 +189,10 @@
             <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/><path d="M10 13v.5M10 7a2 2 0 011.732 3C11.268 10.5 10 11 10 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
             <span class="nav-label">Help &amp; Guide</span>
           </button>
+          <button class="nav-btn" data-page="settingsPage" title="Settings">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.5" stroke="currentColor" stroke-width="1.6"/><path d="M10 3v1.5M10 15.5V17M3 10h1.5M15.5 10H17M4.93 4.93l1.06 1.06M14.01 14.01l1.06 1.06M4.93 15.07l1.06-1.06M14.01 5.99l1.06-1.06" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="nav-label">Settings</span>
+          </button>
         </div>
       </div>
 
@@ -429,6 +433,77 @@
 
 
     
+
+    <!-- ── Settings Page ──────────────────────────────────────── -->
+    <section id="settingsPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Admin Only</div>
+          <h1 class="hero-title">Settings</h1>
+          <p class="hero-sub">Manage users, access, and app configuration</p>
+        </div>
+      </div>
+      <div class="page-body" style="max-width:900px;margin:0 auto;padding:24px 16px;display:flex;flex-direction:column;gap:24px;">
+
+        <!-- User Management -->
+        <div class="card" style="padding:24px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+            <div>
+              <div class="eyebrow">Access Control</div>
+              <h2 style="font-size:18px;font-weight:800;margin:0;">User Management</h2>
+              <p style="font-size:13px;color:var(--muted);margin:4px 0 0;">Invite users, assign roles, and manage module access</p>
+            </div>
+            <button class="btn" id="settingsInviteBtn" type="button">+ Invite User</button>
+          </div>
+          <div id="settingsUserList" style="font-size:14px;color:var(--muted);padding:16px;text-align:center;background:var(--blue1);border-radius:10px;">
+            User management panel coming in Phase 4
+          </div>
+        </div>
+
+        <!-- Temp Admin -->
+        <div class="card" style="padding:24px;">
+          <div class="eyebrow">Elevated Access</div>
+          <h2 style="font-size:18px;font-weight:800;margin:0 0 4px;">Temp Admin</h2>
+          <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">Grant a manager temporary admin access with an automatic expiry</p>
+          <div id="settingsTempAdminList" style="font-size:14px;color:var(--muted);padding:16px;text-align:center;background:var(--blue1);border-radius:10px;">
+            Temp admin management coming in Phase 4
+          </div>
+        </div>
+
+        <!-- Audit Log -->
+        <div class="card" style="padding:24px;">
+          <div class="eyebrow">History</div>
+          <h2 style="font-size:18px;font-weight:800;margin:0 0 4px;">Audit Log</h2>
+          <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">Record of all access changes — who granted what and when</p>
+          <div id="settingsAuditLog" style="font-size:14px;color:var(--muted);padding:16px;text-align:center;background:var(--blue1);border-radius:10px;">
+            Audit log coming in Phase 4
+          </div>
+        </div>
+
+        <!-- Notifications -->
+        <div class="card" style="padding:24px;">
+          <div class="eyebrow">Alerts</div>
+          <h2 style="font-size:18px;font-weight:800;margin:0 0 4px;">Notification Preferences</h2>
+          <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">Configure email alerts for temp admin expiry and access changes</p>
+          <div style="font-size:14px;color:var(--muted);padding:16px;text-align:center;background:var(--blue1);border-radius:10px;">
+            Notification settings coming in Phase 5
+          </div>
+        </div>
+
+        <!-- App Info -->
+        <div class="card" style="padding:24px;">
+          <div class="eyebrow">System</div>
+          <h2 style="font-size:18px;font-weight:800;margin:0 0 12px;">App Info</h2>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;">
+            <div><span style="color:var(--muted);">App</span><br><strong>Houston Control</strong></div>
+            <div><span style="color:var(--muted);">Environment</span><br><strong>Production</strong></div>
+            <div><span style="color:var(--muted);">Identity</span><br><strong>Netlify Identity + Google OAuth</strong></div>
+            <div><span style="color:var(--muted);">Database</span><br><strong>Neon PostgreSQL</strong></div>
+          </div>
+        </div>
+
+      </div>
+    </section>
 
     <section id="helpPage" class="page">
       <div class="hero">

@@ -14,8 +14,7 @@
 
   const ROLE_ACCESS = {
     admin:   ['all'],
-    manager: ['all'],
-    l2: [
+    manager: [
       'homePage', 'huddlePage',
       'attendancePage', 'workflowInboundPage', 'fulfillmentScanPage',
       'returnsPage', 'cycleCountPage', 'errorsPage',
@@ -23,11 +22,18 @@
       'sordPage', 'calendarPage', 'productivityPage', 'policyPage',
       'helpPage', 'importHubPage'
     ],
+    l2: [
+      'homePage',
+      'workflowInboundPage', 'fulfillmentScanPage',
+      'returnsPage', 'cycleCountPage',
+      'assemblyPage', 'assemblyFlightTrackerPage',
+      'calendarPage', 'policyPage', 'helpPage'
+    ],
     l1: [
-      'homePage', 'huddlePage',
-      'attendancePage', 'workflowInboundPage', 'fulfillmentScanPage',
-      'returnsPage', 'cycleCountPage', 'errorsPage',
-      'assemblyPage', 'queuePage', 'assemblyFlightTrackerPage',
+      'homePage',
+      'workflowInboundPage', 'fulfillmentScanPage',
+      'returnsPage', 'cycleCountPage',
+      'assemblyPage', 'assemblyFlightTrackerPage',
       'calendarPage', 'policyPage', 'helpPage'
     ],
   };
@@ -35,7 +41,8 @@
   // Read-only access (can see page but certain actions are disabled)
   // Reserved for future use — currently informational only
   const READ_ONLY = {
-    l2: ['sordPage', 'productivityPage'],
+    manager: [],
+    l2: [],
     l1: [],
   };
 
