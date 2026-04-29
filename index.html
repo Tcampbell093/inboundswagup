@@ -239,10 +239,24 @@
             <p class="subtitle">Morning huddle, end-of-day recap, incoming potential, and historical snapshots — all from your live SORD and assembly data.</p>
           </div>
           <div class="toolbar right">
+            <button class="btn" type="button" onclick="window.hcMeeting.openAM()" style="background:#0f9d58;border-color:#0f9d58;">☀️ AM Huddle</button>
+            <button class="btn" type="button" onclick="window.hcMeeting.openLeadership()" style="background:#1a73e8;border-color:#1a73e8;">👔 Leadership</button>
+            <button class="btn" type="button" onclick="window.hcMeeting.openPM()" style="background:#e37400;border-color:#e37400;">🌙 PM Inbound</button>
             <button class="btn secondary" type="button" data-home-jump="sordPage">Open SORD</button>
             <button class="btn secondary" type="button" data-home-jump="assemblyPage">Open Assembly</button>
           </div>
         </div>
+
+        <!-- ── SECTION 0: Carryover From Yesterday ───────────────── -->
+        <section class="mc-panel">
+          <div class="mc-panel-head">
+            <div>
+              <div class="eyebrow">Carryover</div>
+              <h3>Open items from yesterday</h3>
+            </div>
+          </div>
+          <div id="meetingHubCarryover"></div>
+        </section>
 
         <!-- ── SECTION 1: Floor Now ────────────────────────────────── -->
         <section class="mc-panel">
@@ -535,6 +549,54 @@
 
       </div>
     </section>
+
+    <!-- ── AM Floor Huddle Modal ──────────────────────────────── -->
+    <div id="meetingHubAMModal" class="cm-overlay" hidden aria-modal="true" role="dialog">
+      <div class="cm-dialog" style="max-width:720px;max-height:90vh;overflow-y:auto;">
+        <div class="cm-header">
+          <div>
+            <div class="eyebrow" style="color:#0f9d58;">☀️ Morning Meeting</div>
+            <h2 class="cm-title">AM Floor Huddle</h2>
+          </div>
+          <button class="cm-close" onclick="window.hcMeeting.closeModal()" type="button">✕</button>
+        </div>
+        <div class="cm-body" style="padding:0;">
+          <div id="amHuddleForm" style="padding:20px 0;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Leadership Huddle Modal ────────────────────────────── -->
+    <div id="meetingHubLeadershipModal" class="cm-overlay" hidden aria-modal="true" role="dialog">
+      <div class="cm-dialog" style="max-width:900px;max-height:90vh;overflow-y:auto;">
+        <div class="cm-header">
+          <div>
+            <div class="eyebrow" style="color:#1a73e8;">👔 Leadership Meeting</div>
+            <h2 class="cm-title">Leadership Huddle</h2>
+          </div>
+          <button class="cm-close" onclick="window.hcMeeting.closeModal()" type="button">✕</button>
+        </div>
+        <div class="cm-body" style="padding:0;">
+          <div id="leadershipHuddleForm" style="padding:20px 0;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PM Inbound Huddle Modal ────────────────────────────── -->
+    <div id="meetingHubPMModal" class="cm-overlay" hidden aria-modal="true" role="dialog">
+      <div class="cm-dialog" style="max-width:720px;max-height:90vh;overflow-y:auto;">
+        <div class="cm-header">
+          <div>
+            <div class="eyebrow" style="color:#e37400;">🌙 PM Meeting</div>
+            <h2 class="cm-title">PM Inbound Huddle</h2>
+          </div>
+          <button class="cm-close" onclick="window.hcMeeting.closeModal()" type="button">✕</button>
+        </div>
+        <div class="cm-body" style="padding:0;">
+          <div id="pmHuddleForm" style="padding:20px 0;"></div>
+        </div>
+      </div>
+    </div>
 
     <!-- ── System Reset Modal ─────────────────────────────────── -->
     <div id="systemResetModal" class="cm-overlay" hidden aria-modal="true" role="dialog">
@@ -2448,6 +2510,7 @@
 <script src="fulfillment-scan-prototype.js"></script>
 
 <script src="huddle-module.js"></script>
+<script src="meeting-hub.js"></script>
 <script src="policy.js"></script>
 
 <!-- Global tooltip -->

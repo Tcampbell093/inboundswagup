@@ -4823,3 +4823,18 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 
 /* ===== Notification Banner ===== */
 #hcNotifBanner:not([hidden]){ display:flex; }
+
+/* ===== Meeting Hub ===== */
+.mh-date-bar{display:flex;align-items:center;gap:8px;margin-bottom:20px;flex-wrap:wrap;}
+.mh-section-head{font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:20px 0 10px;border-bottom:1px solid var(--blue2);padding-bottom:6px;}
+.mh-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.mh-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+@media(max-width:600px){.mh-grid-2,.mh-grid-3{grid-template-columns:1fr;}}
+.mh-dept-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;}
+.mh-dept-card{background:var(--blue1);border:1px solid var(--blue2);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;}
+.mh-dept-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+.mh-dept-fields{display:flex;flex-direction:column;gap:8px;}
+.mh-status-select{padding:5px 8px;border-radius:7px;border:2px solid var(--blue2);background:var(--bg);font-size:13px;font-weight:700;cursor:pointer;}
+.mh-dept-input{width:100%;padding:7px 10px;border-radius:7px;border:1px solid var(--blue2);background:var(--bg);font-size:13px;}
+.mh-action-item{background:var(--blue1);border:1px solid var(--blue2);border-radius:10px;padding:12px;margin-bottom:8px;}
+.mh-carryover-item{background:var(--blue1);border-left-width:3px;border-left-style:solid;border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:6px;font-size:13px;}
