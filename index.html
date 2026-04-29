@@ -453,20 +453,10 @@
               <h2 style="font-size:18px;font-weight:800;margin:0;">User Management</h2>
               <p style="font-size:13px;color:var(--muted);margin:4px 0 0;">Invite users, assign roles, and manage module access</p>
             </div>
-            <button class="btn" id="settingsInviteBtn" type="button">+ Invite User</button>
+            <button class="btn" id="settingsInviteBtn" type="button" onclick="window.hcSettings.openInviteModal()">+ Invite User</button>
           </div>
           <div id="settingsUserList" style="font-size:14px;color:var(--muted);padding:16px;text-align:center;background:var(--blue1);border-radius:10px;">
-            User management panel coming in Phase 4
-          </div>
-        </div>
-
-        <!-- Temp Admin -->
-        <div class="card" style="padding:24px;">
-          <div class="eyebrow">Elevated Access</div>
-          <h2 style="font-size:18px;font-weight:800;margin:0 0 4px;">Temp Admin</h2>
-          <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">Grant a manager temporary admin access with an automatic expiry</p>
-          <div id="settingsTempAdminList" style="font-size:14px;color:var(--muted);padding:16px;text-align:center;background:var(--blue1);border-radius:10px;">
-            Temp admin management coming in Phase 4
+            Loading…
           </div>
         </div>
 
@@ -476,7 +466,7 @@
           <h2 style="font-size:18px;font-weight:800;margin:0 0 4px;">Audit Log</h2>
           <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">Record of all access changes — who granted what and when</p>
           <div id="settingsAuditLog" style="font-size:14px;color:var(--muted);padding:16px;text-align:center;background:var(--blue1);border-radius:10px;">
-            Audit log coming in Phase 4
+            Loading…
           </div>
         </div>
 
@@ -504,6 +494,45 @@
 
       </div>
     </section>
+
+    <!-- ── Invite User Modal ───────────────────────────────────── -->
+    <div id="settingsInviteModal" class="cm-overlay" hidden aria-modal="true" role="dialog">
+      <div class="cm-dialog" style="max-width:420px;">
+        <div class="cm-header">
+          <div>
+            <div class="eyebrow" style="text-transform:uppercase;letter-spacing:.16em;font-size:11px;font-weight:800;color:#6d879d;margin-bottom:6px;">User Management</div>
+            <h2 class="cm-title">Invite User</h2>
+          </div>
+          <button class="cm-close" onclick="document.getElementById('settingsInviteModal').hidden=true" type="button">✕</button>
+        </div>
+        <div class="cm-body" style="display:flex;flex-direction:column;gap:16px;padding:20px 0;">
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px;">Email Address</label>
+            <input type="email" id="inviteEmail" placeholder="employee@bdainc.com" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);font-size:14px;">
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px;">Role</label>
+            <select id="inviteRole" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);font-size:14px;font-weight:700;">
+              <option value="l1">Associate L1</option>
+              <option value="l2">Associate L2</option>
+              <option value="manager">Manager</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <p style="font-size:12px;color:var(--muted);margin:0;">They'll receive an email invitation to sign in with Google. Only their invited email will be able to access the app.</p>
+          <div id="inviteStatus" style="font-size:13px;text-align:center;min-height:18px;"></div>
+        </div>
+        <div class="cm-footer" style="display:flex;gap:10px;">
+          <button class="btn" onclick="window.hcSettings.sendInvite()" style="flex:1;">Send Invite</button>
+          <button class="btn secondary" onclick="document.getElementById('settingsInviteModal').hidden=true" style="flex:1;">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── User Edit Drawer ───────────────────────────────────── -->
+    <div id="settingsUserDrawer" hidden style="position:fixed;top:0;right:0;bottom:0;width:min(460px,100vw);background:var(--bg);border-left:1px solid var(--blue2);z-index:8000;overflow-y:auto;padding:28px 24px;box-shadow:-8px 0 32px rgba(0,0,0,.12);">
+      <div id="settingsUserDrawerContent"></div>
+    </div>
 
     <section id="helpPage" class="page">
       <div class="hero">
@@ -2403,6 +2432,7 @@
 <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
 <script src="auth.js"></script>
 <script src="access.js"></script>
+<script src="settings.js"></script>
 <script>
 // ── Upcoming Schedule collapsible ─────────────────────────────────────────
 (function(){
