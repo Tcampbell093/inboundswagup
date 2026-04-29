@@ -159,20 +159,61 @@ exports.handler = async function(event) {
       [email, email, name, role]
     );
 
-    // Send invite via Netlify PAT
-    if (NETLIFY_PAT) {
+    // Send invite email via Resend
+    const RESEND_API_KEY = process.env.RESEND_API_KEY;
+    const roleLabel = { admin:'Admin', manager:'Manager', l2:'Associate L2', l1:'Associate L1' }[role] || 'Associate';
+    const loginUrl  = 'https://inboundswagup.netlify.app/login.html';
+
+    if (RESEND_API_KEY) {
       try {
-        await fetch(`https://api.netlify.com/api/v1/sites/${SITE_ID}/identity/users/invite`, {
+        const emailRes = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${NETLIFY_PAT}`,
+            'Authorization': `Bearer ${RESEND_API_KEY}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ email }),
+          body: JSON.stringify({
+            from: 'Houston Control <onboarding@resend.dev>',
+            to: email,
+            subject: "You've been invited to Houston Control",
+            html: `
+              <div style="font-family:Inter,system-ui,sans-serif;max-width:520px;margin:0 auto;background:#f0f7ff;border-radius:16px;overflow:hidden;">
+                <div style="background:linear-gradient(135deg,#0a1628,#0f2444);padding:40px 32px;text-align:center;">
+                  <h1 style="color:#fff;margin:0;font-size:24px;font-weight:800;letter-spacing:-.5px;">Houston Control</h1>
+                  <p style="color:rgba(255,255,255,.6);margin:8px 0 0;font-size:14px;">Warehouse Operations Hub</p>
+                </div>
+                <div style="padding:32px;">
+                  <h2 style="margin:0 0 12px;font-size:20px;color:#0f2444;">You've been invited!</h2>
+                  <p style="color:#444;line-height:1.6;margin:0 0 8px;">
+                    ${caller.email} has invited you to join <strong>Houston Control</strong> as <strong>${roleLabel}</strong>.
+                  </p>
+                  <p style="color:#444;line-height:1.6;margin:0 0 24px;">
+                    Sign in with your Google account to get started. Make sure to use this email address (${email}) when signing in.
+                  </p>
+                  <div style="text-align:center;margin-bottom:24px;">
+                    <a href="${loginUrl}" style="display:inline-block;background:#0f2444;color:#fff;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;text-decoration:none;">
+                      Sign in to Houston Control →
+                    </a>
+                  </div>
+                  <p style="color:#888;font-size:12px;text-align:center;margin:0;">
+                    If you weren't expecting this invitation, you can ignore this email.
+                  </p>
+                </div>
+              </div>
+            `,
+          }),
         });
+        if (!emailRes.ok) {
+          const errText = await emailRes.text();
+          console.error('Resend error:', emailRes.status, errText);
+        } else {
+          console.log('HC Users: invite email sent to', email);
+        }
       } catch(e) {
-        console.error('Netlify invite error (non-fatal):', e.message);
+        console.error('Resend invite error (non-fatal):', e.message);
       }
+    } else {
+      console.warn('HC Users: RESEND_API_KEY not set — invite email skipped');
     }
 
     await writeAudit(caller.email, email, 'invite', { role });
