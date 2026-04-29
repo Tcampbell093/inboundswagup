@@ -21,18 +21,27 @@ function json(code, body) {
 async function verifyAdmin(event) {
   const auth = event.headers['authorization'] || event.headers['Authorization'] || '';
   const token = auth.replace('Bearer ', '').trim();
-  if (!token) return null;
+  if (!token) {
+    console.error('HC Users: no authorization token in request');
+    return null;
+  }
 
   const res = await fetch(
     `https://inboundswagup.netlify.app/.netlify/identity/user`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
-  if (!res.ok) return null;
+  if (!res.ok) {
+    console.error('HC Users: token verification failed', res.status);
+    return null;
+  }
   const user = await res.json();
   const role = user?.app_metadata?.role
             || (user?.app_metadata?.roles && user.app_metadata.roles[0])
             || 'l1';
-  if (!['admin', 'manager'].includes(role)) return null;
+  if (!['admin', 'manager'].includes(role)) {
+    console.error('HC Users: insufficient role', role);
+    return null;
+  }
   return { user, role, token };
 }
 
@@ -68,11 +77,23 @@ exports.handler = async function(event) {
     const caller = await verifyAdmin(event);
     if (!caller) return json(401, { error: 'Unauthorized' });
 
+    if (!NETLIFY_PAT) {
+      console.error('HC Users: NETLIFY_PAT environment variable is not set');
+      return json(500, { error: 'NETLIFY_PAT not configured. Add it to your Netlify environment variables.' });
+    }
+
+    console.log('HC Users: fetching users from Netlify API, site:', SITE_ID);
+
     const res = await fetch(
       `${NETLIFY_API}/sites/${SITE_ID}/identity/users?per_page=100`,
       { headers: { Authorization: `Bearer ${NETLIFY_PAT}` } }
     );
-    if (!res.ok) return json(502, { error: 'Failed to fetch users' });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error('HC Users: Netlify API error', res.status, errText);
+      return json(502, { error: `Netlify API error ${res.status}: ${errText}` });
+    }
     const data = await res.json();
 
     const users = (data.users || []).map(u => ({
