@@ -51,6 +51,24 @@
       console.log('HC Auth: logged in as', data.name, '/', data.role);
     }
 
+    // ── Logout button — always attach regardless of session ───
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', function() {
+        const d = JSON.parse(localStorage.getItem(HC_USER_KEY) || '{}');
+        localStorage.removeItem(HC_USER_KEY);
+        localStorage.removeItem(USER_KEY);
+        window.hcCurrentUser = null;
+        if (d.token) {
+          fetch(API_URL + '/logout', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + d.token }
+          }).finally(function() { window.location.href = 'login.html'; });
+        } else {
+          window.location.href = 'login.html';
+        }
+      });
+    }
+
     // ── Check for saved session ────────────────────────────────
     const saved = localStorage.getItem(HC_USER_KEY);
     if (saved) {
@@ -68,7 +86,7 @@
           .then(function(user) {
             // Refresh user data from server
             const name = (user.user_metadata && (user.user_metadata.full_name || user.user_metadata.name)) || user.email;
-            const role = (user.app_metadata && user.app_metadata.role) || 'l1';
+            const role = (user.app_metadata && (user.app_metadata.role || (user.app_metadata.roles && user.app_metadata.roles[0]))) || 'l1';
             const refreshed = { id: user.id, email: user.email, name, role,
               overrides: (user.app_metadata && user.app_metadata.overrides) || {},
               tempAdmin: (user.app_metadata && user.app_metadata.tempAdmin) || false,
@@ -88,24 +106,6 @@
 
     // No valid session — go to login
     showLogin();
-
-    // ── Logout button ──────────────────────────────────────────
-    if (logoutBtn) {
-      logoutBtn.addEventListener('click', function() {
-        const d = JSON.parse(localStorage.getItem(HC_USER_KEY) || '{}');
-        localStorage.removeItem(HC_USER_KEY);
-        localStorage.removeItem(USER_KEY);
-        window.hcCurrentUser = null;
-        if (d.token) {
-          fetch(API_URL + '/logout', {
-            method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + d.token }
-          }).finally(function() { window.location.href = 'login.html'; });
-        } else {
-          window.location.href = 'login.html';
-        }
-      });
-    }
   }
 
   if (document.readyState === 'loading') {

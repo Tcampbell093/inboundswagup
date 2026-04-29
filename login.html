@@ -93,7 +93,7 @@
       }
 
       const name = (user.user_metadata && (user.user_metadata.full_name || user.user_metadata.name)) || user.email;
-      const role = (user.app_metadata && user.app_metadata.role) || 'l1';
+      const role = (user.app_metadata && (user.app_metadata.role || (user.app_metadata.roles && user.app_metadata.roles[0]))) || 'l1';
 
       localStorage.setItem(USER_KEY, name);
       localStorage.setItem(HC_USER_KEY, JSON.stringify({
