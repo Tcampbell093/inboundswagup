@@ -471,6 +471,59 @@
 
   function copyLeadSummary() { copyText(window._lhSummary || '', 'lhCopyBtn'); }
 
+  function lhRenderDone() {
+    lhSaveCurrent();
+    const form = el('leadershipHuddleForm');
+    if (!form) return;
+    form.innerHTML = '<div style="text-align:center;padding:24px 0 16px;">' +
+      '<div style="font-size:40px;margin-bottom:12px;">\u2728</div>' +
+      '<div style="font-size:16px;font-weight:800;margin-bottom:6px;">All departments checked in</div>' +
+      '<div style="font-size:13px;color:var(--muted);margin-bottom:24px;">Sending everything to AI for your leadership summary\u2026</div>' +
+      '<div id="lhSummaryOutput" style="text-align:left;"></div>' +
+      '</div>';
+    lhGenerateSummary();
+  }
+
+  async function lhGenerateSummary() {
+    const out = el('lhSummaryOutput');
+    if (!out) return;
+    out.innerHTML = '<div style="color:var(--muted);font-size:13px;text-align:center;">Generating summary\u2026</div>';
+    const day     = getDay(activeDate);
+    const depts   = (day.leadershipHuddle || {}).departments || {};
+    const dateStr = new Date(activeDate + 'T00:00:00').toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
+    let dataBlock = 'Date: ' + dateStr + '\n\n';
+    LH_DEPTS.forEach(function(dept) {
+      const d = depts[dept] || {};
+      dataBlock += 'Department: ' + dept + '\n';
+      if (d.lead)   dataBlock += 'Lead: ' + d.lead + '\n';
+      if (d.status) dataBlock += 'Status: ' + d.status + '\n';
+      if (d.volume) dataBlock += 'Volume: ' + d.volume + '\n';
+      if (d.pto && d.pto.length) dataBlock += 'Scheduled time off: ' + d.pto.map(function(p){ return p.name + ' on ' + p.date; }).join(', ') + '\n';
+      if (d.notes)  dataBlock += 'Notes: ' + d.notes + '\n';
+      dataBlock += '\n';
+    });
+    const prompt = 'You are a warehouse operations assistant. A supervisor has just completed their daily leadership huddle for ' + dateStr + '. Here is the raw data from each department:\n\n' + dataBlock + '\nWrite a clean, professional leadership summary a warehouse manager would be proud to share with upper management. Include a brief overall floor status, department-by-department highlights (only what is noteworthy), staffing concerns, key priorities and blockers, and any safety concerns. Keep it concise and professional. Use plain paragraphs, no markdown. Write as if you are the operations manager summarizing the morning huddle.';
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] }),
+      });
+      const data = await res.json();
+      const text = (data && data.content && data.content[0] && data.content[0].text) ? data.content[0].text : 'No summary generated.';
+      window._lhSummary = text;
+      out.innerHTML = '<div style="background:var(--blue1);border:1px solid var(--blue2);border-radius:12px;padding:20px;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+        '<strong style="font-size:14px;">Leadership Summary \u2014 ' + esc(dateStr) + '</strong>' +
+        '<button class="btn secondary" id="lhCopyBtn" onclick="window.hcMeeting.copyLeadSummary()" style="font-size:12px;padding:5px 12px;" type="button">Copy</button>' +
+        '</div><div style="font-size:14px;line-height:1.8;white-space:pre-wrap;color:var(--text);">' + esc(text) + '</div></div>' +
+        '<div style="margin-top:12px;text-align:center;"><button class="btn secondary" onclick="window.hcMeeting.lhGoBack()" type="button" style="font-size:13px;">\u2190 Go back and edit</button></div>';
+    } catch(e) {
+      out.innerHTML = '<div style="color:#e74c3c;font-size:13px;text-align:center;">Failed to generate: ' + esc(e.message) + '</div>' +
+        '<div style="margin-top:10px;text-align:center;"><button class="btn secondary" onclick="window.hcMeeting.lhRenderDone()" type="button">Retry</button></div>';
+    }
+  }
+
   function lhGoBack() {
     lhState.deptIdx = LH_DEPTS.length - 1;
     lhState.innerStep = LH_STEPS.length - 1;
