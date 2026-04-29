@@ -7,7 +7,7 @@
   'use strict';
 
   const STORAGE_KEY = 'ops_hub_meeting_hub_v1';
-  const DEPARTMENTS = ['QA Receiving','Prep','Inventory','Fulfillment','Assembly','Office/Admin','Facilities'];
+  const DEPARTMENTS = ['Fulfillment','Inventory','QA Receiving','QA Prepping','Assembly'];
 
   // ── Helpers ───────────────────────────────────────────────
   function isoToday() { return new Date().toISOString().slice(0, 10); }
@@ -219,288 +219,268 @@
   // ═══════════════════════════════════════════════════════════
 
   function openLeadership() {
-    renderLeadershipForm();
+    lhState.deptIdx = 0;
+    lhState.innerStep = 0;
+    lhRender();
     openModal('meetingHubLeadershipModal');
   }
 
-  function renderLeadershipForm() {
-    const day  = getDay(activeDate);
-    const h    = day.leadershipHuddle || { departments:{}, actionItems:[] };
+  // ── Leadership Huddle Wizard ──────────────────────────────
+  const LH_DEPTS = ['Fulfillment','Inventory','QA Receiving','QA Prepping','Assembly'];
+  const LH_STEPS = ['lead','status','volume','absences','pto','notes'];
+  const lhState  = { deptIdx: 0, innerStep: 0 };
+
+  function lhGetDeptData(dept) {
+    const day = getDay(activeDate);
+    if (!day.leadershipHuddle) day.leadershipHuddle = { departments:{} };
+    if (!day.leadershipHuddle.departments) day.leadershipHuddle.departments = {};
+    if (!day.leadershipHuddle.departments[dept]) day.leadershipHuddle.departments[dept] = { lead:'', status:'', volume:'', pto:[], notes:'' };
+    return day.leadershipHuddle.departments[dept];
+  }
+
+  function lhSaveCurrent() {
+    const dept = LH_DEPTS[lhState.deptIdx];
+    const step = LH_STEPS[lhState.innerStep];
+    const d    = lhGetDeptData(dept);
+    if (step === 'notes') d.notes = el('lhNotesInput') ? el('lhNotesInput').value : d.notes;
+    saveDay(activeDate, getDay(activeDate));
+  }
+
+  function lhNav(dir) {
+    lhSaveCurrent();
+    lhState.innerStep += dir;
+    if (lhState.innerStep < 0) {
+      if (lhState.deptIdx > 0) { lhState.deptIdx--; lhState.innerStep = LH_STEPS.length - 1; }
+      else { lhState.innerStep = 0; return; }
+    }
+    if (lhState.innerStep >= LH_STEPS.length) {
+      if (lhState.deptIdx < LH_DEPTS.length - 1) { lhState.deptIdx++; lhState.innerStep = 0; }
+      else { lhRenderDone(); return; }
+    }
+    lhRender();
+  }
+
+  function lhJumpDept(idx) {
+    lhSaveCurrent();
+    lhState.deptIdx = idx;
+    lhState.innerStep = 0;
+    lhRender();
+  }
+
+  function lhSelectLead(name) {
+    lhGetDeptData(LH_DEPTS[lhState.deptIdx]).lead = name;
+    saveDay(activeDate, getDay(activeDate));
+    lhRender();
+  }
+
+  function lhSelectStatus(val) {
+    lhGetDeptData(LH_DEPTS[lhState.deptIdx]).status = val;
+    saveDay(activeDate, getDay(activeDate));
+    lhRender();
+  }
+
+  function lhSelectVolume(val) {
+    lhGetDeptData(LH_DEPTS[lhState.deptIdx]).volume = val;
+    saveDay(activeDate, getDay(activeDate));
+    lhRender();
+  }
+
+  function lhAddPTO(name) {
+    const dept = LH_DEPTS[lhState.deptIdx];
+    const dateEl = el('lhPtoDate');
+    const date = dateEl ? dateEl.value : '';
+    if (!date) return;
+    const d = lhGetDeptData(dept);
+    d.pto = (d.pto || []).filter(function(p){ return p.name !== name; });
+    d.pto.push({ name: name, date: date });
+    saveDay(activeDate, getDay(activeDate));
+    lhRenderPTO(dept);
+  }
+
+  function lhRemovePTO(name) {
+    const dept = LH_DEPTS[lhState.deptIdx];
+    const d = lhGetDeptData(dept);
+    d.pto = (d.pto || []).filter(function(p){ return p.name !== name; });
+    saveDay(activeDate, getDay(activeDate));
+    lhRenderPTO(dept);
+  }
+
+  function lhRenderPTO(dept) {
+    const list = el('lhPtoList');
+    if (!list) return;
+    const items = lhGetDeptData(dept).pto || [];
+    list.innerHTML = items.length
+      ? items.map(function(p){ return '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:var(--blue1);border:1px solid var(--blue2);margin-bottom:6px;font-size:13px;"><span style=\'flex:1;font-weight:700;\'>' + esc(p.name) + '</span><span style=\'color:var(--muted);font-size:12px;\'>' + esc(p.date) + '</span><button onclick=\'window.hcMeeting.lhRemovePTO("' + esc(p.name) + '")\'  style=\'background:none;border:none;color:#e74c3c;cursor:pointer;font-size:16px;padding:0 4px;\'  type=\'button\'>×</button></div>'; }).join('')
+      : '<div style="font-size:13px;color:var(--muted);">None logged yet</div>';
+  }
+
+  function lhGetAbsences(dept) {
+    try {
+      const today = isoToday();
+      const records = (typeof attendanceRecords !== 'undefined' && Array.isArray(attendanceRecords)) ? attendanceRecords : [];
+      return records
+        .filter(function(r){ return r.date === today && ['Absent','Call Out','No Call No Show'].includes(r.mark); })
+        .filter(function(r){
+          const empDept = (r.department || '').toLowerCase().replace(/\s+/g,'');
+          const target  = dept.toLowerCase().replace(/\s+/g,'');
+          return empDept === target || empDept.includes(target) || target.includes(empDept);
+        })
+        .map(function(r){ return r.name || r.employee || ''; });
+    } catch(e){ return []; }
+  }
+
+  function lhGetEmployees(dept) {
+    try {
+      var roster = [];
+      var keys = ['ops_hub_attendance_settings_v1','ops_hub_employees_v1'];
+      for (var k = 0; k < keys.length; k++) {
+        try {
+          var raw = localStorage.getItem(keys[k]);
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            var emps = parsed.employees || parsed.roster || [];
+            if (emps.length) { roster = emps; break; }
+          }
+        } catch(e2){}
+      }
+      return roster
+        .filter(function(e){
+          var empDept = (e.department || '').toLowerCase().replace(/\s+/g,'');
+          var target  = dept.toLowerCase().replace(/\s+/g,'');
+          return empDept === target || empDept.includes(target) || target.includes(empDept);
+        })
+        .map(function(e){ return e.name || e.adpName || ''; })
+        .filter(Boolean);
+    } catch(e){ return []; }
+  }
+
+  function lhRender() {
     const form = el('leadershipHuddleForm');
     if (!form) return;
+    const dept  = LH_DEPTS[lhState.deptIdx];
+    const step  = LH_STEPS[lhState.innerStep];
+    const d     = lhGetDeptData(dept);
+    const emps  = lhGetEmployees(dept);
+    const abs   = lhGetAbsences(dept);
+    const total = LH_DEPTS.length * LH_STEPS.length;
+    const curr  = lhState.deptIdx * LH_STEPS.length + lhState.innerStep + 1;
+    const pct   = Math.round((curr / total) * 100);
+    const stepLabels = { lead:'Lead', status:'Status', volume:'Volume', absences:'Absences', pto:'Time Off', notes:'Notes' };
 
-    const statusColors = { Green:'#2ecc71', Yellow:'#f1c40f', Red:'#e74c3c' };
+    const pills = LH_DEPTS.map(function(d2, i) {
+      const isDone   = i < lhState.deptIdx;
+      const isActive = i === lhState.deptIdx;
+      const dd       = lhGetDeptData(d2);
+      const sc       = { Green:'#2ecc71', Yellow:'#f1c40f', Red:'#e74c3c' }[dd.status] || 'var(--blue2)';
+      const border   = isActive ? '#1a73e8' : isDone ? sc : 'var(--blue2)';
+      const bg       = isActive ? '#e8f0fe' : 'var(--blue1)';
+      const color    = isActive ? '#1a73e8' : 'var(--text)';
+      const prefix   = isDone ? '\u2713 ' : '';
+      return '<button onclick="window.hcMeeting.lhJumpDept(' + i + ')" type="button"' +
+        ' style="padding:6px 14px;border-radius:999px;border:1.5px solid ' + border + ';background:' + bg + ';color:' + color + ';font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">' +
+        prefix + d2 + '</button>';
+    }).join('');
 
-    form.innerHTML = `
-      <div class="mh-date-bar">
-        <button class="btn secondary" onclick="window.hcMeeting.leadPrevDay()" type="button">◀</button>
-        <input type="date" id="leadHuddleDate" value="${esc(activeDate)}" style="padding:8px 12px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);font-size:14px;font-weight:700;" onchange="window.hcMeeting.leadSetDate(this.value)">
-        <button class="btn secondary" onclick="window.hcMeeting.leadSetDate('${isoToday()}')" type="button">Today</button>
-        <button class="btn secondary" onclick="window.hcMeeting.leadNextDay()" type="button">▶</button>
-      </div>
-
-      <div class="mh-section-head">Department Check-ins</div>
-      <div class="mh-dept-grid" id="leadDeptCards">
-        ${DEPARTMENTS.map(dept => {
-          const dd = (h.departments || {})[dept] || {};
-          return `
-          <div class="mh-dept-card">
-            <div class="mh-dept-card-head">
-              <strong>${esc(dept)}</strong>
-              <select class="mh-status-select" data-dept="${esc(dept)}" data-field="status" style="border-color:${statusColors[dd.status] || 'var(--blue2)'};">
-                <option value="">Status</option>
-                <option value="Green" ${dd.status==='Green'?'selected':''}>🟢 Green</option>
-                <option value="Yellow" ${dd.status==='Yellow'?'selected':''}>🟡 Yellow</option>
-                <option value="Red" ${dd.status==='Red'?'selected':''}>🔴 Red</option>
-              </select>
-            </div>
-            <div class="mh-dept-fields">
-              ${mhDeptField(dept,'leadName','Lead Name',dd.leadName,'')}
-              <div style="display:flex;gap:8px;">
-                <div style="flex:1;">
-                  <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;">Volume</label>
-                  <select class="mh-status-select" data-dept="${esc(dept)}" data-field="volume" style="width:100%;">
-                    <option value="">Volume</option>
-                    <option value="Low" ${dd.volume==='Low'?'selected':''}>Low</option>
-                    <option value="Medium" ${dd.volume==='Medium'?'selected':''}>Medium</option>
-                    <option value="High" ${dd.volume==='High'?'selected':''}>High</option>
-                  </select>
-                </div>
-                <div style="flex:1;">
-                  ${mhDeptField(dept,'absences','Absences Today',dd.absences,'')}
-                </div>
-              </div>
-              ${mhDeptField(dept,'staffingStatus','Staffing Status',dd.staffingStatus,'Fully staffed / short-handed?')}
-              ${mhDeptField(dept,'scheduledTimeOff','Scheduled Time Off',dd.scheduledTimeOff,'Later this week?')}
-              ${mhDeptField(dept,'mainPriority','Main Priority Today',dd.mainPriority,'')}
-              ${mhDeptField(dept,'currentBlocker','Current Blocker',dd.currentBlocker,'What is slowing you down?')}
-              ${mhDeptField(dept,'helpNeeded','Help Needed From',dd.helpNeeded,'Which dept can help?')}
-              ${mhDeptField(dept,'othersShouldKnow','Others Should Know',dd.othersShouldKnow,'Cross-dept awareness')}
-              ${mhDeptField(dept,'safetyConcern','Safety Concern',dd.safetyConcern,'Any safety issues?')}
-              ${mhDeptField(dept,'suppliesNeeded','Supplies / Equipment',dd.suppliesNeeded,'What do you need?')}
-            </div>
-          </div>`;
-        }).join('')}
-      </div>
-
-      <div class="mh-section-head" style="margin-top:24px;">Action Items</div>
-      <div id="leadActionItems"></div>
-      <button class="btn secondary" onclick="window.hcMeeting.addActionItem()" type="button" style="margin-top:8px;">+ Add Action Item</button>
-
-      <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;">
-        <button class="btn" onclick="window.hcMeeting.saveLead()" type="button">💾 Save</button>
-        <button class="btn secondary" onclick="window.hcMeeting.generateLeadSummary()" type="button">📋 Generate Summary</button>
-      </div>
-      <div id="leadSaveStatus" style="min-height:20px;font-size:13px;margin-top:8px;"></div>
-      <div id="leadSummaryOutput" style="display:none;margin-top:20px;"></div>
-    `;
-
-    renderActionItems(h.actionItems || []);
-
-    // Wire dept field changes
-    form.querySelectorAll('[data-dept][data-field]').forEach(sel => {
-      sel.addEventListener('change', () => {
-        if (sel.getAttribute('data-field') === 'status') {
-          const colors = { Green:'#2ecc71', Yellow:'#f1c40f', Red:'#e74c3c' };
-          sel.style.borderColor = colors[sel.value] || 'var(--blue2)';
-        }
-      });
-    });
-  }
-
-  function mhDeptField(dept, field, label, value, placeholder) {
-    return `<div>
-      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px;">${esc(label)}</label>
-      <input type="text" class="mh-dept-input" data-dept="${esc(dept)}" data-field="${esc(field)}"
-        value="${esc(value||'')}" placeholder="${esc(placeholder)}"
-        style="width:100%;padding:7px 10px;border-radius:7px;border:1px solid var(--blue2);background:var(--blue1);font-size:13px;">
-    </div>`;
-  }
-
-  function renderActionItems(items) {
-    const container = el('leadActionItems');
-    if (!container) return;
-    if (!items.length) {
-      container.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0;">No action items yet.</div>';
-      return;
+    let content = '';
+    if (step === 'lead') {
+      const btns = emps.length
+        ? emps.map(function(n) {
+            const sel = d.lead === n;
+            return '<button onclick="window.hcMeeting.lhSelectLead(this.dataset.name)" data-name="' + esc(n) + '" type="button"' +
+              ' style="padding:10px 18px;border-radius:10px;border:2px solid ' + (sel ? '#1a73e8' : 'var(--blue2)') + ';background:' + (sel ? '#e8f0fe' : 'var(--blue1)') + ';color:' + (sel ? '#1a73e8' : 'var(--text)') + ';font-size:14px;font-weight:700;cursor:pointer;">' +
+              esc(n) + '</button>';
+          }).join('')
+        : '<div style="font-size:13px;color:var(--muted);">No employees found for this department. Add them via the Employee module.</div>';
+      content = '<div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Who is leading ' + esc(dept) + ' today?</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:10px;">' + btns + '</div>';
     }
-    container.innerHTML = items.map((item, idx) => `
-      <div class="mh-action-item" data-idx="${idx}">
-        <div class="mh-grid-3">
-          <input type="text" placeholder="Task title" value="${esc(item.title||'')}" data-action-field="title" data-idx="${idx}" style="padding:8px;border-radius:7px;border:1px solid var(--blue2);background:var(--bg);font-size:13px;font-weight:700;">
-          <input type="text" placeholder="Assigned to" value="${esc(item.assignedTo||'')}" data-action-field="assignedTo" data-idx="${idx}" style="padding:8px;border-radius:7px;border:1px solid var(--blue2);background:var(--bg);font-size:13px;">
-          <input type="text" placeholder="Department" value="${esc(item.department||'')}" data-action-field="department" data-idx="${idx}" style="padding:8px;border-radius:7px;border:1px solid var(--blue2);background:var(--bg);font-size:13px;">
-        </div>
-        <div class="mh-grid-3" style="margin-top:6px;">
-          <input type="date" value="${esc(item.dueDate||'')}" data-action-field="dueDate" data-idx="${idx}" style="padding:8px;border-radius:7px;border:1px solid var(--blue2);background:var(--bg);font-size:13px;">
-          <select data-action-field="priority" data-idx="${idx}" style="padding:8px;border-radius:7px;border:1px solid var(--blue2);background:var(--bg);font-size:13px;">
-            <option value="Low" ${item.priority==='Low'?'selected':''}>Low Priority</option>
-            <option value="Medium" ${item.priority==='Medium'?'selected':''}>Medium Priority</option>
-            <option value="High" ${item.priority==='High'?'selected':''}>High Priority</option>
-          </select>
-          <select data-action-field="status" data-idx="${idx}" style="padding:8px;border-radius:7px;border:1px solid var(--blue2);background:var(--bg);font-size:13px;">
-            <option value="Open" ${item.status==='Open'?'selected':''}>Open</option>
-            <option value="In Progress" ${item.status==='In Progress'?'selected':''}>In Progress</option>
-            <option value="Done" ${item.status==='Done'?'selected':''}>Done</option>
-            <option value="Blocked" ${item.status==='Blocked'?'selected':''}>Blocked</option>
-          </select>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:6px;align-items:center;">
-          <input type="text" placeholder="Notes" value="${esc(item.notes||'')}" data-action-field="notes" data-idx="${idx}" style="flex:1;padding:8px;border-radius:7px;border:1px solid var(--blue2);background:var(--bg);font-size:13px;">
-          <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
-            <input type="checkbox" data-action-field="needsLeadership" data-idx="${idx}" ${item.needsLeadership?'checked':''}>
-            Needs Leadership
-          </label>
-          <button class="btn secondary" onclick="window.hcMeeting.removeActionItem(${idx})" style="font-size:12px;padding:5px 10px;" type="button">✕</button>
-        </div>
-      </div>
-    `).join('');
-  }
-
-  function addActionItem() {
-    const day = getDay(activeDate);
-    if (!day.leadershipHuddle) day.leadershipHuddle = { departments:{}, actionItems:[] };
-    if (!day.leadershipHuddle.actionItems) day.leadershipHuddle.actionItems = [];
-    day.leadershipHuddle.actionItems.push({ title:'', assignedTo:'', department:'', dueDate:'', priority:'Medium', status:'Open', notes:'', needsLeadership:false });
-    saveDay(activeDate, day);
-    renderActionItems(day.leadershipHuddle.actionItems);
-  }
-
-  function removeActionItem(idx) {
-    const day = getDay(activeDate);
-    day.leadershipHuddle.actionItems.splice(idx, 1);
-    saveDay(activeDate, day);
-    renderActionItems(day.leadershipHuddle.actionItems);
-  }
-
-  function collectLeadData() {
-    const form  = el('leadershipHuddleForm');
-    const depts = {};
-
-    DEPARTMENTS.forEach(dept => {
-      const dd = {};
-      form.querySelectorAll(`[data-dept="${dept}"][data-field]`).forEach(inp => {
-        dd[inp.getAttribute('data-field')] = inp.type === 'checkbox' ? inp.checked : inp.value;
-      });
-      depts[dept] = dd;
-    });
-
-    const actionItems = [];
-    const itemEls = (el('leadActionItems') || {}).querySelectorAll ? el('leadActionItems').querySelectorAll('[data-idx]') : [];
-    const seen = new Set();
-    itemEls.forEach(inp => {
-      const idx = parseInt(inp.getAttribute('data-idx'));
-      if (!seen.has(idx)) { seen.add(idx); actionItems[idx] = actionItems[idx] || {}; }
-      const field = inp.getAttribute('data-action-field');
-      if (field) actionItems[idx][field] = inp.type === 'checkbox' ? inp.checked : inp.value;
-    });
-
-    return { departments: depts, actionItems: actionItems.filter(Boolean), savedAt: new Date().toISOString() };
-  }
-
-  function saveLead() {
-    const day = getDay(activeDate);
-    day.leadershipHuddle = collectLeadData();
-    saveDay(activeDate, day);
-    const s = el('leadSaveStatus');
-    if (s) s.innerHTML = '<span style="color:#2ecc71;">✓ Saved</span>';
-    setTimeout(() => { if (s) s.textContent = ''; }, 2000);
-  }
-
-  function generateLeadSummary() {
-    saveLead();
-    const h = getDay(activeDate).leadershipHuddle || {};
-    const depts = h.departments || {};
-    const items = h.actionItems || [];
-    const dateStr = new Date(activeDate + 'T00:00:00').toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
-
-    let summary = `LEADERSHIP HUDDLE SUMMARY — ${dateStr}\n${'─'.repeat(50)}\n\n`;
-
-    // Overall status
-    const reds    = DEPARTMENTS.filter(d => depts[d]?.status === 'Red');
-    const yellows = DEPARTMENTS.filter(d => depts[d]?.status === 'Yellow');
-    const greens  = DEPARTMENTS.filter(d => depts[d]?.status === 'Green');
-    summary += `FLOOR STATUS OVERVIEW\n`;
-    if (greens.length)   summary += `✅ Green: ${greens.join(', ')}\n`;
-    if (yellows.length)  summary += `⚠️ Yellow: ${yellows.join(', ')}\n`;
-    if (reds.length)     summary += `🔴 Red: ${reds.join(', ')}\n`;
-    summary += `\n`;
-
-    // Dept by dept
-    summary += `DEPARTMENT UPDATES\n`;
-    DEPARTMENTS.forEach(dept => {
-      const dd = depts[dept] || {};
-      if (!dd.leadName && !dd.mainPriority && !dd.currentBlocker) return;
-      summary += `\n${dept}`;
-      if (dd.leadName)        summary += ` (${dd.leadName})`;
-      if (dd.status)          summary += ` — ${dd.status}`;
-      if (dd.volume)          summary += ` · Volume: ${dd.volume}`;
-      summary += `\n`;
-      if (dd.staffingStatus)  summary += `  Staffing: ${dd.staffingStatus}\n`;
-      if (dd.absences)        summary += `  Absences: ${dd.absences}\n`;
-      if (dd.mainPriority)    summary += `  Priority: ${dd.mainPriority}\n`;
-      if (dd.currentBlocker)  summary += `  Blocker: ${dd.currentBlocker}\n`;
-      if (dd.helpNeeded)      summary += `  Needs help from: ${dd.helpNeeded}\n`;
-      if (dd.othersShouldKnow) summary += `  FYI: ${dd.othersShouldKnow}\n`;
-    });
-    summary += `\n`;
-
-    // Safety
-    const safetyItems = DEPARTMENTS.filter(d => depts[d]?.safetyConcern);
-    if (safetyItems.length) {
-      summary += `SAFETY CONCERNS\n`;
-      safetyItems.forEach(d => summary += `  ${d}: ${depts[d].safetyConcern}\n`);
-      summary += `\n`;
+    else if (step === 'status') {
+      const opts = [
+        { val:'Green',  label:'on track',   border:'#2ecc71', bg:'#e6f9ee', color:'#1e7e34', icon:'🟢' },
+        { val:'Yellow', label:'watch it',   border:'#f1c40f', bg:'#fef9e7', color:'#7d5a00', icon:'🟡' },
+        { val:'Red',    label:'needs help', border:'#e74c3c', bg:'#fce8e6', color:'#a01a1a', icon:'🔴' },
+      ];
+      content = '<div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Overall status for ' + esc(dept) + '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:10px;">' +
+        opts.map(function(o) {
+          const sel = d.status === o.val;
+          return '<button onclick="window.hcMeeting.lhSelectStatus(this.dataset.val)" data-val="' + o.val + '" type="button"' +
+            ' style="padding:12px 22px;border-radius:10px;border:2px solid ' + (sel ? o.border : 'var(--blue2)') + ';background:' + (sel ? o.bg : 'var(--blue1)') + ';color:' + (sel ? o.color : 'var(--text)') + ';font-size:14px;font-weight:700;cursor:pointer;">' +
+            o.icon + ' ' + o.val + ' \u2014 ' + o.label + '</button>';
+        }).join('') + '</div>';
+    }
+    else if (step === 'volume') {
+      content = '<div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Volume today for ' + esc(dept) + '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:10px;">' +
+        ['Low','Medium','High'].map(function(v) {
+          const sel = d.volume === v;
+          return '<button onclick="window.hcMeeting.lhSelectVolume(this.dataset.vol)" data-vol="' + v + '" type="button"' +
+            ' style="padding:12px 28px;border-radius:10px;border:2px solid ' + (sel ? '#1a73e8' : 'var(--blue2)') + ';background:' + (sel ? '#e8f0fe' : 'var(--blue1)') + ';color:' + (sel ? '#1a73e8' : 'var(--text)') + ';font-size:14px;font-weight:700;cursor:pointer;">' +
+            v + '</button>';
+        }).join('') + '</div>';
+    }
+    else if (step === 'absences') {
+      content = '<div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Absences pulled from today\'s attendance \u2014 ' + esc(dept) + '</div>' +
+        (abs.length
+          ? abs.map(function(n) { return '<div style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;background:#fce8e6;border:1px solid #e74c3c;color:#a01a1a;font-size:13px;font-weight:700;margin:0 6px 6px 0;">Absent: ' + esc(n) + '</div>'; }).join('')
+          : '<div style="padding:14px;border-radius:10px;background:var(--blue1);border:1px solid var(--blue2);font-size:13px;color:var(--muted);">No absences recorded today for this department \u2713</div>');
+    }
+    else if (step === 'pto') {
+      const ptoBtns = emps.length
+        ? emps.map(function(n) {
+            return '<button onclick="window.hcMeeting.lhAddPTO(this.dataset.name)" data-name="' + esc(n) + '" type="button"' +
+              ' style="padding:8px 14px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;">' +
+              esc(n) + '</button>';
+          }).join('')
+        : '<div style="font-size:13px;color:var(--muted);">No employees in roster</div>';
+      content = '<div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Scheduled time off this week \u2014 ' + esc(dept) + '</div>' +
+        '<div style="margin-bottom:10px;">' +
+        '<label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px;">Pick a date first, then tap a name</label>' +
+        '<input type="date" id="lhPtoDate" style="padding:8px 12px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);font-size:13px;margin-bottom:10px;">' +
+        '<div style="display:flex;flex-wrap:wrap;gap:8px;">' + ptoBtns + '</div></div>' +
+        '<div id="lhPtoList" style="margin-top:10px;"></div>';
+    }
+    else if (step === 'notes') {
+      content = '<div style="font-size:13px;color:var(--muted);margin-bottom:8px;">Things of note for ' + esc(dept) + ' \u2014 priorities, blockers, safety, anything else</div>' +
+        '<textarea id="lhNotesInput" placeholder="Type anything \u2014 rough bullets are fine. AI will clean it up in the summary."' +
+        ' style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--blue2);background:var(--blue1);font-size:14px;min-height:120px;resize:vertical;color:var(--text);">' +
+        esc(d.notes || '') + '</textarea>';
     }
 
-    // Supplies
-    const supplyItems = DEPARTMENTS.filter(d => depts[d]?.suppliesNeeded);
-    if (supplyItems.length) {
-      summary += `SUPPLIES / EQUIPMENT NEEDED\n`;
-      supplyItems.forEach(d => summary += `  ${d}: ${depts[d].suppliesNeeded}\n`);
-      summary += `\n`;
-    }
+    const isFirst = lhState.deptIdx === 0 && lhState.innerStep === 0;
+    const isLast  = lhState.deptIdx === LH_DEPTS.length - 1 && lhState.innerStep === LH_STEPS.length - 1;
 
-    // Action items
-    if (items.length) {
-      summary += `ACTION ITEMS\n`;
-      items.forEach((item, i) => {
-        summary += `  ${i+1}. ${item.title || 'Untitled'}`;
-        if (item.assignedTo)  summary += ` → ${item.assignedTo}`;
-        if (item.dueDate)     summary += ` (Due: ${item.dueDate})`;
-        if (item.priority)    summary += ` [${item.priority}]`;
-        if (item.status)      summary += ` · ${item.status}`;
-        if (item.needsLeadership) summary += ` ⚑ NEEDS LEADERSHIP`;
-        summary += `\n`;
-        if (item.notes)       summary += `     Notes: ${item.notes}\n`;
-      });
-      summary += `\n`;
-    }
+    form.innerHTML =
+      '<div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px;">' + pills + '</div>' +
+      '<div style="height:3px;background:var(--blue2);border-radius:2px;margin-bottom:20px;">' +
+        '<div style="height:3px;width:' + pct + '%;background:#1a73e8;border-radius:2px;transition:width .3s;"></div>' +
+      '</div>' +
+      '<div style="margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">' +
+        '<span style="font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">' + esc(dept) + ' \u2014 ' + stepLabels[step] + '</span>' +
+        '<span style="font-size:12px;color:var(--muted);">Step ' + (lhState.innerStep + 1) + ' of ' + LH_STEPS.length + '</span>' +
+      '</div>' +
+      '<div style="min-height:160px;">' + content + '</div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding-top:16px;border-top:1px solid var(--blue2);">' +
+        '<button class="btn secondary" onclick="window.hcMeeting.lhNav(-1)" type="button"' + (isFirst ? ' disabled' : '') + '>\u25c4 Back</button>' +
+        '<button class="btn" onclick="window.hcMeeting.lhNav(1)" type="button"' + (isLast ? ' style="background:#0f9d58;border-color:#0f9d58;"' : '') + '>' + (isLast ? '\u2728 Generate Summary' : 'Next \u25ba') + '</button>' +
+      '</div>' +
+      '<div id="lhStatus" style="min-height:18px;font-size:13px;margin-top:8px;text-align:center;"></div>';
 
-    // Staffing risks
-    const staffingRisks = DEPARTMENTS.filter(d => depts[d]?.scheduledTimeOff);
-    if (staffingRisks.length) {
-      summary += `UPCOMING STAFFING RISKS\n`;
-      staffingRisks.forEach(d => summary += `  ${d}: ${depts[d].scheduledTimeOff}\n`);
-    }
-
-    const out = el('leadSummaryOutput');
-    if (!out) return;
-    out.style.display = 'block';
-    out.innerHTML = `
-      <div style="background:var(--blue1);border:1px solid var(--blue2);border-radius:12px;padding:20px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <strong style="font-size:14px;">📋 Leadership Summary</strong>
-          <button class="btn secondary" id="leadCopyBtn" onclick="window.hcMeeting.copyLeadSummary()" style="font-size:12px;padding:5px 12px;" type="button">Copy Summary</button>
-        </div>
-        <pre style="white-space:pre-wrap;font-family:Inter,sans-serif;font-size:13px;line-height:1.7;margin:0;">${esc(summary)}</pre>
-      </div>
-    `;
-    out.scrollIntoView({ behavior:'smooth', block:'nearest' });
-    window._leadSummary = summary;
+    if (step === 'pto') lhRenderPTO(dept);
   }
 
-  function copyLeadSummary() { copyText(window._leadSummary || '', 'leadCopyBtn'); }
+  function copyLeadSummary() { copyText(window._lhSummary || '', 'lhCopyBtn'); }
+
+  function lhGoBack() {
+    lhState.deptIdx = LH_DEPTS.length - 1;
+    lhState.innerStep = LH_STEPS.length - 1;
+    lhRender();
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // PM INBOUND HUDDLE
+  // ═══════════════════════════════════════════════════════════
+
 
   // ═══════════════════════════════════════════════════════════
   // PM INBOUND HUDDLE
@@ -758,17 +738,19 @@
   // ── Public API ────────────────────────────────────────────
   window.hcMeeting = {
     openAM, openLeadership, openPM, closeModal,
-    saveAM, saveLead, savePM,
-    generateAMScript, generateLeadSummary, generatePMRecap,
+    saveAM, savePM,
+    generateAMScript, generatePMRecap,
     copyAMScript, copyLeadSummary, copyPMRecap,
-    addActionItem, removeActionItem,
-    // Date nav
+    // Leadership wizard
+    lhNav, lhJumpDept,
+    lhSelectLead, lhSelectStatus, lhSelectVolume,
+    lhAddPTO, lhRemovePTO,
+    lhRenderDone, lhGoBack,
+    // AM date nav
     amPrevDay:   () => { activeDate = shiftDate(-1); renderAMForm(); },
     amNextDay:   () => { activeDate = shiftDate(1);  renderAMForm(); },
     amSetDate:   (d) => { activeDate = d || isoToday(); renderAMForm(); },
-    leadPrevDay: () => { activeDate = shiftDate(-1); renderLeadershipForm(); },
-    leadNextDay: () => { activeDate = shiftDate(1);  renderLeadershipForm(); },
-    leadSetDate: (d) => { activeDate = d || isoToday(); renderLeadershipForm(); },
+    // PM date nav
     pmPrevDay:   () => { activeDate = shiftDate(-1); renderPMForm(); },
     pmNextDay:   () => { activeDate = shiftDate(1);  renderPMForm(); },
     pmSetDate:   (d) => { activeDate = d || isoToday(); renderPMForm(); },
