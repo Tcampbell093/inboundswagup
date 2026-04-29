@@ -4838,3 +4838,57 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 .mh-dept-input{width:100%;padding:7px 10px;border-radius:7px;border:1px solid var(--blue2);background:var(--bg);font-size:13px;}
 .mh-action-item{background:var(--blue1);border:1px solid var(--blue2);border-radius:10px;padding:12px;margin-bottom:8px;}
 .mh-carryover-item{background:var(--blue1);border-left-width:3px;border-left-style:solid;border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:6px;font-size:13px;}
+
+/* ===== Meeting Hub — Light Modal Overrides ===== */
+#meetingHubAMModal .cm-dialog,
+#meetingHubLeadershipModal .cm-dialog,
+#meetingHubPMModal .cm-dialog {
+  background: #fff;
+  color: #1a1a2e;
+}
+#meetingHubAMModal input,
+#meetingHubAMModal textarea,
+#meetingHubAMModal select,
+#meetingHubLeadershipModal input,
+#meetingHubLeadershipModal textarea,
+#meetingHubLeadershipModal select,
+#meetingHubPMModal input,
+#meetingHubPMModal textarea,
+#meetingHubPMModal select {
+  background: #f0f4f8 !important;
+  border-color: #c8d8e8 !important;
+  color: #1a1a2e !important;
+}
+#meetingHubAMModal input::placeholder,
+#meetingHubAMModal textarea::placeholder,
+#meetingHubLeadershipModal input::placeholder,
+#meetingHubLeadershipModal textarea::placeholder,
+#meetingHubPMModal input::placeholder,
+#meetingHubPMModal textarea::placeholder {
+  color: #8aa0b8 !important;
+}
+#meetingHubAMModal label,
+#meetingHubLeadershipModal label,
+#meetingHubPMModal label {
+  color: #4a6080 !important;
+}
+#meetingHubAMModal .mh-section-head,
+#meetingHubLeadershipModal .mh-section-head,
+#meetingHubPMModal .mh-section-head {
+  color: #4a6080 !important;
+  border-bottom-color: #c8d8e8 !important;
+}
+#meetingHubLeadershipModal .mh-dept-card {
+  background: #f5f9ff !important;
+  border-color: #c8d8e8 !important;
+}
+#meetingHubLeadershipModal .mh-action-item {
+  background: #f5f9ff !important;
+  border-color: #c8d8e8 !important;
+}
+#meetingHubLeadershipModal .mh-dept-input,
+#meetingHubLeadershipModal .mh-status-select {
+  background: #fff !important;
+  color: #1a1a2e !important;
+  border-color: #c8d8e8 !important;
+}
