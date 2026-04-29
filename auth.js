@@ -87,15 +87,28 @@
             throw new Error('Session expired');
           })
           .then(function(user) {
-            // Refresh user data from server
+            // Fetch role from our Neon DB
             const name = (user.user_metadata && (user.user_metadata.full_name || user.user_metadata.name)) || user.email;
-            const role = (user.app_metadata && (user.app_metadata.role || (user.app_metadata.roles && user.app_metadata.roles[0]))) || 'l1';
-            const refreshed = { id: user.id, email: user.email, name, role,
-              overrides: (user.app_metadata && user.app_metadata.overrides) || {},
-              tempAdmin: (user.app_metadata && user.app_metadata.tempAdmin) || false,
-              token: data.token };
-            localStorage.setItem(HC_USER_KEY, JSON.stringify(refreshed));
-            applyUser(refreshed);
+            return fetch('/.netlify/functions/users?action=upsert', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: user.id, email: user.email, name: name })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(dbUser) {
+              const refreshed = {
+                id:        user.id,
+                email:     user.email,
+                name:      name,
+                role:      dbUser.role || 'l1',
+                overrides: dbUser.overrides || {},
+                tempAdmin: dbUser.tempAdmin || false,
+                suspended: dbUser.suspended || false,
+                token:     data.token
+              };
+              localStorage.setItem(HC_USER_KEY, JSON.stringify(refreshed));
+              applyUser(refreshed);
+            });
           })
           .catch(function() {
             localStorage.removeItem(HC_USER_KEY);

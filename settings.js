@@ -234,8 +234,7 @@
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({
-          userId:    selectedUserId,
-          targetEmail: user.email,
+          email:    user.email,
           role, overrides, suspended, tempAdmin, tempAdminExpiry,
         }),
       });

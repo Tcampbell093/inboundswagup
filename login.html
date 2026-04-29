@@ -88,23 +88,31 @@
     .then(r => r.json())
     .then(function(user) {
       if (!user || !user.email) throw new Error('No user data');
-      if (user.app_metadata && user.app_metadata.suspended) {
-        throw new Error('Account suspended');
-      }
 
       const name = (user.user_metadata && (user.user_metadata.full_name || user.user_metadata.name)) || user.email;
-      const role = (user.app_metadata && (user.app_metadata.role || (user.app_metadata.roles && user.app_metadata.roles[0]))) || 'l1';
 
-      localStorage.setItem(USER_KEY, name);
-      localStorage.setItem(HC_USER_KEY, JSON.stringify({
-        id: user.id, email: user.email, name: name, role: role,
-        overrides: (user.app_metadata && user.app_metadata.overrides) || {},
-        tempAdmin: (user.app_metadata && user.app_metadata.tempAdmin) || false,
-        token: token
-      }));
+      // Fetch role from Neon DB
+      return fetch('/.netlify/functions/users?action=upsert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: user.id, email: user.email, name: name })
+      })
+      .then(r => r.json())
+      .then(function(dbUser) {
+        if (dbUser.suspended) throw new Error('Your account has been suspended. Contact your manager.');
 
-      setStatus('Signed in as ' + name + '. Redirecting…');
-      window.location.href = 'index.html#homePage';
+        localStorage.setItem(USER_KEY, name);
+        localStorage.setItem(HC_USER_KEY, JSON.stringify({
+          id: user.id, email: user.email, name: name,
+          role:      dbUser.role || 'l1',
+          overrides: dbUser.overrides || {},
+          tempAdmin: dbUser.tempAdmin || false,
+          token: token
+        }));
+
+        setStatus('Signed in as ' + name + '. Redirecting…');
+        window.location.href = 'index.html#homePage';
+      });
     })
     .catch(function(err) {
       setStatus(err.message || 'Sign in failed. Please try again.', true);
