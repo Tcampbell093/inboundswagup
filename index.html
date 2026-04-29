@@ -46,6 +46,13 @@
 
 <!-- ── User display chip (shown when logged in) ─────────────── -->
 <div id="hcUserDisplay" class="hc-user-chip" hidden></div>
+
+<!-- ── Admin Notification Banner ─────────────────────────── -->
+<div id="hcNotifBanner" hidden style="position:fixed;top:0;left:0;right:0;z-index:9998;background:linear-gradient(90deg,#f5a623,#e8960f);color:#fff;padding:12px 20px;display:flex;align-items:center;gap:12px;font-size:14px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.18);">
+  <span style="font-size:18px;">⚡</span>
+  <span id="hcNotifText" style="flex:1;"></span>
+  <button id="hcNotifDismiss" style="background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.4);color:#fff;padding:5px 14px;border-radius:8px;cursor:pointer;font-weight:800;font-size:13px;">Dismiss</button>
+</div>
 <div class="app" data-app-shell="warehouse-hub">
   <!-- Mobile overlay -->
   <div class="sidebar-overlay" id="sidebarOverlay" aria-hidden="true"></div>
@@ -2433,6 +2440,84 @@
 <script src="auth.js"></script>
 <script src="access.js"></script>
 <script src="settings.js"></script>
+<script>
+// ── Houston Control Notification Poller ───────────────────────
+(function() {
+  'use strict';
+
+  const banner    = document.getElementById('hcNotifBanner');
+  const notifText = document.getElementById('hcNotifText');
+  const dismissBtn = document.getElementById('hcNotifDismiss');
+  let activeNotifId = null;
+
+  function getToken() {
+    try { return JSON.parse(localStorage.getItem('hcAuthUser') || '{}').token || null; }
+    catch(_) { return null; }
+  }
+
+  function showBanner(message, id) {
+    if (!banner || !notifText) return;
+    notifText.textContent = message;
+    activeNotifId = id;
+    banner.hidden = false;
+  }
+
+  function hideBanner() {
+    if (banner) banner.hidden = true;
+  }
+
+  if (dismissBtn) {
+    dismissBtn.addEventListener('click', function() {
+      hideBanner();
+      const token = getToken();
+      if (!token) return;
+      fetch('/.netlify/functions/notifications?action=read', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({ id: activeNotifId })
+      }).catch(function() {});
+    });
+  }
+
+  function checkNotifications() {
+    const user = window.hcCurrentUser;
+    if (!user || !['admin', 'manager'].includes(user.role)) return;
+    const token = getToken();
+    if (!token) return;
+
+    fetch('/.netlify/functions/notifications?action=list', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      const notifs = data.notifications || [];
+      if (notifs.length > 0) {
+        showBanner(notifs[0].message, notifs[0].id);
+      }
+    })
+    .catch(function() {});
+  }
+
+  // Poll after user is set, then every 5 minutes
+  function startPolling() {
+    if (window.hcCurrentUser) {
+      checkNotifications();
+      setInterval(checkNotifications, 5 * 60 * 1000);
+    } else {
+      setTimeout(startPolling, 500);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startPolling);
+  } else {
+    startPolling();
+  }
+})();
+</script>
 <script>
 // ── Upcoming Schedule collapsible ─────────────────────────────────────────
 (function(){

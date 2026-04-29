@@ -1,0 +1,8 @@
+[build]
+  functions = "netlify/functions"
+
+[[plugins]]
+  package = "@netlify/plugin-functions-install-core"
+
+[functions."temp-admin-check"]
+  schedule = "0 8 * * *"
