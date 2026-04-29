@@ -309,11 +309,23 @@
     const list = el('lhPtoList');
     if (!list) return;
     const items = lhGetDeptData(dept).pto || [];
-    list.innerHTML = items.length
-      ? items.map(function(p){ return '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:var(--blue1);border:1px solid var(--blue2);margin-bottom:6px;font-size:13px;"><span style=\'flex:1;font-weight:700;\'>' + esc(p.name) + '</span><span style=\'color:var(--muted);font-size:12px;\'>' + esc(p.date) + '</span><button onclick=\'window.hcMeeting.lhRemovePTO("' + esc(p.name) + '")\'  style=\'background:none;border:none;color:#e74c3c;cursor:pointer;font-size:16px;padding:0 4px;\'  type=\'button\'>×</button></div>'; }).join('')
-      : '<div style="font-size:13px;color:var(--muted);">None logged yet</div>';
+    if (!items.length) {
+      list.innerHTML = '<div style="font-size:13px;color:var(--muted);">None logged yet</div>';
+      return;
+    }
+    list.innerHTML = items.map(function(p) {
+      return '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:var(--blue1);border:1px solid var(--blue2);margin-bottom:6px;font-size:13px;">' +
+        '<span style="flex:1;font-weight:700;">' + esc(p.name) + '</span>' +
+        '<span style="color:var(--muted);font-size:12px;">' + esc(p.date) + '</span>' +
+        '<button class="lh-pto-remove" data-name="' + p.name.replace(/"/g,'&quot;') + '" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:16px;padding:0 4px;" type="button">\xd7</button>' +
+        '</div>';
+    }).join('');
+    list.querySelectorAll('.lh-pto-remove').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        lhRemovePTO(this.getAttribute('data-name'));
+      });
+    });
   }
-
   function lhGetAbsences(dept) {
     try {
       var today = (new Date()).toISOString().slice(0,10);
@@ -467,23 +479,23 @@
     // Wire events via addEventListener — no inline onclick quoting issues
     form.querySelectorAll('.lh-dept-pill').forEach(function(btn) {
       btn.addEventListener('click', function() {
-        window.hcMeeting.lhJumpDept(parseInt(this.getAttribute('data-idx')));
+        lhJumpDept(parseInt(this.getAttribute('data-idx')));
       });
     });
     form.querySelectorAll('.lh-select-btn').forEach(function(btn) {
       btn.addEventListener('click', function() {
         var action = this.getAttribute('data-action');
         var val    = this.getAttribute('data-val');
-        if (action === 'lead')   window.hcMeeting.lhSelectLead(val);
-        if (action === 'status') window.hcMeeting.lhSelectStatus(val);
-        if (action === 'volume') window.hcMeeting.lhSelectVolume(val);
-        if (action === 'pto')    window.hcMeeting.lhAddPTO(val);
+        if (action === 'lead')   lhSelectLead(val);
+        if (action === 'status') lhSelectStatus(val);
+        if (action === 'volume') lhSelectVolume(val);
+        if (action === 'pto')    lhAddPTO(val);
       });
     });
     var backBtn = form.querySelector('#lhBackBtn');
     var nextBtn = form.querySelector('#lhNextBtn');
-    if (backBtn) backBtn.addEventListener('click', function() { window.hcMeeting.lhNav(-1); });
-    if (nextBtn) nextBtn.addEventListener('click', function() { window.hcMeeting.lhNav(1); });
+    if (backBtn) backBtn.addEventListener('click', function() { lhNav(-1); });
+    if (nextBtn) nextBtn.addEventListener('click', function() { lhNav(1); });
 
     if (step === 'pto') lhRenderPTO(dept);
   }
