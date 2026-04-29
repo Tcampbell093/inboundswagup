@@ -353,56 +353,56 @@
   }
 
   function lhRender() {
-    const form = el('leadershipHuddleForm');
+    var form = el('leadershipHuddleForm');
     if (!form) return;
-    const dept  = LH_DEPTS[lhState.deptIdx];
-    const step  = LH_STEPS[lhState.innerStep];
-    const d     = lhGetDeptData(dept);
-    const emps  = lhGetEmployees(dept);
-    const abs   = lhGetAbsences(dept);
-    const total = LH_DEPTS.length * LH_STEPS.length;
-    const curr  = lhState.deptIdx * LH_STEPS.length + lhState.innerStep + 1;
-    const pct   = Math.round((curr / total) * 100);
-    const stepLabels = { lead:'Lead', status:'Status', volume:'Volume', absences:'Absences', pto:'Time Off', notes:'Notes' };
+    var dept  = LH_DEPTS[lhState.deptIdx];
+    var step  = LH_STEPS[lhState.innerStep];
+    var d     = lhGetDeptData(dept);
+    var emps  = lhGetEmployees(dept);
+    var abs   = lhGetAbsences(dept);
+    var total = LH_DEPTS.length * LH_STEPS.length;
+    var curr  = lhState.deptIdx * LH_STEPS.length + lhState.innerStep + 1;
+    var pct   = Math.round((curr / total) * 100);
+    var stepLabels = { lead:'Lead', status:'Status', volume:'Volume', absences:'Absences', pto:'Time Off', notes:'Notes' };
 
-    const pills = LH_DEPTS.map(function(d2, i) {
-      const isDone   = i < lhState.deptIdx;
-      const isActive = i === lhState.deptIdx;
-      const dd       = lhGetDeptData(d2);
-      const sc       = { Green:'#2ecc71', Yellow:'#f1c40f', Red:'#e74c3c' }[dd.status] || 'var(--blue2)';
-      const border   = isActive ? '#1a73e8' : isDone ? sc : 'var(--blue2)';
-      const bg       = isActive ? '#e8f0fe' : 'var(--blue1)';
-      const color    = isActive ? '#1a73e8' : 'var(--text)';
-      const prefix   = isDone ? '\u2713 ' : '';
-      return '<button onclick="window.hcMeeting.lhJumpDept(' + i + ')" type="button"' +
+    var pills = LH_DEPTS.map(function(d2, i) {
+      var isDone   = i < lhState.deptIdx;
+      var isActive = i === lhState.deptIdx;
+      var dd       = lhGetDeptData(d2);
+      var sc       = { Green:'#2ecc71', Yellow:'#f1c40f', Red:'#e74c3c' }[dd.status] || 'var(--blue2)';
+      var border   = isActive ? '#1a73e8' : (isDone ? sc : 'var(--blue2)');
+      var bg       = isActive ? '#e8f0fe' : 'var(--blue1)';
+      var color    = isActive ? '#1a73e8' : 'var(--text)';
+      var prefix   = isDone ? '\u2713 ' : '';
+      return '<button class="lh-dept-pill" data-idx="' + i + '"' +
         ' style="padding:6px 14px;border-radius:999px;border:1.5px solid ' + border + ';background:' + bg + ';color:' + color + ';font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">' +
         prefix + d2 + '</button>';
     }).join('');
 
-    let content = '';
+    var content = '';
     if (step === 'lead') {
-      const btns = emps.length
+      var btns = emps.length
         ? emps.map(function(n) {
-            const sel = d.lead === n;
-            return '<button onclick="window.hcMeeting.lhSelectLead(\'' + esc(n) + '\')" type="button"' +
+            var sel = d.lead === n;
+            return '<button class="lh-select-btn" data-action="lead" data-val="' + n.replace(/"/g,'&quot;') + '"' +
               ' style="padding:10px 18px;border-radius:10px;border:2px solid ' + (sel ? '#1a73e8' : 'var(--blue2)') + ';background:' + (sel ? '#e8f0fe' : 'var(--blue1)') + ';color:' + (sel ? '#1a73e8' : 'var(--text)') + ';font-size:14px;font-weight:700;cursor:pointer;">' +
               esc(n) + '</button>';
           }).join('')
-        : '<div style="font-size:13px;color:var(--muted);">No employees found for this department. Add them via the Employee module.</div>';
+        : '<div style="font-size:13px;color:var(--muted);">No employees found. Add them via Attendance settings.</div>';
       content = '<div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Who is leading ' + esc(dept) + ' today?</div>' +
         '<div style="display:flex;flex-wrap:wrap;gap:10px;">' + btns + '</div>';
     }
     else if (step === 'status') {
-      const opts = [
-        { val:'Green',  label:'on track',   border:'#2ecc71', bg:'#e6f9ee', color:'#1e7e34', icon:'🟢' },
-        { val:'Yellow', label:'watch it',   border:'#f1c40f', bg:'#fef9e7', color:'#7d5a00', icon:'🟡' },
-        { val:'Red',    label:'needs help', border:'#e74c3c', bg:'#fce8e6', color:'#a01a1a', icon:'🔴' },
+      var opts = [
+        { val:'Green',  label:'on track',   border:'#2ecc71', bg:'#e6f9ee', color:'#1e7e34', icon:'\uD83D\uDFE2' },
+        { val:'Yellow', label:'watch it',   border:'#f1c40f', bg:'#fef9e7', color:'#7d5a00', icon:'\uD83D\uDFE1' },
+        { val:'Red',    label:'needs help', border:'#e74c3c', bg:'#fce8e6', color:'#a01a1a', icon:'\uD83D\uDD34' },
       ];
       content = '<div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Overall status for ' + esc(dept) + '</div>' +
         '<div style="display:flex;flex-wrap:wrap;gap:10px;">' +
         opts.map(function(o) {
-          const sel = d.status === o.val;
-          return '<button onclick="window.hcMeeting.lhSelectStatus(\'' + o.val + '\')" type="button"' +
+          var sel = d.status === o.val;
+          return '<button class="lh-select-btn" data-action="status" data-val="' + o.val + '"' +
             ' style="padding:12px 22px;border-radius:10px;border:2px solid ' + (sel ? o.border : 'var(--blue2)') + ';background:' + (sel ? o.bg : 'var(--blue1)') + ';color:' + (sel ? o.color : 'var(--text)') + ';font-size:14px;font-weight:700;cursor:pointer;">' +
             o.icon + ' ' + o.val + ' \u2014 ' + o.label + '</button>';
         }).join('') + '</div>';
@@ -411,8 +411,8 @@
       content = '<div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Volume today for ' + esc(dept) + '</div>' +
         '<div style="display:flex;flex-wrap:wrap;gap:10px;">' +
         ['Low','Medium','High'].map(function(v) {
-          const sel = d.volume === v;
-          return '<button onclick="window.hcMeeting.lhSelectVolume(\'' + v + '\')" type="button"' +
+          var sel = d.volume === v;
+          return '<button class="lh-select-btn" data-action="volume" data-val="' + v + '"' +
             ' style="padding:12px 28px;border-radius:10px;border:2px solid ' + (sel ? '#1a73e8' : 'var(--blue2)') + ';background:' + (sel ? '#e8f0fe' : 'var(--blue1)') + ';color:' + (sel ? '#1a73e8' : 'var(--text)') + ';font-size:14px;font-weight:700;cursor:pointer;">' +
             v + '</button>';
         }).join('') + '</div>';
@@ -424,9 +424,9 @@
           : '<div style="padding:14px;border-radius:10px;background:var(--blue1);border:1px solid var(--blue2);font-size:13px;color:var(--muted);">No absences recorded today for this department \u2713</div>');
     }
     else if (step === 'pto') {
-      const ptoBtns = emps.length
+      var ptoBtns = emps.length
         ? emps.map(function(n) {
-            return '<button onclick="window.hcMeeting.lhAddPTO(\'' + esc(n) + '\')" type="button"' +
+            return '<button class="lh-select-btn" data-action="pto" data-val="' + n.replace(/"/g,'&quot;') + '"' +
               ' style="padding:8px 14px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;">' +
               esc(n) + '</button>';
           }).join('')
@@ -445,8 +445,8 @@
         esc(d.notes || '') + '</textarea>';
     }
 
-    const isFirst = lhState.deptIdx === 0 && lhState.innerStep === 0;
-    const isLast  = lhState.deptIdx === LH_DEPTS.length - 1 && lhState.innerStep === LH_STEPS.length - 1;
+    var isFirst = lhState.deptIdx === 0 && lhState.innerStep === 0;
+    var isLast  = lhState.deptIdx === LH_DEPTS.length - 1 && lhState.innerStep === LH_STEPS.length - 1;
 
     form.innerHTML =
       '<div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:6px;">' + pills + '</div>' +
@@ -459,10 +459,31 @@
       '</div>' +
       '<div style="min-height:160px;">' + content + '</div>' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding-top:16px;border-top:1px solid var(--blue2);">' +
-        '<button class="btn secondary" onclick="window.hcMeeting.lhNav(-1)" type="button"' + (isFirst ? ' disabled' : '') + '>\u25c4 Back</button>' +
-        '<button class="btn" onclick="window.hcMeeting.lhNav(1)" type="button"' + (isLast ? ' style="background:#0f9d58;border-color:#0f9d58;"' : '') + '>' + (isLast ? '\u2728 Generate Summary' : 'Next \u25ba') + '</button>' +
+        '<button id="lhBackBtn" style="padding:8px 18px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;"' + (isFirst ? ' disabled' : '') + '>\u25c4 Back</button>' +
+        '<button id="lhNextBtn" style="padding:8px 18px;border-radius:8px;border:none;' + (isLast ? 'background:#0f9d58;' : 'background:#1a73e8;') + 'color:#fff;font-size:13px;font-weight:700;cursor:pointer;">' + (isLast ? '\u2728 Generate Summary' : 'Next \u25ba') + '</button>' +
       '</div>' +
       '<div id="lhStatus" style="min-height:18px;font-size:13px;margin-top:8px;text-align:center;"></div>';
+
+    // Wire events via addEventListener — no inline onclick quoting issues
+    form.querySelectorAll('.lh-dept-pill').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        window.hcMeeting.lhJumpDept(parseInt(this.getAttribute('data-idx')));
+      });
+    });
+    form.querySelectorAll('.lh-select-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var action = this.getAttribute('data-action');
+        var val    = this.getAttribute('data-val');
+        if (action === 'lead')   window.hcMeeting.lhSelectLead(val);
+        if (action === 'status') window.hcMeeting.lhSelectStatus(val);
+        if (action === 'volume') window.hcMeeting.lhSelectVolume(val);
+        if (action === 'pto')    window.hcMeeting.lhAddPTO(val);
+      });
+    });
+    var backBtn = form.querySelector('#lhBackBtn');
+    var nextBtn = form.querySelector('#lhNextBtn');
+    if (backBtn) backBtn.addEventListener('click', function() { window.hcMeeting.lhNav(-1); });
+    if (nextBtn) nextBtn.addEventListener('click', function() { window.hcMeeting.lhNav(1); });
 
     if (step === 'pto') lhRenderPTO(dept);
   }
