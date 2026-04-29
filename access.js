@@ -129,20 +129,19 @@
   // auth.js sets hcCurrentUser — we poll briefly for it since
   // the token verification is async
   function waitForUserAndApply() {
-    if (window.hcCurrentUser) {
+    if (window.hcCurrentUser && window.hcCurrentUser.role) {
       applyGuards();
       guardCurrentPage();
       return;
     }
-    // Retry up to 5 seconds
     let attempts = 0;
     const interval = setInterval(function() {
       attempts++;
-      if (window.hcCurrentUser) {
+      if (window.hcCurrentUser && window.hcCurrentUser.role) {
         clearInterval(interval);
         applyGuards();
         guardCurrentPage();
-      } else if (attempts > 50) {
+      } else if (attempts > 150) {
         clearInterval(interval);
         console.warn('HC Access: user never set, guards not applied');
       }

@@ -49,6 +49,9 @@
       }
 
       console.log('HC Auth: logged in as', data.name, '/', data.role);
+
+      // Apply role guards immediately
+      if (window.hcAccess) window.hcAccess.applyGuards();
     }
 
     // ── Logout button — always attach regardless of session ───
