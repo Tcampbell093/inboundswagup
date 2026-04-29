@@ -5,9 +5,9 @@ const pool = new Pool({
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : undefined,
 });
 
-const NETLIFY_API = 'https://api.netlify.com/api/v1';
-const SITE_ID     = process.env.SITE_ID || 'e0682cfd-2c71-4105-b217-1dc6863a3747';
+const GOTRUE_URL  = 'https://inboundswagup.netlify.app/.netlify/identity';
 const NETLIFY_PAT = process.env.NETLIFY_PAT;
+const SITE_ID     = 'e0682cfd-2c71-4105-b217-1dc6863a3747';
 
 function json(code, body) {
   return {
@@ -17,192 +17,208 @@ function json(code, body) {
   };
 }
 
-// ── Verify caller is admin or manager ────────────────────────
-async function verifyAdmin(event) {
-  const auth = event.headers['authorization'] || event.headers['Authorization'] || '';
-  const token = auth.replace('Bearer ', '').trim();
-  if (!token) {
-    console.error('HC Users: no authorization token in request');
-    return null;
-  }
-
-  const res = await fetch(
-    `https://inboundswagup.netlify.app/.netlify/identity/user`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!res.ok) {
-    console.error('HC Users: token verification failed', res.status);
-    return null;
-  }
-  const user = await res.json();
-  const role = user?.app_metadata?.role
-            || (user?.app_metadata?.roles && user.app_metadata.roles[0])
-            || 'l1';
-  if (!['admin', 'manager'].includes(role)) {
-    console.error('HC Users: insufficient role', role);
-    return null;
-  }
-  return { user, role, token };
+// ── Ensure schema exists ─────────────────────────────────────
+async function ensureSchema() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS hc_users (
+      id          TEXT PRIMARY KEY,
+      email       TEXT UNIQUE NOT NULL,
+      name        TEXT DEFAULT '',
+      role        TEXT DEFAULT 'l1',
+      overrides   JSONB DEFAULT '{}'::jsonb,
+      temp_admin  BOOLEAN DEFAULT false,
+      temp_admin_expiry TIMESTAMPTZ,
+      suspended   BOOLEAN DEFAULT false,
+      last_login  TIMESTAMPTZ,
+      created_at  TIMESTAMPTZ DEFAULT now(),
+      updated_at  TIMESTAMPTZ DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS access_audit (
+      id         SERIAL PRIMARY KEY,
+      actor      TEXT,
+      target     TEXT,
+      action     TEXT,
+      detail     JSONB,
+      created_at TIMESTAMPTZ DEFAULT now()
+    );
+  `);
 }
 
-// ── Write audit log entry ─────────────────────────────────────
+// ── Verify caller is admin or manager ────────────────────────
+async function verifyAdmin(event) {
+  const auth  = event.headers['authorization'] || event.headers['Authorization'] || '';
+  const token = auth.replace('Bearer ', '').trim();
+  if (!token) return null;
+
+  // Verify token with Identity
+  const res = await fetch(`${GOTRUE_URL}/user`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!res.ok) return null;
+  const user = await res.json();
+
+  // Check role in our DB first, fall back to Identity metadata
+  await ensureSchema();
+  const dbRes = await pool.query('SELECT * FROM hc_users WHERE email=$1', [user.email]);
+  const dbUser = dbRes.rows[0];
+  const role = dbUser?.role
+            || user.app_metadata?.role
+            || user.app_metadata?.roles?.[0]
+            || 'l1';
+
+  if (!['admin', 'manager'].includes(role)) return null;
+  return { user, role, email: user.email };
+}
+
+// ── Write audit entry ────────────────────────────────────────
 async function writeAudit(actor, target, action, detail) {
   try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS access_audit (
-        id SERIAL PRIMARY KEY,
-        actor TEXT,
-        target TEXT,
-        action TEXT,
-        detail JSONB,
-        created_at TIMESTAMPTZ DEFAULT now()
-      )
-    `);
     await pool.query(
       `INSERT INTO access_audit (actor, target, action, detail) VALUES ($1,$2,$3,$4)`,
       [actor, target, action, JSON.stringify(detail)]
     );
-  } catch(e) {
-    console.error('Audit log write failed:', e.message);
-  }
+  } catch(e) { console.error('Audit write failed:', e.message); }
 }
 
 exports.handler = async function(event) {
   const method = event.httpMethod;
-  const params = event.queryStringParameters || {};
-  const action = params.action;
+  const action = (event.queryStringParameters || {}).action;
 
-  // ── GET /users?action=list ─────────────────────────────────
+  await ensureSchema();
+
+  // ── LIST users ─────────────────────────────────────────────
   if (method === 'GET' && action === 'list') {
     const caller = await verifyAdmin(event);
     if (!caller) return json(401, { error: 'Unauthorized' });
 
-    if (!NETLIFY_PAT) {
-      console.error('HC Users: NETLIFY_PAT environment variable is not set');
-      return json(500, { error: 'NETLIFY_PAT not configured. Add it to your Netlify environment variables.' });
-    }
-
-    console.log('HC Users: fetching users from Netlify API, site:', SITE_ID);
-
-    const res = await fetch(
-      `${NETLIFY_API}/sites/${SITE_ID}/identity/users?per_page=100`,
-      { headers: { Authorization: `Bearer ${NETLIFY_PAT}` } }
+    const result = await pool.query(
+      `SELECT * FROM hc_users ORDER BY created_at DESC`
     );
-
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error('HC Users: Netlify API error', res.status, errText);
-      return json(502, { error: `Netlify API error ${res.status}: ${errText}` });
-    }
-    const data = await res.json();
-
-    const users = (data.users || []).map(u => ({
-      id:        u.id,
-      email:     u.email,
-      name:      u.user_metadata?.full_name || u.user_metadata?.name || '',
-      role:      u.app_metadata?.role || (u.app_metadata?.roles && u.app_metadata.roles[0]) || 'l1',
-      overrides: u.app_metadata?.overrides || {},
-      tempAdmin: u.app_metadata?.tempAdmin || false,
-      tempAdminExpiry: u.app_metadata?.tempAdminExpiry || null,
-      suspended: u.app_metadata?.suspended || false,
-      lastLogin: u.last_sign_in_at || null,
-      createdAt: u.created_at || null,
-    }));
-
-    return json(200, { users });
+    return json(200, { users: result.rows.map(u => ({
+      id:              u.id,
+      email:           u.email,
+      name:            u.name,
+      role:            u.role,
+      overrides:       u.overrides || {},
+      tempAdmin:       u.temp_admin,
+      tempAdminExpiry: u.temp_admin_expiry,
+      suspended:       u.suspended,
+      lastLogin:       u.last_login,
+      createdAt:       u.created_at,
+    }))});
   }
 
-  // ── POST /users?action=invite ──────────────────────────────
+  // ── UPSERT user on login (called from auth flow) ───────────
+  if (method === 'POST' && action === 'upsert') {
+    const { id, email, name } = JSON.parse(event.body || '{}');
+    if (!email) return json(400, { error: 'email required' });
+
+    // Check if user exists
+    const existing = await pool.query('SELECT role FROM hc_users WHERE email=$1', [email]);
+
+    if (existing.rows.length === 0) {
+      // New user — insert with default role
+      await pool.query(
+        `INSERT INTO hc_users (id, email, name, role, last_login)
+         VALUES ($1,$2,$3,'l1',now())
+         ON CONFLICT (email) DO UPDATE SET last_login=now(), name=EXCLUDED.name`,
+        [id || email, email, name || '']
+      );
+      return json(200, { role: 'l1', overrides: {}, tempAdmin: false, suspended: false });
+    } else {
+      // Existing user — update last login
+      await pool.query(
+        `UPDATE hc_users SET last_login=now(), name=COALESCE(NULLIF($2,''), name), updated_at=now()
+         WHERE email=$1`,
+        [email, name || '']
+      );
+      const u = (await pool.query('SELECT * FROM hc_users WHERE email=$1', [email])).rows[0];
+      return json(200, {
+        role:            u.role,
+        overrides:       u.overrides || {},
+        tempAdmin:       u.temp_admin,
+        tempAdminExpiry: u.temp_admin_expiry,
+        suspended:       u.suspended,
+      });
+    }
+  }
+
+  // ── INVITE user ────────────────────────────────────────────
   if (method === 'POST' && action === 'invite') {
     const caller = await verifyAdmin(event);
     if (!caller) return json(401, { error: 'Unauthorized' });
 
-    const body = JSON.parse(event.body || '{}');
-    const { email, role = 'l1' } = body;
+    const { email, role = 'l1', name = '' } = JSON.parse(event.body || '{}');
     if (!email) return json(400, { error: 'Email required' });
 
-    const res = await fetch(
-      `${NETLIFY_API}/sites/${SITE_ID}/identity/users/invite`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${NETLIFY_PAT}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email,
-          data: { role },
-        }),
-      }
+    // Add to our DB first
+    await pool.query(
+      `INSERT INTO hc_users (id, email, name, role)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (email) DO UPDATE SET role=$4, updated_at=now()`,
+      [email, email, name, role]
     );
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      return json(502, { error: err.msg || 'Invite failed' });
+
+    // Send invite via Netlify PAT
+    if (NETLIFY_PAT) {
+      try {
+        await fetch(`https://api.netlify.com/api/v1/sites/${SITE_ID}/identity/users/invite`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${NETLIFY_PAT}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email }),
+        });
+      } catch(e) {
+        console.error('Netlify invite error (non-fatal):', e.message);
+      }
     }
 
-    await writeAudit(caller.user.email, email, 'invite', { role });
+    await writeAudit(caller.email, email, 'invite', { role });
     return json(200, { ok: true });
   }
 
-  // ── POST /users?action=update ──────────────────────────────
+  // ── UPDATE user ────────────────────────────────────────────
   if (method === 'POST' && action === 'update') {
     const caller = await verifyAdmin(event);
     if (!caller) return json(401, { error: 'Unauthorized' });
 
-    const body = JSON.parse(event.body || '{}');
-    const { userId, role, overrides, suspended, tempAdmin, tempAdminExpiry, targetEmail } = body;
-    if (!userId) return json(400, { error: 'userId required' });
+    const { email, role, overrides, suspended, tempAdmin, tempAdminExpiry }
+      = JSON.parse(event.body || '{}');
+    if (!email) return json(400, { error: 'email required' });
 
-    // Fetch current app_metadata first
-    const getRes = await fetch(
-      `${NETLIFY_API}/sites/${SITE_ID}/identity/users/${userId}`,
-      { headers: { Authorization: `Bearer ${NETLIFY_PAT}` } }
+    // Get current state for audit
+    const before = (await pool.query('SELECT * FROM hc_users WHERE email=$1', [email])).rows[0];
+
+    await pool.query(
+      `UPDATE hc_users SET
+        role            = COALESCE($2, role),
+        overrides       = COALESCE($3::jsonb, overrides),
+        suspended       = COALESCE($4, suspended),
+        temp_admin      = COALESCE($5, temp_admin),
+        temp_admin_expiry = $6,
+        updated_at      = now()
+       WHERE email = $1`,
+      [
+        email,
+        role       ?? null,
+        overrides  ? JSON.stringify(overrides) : null,
+        suspended  ?? null,
+        tempAdmin  ?? null,
+        tempAdminExpiry ? new Date(tempAdminExpiry) : null,
+      ]
     );
-    if (!getRes.ok) return json(502, { error: 'Failed to fetch user' });
-    const currentUser = await getRes.json();
-    const currentMeta = currentUser.app_metadata || {};
 
-    const newMeta = {
-      ...currentMeta,
-      ...(role      !== undefined && { role }),
-      ...(overrides !== undefined && { overrides }),
-      ...(suspended !== undefined && { suspended }),
-      ...(tempAdmin !== undefined && { tempAdmin }),
-      ...(tempAdminExpiry !== undefined && { tempAdminExpiry }),
-    };
-
-    const updateRes = await fetch(
-      `${NETLIFY_API}/sites/${SITE_ID}/identity/users/${userId}`,
-      {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${NETLIFY_PAT}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ app_metadata: newMeta }),
-      }
-    );
-    if (!updateRes.ok) return json(502, { error: 'Update failed' });
-
-    await writeAudit(caller.user.email, targetEmail || userId, 'update', {
-      before: currentMeta, after: newMeta
-    });
-
+    await writeAudit(caller.email, email, 'update', { before, after: { role, overrides, suspended, tempAdmin, tempAdminExpiry } });
     return json(200, { ok: true });
   }
 
-  // ── GET /users?action=audit ────────────────────────────────
+  // ── AUDIT log ──────────────────────────────────────────────
   if (method === 'GET' && action === 'audit') {
     const caller = await verifyAdmin(event);
     if (!caller) return json(401, { error: 'Unauthorized' });
 
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS access_audit (
-        id SERIAL PRIMARY KEY,
-        actor TEXT, target TEXT, action TEXT,
-        detail JSONB, created_at TIMESTAMPTZ DEFAULT now()
-      )
-    `);
     const result = await pool.query(
       `SELECT * FROM access_audit ORDER BY created_at DESC LIMIT 100`
     );
