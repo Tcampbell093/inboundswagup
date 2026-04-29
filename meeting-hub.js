@@ -316,42 +316,40 @@
 
   function lhGetAbsences(dept) {
     try {
-      const today = isoToday();
-      const records = (typeof attendanceRecords !== 'undefined' && Array.isArray(attendanceRecords)) ? attendanceRecords : [];
+      var today = (new Date()).toISOString().slice(0,10);
+      var raw = localStorage.getItem('ops_hub_attendance_records_v2');
+      if (!raw) return [];
+      var records = JSON.parse(raw);
+      if (!Array.isArray(records)) return [];
       return records
-        .filter(function(r){ return r.date === today && ['Absent','Call Out','No Call No Show'].includes(r.mark); })
-        .filter(function(r){
-          const empDept = (r.department || '').toLowerCase().replace(/\s+/g,'');
-          const target  = dept.toLowerCase().replace(/\s+/g,'');
+        .filter(function(r) {
+          return r.date === today && ['Absent','Call Out','No Call No Show'].includes(r.mark);
+        })
+        .filter(function(r) {
+          var empDept = (r.department || '').toLowerCase().replace(/\s+/g,'');
+          var target  = dept.toLowerCase().replace(/\s+/g,'');
           return empDept === target || empDept.includes(target) || target.includes(empDept);
         })
-        .map(function(r){ return r.name || r.employee || ''; });
-    } catch(e){ return []; }
+        .map(function(r) { return r.employeeName || r.name || ''; })
+        .filter(Boolean);
+    } catch(e) { return []; }
   }
 
   function lhGetEmployees(dept) {
     try {
-      var roster = [];
-      var keys = ['ops_hub_attendance_settings_v1','ops_hub_employees_v1'];
-      for (var k = 0; k < keys.length; k++) {
-        try {
-          var raw = localStorage.getItem(keys[k]);
-          if (raw) {
-            var parsed = JSON.parse(raw);
-            var emps = parsed.employees || parsed.roster || [];
-            if (emps.length) { roster = emps; break; }
-          }
-        } catch(e2){}
-      }
+      var raw = localStorage.getItem('ops_hub_attendance_settings_v1');
+      if (!raw) return [];
+      var parsed = JSON.parse(raw);
+      var roster = parsed.employees || parsed.roster || [];
       return roster
-        .filter(function(e){
+        .filter(function(e) {
           var empDept = (e.department || '').toLowerCase().replace(/\s+/g,'');
           var target  = dept.toLowerCase().replace(/\s+/g,'');
           return empDept === target || empDept.includes(target) || target.includes(empDept);
         })
-        .map(function(e){ return e.name || e.adpName || ''; })
+        .map(function(e) { return e.name || e.adpName || ''; })
         .filter(Boolean);
-    } catch(e){ return []; }
+    } catch(e) { return []; }
   }
 
   function lhRender() {
@@ -386,7 +384,7 @@
       const btns = emps.length
         ? emps.map(function(n) {
             const sel = d.lead === n;
-            return '<button onclick="window.hcMeeting.lhSelectLead(this.dataset.name)" data-name="' + esc(n) + '" type="button"' +
+            return '<button onclick="window.hcMeeting.lhSelectLead(\'' + esc(n) + '\')" type="button"' +
               ' style="padding:10px 18px;border-radius:10px;border:2px solid ' + (sel ? '#1a73e8' : 'var(--blue2)') + ';background:' + (sel ? '#e8f0fe' : 'var(--blue1)') + ';color:' + (sel ? '#1a73e8' : 'var(--text)') + ';font-size:14px;font-weight:700;cursor:pointer;">' +
               esc(n) + '</button>';
           }).join('')
@@ -404,7 +402,7 @@
         '<div style="display:flex;flex-wrap:wrap;gap:10px;">' +
         opts.map(function(o) {
           const sel = d.status === o.val;
-          return '<button onclick="window.hcMeeting.lhSelectStatus(this.dataset.val)" data-val="' + o.val + '" type="button"' +
+          return '<button onclick="window.hcMeeting.lhSelectStatus(\'' + o.val + '\')" type="button"' +
             ' style="padding:12px 22px;border-radius:10px;border:2px solid ' + (sel ? o.border : 'var(--blue2)') + ';background:' + (sel ? o.bg : 'var(--blue1)') + ';color:' + (sel ? o.color : 'var(--text)') + ';font-size:14px;font-weight:700;cursor:pointer;">' +
             o.icon + ' ' + o.val + ' \u2014 ' + o.label + '</button>';
         }).join('') + '</div>';
@@ -414,7 +412,7 @@
         '<div style="display:flex;flex-wrap:wrap;gap:10px;">' +
         ['Low','Medium','High'].map(function(v) {
           const sel = d.volume === v;
-          return '<button onclick="window.hcMeeting.lhSelectVolume(this.dataset.vol)" data-vol="' + v + '" type="button"' +
+          return '<button onclick="window.hcMeeting.lhSelectVolume(\'' + v + '\')" type="button"' +
             ' style="padding:12px 28px;border-radius:10px;border:2px solid ' + (sel ? '#1a73e8' : 'var(--blue2)') + ';background:' + (sel ? '#e8f0fe' : 'var(--blue1)') + ';color:' + (sel ? '#1a73e8' : 'var(--text)') + ';font-size:14px;font-weight:700;cursor:pointer;">' +
             v + '</button>';
         }).join('') + '</div>';
@@ -428,7 +426,7 @@
     else if (step === 'pto') {
       const ptoBtns = emps.length
         ? emps.map(function(n) {
-            return '<button onclick="window.hcMeeting.lhAddPTO(this.dataset.name)" data-name="' + esc(n) + '" type="button"' +
+            return '<button onclick="window.hcMeeting.lhAddPTO(\'' + esc(n) + '\')" type="button"' +
               ' style="padding:8px 14px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;">' +
               esc(n) + '</button>';
           }).join('')
