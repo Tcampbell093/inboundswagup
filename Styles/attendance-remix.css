@@ -628,7 +628,7 @@
 .attendance-remix-settings-overlay {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: 2000;
   display: none;
   align-items: center;
   justify-content: center;
