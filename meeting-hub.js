@@ -231,20 +231,28 @@
   const LH_STEPS = ['lead','status','volume','absences','pto','notes'];
   const lhState  = { deptIdx: 0, innerStep: 0 };
 
-  function lhGetDeptData(dept) {
-    const day = getDay(activeDate);
+  function lhEnsureDept(day, dept) {
     if (!day.leadershipHuddle) day.leadershipHuddle = { departments:{} };
     if (!day.leadershipHuddle.departments) day.leadershipHuddle.departments = {};
     if (!day.leadershipHuddle.departments[dept]) day.leadershipHuddle.departments[dept] = { lead:'', status:'', volume:'', pto:[], notes:'' };
     return day.leadershipHuddle.departments[dept];
   }
 
+  function lhGetDeptData(dept) {
+    return lhEnsureDept(getDay(activeDate), dept);
+  }
+
   function lhSaveCurrent() {
-    const dept = LH_DEPTS[lhState.deptIdx];
-    const step = LH_STEPS[lhState.innerStep];
-    const d    = lhGetDeptData(dept);
-    if (step === 'notes') d.notes = el('lhNotesInput') ? el('lhNotesInput').value : d.notes;
-    saveDay(activeDate, getDay(activeDate));
+    var dept = LH_DEPTS[lhState.deptIdx];
+    var step = LH_STEPS[lhState.innerStep];
+    if (step === 'notes') {
+      var noteEl = el('lhNotesInput');
+      if (noteEl) {
+        var day = getDay(activeDate);
+        lhEnsureDept(day, dept).notes = noteEl.value;
+        saveDay(activeDate, day);
+      }
+    }
   }
 
   function lhNav(dir) {
@@ -269,42 +277,48 @@
   }
 
   function lhSelectLead(name) {
-    lhGetDeptData(LH_DEPTS[lhState.deptIdx]).lead = name;
-    saveDay(activeDate, getDay(activeDate));
+    var day = getDay(activeDate);
+    lhEnsureDept(day, LH_DEPTS[lhState.deptIdx]).lead = name;
+    saveDay(activeDate, day);
     lhRender();
   }
 
   function lhSelectStatus(val) {
-    lhGetDeptData(LH_DEPTS[lhState.deptIdx]).status = val;
-    saveDay(activeDate, getDay(activeDate));
+    var day = getDay(activeDate);
+    lhEnsureDept(day, LH_DEPTS[lhState.deptIdx]).status = val;
+    saveDay(activeDate, day);
     lhRender();
   }
 
   function lhSelectVolume(val) {
-    lhGetDeptData(LH_DEPTS[lhState.deptIdx]).volume = val;
-    saveDay(activeDate, getDay(activeDate));
+    var day = getDay(activeDate);
+    lhEnsureDept(day, LH_DEPTS[lhState.deptIdx]).volume = val;
+    saveDay(activeDate, day);
     lhRender();
   }
 
   function lhAddPTO(name) {
-    const dept = LH_DEPTS[lhState.deptIdx];
-    const dateEl = el('lhPtoDate');
-    const date = dateEl ? dateEl.value : '';
+    var dept = LH_DEPTS[lhState.deptIdx];
+    var dateEl = el('lhPtoDate');
+    var date = dateEl ? dateEl.value : '';
     if (!date) return;
-    const d = lhGetDeptData(dept);
+    var day = getDay(activeDate);
+    var d = lhEnsureDept(day, dept);
     d.pto = (d.pto || []).filter(function(p){ return p.name !== name; });
     d.pto.push({ name: name, date: date });
-    saveDay(activeDate, getDay(activeDate));
+    saveDay(activeDate, day);
     lhRenderPTO(dept);
   }
 
   function lhRemovePTO(name) {
-    const dept = LH_DEPTS[lhState.deptIdx];
-    const d = lhGetDeptData(dept);
+    var dept = LH_DEPTS[lhState.deptIdx];
+    var day = getDay(activeDate);
+    var d = lhEnsureDept(day, dept);
     d.pto = (d.pto || []).filter(function(p){ return p.name !== name; });
-    saveDay(activeDate, getDay(activeDate));
+    saveDay(activeDate, day);
     lhRenderPTO(dept);
   }
+
 
   function lhRenderPTO(dept) {
     const list = el('lhPtoList');
@@ -542,13 +556,14 @@
     });
     const prompt = 'You are a warehouse operations assistant. A supervisor has just completed their daily leadership huddle for ' + dateStr + '. Here is the raw data from each department:\n\n' + dataBlock + '\nWrite a clean, professional leadership summary a warehouse manager would be proud to share with upper management. Include a brief overall floor status, department-by-department highlights (only what is noteworthy), staffing concerns, key priorities and blockers, and any safety concerns. Keep it concise and professional. Use plain paragraphs, no markdown. Write as if you are the operations manager summarizing the morning huddle.';
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('/.netlify/functions/meeting-summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] }),
+        body: JSON.stringify({ prompt }),
       });
       const data = await res.json();
-      const text = (data && data.content && data.content[0] && data.content[0].text) ? data.content[0].text : 'No summary generated.';
+      if (!res.ok) throw new Error(data.error || 'Summary failed');
+      const text = data.text || 'No summary generated.';
       window._lhSummary = text;
       out.innerHTML = '<div style="background:var(--blue1);border:1px solid var(--blue2);border-radius:12px;padding:20px;">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
