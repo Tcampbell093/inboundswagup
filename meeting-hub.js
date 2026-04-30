@@ -219,6 +219,7 @@
   // ═══════════════════════════════════════════════════════════
 
   function openLeadership() {
+    console.log('HC Meeting: openLeadership called');
     lhState.deptIdx = 0;
     lhState.innerStep = 0;
     lhRender();
@@ -366,6 +367,7 @@
 
   function lhRender() {
     var form = el('leadershipHuddleForm');
+    console.log('HC Meeting: lhRender called, form=', form, 'deptIdx=', lhState.deptIdx, 'stepIdx=', lhState.innerStep);
     if (!form) return;
     var dept  = LH_DEPTS[lhState.deptIdx];
     var step  = LH_STEPS[lhState.innerStep];
@@ -477,15 +479,20 @@
       '<div id="lhStatus" style="min-height:18px;font-size:13px;margin-top:8px;text-align:center;"></div>';
 
     // Wire events via addEventListener — no inline onclick quoting issues
-    form.querySelectorAll('.lh-dept-pill').forEach(function(btn) {
+    var selectBtns = form.querySelectorAll('.lh-select-btn');
+    var pillBtns   = form.querySelectorAll('.lh-dept-pill');
+    console.log('HC Meeting: wiring', selectBtns.length, 'select btns,', pillBtns.length, 'pill btns');
+    pillBtns.forEach(function(btn) {
       btn.addEventListener('click', function() {
+        console.log('HC Meeting: pill clicked', this.getAttribute('data-idx'));
         lhJumpDept(parseInt(this.getAttribute('data-idx')));
       });
     });
-    form.querySelectorAll('.lh-select-btn').forEach(function(btn) {
+    selectBtns.forEach(function(btn) {
       btn.addEventListener('click', function() {
         var action = this.getAttribute('data-action');
         var val    = this.getAttribute('data-val');
+        console.log('HC Meeting: select btn clicked action=' + action + ' val=' + val);
         if (action === 'lead')   lhSelectLead(val);
         if (action === 'status') lhSelectStatus(val);
         if (action === 'volume') lhSelectVolume(val);
