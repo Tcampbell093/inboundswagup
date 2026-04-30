@@ -1,6 +1,6 @@
 /* =========================================================
    meeting-summary.js — Houston Control
-   Proxies leadership huddle data to Anthropic API
+   Generates AI leadership summary via Google Gemini (free tier)
    ========================================================= */
 
 exports.handler = async function(event) {
@@ -8,12 +8,12 @@ exports.handler = async function(event) {
     return { statusCode: 405, body: 'Method not allowed' };
   }
 
-  const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
-  if (!ANTHROPIC_KEY) {
+  const GEMINI_KEY = process.env.GEMINI_API_KEY;
+  if (!GEMINI_KEY) {
     return {
       statusCode: 500,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: 'ANTHROPIC_API_KEY not configured' }),
+      body: JSON.stringify({ error: 'GEMINI_API_KEY not configured. Add it to your Netlify environment variables.' }),
     };
   }
 
@@ -30,22 +30,30 @@ exports.handler = async function(event) {
   }
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`;
+
+    const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1000,
-        messages: [{ role: 'user', content: prompt }],
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 1000, temperature: 0.4 },
       }),
     });
 
     const data = await res.json();
-    const text = data?.content?.[0]?.text || '';
+
+    if (!res.ok) {
+      const errMsg = data?.error?.message || 'Gemini API error';
+      console.error('Gemini error:', res.status, errMsg);
+      return {
+        statusCode: 502,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: errMsg }),
+      };
+    }
+
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || 'No summary generated.';
 
     return {
       statusCode: 200,
