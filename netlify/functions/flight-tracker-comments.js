@@ -52,8 +52,8 @@ exports.handler = async function handler(event) {
         const email = String(params.unread_for).trim().toLowerCase();
         const result = await pool.query(
           `SELECT COUNT(*) as count FROM flight_tracker_comments
-            WHERE category = ANY($1) AND NOT ($2 = ANY(read_by))`,
-          [ALERT_CATEGORIES, email]
+            WHERE NOT ($1 = ANY(read_by))`,
+          [email]
         );
         return json(200, { count: parseInt(result.rows[0].count) });
       }
@@ -109,8 +109,8 @@ exports.handler = async function handler(event) {
       await pool.query(
         `UPDATE flight_tracker_comments
             SET read_by = array_append(read_by, $1)
-          WHERE category = ANY($2) AND NOT ($1 = ANY(read_by))`,
-        [reader, ALERT_CATEGORIES]
+          WHERE NOT ($1 = ANY(read_by))`,
+        [reader]
       );
       return json(200, { ok: true });
     }
