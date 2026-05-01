@@ -200,15 +200,22 @@
           html += '<span class="qcc-badge ' + (BADGE_CLS[r._qStatus]||'qcc-b-p') + '">' + (BADGE_LABEL[r._qStatus]||r._qStatus) + '</span>';
 
           // Action buttons
+          var link = typeof buildSalesforcePbLink === 'function' ? buildSalesforcePbLink(r.pbId, r.pdfUrl) : '';
           if (r._qStatus === 'ready') {
             html += '<button class="qcc-act" onclick="event.stopPropagation();scheduleQueueRow(\'' + esc(String(r.id)) + '\',\'ready\')">Schedule</button>';
+            html += '<button class="qcc-act" onclick="event.stopPropagation();openIssueHoldModal(\'' + esc(String(r.id)) + '\',\'ready\')" style="color:#791F1F;">Hold</button>';
           } else if (r._qStatus === 'pending') {
             html += '<button class="qcc-act" onclick="event.stopPropagation();scheduleQueueRow(\'' + esc(String(r.id)) + '\',\'incomplete\')">Schedule</button>';
+            html += '<button class="qcc-act" onclick="event.stopPropagation();openIssueHoldModal(\'' + esc(String(r.id)) + '\',\'incomplete\')" style="color:#791F1F;">Hold</button>';
           } else if (r._qStatus === 'scheduled') {
             html += '<button class="qcc-act" onclick="event.stopPropagation();viewScheduledInAssembly(\'' + esc(String(r.id)) + '\')">In Assembly</button>';
+            html += '<button class="qcc-act" onclick="event.stopPropagation();openIssueHoldModal(\'' + esc(String(r.id)) + '\',\'scheduled\')" style="color:#791F1F;">Hold</button>';
             html += '<button class="qcc-act" onclick="event.stopPropagation();unscheduleQueueRow(\'' + esc(String(r.id)) + '\')" style="color:#e74c3c;">Unschedule</button>';
           } else if (r._qStatus === 'hold') {
             html += '<button class="qcc-act" onclick="event.stopPropagation();openIssueHoldModal(\'' + esc(String(r.id)) + '\',\'hold\')" style="color:#791F1F;">View hold</button>';
+          }
+          if (link) {
+            html += '<a class="qcc-act" href="' + esc(link) + '" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" style="text-decoration:none;">SF &#8599;</a>';
           }
 
           // Comment badge
