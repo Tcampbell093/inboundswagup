@@ -40,15 +40,19 @@ async function ensureTable() {
 exports.handler = async function(event) {
   await ensureTable();
 
-  // GET — fetch photos for a pb_id
-  if (event.httpMethod === 'GET') {
-    const pb_id = event.queryStringParameters?.pb_id;
-    if (!pb_id) return json(400, { error: 'pb_id required' });
+  // GET with ?id=123 — fetch actual image data for a specific photo
+  if (event.httpMethod === 'GET' && event.queryStringParameters?.id) {
+    const id = event.queryStringParameters.id;
     const result = await pool.query(
-      'SELECT id, pb_id, pb_name, account, taken_by, taken_at, photo_index FROM flight_tracker_photos WHERE pb_id=$1 ORDER BY photo_index ASC, taken_at ASC',
-      [pb_id]
+      'SELECT photo_data, taken_at, taken_by FROM flight_tracker_photos WHERE id=$1',
+      [id]
     );
-    return json(200, { photos: result.rows });
+    if (!result.rows.length) return json(404, { error: 'Photo not found' });
+    return json(200, {
+      photo_data: result.rows[0].photo_data,
+      taken_at: result.rows[0].taken_at,
+      taken_by: result.rows[0].taken_by,
+    });
   }
 
   // GET with ?batch=pb1,pb2 — fetch photo counts for multiple PBs
@@ -62,6 +66,17 @@ exports.handler = async function(event) {
     const counts = {};
     result.rows.forEach(r => { counts[r.pb_id] = parseInt(r.count); });
     return json(200, { counts });
+  }
+
+  // GET — fetch photos list for a pb_id
+  if (event.httpMethod === 'GET') {
+    const pb_id = event.queryStringParameters?.pb_id;
+    if (!pb_id) return json(400, { error: 'pb_id required' });
+    const result = await pool.query(
+      'SELECT id, pb_id, pb_name, account, taken_by, taken_at, photo_index FROM flight_tracker_photos WHERE pb_id=$1 ORDER BY photo_index ASC, taken_at ASC',
+      [pb_id]
+    );
+    return json(200, { photos: result.rows });
   }
 
   // POST — save a photo
@@ -95,21 +110,6 @@ exports.handler = async function(event) {
     if (!id) return json(400, { error: 'id required' });
     await pool.query('DELETE FROM flight_tracker_photos WHERE id=$1', [id]);
     return json(200, { ok: true });
-  }
-
-  // GET /photo — fetch actual image data for a specific id
-  if (event.httpMethod === 'GET' && event.queryStringParameters?.id) {
-    const id = event.queryStringParameters.id;
-    const result = await pool.query(
-      'SELECT photo_data, taken_at, taken_by FROM flight_tracker_photos WHERE id=$1',
-      [id]
-    );
-    if (!result.rows.length) return json(404, { error: 'Photo not found' });
-    return json(200, {
-      photo_data: result.rows[0].photo_data,
-      taken_at: result.rows[0].taken_at,
-      taken_by: result.rows[0].taken_by,
-    });
   }
 
   return json(405, { error: 'Method not allowed' });
