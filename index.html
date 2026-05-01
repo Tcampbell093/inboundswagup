@@ -1649,76 +1649,72 @@
     <!-- Assembly -->
     <section id="assemblyPage" class="page">
 
-      <!-- Hero: title + exports only -->
-      <div class="hero" style="margin-bottom:14px;">
+      <!-- ── Top bar ──────────────────────────────────────────── -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
         <div>
           <div class="eyebrow">Assembly</div>
-          <h2>Assembly Planner</h2>
+          <h2 style="margin:2px 0 0;">Assembly Planner</h2>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <button class="btn secondary" id="assemblyExportStyledSnapshotBtn" style="font-size:13px;">Export XLSX</button>
-          <button class="btn secondary" id="exportStakeholderDashboardBtn" style="font-size:13px;">7-Day</button>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <button class="btn secondary" id="assemblyPrevDayBtn" style="font-size:15px;padding:7px 12px;line-height:1;">&#9664;</button>
+          <input id="assemblyDate" type="date" style="padding:8px 12px;border-radius:8px;border:1.5px solid var(--blue2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;" />
+          <span class="pill" id="assemblySelectedDatePill" style="font-size:13px;font-weight:700;padding:7px 14px;color:var(--text);">Today</span>
+          <button class="btn secondary" id="assemblyNextDayBtn" style="font-size:15px;padding:7px 12px;line-height:1;">&#9654;</button>
+          <div style="width:1px;height:24px;background:var(--blue2);margin:0 2px;"></div>
+          <button class="btn" id="assemblyEditModeToggleBtn" type="button">+ Add Row</button>
+          <button class="btn secondary" id="assemblyExportStyledSnapshotBtn">Export XLSX</button>
+          <button class="btn secondary" id="exportStakeholderDashboardBtn">7-Day</button>
         </div>
       </div>
 
-      <!-- Date nav + Add Row bar -->
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
-        <button class="btn secondary" id="assemblyPrevDayBtn" style="padding:7px 14px;">&#9664;</button>
-        <input id="assemblyDate" type="date" style="padding:7px 12px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);font-size:13px;font-weight:700;" />
-        <span class="pill" id="assemblySelectedDatePill" style="font-size:13px;font-weight:700;padding:6px 14px;">Today</span>
-        <button class="btn secondary" id="assemblyNextDayBtn" style="padding:7px 14px;">&#9654;</button>
-        <div style="flex:1;"></div>
-        <button class="btn" id="assemblyEditModeToggleBtn" type="button" style="font-size:13px;">+ Add Row</button>
-      </div>
+      <!-- ── Two-column: Shift Setup + Live Output ────────────── -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
 
-      <!-- Two-column: Shift Setup + Live Output -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
-
-        <div class="card" style="padding:16px 20px;">
-          <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px;">Shift Setup</div>
-          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:14px;">
-            <div><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px;" for="assemblyHeadcount">Headcount</label><input id="assemblyHeadcount" type="number" min="0" value="7" style="width:100%;padding:6px 8px;border-radius:7px;border:1px solid var(--blue2);background:var(--bg);font-size:13px;font-weight:700;" /></div>
-            <div><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px;" for="assemblyHours">Hours</label><input id="assemblyHours" type="number" min="0" step="0.25" value="8" style="width:100%;padding:6px 8px;border-radius:7px;border:1px solid var(--blue2);background:var(--bg);font-size:13px;font-weight:700;" /></div>
-            <div><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px;" for="assemblyHoursElapsed">Elapsed</label><input id="assemblyHoursElapsed" type="number" min="0" step="0.25" value="1" style="width:100%;padding:6px 8px;border-radius:7px;border:1px solid var(--blue2);background:var(--bg);font-size:13px;font-weight:700;" /></div>
-            <div><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px;" for="assemblyUph">Target UPH</label><input id="assemblyUph" type="number" min="0" value="150" style="width:100%;padding:6px 8px;border-radius:7px;border:1px solid var(--blue2);background:var(--bg);font-size:13px;font-weight:700;" /></div>
-            <div><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px;" for="assemblyScheduledPb">Sched. PBs</label><input id="assemblyScheduledPb" type="number" min="0" value="0" style="width:100%;padding:6px 8px;border-radius:7px;border:1px solid var(--blue2);background:var(--bg);font-size:13px;font-weight:700;" /></div>
+        <div class="card" style="padding:18px 20px;">
+          <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;">Shift Setup</div>
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px;">
+            <div><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px;">Headcount</div><input id="assemblyHeadcount" type="number" min="0" value="7" style="width:100%;padding:7px 8px;border-radius:7px;border:1.5px solid var(--blue2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;" /></div>
+            <div><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px;">Hours</div><input id="assemblyHours" type="number" min="0" step="0.25" value="8" style="width:100%;padding:7px 8px;border-radius:7px;border:1.5px solid var(--blue2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;" /></div>
+            <div><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px;">Elapsed</div><input id="assemblyHoursElapsed" type="number" min="0" step="0.25" value="1" style="width:100%;padding:7px 8px;border-radius:7px;border:1.5px solid var(--blue2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;" /></div>
+            <div><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px;">Target UPH</div><input id="assemblyUph" type="number" min="0" value="150" style="width:100%;padding:7px 8px;border-radius:7px;border:1.5px solid var(--blue2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;" /></div>
+            <div><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px;">Sched. PBs</div><input id="assemblyScheduledPb" type="number" min="0" value="0" style="width:100%;padding:7px 8px;border-radius:7px;border:1.5px solid var(--blue2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;" /></div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;">
-            <div style="text-align:center;padding:8px 4px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">People</div><div style="font-size:22px;font-weight:800;line-height:1;" id="assemblyHeadcountStat">0</div></div>
-            <div style="text-align:center;padding:8px 4px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Hours</div><div style="font-size:22px;font-weight:800;line-height:1;" id="assemblyHoursStat">0</div></div>
-            <div style="text-align:center;padding:8px 4px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">UPH Target</div><div style="font-size:22px;font-weight:800;line-height:1;" id="assemblyUphStat">0</div></div>
-            <div style="text-align:center;padding:8px 4px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Goal %</div><div style="font-size:22px;font-weight:800;line-height:1;" id="assemblyGoalProgressDisplay">0%</div></div>
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">People</div><div style="font-size:22px;font-weight:800;color:var(--text);" id="assemblyHeadcountStat">0</div></div>
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Hours</div><div style="font-size:22px;font-weight:800;color:var(--text);" id="assemblyHoursStat">0</div></div>
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">UPH Target</div><div style="font-size:22px;font-weight:800;color:var(--text);" id="assemblyUphStat">0</div></div>
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Goal %</div><div style="font-size:22px;font-weight:800;color:var(--text);" id="assemblyGoalProgressDisplay">0%</div></div>
           </div>
-          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:5px;"><span>Capacity</span><span id="assemblyCapacityStat" style="font-weight:800;color:var(--text);">0</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:5px;"><span>Capacity</span><strong style="color:var(--text);" id="assemblyCapacityStat">0</strong></div>
           <div style="height:5px;background:var(--blue2);border-radius:3px;overflow:hidden;"><div id="assemblyCapacityBar" style="height:5px;background:#1a73e8;border-radius:3px;width:0%;transition:width .4s;"></div></div>
         </div>
 
-        <div class="card" style="padding:16px 20px;">
-          <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px;">Live Output</div>
+        <div class="card" style="padding:18px 20px;">
+          <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;">Live Output</div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">
-            <div style="text-align:center;padding:8px 4px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Scheduled</div><div style="font-size:18px;font-weight:800;line-height:1.2;" id="assemblyScheduledUnitsStat">0</div></div>
-            <div style="text-align:center;padding:8px 4px;background:#e6f9ee;border-radius:8px;"><div style="font-size:10px;font-weight:800;color:#0F6E56;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Done</div><div style="font-size:18px;font-weight:800;line-height:1.2;color:#0F6E56;" id="assemblyDoneUnitsStat2">0</div></div>
-            <div style="text-align:center;padding:8px 4px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Remaining</div><div style="font-size:18px;font-weight:800;line-height:1.2;" id="assemblyRemainingUnitsStat">0</div></div>
-            <div style="text-align:center;padding:8px 4px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">UPH Now</div><div style="font-size:18px;font-weight:800;line-height:1.2;" id="assemblyCurrentUphDisplay">0</div></div>
-            <div style="text-align:center;padding:8px 4px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Revenue</div><div style="font-size:18px;font-weight:800;line-height:1.2;" id="assemblyScheduledRevenueStat">$0</div></div>
-            <div style="text-align:center;padding:8px 4px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">PB Rows</div><div style="font-size:18px;font-weight:800;line-height:1.2;" id="assemblyRowsTodayStat">0</div></div>
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Scheduled</div><div style="font-size:16px;font-weight:800;color:var(--text);line-height:1.3;" id="assemblyScheduledUnitsStat">0</div></div>
+            <div style="text-align:center;padding:9px 6px;background:#e6f9ee;border-radius:8px;"><div style="font-size:10px;font-weight:800;color:#0F6E56;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Done</div><div style="font-size:16px;font-weight:800;color:#0F6E56;line-height:1.3;" id="assemblyDoneUnitsStat2">0</div></div>
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Remaining</div><div style="font-size:16px;font-weight:800;color:var(--text);line-height:1.3;" id="assemblyRemainingUnitsStat">0</div></div>
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">UPH Now</div><div style="font-size:16px;font-weight:800;color:var(--text);line-height:1.3;" id="assemblyCurrentUphDisplay">0</div></div>
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Revenue</div><div style="font-size:16px;font-weight:800;color:var(--text);line-height:1.3;" id="assemblyScheduledRevenueStat">$0</div></div>
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">PB Rows</div><div style="font-size:16px;font-weight:800;color:var(--text);line-height:1.3;" id="assemblyRowsTodayStat">0</div></div>
           </div>
-          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:5px;"><span>Completion</span><span id="assemblyCompletionStat" style="font-weight:800;color:var(--text);">0%</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:5px;"><span>Completion</span><strong style="color:var(--text);" id="assemblyCompletionStat">0%</strong></div>
           <div style="height:5px;background:var(--blue2);border-radius:3px;overflow:hidden;"><div id="assemblyCompletionBar" style="height:5px;background:#0F6E56;border-radius:3px;width:0%;transition:width .4s;"></div></div>
         </div>
       </div>
 
-      <!-- Stage strip + controls -->
+      <!-- ── Stage strip ──────────────────────────────────────── -->
       <div class="card" style="padding:12px 18px;margin-bottom:10px;">
         <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
-          <span id="assemblyBoardCountPill" style="font-size:13px;font-weight:700;color:var(--muted);min-width:50px;">0 rows</span>
-          <div style="flex:1;display:flex;gap:18px;justify-content:center;flex-wrap:wrap;">
-            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;line-height:1;" id="asmStripAa">0</span><span style="font-size:10px;background:#E6F1FB;color:#0C447C;padding:2px 8px;border-radius:999px;font-weight:700;">A.A.</span></div>
-            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;line-height:1;" id="asmStripPrint">0</span><span style="font-size:10px;background:#FAEEDA;color:#633806;padding:2px 8px;border-radius:999px;font-weight:700;">Print</span></div>
-            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;line-height:1;" id="asmStripPicked">0</span><span style="font-size:10px;background:#EEEDFE;color:#3C3489;padding:2px 8px;border-radius:999px;font-weight:700;">Picked</span></div>
-            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;line-height:1;" id="asmStripLine">0</span><span style="font-size:10px;background:#EAF3DE;color:#27500A;padding:2px 8px;border-radius:999px;font-weight:700;">Line</span></div>
-            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;line-height:1;" id="asmStripDpmo">0</span><span style="font-size:10px;background:#FAECE7;color:#712B13;padding:2px 8px;border-radius:999px;font-weight:700;">DPMO</span></div>
-            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;line-height:1;" id="asmStripDone">0</span><span style="font-size:10px;background:#E1F5EE;color:#085041;padding:2px 8px;border-radius:999px;font-weight:700;">Done</span></div>
+          <span id="assemblyBoardCountPill" style="font-size:13px;font-weight:700;color:var(--muted);min-width:48px;">0 rows</span>
+          <div style="flex:1;display:flex;gap:20px;justify-content:center;flex-wrap:wrap;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;color:var(--text);" id="asmStripAa">0</span><span style="font-size:10px;background:#E6F1FB;color:#0C447C;padding:2px 8px;border-radius:999px;font-weight:700;white-space:nowrap;">A.A.</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;color:var(--text);" id="asmStripPrint">0</span><span style="font-size:10px;background:#FAEEDA;color:#633806;padding:2px 8px;border-radius:999px;font-weight:700;white-space:nowrap;">Print</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;color:var(--text);" id="asmStripPicked">0</span><span style="font-size:10px;background:#EEEDFE;color:#3C3489;padding:2px 8px;border-radius:999px;font-weight:700;white-space:nowrap;">Picked</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;color:var(--text);" id="asmStripLine">0</span><span style="font-size:10px;background:#EAF3DE;color:#27500A;padding:2px 8px;border-radius:999px;font-weight:700;white-space:nowrap;">Line</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;color:var(--text);" id="asmStripDpmo">0</span><span style="font-size:10px;background:#FAECE7;color:#712B13;padding:2px 8px;border-radius:999px;font-weight:700;white-space:nowrap;">DPMO</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;color:var(--text);" id="asmStripDone">0</span><span style="font-size:10px;background:#E1F5EE;color:#085041;padding:2px 8px;border-radius:999px;font-weight:700;white-space:nowrap;">Done</span></div>
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0;">
             <button class="btn secondary" id="assemblyBreakdownToggleBtn" type="button" style="font-size:12px;padding:5px 12px;">Units</button>
@@ -1729,7 +1725,7 @@
         </div>
       </div>
 
-      <!-- Stage breakdown (collapsible) -->
+      <!-- ── Stage breakdown (collapsible) ───────────────────── -->
       <div class="assembly-collapse" id="assemblyBreakdownPanel" hidden style="margin-bottom:10px;">
         <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;">
           <div class="card assembly-card-tight"><div class="stat-label">A.A.</div><div class="stat-value" id="assemblyAaUnits">0</div></div>
@@ -1741,7 +1737,7 @@
         </div>
       </div>
 
-      <!-- Add row panel -->
+      <!-- ── Add row panel ────────────────────────────────────── -->
       <div class="assembly-collapse assembly-add-modal-backdrop" id="assemblyEditModePanel" hidden style="margin-bottom:10px;">
         <div class="assembly-add-modal-card">
           <div class="modal-header assembly-add-modal-header">
@@ -1772,7 +1768,7 @@
         </div>
       </div>
 
-      <!-- Filter bar -->
+      <!-- ── Filter bar ───────────────────────────────────────── -->
       <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;" id="assemblyFilterBar">
         <button class="btn secondary asm-filter-btn asm-filter-active" data-filter="all" style="font-size:12px;padding:5px 14px;font-weight:700;">All</button>
         <button class="btn secondary asm-filter-btn" data-filter="overdue" style="font-size:12px;padding:5px 14px;border-color:#e74c3c;color:#a01a1a;">Overdue</button>
@@ -1781,10 +1777,10 @@
         <button class="btn secondary asm-filter-btn" data-filter="done" style="font-size:12px;padding:5px 14px;border-color:#2ecc71;color:#0F6E56;">Done</button>
       </div>
 
-      <!-- Focus list -->
+      <!-- ── Focus list ───────────────────────────────────────── -->
       <div id="assemblyFocusList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;"></div>
 
-      <!-- Detail table -->
+      <!-- ── Detail table ─────────────────────────────────────── -->
       <div class="table-wrap assembly-table-desktop" id="assemblyDetailTableWrap" style="display:none;">
         <table>
           <thead id="assemblyBoardHead"></thead>
