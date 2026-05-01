@@ -36,6 +36,9 @@
       'assemblyPage', 'assemblyFlightTrackerPage',
       'calendarPage', 'policyPage', 'helpPage'
     ],
+    external: [
+      'assemblyFlightTrackerPage'
+    ],
   };
 
   // Read-only access (can see page but certain actions are disabled)
