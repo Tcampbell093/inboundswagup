@@ -636,7 +636,7 @@ function renderBoardCards(rows){
             <div class="mob-meta-item"><span class="mob-meta-label">Revenue</span><strong>${fmtMoney(r.revenue||0)}</strong></div>
             <div class="mob-meta-item"><span class="mob-meta-label">In-Hands</span><strong>${ihdDisplay(r)}</strong></div>
           </div>
-          <div class="mob-card-actions">${commentBtn(r)}</div>
+          <div class="mob-card-actions">${commentBtn(r)}${photoBtn(r)}</div>
         </div>`;
       }).join('')}
     </section>`;
