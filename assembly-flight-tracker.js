@@ -888,7 +888,7 @@ async function renderPhotoStrip(pbId) {
     } else {
       photoStrip.innerHTML = photos.map(function(p, i) {
         return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
-          <div class="photo-thumb" data-photo-id="${p.id}" onclick="viewPhotoFull(${p.id})">
+          <div class="photo-thumb" data-photo-id="${p.id}">
             <span style="font-size:22px;">&#128247;</span>
           </div>
           <div style="font-size:10px;color:#666;text-align:center;">
@@ -903,7 +903,7 @@ async function renderPhotoStrip(pbId) {
     // Add photo button (associates only, max 3)
     if (canTakePhotos() && photos.length < 3) {
       photoAddArea.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
-        <button class="photo-add-btn" onclick="triggerCamera()">
+        <button class="photo-add-btn" type="button" data-photo-action="add">
           <span style="font-size:22px;">&#43;</span>
           <span>Add photo</span>
         </button>
@@ -947,17 +947,39 @@ function viewPhotoFull(photoId) {
         <div style="font-size:13px;font-weight:700;">${photoModalPb.name}</div>
         <div style="font-size:12px;color:#666;">${takenAt}${meta.taken_by?' · '+meta.taken_by:''}</div>
       </div>
-      <button onclick="this.closest('.photo-lightbox-bg').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#666;">&#215;</button>
+      <button type="button" data-lightbox-close style="background:none;border:none;font-size:20px;cursor:pointer;color:#666;">&#215;</button>
     </div>
     <img src="${src}" alt="Confirmation photo" style="width:100%;border-radius:8px;" />
   `;
   bg.appendChild(inner);
+  inner.addEventListener('click', function(e) {
+    const closeBtn = e.target.closest('[data-lightbox-close]');
+    if (closeBtn) bg.remove();
+  });
   bg.addEventListener('click', function(e) { if (e.target === bg) bg.remove(); });
   document.body.appendChild(bg);
 }
 
 function triggerCamera() {
   if (photoFileInput) photoFileInput.click();
+}
+
+if (photoAddArea) {
+  photoAddArea.addEventListener('click', function(e) {
+    const addBtn = e.target.closest('[data-photo-action="add"]');
+    if (!addBtn) return;
+    triggerCamera();
+  });
+}
+
+if (photoStrip) {
+  photoStrip.addEventListener('click', function(e) {
+    const thumb = e.target.closest('[data-photo-id]');
+    if (!thumb) return;
+    const photoId = Number(thumb.getAttribute('data-photo-id'));
+    if (!photoId) return;
+    viewPhotoFull(photoId);
+  });
 }
 
 if (photoFileInput) {
