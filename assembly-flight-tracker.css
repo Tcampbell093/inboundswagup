@@ -302,6 +302,32 @@ a.row-link:hover{text-decoration:underline}
   cursor: pointer;
 }
 
+/* Full-size photo lightbox */
+.photo-lightbox-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(8, 18, 30, .72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.photo-lightbox-inner {
+  width: min(760px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.3);
+}
+.photo-lightbox-inner img {
+  max-height: 78vh;
+  object-fit: contain;
+}
+
 /* Keep photo modal interactive when image is tall */
 #photoModal .cm-dialog {
   overflow-y: auto;

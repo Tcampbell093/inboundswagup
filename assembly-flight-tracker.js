@@ -1014,6 +1014,8 @@ async function loadThumbImage(photoId) {
 }
 
 function viewPhotoFull(photoId) {
+  // Prevent stacked overlays if user taps repeatedly.
+  document.querySelectorAll('.photo-lightbox-bg').forEach(function(el) { el.remove(); });
   const carouselPhoto = (photoCarousel.photos || []).find(function(p) { return Number(p.id) === Number(photoId); });
   const thumb = document.querySelector(`[data-photo-id="${photoId}"]`);
   const src   = carouselPhoto?.photo_data || thumb?._photoData;
@@ -1037,7 +1039,11 @@ function viewPhotoFull(photoId) {
   bg.appendChild(inner);
   inner.addEventListener('click', function(e) {
     const closeBtn = e.target.closest('[data-lightbox-close]');
-    if (closeBtn) bg.remove();
+    if (closeBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      bg.remove();
+    }
   });
   bg.addEventListener('click', function(e) { if (e.target === bg) bg.remove(); });
   document.body.appendChild(bg);
