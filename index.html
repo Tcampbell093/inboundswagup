@@ -1792,10 +1792,11 @@
 
 
 <section id="queuePage" class="page queue-page-redesign">
-      <div class="queue-sticky-bar legacy-import-ui">
+
+      <!-- ── Import bar (hidden, kept for JS compat) ──────────── -->
+      <div class="queue-sticky-bar legacy-import-ui" style="display:none;">
         <div class="queue-sticky-inner">
           <div class="queue-sticky-group">
-            <div class="queue-sticky-label">Queue import</div>
             <div class="queue-sticky-actions">
               <input id="queueFileInput" type="file" accept=".xlsx,.xls" />
               <button class="btn" id="queueImportBtn">Import report</button>
@@ -1805,7 +1806,6 @@
           </div>
           <div class="queue-sticky-divider"></div>
           <div class="queue-sticky-group">
-            <div class="queue-sticky-label"><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BE2jMAG/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Revenue reference</a></div>
             <div class="queue-sticky-actions">
               <input id="revenueFileInput" type="file" accept=".xlsx,.xls" />
               <button class="btn" id="revenueImportBtn">Import revenue reference</button>
@@ -1816,231 +1816,180 @@
         </div>
       </div>
 
-      <div class="card import-hub-inline-note">
-        <div><strong>Imports moved.</strong> Use the shared <strong>Import Hub</strong> page for Queue, Revenue, and Daily Tools report imports.</div>
-        <button class="btn secondary" type="button" data-page-jump="importHubPage">Open Import Hub</button>
+      <!-- ── Hidden stats elements (kept for queue.js compat) ─── -->
+      <div style="display:none;">
+        <span id="queueImportedCount">0</span>
+        <span id="queueIncompleteCount">0</span>
+        <span id="queueScheduledCount">0</span>
+        <span id="queueEarliestIhd">—</span>
+        <span id="queueReadyUnitsStat">0</span>
+        <span id="queueReadyPbsStat">0</span>
+        <span id="queuePendingUnitsStat">0</span>
+        <span id="queuePendingPbsStat">0</span>
+        <span id="queueScheduledUnitsStat">0</span>
+        <span id="queueScheduledPbsStat">0</span>
+        <span id="queueScheduledTodayUnitsStat">0</span>
+        <span id="queueScheduledTodayPbsStat">0</span>
+        <span id="queueIssueHoldCountStat">0</span>
+        <span id="queueIssueHoldUnitsStat">0</span>
+        <span id="queueIssueHoldRevenueStat">$0</span>
+        <span id="queueIssueHoldTopTypeStat">—</span>
+        <span id="queueRawRowsCount">0</span>
+        <span id="queueGroupedRowsCount">0</span>
+        <span id="queuePriorityUnits">0</span>
+        <span id="queueSortModeLabel">IHD</span>
+        <span id="revenueRowsCount">0</span>
+        <span id="revenueKeysCount">0</span>
+        <span id="revenueSubtotalTotal">0</span>
+        <span id="revenueEarliestIhd">—</span>
+        <select id="queueSortBy"><option value="ihd_asc">IHD earliest first</option><option value="units_desc">Units highest first</option><option value="account_asc">Account A-Z</option><option value="pb_asc">Pack Builder A-Z</option></select>
+        <input id="queueSearch" placeholder="Search..." />
+        <button id="queueClearSearchBtn">Clear</button>
+        <select id="scheduledQueueLimit"><option value="all">All</option></select>
+        <select id="readyQueueLimit"><option value="all">All</option></select>
+        <select id="incompleteQueueLimit"><option value="all">All</option></select>
+        <select id="issueHoldQueueLimit"><option value="all">All</option></select>
+        <tbody id="queueTableBody"></tbody>
+        <tbody id="scheduledQueueTableBody"></tbody>
+        <tbody id="incompleteQueueTableBody"></tbody>
+        <tbody id="issueHoldQueueTableBody"></tbody>
+        <div id="readyQueueCards"></div>
+        <div id="scheduledQueueCards"></div>
+        <div id="incompleteQueueCards"></div>
+        <div id="assemblyBoardBodyCards"></div>
       </div>
 
-      <div class="hero queue-hero">
-        <div>
-          <div class="eyebrow">Available Queue</div>
-          <h2>Salesforce-ready pack builders</h2>
-          <p class="subtitle">Upload one Salesforce report with a status column, group rows by Pack Builder, and let the site route builders into Ready, Incomplete/Pending, and Scheduled sections automatically.</p>
+      <!-- ── Command Center UI ─────────────────────────────────── -->
+      <div id="queueCommandCenter">
+
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+          <div>
+            <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;">Pack Builder Queue</div>
+            <h2 style="margin:0;font-size:26px;font-weight:800;">Available builders</h2>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn secondary" type="button" data-page-jump="importHubPage">Open Import Hub</button>
+            <button class="btn secondary" type="button" id="qccLegacyToggle">Legacy View</button>
+          </div>
         </div>
+
+        <!-- Stats row -->
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:18px;" id="qccStats">
+          <div class="qcc-stat"><div class="qcc-stat-n" id="qccTotal">0</div><div class="qcc-stat-l">Total builders</div></div>
+          <div class="qcc-stat"><div class="qcc-stat-n" style="color:#27500A;" id="qccReady">0</div><div class="qcc-stat-l">Ready</div></div>
+          <div class="qcc-stat"><div class="qcc-stat-n" style="color:#A32D2D;" id="qccHold">0</div><div class="qcc-stat-l">On hold</div></div>
+          <div class="qcc-stat"><div class="qcc-stat-n" style="color:#0F6E56;" id="qccRev">$0</div><div class="qcc-stat-l">Ready revenue</div></div>
+          <div class="qcc-stat"><div class="qcc-stat-n" id="qccIhd">—</div><div class="qcc-stat-l">Next IHD</div></div>
+        </div>
+
+        <!-- Search + Sort -->
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+          <input type="text" id="qccSearch" placeholder="Search by PB, account, owner, status, issue…" style="flex:1;min-width:200px;padding:8px 12px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);font-size:13px;color:var(--text);" oninput="window.qcc&&window.qcc.applyFilters()" />
+          <select id="qccSort" style="padding:8px 10px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);font-size:13px;color:var(--text);" onchange="window.qcc&&window.qcc.applyFilters()">
+            <option value="ihd">Sort: IHD earliest</option>
+            <option value="rev">Sort: Revenue highest</option>
+            <option value="units">Sort: Units highest</option>
+            <option value="acc">Sort: Account A–Z</option>
+            <option value="pb">Sort: PB A–Z</option>
+          </select>
+          <select id="qccPageSize" style="padding:8px 10px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);font-size:13px;color:var(--text);" onchange="window.qcc&&window.qcc.applyFilters()">
+            <option value="25">25 per page</option>
+            <option value="50">50 per page</option>
+            <option value="100">100 per page</option>
+            <option value="all">All</option>
+          </select>
+        </div>
+
+        <!-- Filter pills -->
+        <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;align-items:center;" id="qccFilters">
+          <button class="qcc-pill qcc-pill-on" data-f="all">All</button>
+          <button class="qcc-pill" data-f="scheduled" style="color:#0C447C;border-color:#85B7EB;">Scheduled</button>
+          <button class="qcc-pill" data-f="ready" style="color:#27500A;border-color:#C0DD97;">Ready</button>
+          <button class="qcc-pill" data-f="hold" style="color:#791F1F;border-color:#F09595;">On hold</button>
+          <button class="qcc-pill" data-f="pending">Pending</button>
+          <button class="qcc-pill" data-f="urgent" style="color:#A32D2D;border-color:#F09595;">Urgent</button>
+          <span style="margin-left:auto;font-size:12px;color:var(--muted);" id="qccMatchCount"></span>
+        </div>
+
+        <!-- Bulk action bar -->
+        <div id="qccBulkBar" style="display:none;align-items:center;gap:10px;padding:8px 14px;border-radius:8px;background:#E6F1FB;margin-bottom:10px;font-size:13px;color:#0C447C;">
+          <span id="qccBulkCount">0 selected</span>
+          <button class="btn" onclick="window.qcc&&window.qcc.bulkSchedule()" style="font-size:12px;padding:5px 14px;background:#185FA5;border-color:#185FA5;">Schedule selected</button>
+          <button class="btn secondary" onclick="window.qcc&&window.qcc.clearSelection()" style="font-size:12px;padding:5px 14px;">Clear</button>
+        </div>
+
+        <!-- List container -->
+        <div id="qccList"></div>
+
+        <!-- Pager -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;font-size:12px;color:var(--muted);">
+          <span id="qccPagerInfo"></span>
+          <div id="qccPagerBtns" style="display:flex;gap:4px;"></div>
+        </div>
+
       </div>
 
-      <section class="queue-stats-shell">
-        <div class="queue-stat-group">
-          <div class="queue-stat-group-title">Operations</div>
-          <div class="queue-stat-grid">
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Ready builders</span>
-              <strong class="queue-stat-value" id="queueImportedCount">0</strong>
-              <span class="queue-stat-subtle">Ready-to-pack builders</span>
-            </article>
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Incomplete builders</span>
-              <strong class="queue-stat-value" id="queueIncompleteCount">0</strong>
-              <span class="queue-stat-subtle">Pending or partial candidates</span>
-            </article>
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Scheduled builders</span>
-              <strong class="queue-stat-value" id="queueScheduledCount">0</strong>
-              <span class="queue-stat-subtle">Already placed on the board</span>
-            </article>
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Earliest IHD</span>
-              <strong class="queue-stat-value" id="queueEarliestIhd">—</strong>
-              <span class="queue-stat-subtle">Fast urgency check</span>
-            </article>
+      <!-- ── Legacy view (hidden by default) ──────────────────── -->
+      <div id="queueLegacyView" style="display:none;">
+        <div class="card import-hub-inline-note">
+          <div><strong>Imports moved.</strong> Use the shared <strong>Import Hub</strong> page for Queue, Revenue, and Daily Tools report imports.</div>
+          <button class="btn secondary" type="button" data-page-jump="importHubPage">Open Import Hub</button>
+        </div>
+        <div class="hero queue-hero">
+          <div>
+            <div class="eyebrow">Available Queue</div>
+            <h2>Salesforce-ready pack builders</h2>
           </div>
         </div>
-
-        <div class="queue-stat-group">
-          <div class="queue-stat-group-title">Volume</div>
-          <div class="queue-stat-grid">
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Ready Units</span>
-              <strong class="queue-stat-value" id="queueReadyUnitsStat">0</strong>
-              <span class="queue-stat-subtle"><span id="queueReadyPbsStat">0</span> PBs currently ready</span>
-            </article>
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Pending Units</span>
-              <strong class="queue-stat-value" id="queuePendingUnitsStat">0</strong>
-              <span class="queue-stat-subtle"><span id="queuePendingPbsStat">0</span> PBs currently pending</span>
-            </article>
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Scheduled Units</span>
-              <strong class="queue-stat-value" id="queueScheduledUnitsStat">0</strong>
-              <span class="queue-stat-subtle"><span id="queueScheduledPbsStat">0</span> PB rows currently scheduled</span>
-            </article>
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Scheduled Today</span>
-              <strong class="queue-stat-value" id="queueScheduledTodayUnitsStat">0</strong>
-              <span class="queue-stat-subtle"><span id="queueScheduledTodayPbsStat">0</span> PB rows on the selected Assembly day</span>
-            </article>
-          </div>
-        </div>
-
-        <div class="queue-stat-group">
-          <div class="queue-stat-group-title">Risk & revenue</div>
-          <div class="queue-stat-grid">
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Issue Hold PBs</span>
-              <strong class="queue-stat-value" id="queueIssueHoldCountStat">0</strong>
-              <span class="queue-stat-subtle">Pack builders currently blocked</span>
-            </article>
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Issue Hold Units</span>
-              <strong class="queue-stat-value" id="queueIssueHoldUnitsStat">0</strong>
-              <span class="queue-stat-subtle">Units currently tied up by issues</span>
-            </article>
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Issue Hold Revenue</span>
-              <strong class="queue-stat-value" id="queueIssueHoldRevenueStat">$0</strong>
-              <span class="queue-stat-subtle">Estimated subtotal currently blocked</span>
-            </article>
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Top Issue Type</span>
-              <strong class="queue-stat-value" id="queueIssueHoldTopTypeStat">—</strong>
-              <span class="queue-stat-subtle">Most common current hold reason</span>
-            </article>
-          </div>
-        </div>
-
-        <div class="queue-stat-group">
-          <div class="queue-stat-group-title">Import health</div>
-          <div class="queue-stat-grid">
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Imported rows</span>
-              <strong class="queue-stat-value" id="queueRawRowsCount">0</strong>
-              <span class="queue-stat-subtle">Raw detail rows read from file</span>
-            </article>
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Grouped builders</span>
-              <strong class="queue-stat-value" id="queueGroupedRowsCount">0</strong>
-              <span class="queue-stat-subtle">One row per Pack Builder</span>
-            </article>
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Priority units</span>
-              <strong class="queue-stat-value" id="queuePriorityUnits">0</strong>
-              <span class="queue-stat-subtle">Units currently marked priority</span>
-            </article>
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Sort mode</span>
-              <strong class="queue-stat-value" id="queueSortModeLabel">IHD</strong>
-              <span class="queue-stat-subtle">Current queue sorting</span>
-            </article>
-          </div>
-        </div>
-
-        <div class="queue-stat-group">
-          <div class="queue-stat-group-title"><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BE2jMAG/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Revenue reference</a></div>
-          <div class="queue-stat-grid">
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Revenue rows</span>
-              <strong class="queue-stat-value" id="revenueRowsCount">0</strong>
-              <span class="queue-stat-subtle">Reference rows currently stored</span>
-            </article>
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Lookup keys</span>
-              <strong class="queue-stat-value" id="revenueKeysCount">0</strong>
-              <span class="queue-stat-subtle">Unique Sales Orders detected</span>
-            </article>
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Subtotal total</span>
-              <strong class="queue-stat-value" id="revenueSubtotalTotal">0</strong>
-              <span class="queue-stat-subtle">Sum of Original Subtotal values</span>
-            </article>
-            <article class="queue-stat-card">
-              <span class="queue-stat-label">Earliest IHD</span>
-              <strong class="queue-stat-value" id="revenueEarliestIhd">—</strong>
-              <span class="queue-stat-subtle">Earliest IHD found in reference</span>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      <div class="card queue-controls-card">
-        <div class="toolbar queue-controls-toolbar" style="margin-bottom:0">
-          <div class="left queue-controls-left">
-            <div class="field queue-control-field">
-              <label for="queueSearch">Search</label>
-              <input id="queueSearch" placeholder="PB, SORD, account, owner, status, note..." />
+        <section class="queue-stats-shell">
+          <div class="queue-stat-group"><div class="queue-stat-group-title">Operations</div><div class="queue-stat-grid">
+            <article class="queue-stat-card"><span class="queue-stat-label">Ready builders</span><strong class="queue-stat-value" id="queueImportedCountLeg">0</strong></article>
+            <article class="queue-stat-card"><span class="queue-stat-label">Incomplete builders</span><strong class="queue-stat-value" id="queueIncompleteCountLeg">0</strong></article>
+            <article class="queue-stat-card"><span class="queue-stat-label">Scheduled builders</span><strong class="queue-stat-value" id="queueScheduledCountLeg">0</strong></article>
+            <article class="queue-stat-card"><span class="queue-stat-label">Earliest IHD</span><strong class="queue-stat-value" id="queueEarliestIhdLeg">—</strong></article>
+          </div></div>
+        </section>
+        <div class="card queue-controls-card">
+          <div class="toolbar queue-controls-toolbar" style="margin-bottom:0">
+            <div class="left queue-controls-left">
+              <div class="field queue-control-field"><label for="queueSearchLeg">Search</label><input id="queueSearchLeg" placeholder="PB, SORD, account..." /></div>
+              <div class="field queue-control-field queue-control-select"><label for="queueSortByLeg">Sort By</label>
+                <select id="queueSortByLeg"><option value="ihd_asc">IHD earliest first</option><option value="units_desc">Units highest first</option><option value="account_asc">Account A-Z</option><option value="pb_asc">Pack Builder A-Z</option></select>
+              </div>
             </div>
-            <div class="field queue-control-field queue-control-select">
-              <label for="queueSortBy">Sort By</label>
-              <select id="queueSortBy">
-                <option value="ihd_asc">IHD earliest first</option>
-                <option value="units_desc">Units highest first</option>
-                <option value="account_asc">Account A-Z</option>
-                <option value="pb_asc">Pack Builder A-Z</option>
-              </select>
-            </div>
-          </div>
-          <div class="right queue-controls-right">
-            <button class="btn secondary" id="queueClearSearchBtn">Clear Search</button>
+            <div class="right"><button class="btn secondary" id="queueClearSearchBtnLeg">Clear Search</button></div>
           </div>
         </div>
-        <div class="queue-controls-note">Import one Salesforce report, let the site route builders into Ready vs Incomplete/Pending, and schedule either type into Assembly. Scheduled rows stay in their own section below.</div>
-      </div>
-
-      <div class="card queue-section-card" style="margin-top:20px">
-        <div class="toolbar" style="margin-bottom:14px">
-          <div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Scheduled pack builders</h3></div>
-          <div class="right"><label for="scheduledQueueLimit" style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="scheduledQueueLimit"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="all">All</option></select></div>
+        <div class="card queue-section-card" style="margin-top:20px">
+          <div class="toolbar" style="margin-bottom:14px"><div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Scheduled pack builders</h3></div>
+            <div class="right"><label style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="scheduledQueueLimitLeg"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="all">All</option></select></div>
+          </div>
+          <div class="table-wrap queue-table-wrap"><table><thead><tr><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>Scheduled For</th><th>Scheduled At</th><th>Flags</th><th>Note</th><th>Comments</th><th>Action</th></tr></thead><tbody id="scheduledQueueTableBodyLeg"></tbody></table></div>
         </div>
-        <div class="table-wrap queue-table-wrap">
-          <table>
-            <thead><tr><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>Scheduled For</th><th>Scheduled At</th><th>Flags</th><th>Schedule Note</th><th>Comments</th><th>Action</th></tr></thead>
-            <tbody id="scheduledQueueTableBody"></tbody>
-          </table>
+        <div class="card queue-section-card" style="margin-top:20px">
+          <div class="toolbar" style="margin-bottom:14px"><div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Issue Hold</h3></div>
+            <div class="right"><label style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="issueHoldQueueLimitLeg"><option value="10">10</option><option value="25">25</option><option value="all">All</option></select></div>
+          </div>
+          <div class="table-wrap queue-table-wrap"><table><thead><tr><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>IHD</th><th>Issue Type</th><th>Hold Note</th><th>Hold Start</th><th>Days</th><th>Revenue</th><th>Action</th></tr></thead><tbody id="issueHoldQueueTableBodyLeg"></tbody></table></div>
         </div>
-        <div id="scheduledQueueCards" class="assembly-cards-mobile"></div>
-      </div>
-
-      <div class="card queue-section-card" style="margin-top:20px">
-        <div class="toolbar" style="margin-bottom:14px">
-          <div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Issue Hold</h3></div>
-          <div class="right"><label for="issueHoldQueueLimit" style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="issueHoldQueueLimit"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="all">All</option></select></div>
+        <div class="card queue-section-card" style="margin-top:20px">
+          <div class="toolbar" style="margin-bottom:14px"><div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Ready pack builders</h3></div>
+            <div class="right"><label style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="readyQueueLimitLeg"><option value="10">10</option><option value="25">25</option><option value="all">All</option></select></div>
+          </div>
+          <div class="table-wrap queue-table-wrap"><table><thead><tr><th>Priority</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Qty</th><th>Total Products</th><th>Units</th><th>IHD</th><th>Status</th><th>Flags</th><th>Account Owner</th><th>Link</th><th>Action</th></tr></thead><tbody id="queueTableBodyLeg"></tbody></table></div>
+          <div id="readyQueueCardsLeg" class="assembly-cards-mobile"></div>
         </div>
-        <div class="queue-controls-note queue-hold-note"><strong>Use this when a pack builder is real but blocked.</strong> Issue Hold keeps the work visible, stores the problem, and keeps the revenue impact from disappearing.</div>
-        <div class="table-wrap queue-table-wrap">
-          <table>
-            <thead><tr><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>IHD</th><th>Issue Type</th><th>Hold Note</th><th>Hold Start</th><th>Days</th><th>Revenue</th><th>Action</th></tr></thead>
-            <tbody id="issueHoldQueueTableBody"></tbody>
-          </table>
+        <div class="card queue-section-card" style="margin-top:20px">
+          <div class="toolbar" style="margin-bottom:14px"><div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Incomplete / pending</h3></div>
+            <div class="right"><label style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="incompleteQueueLimitLeg"><option value="10">10</option><option value="25">25</option><option value="all">All</option></select></div>
+          </div>
+          <div class="table-wrap queue-table-wrap"><table><thead><tr><th>Priority</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Qty</th><th>Total Products</th><th>Units</th><th>IHD</th><th>Status</th><th>Flags</th><th>Account Owner</th><th>Link</th><th>Action</th></tr></thead><tbody id="incompleteQueueTableBodyLeg"></tbody></table></div>
+          <div id="incompleteQueueCardsLeg" class="assembly-cards-mobile"></div>
         </div>
       </div>
 
-      <div class="card queue-section-card" style="margin-top:20px">
-        <div class="toolbar" style="margin-bottom:14px">
-          <div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Ready pack builders</h3></div>
-          <div class="right"><label for="readyQueueLimit" style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="readyQueueLimit"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="all">All</option></select></div>
-        </div>
-        <div class="table-wrap queue-table-wrap">
-          <table>
-            <thead><tr><th>Priority</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Qty</th><th>Total Products</th><th>Units</th><th>IHD</th><th>Status</th><th>Flags</th><th>Account Owner</th></tr></thead>
-            <tbody id="queueTableBody"></tbody>
-          </table>
-        </div>
-        <div id="readyQueueCards" class="assembly-cards-mobile"></div>
-      </div>
-
-      <div class="card queue-section-card" style="margin-top:20px">
-        <div class="toolbar" style="margin-bottom:14px">
-          <div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Incomplete / pending pack builders</h3></div>
-          <div class="right"><label for="incompleteQueueLimit" style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="incompleteQueueLimit"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="all">All</option></select></div>
-        </div>
-        <div class="table-wrap queue-table-wrap">
-          <table>
-            <thead><tr><th>Priority</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Qty</th><th>Total Products</th><th>Units</th><th>IHD</th><th>Status</th><th>Flags</th><th>Account Owner</th></tr></thead>
-            <tbody id="incompleteQueueTableBody"></tbody>
-          </table>
-        </div>
-        <div id="incompleteQueueCards" class="assembly-cards-mobile"></div>
-      </div>
     </section>
+
 <section id="sordPage" class="page">
       <div class="hero">
         <div>
@@ -2517,6 +2466,7 @@
 <script src="sidebar.js"></script>
 <script src="storage.js"></script>
 <script src="queue.js"></script>
+<script src="queue-command-center.js"></script>
 <script src="assembly.js"></script>
 <script src="script.js"></script>
 <script src="sord.js"></script>
