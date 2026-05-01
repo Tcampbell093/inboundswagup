@@ -548,7 +548,7 @@ assemblyEditModalBackdrop?.addEventListener('click',(e)=>{if(e.target===assembly
 window.openIssueHoldModal=window.openIssueHoldModal||openIssueHoldModal;
 
 // ── Comment badge loader for Assembly board (batch fetch) ─────────────
-window._cmBatchData = window._cmBatchData || { counts:{}, hasPriority:{}, unread:{}, loadedAt:0 };
+window._cmBatchData = window._cmBatchData || { counts:{}, hasPriority:{}, unread:{}, requests:{}, loadedAt:0 };
 
 function _getCurrentReader() {
   try { if (typeof state !== 'undefined' && state.currentUser) return state.currentUser; } catch(_) {}
@@ -563,22 +563,26 @@ async function _loadCommentBatch() {
     if (!res.ok) return;
     const data = await res.json();
     const comments = data.comments || [];
-    const counts = {}, hasPri = {}, unread = {};
+    const counts = {}, hasPri = {}, unread = {}, requests = {};
     const reader = _getCurrentReader().toLowerCase();
     comments.forEach(c => {
       const key = c.pb_id || c.so || '';
       if (!key) return;
       counts[key] = (counts[key] || 0) + 1;
       if (c.category === 'priority') hasPri[key] = true;
+      if (c.category === 'hold_request') requests[key] = 'hold';
+      if (c.category === 'date_change_request' && requests[key] !== 'hold') requests[key] = 'date';
       const readBy = (c.read_by || []).map(r => String(r).toLowerCase());
       if (reader && !readBy.includes(reader)) unread[key] = (unread[key] || 0) + 1;
       if (c.so && c.pb_id && c.so !== c.pb_id) {
         counts[c.so] = (counts[c.so] || 0) + 1;
         if (c.category === 'priority') hasPri[c.so] = true;
+        if (c.category === 'hold_request') requests[c.so] = 'hold';
+        if (c.category === 'date_change_request' && requests[c.so] !== 'hold') requests[c.so] = 'date';
         if (reader && !readBy.includes(reader)) unread[c.so] = (unread[c.so] || 0) + 1;
       }
     });
-    window._cmBatchData = { counts, hasPriority: hasPri, unread, loadedAt: Date.now() };
+    window._cmBatchData = { counts, hasPriority: hasPri, unread, requests, loadedAt: Date.now() };
   } catch { /* non-fatal */ }
 }
 
@@ -602,20 +606,29 @@ window._markCommentThreadRead = _markRead;
 function _applyBadgesToCells(selector) {
   const cells = document.querySelectorAll(selector);
   if (!cells.length) return;
-  const { counts, hasPriority, unread } = window._cmBatchData;
+  const { counts, hasPriority, unread, requests } = window._cmBatchData;
   cells.forEach(cell => {
     const key     = cell.dataset.cbkey || '';
     const count   = counts[key]       || 0;
     const isPri   = hasPriority[key]  || false;
     const nUnread = unread[key]       || 0;
+    const reqType = requests[key]     || '';
     const span    = cell.querySelector('.cb-badge') || cell;
+    const rowEl = cell.closest('tr');
+    if (rowEl) {
+      rowEl.classList.remove('row-hold-request', 'row-date-request');
+      if (reqType === 'hold') rowEl.classList.add('row-hold-request');
+      if (reqType === 'date') rowEl.classList.add('row-date-request');
+    }
     span.classList.remove('cb-loading');
     if (count > 0) {
       span.className = 'cb-badge cb-has' + (isPri?' cb-priority':'') + (nUnread?' cb-unread':'');
-      span.innerHTML = nUnread
+      const reqChip = reqType==='hold' ? ' <span class="cb-req-chip cb-req-hold">Hold</span>'
+        : reqType==='date' ? ' <span class="cb-req-chip cb-req-date">Date</span>' : '';
+      span.innerHTML = (nUnread
         ? '\u{1F4AC} ' + count + '<span class="cb-unread-dot" title="' + nUnread + ' unread"></span>'
-        : '\u{1F4AC} ' + count;
-      span.title = count + ' comment' + (count===1?'':'s') + (nUnread?' \u00B7 '+nUnread+' unread':'') + (isPri?' \u00B7 includes Priority Request':'');
+        : '\u{1F4AC} ' + count) + reqChip;
+      span.title = count + ' comment' + (count===1?'':'s') + (nUnread?' \u00B7 '+nUnread+' unread':'') + (isPri?' \u00B7 includes Priority Request':'') + (reqType==='hold'?' \u00B7 Hold requested':'') + (reqType==='date'?' \u00B7 Date change requested':'');
     } else {
       span.className = 'cb-badge cb-none';
       span.textContent = '\u{1F4AC} Add';
@@ -634,10 +647,13 @@ async function renderAssemblyCommentBadges() {
     const count = d.counts[key] || 0;
     const isPri = d.hasPriority[key] || false;
     const nUnread = d.unread[key] || 0;
+    const reqType = (d.requests && d.requests[key]) || '';
     el.classList.remove('cb-loading');
     if (count > 0) {
       el.className = 'cb-badge cb-has' + (isPri?' cb-priority':'') + (nUnread?' cb-unread':'');
-      el.innerHTML = nUnread ? '\u{1F4AC} ' + count + '<span class="cb-unread-dot"></span>' : '\u{1F4AC} ' + count;
+      const reqChip = reqType==='hold' ? ' <span class="cb-req-chip cb-req-hold">Hold</span>'
+        : reqType==='date' ? ' <span class="cb-req-chip cb-req-date">Date</span>' : '';
+      el.innerHTML = (nUnread ? '\u{1F4AC} ' + count + '<span class="cb-unread-dot"></span>' : '\u{1F4AC} ' + count) + reqChip;
     } else {
       el.className = 'cb-badge cb-none';
       el.textContent = '\u{1F4AC} Add';

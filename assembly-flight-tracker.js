@@ -14,6 +14,7 @@ const state = {
   filtered:   [],
   commentCounts: {},   // pbId|so -> count
   hasPriority:   {},   // pbId|so -> bool
+  requestFlags:  {},   // pbId|so -> 'hold' | 'date'
   updatedAt:  null,
   groupBy:    'day',   // 'day' | 'sord'
 };
@@ -233,28 +234,34 @@ function hydrateRow(row, revLookup){
 // ── Comment counts batch fetch ─────────────────────────────────────────────
 async function loadCommentCounts(rows){
   // Fetch recent comments to build a count map — uses ?latest=N approach
-  // For now fetch last 200 comments and build counts client-side
+  // For now fetch last 500 comments and build counts client-side
   // This avoids N+1 per row and works with the existing backend
   try{
-    const res  = await fetch(`${commentsApiBase}?latest=200`,{headers:{Accept:'application/json'}});
+    const res  = await fetch(`${commentsApiBase}?latest=500`,{headers:{Accept:'application/json'}});
     if(!res.ok) return;
     const data = await res.json();
     const comments = data.comments || (data.comment ? [data.comment] : []);
     const counts = {};
     const hasPri = {};
+    const requestFlags = {};
     comments.forEach(c=>{
       const key = c.pb_id || c.so || '';
       if(!key) return;
       counts[key]  = (counts[key]||0)+1;
       if(c.category==='priority') hasPri[key]=true;
+      if(c.category==='hold_request') requestFlags[key]='hold';
+      if(c.category==='date_change_request' && requestFlags[key]!=='hold') requestFlags[key]='date';
       // also key by so for rows without pbId
       if(c.so && c.pb_id && c.so!==c.pb_id){
         counts[c.so]  = (counts[c.so]||0)+1;
         if(c.category==='priority') hasPri[c.so]=true;
+        if(c.category==='hold_request') requestFlags[c.so]='hold';
+        if(c.category==='date_change_request' && requestFlags[c.so]!=='hold') requestFlags[c.so]='date';
       }
     });
     state.commentCounts = counts;
     state.hasPriority   = hasPri;
+    state.requestFlags  = requestFlags;
   }catch(e){
     // non-fatal
   }
@@ -270,6 +277,16 @@ function getCommentCount(row){
 function hasPriorityComment(row){
   const k = commentKey(row);
   return !!(state.hasPriority[k] || state.hasPriority[row.so]);
+}
+function getRequestType(row){
+  const k = commentKey(row);
+  return state.requestFlags[k] || state.requestFlags[row.so] || '';
+}
+function requestBadge(row){
+  const req = getRequestType(row);
+  if(req==='hold') return '<span class="ft-request-chip ft-request-hold">Hold requested</span>';
+  if(req==='date') return '<span class="ft-request-chip ft-request-date">Date change requested</span>';
+  return '';
 }
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
@@ -337,6 +354,18 @@ function commentBtn(row){
     data-account="${esc(row.account||'')}">
     ${priDot}💬${countTxt ? `<span class="cm-count">${countTxt}</span>` : ''}
   </button>`;
+}
+
+function requestActionBtn(row, type){
+  const cls = type==='hold' ? 'ft-req-btn ft-req-hold' : 'ft-req-btn ft-req-date';
+  const label = type==='hold' ? '⏸ Hold' : '📅 Date';
+  const action = type==='hold' ? 'hold' : 'date_change';
+  return `<button class="${cls}" type="button"
+    data-request-action="${action}"
+    data-pbid="${esc(row.pbId||'')}"
+    data-pbname="${esc(row.pb||'')}"
+    data-so="${esc(row.so||'')}"
+    data-account="${esc(row.account||'')}">${label}</button>`;
 }
 
 // ── Filters ────────────────────────────────────────────────────────────────
@@ -461,17 +490,18 @@ function buildTableRow(row){
   const pbContent = row.rowLink
     ? `<a class="row-link" href="${esc(row.rowLink)}" target="_blank" rel="noreferrer">${esc(row.pb||'—')}</a>`
     : esc(row.pb||'—');
-  return `<tr class="risk-${getRisk(row)}">
+  const req = getRequestType(row);
+  return `<tr class="risk-${getRisk(row)}${req ? ` request-${req}` : ''}">
     <td>${pbContent}</td>
     <td>${esc(row.so||'—')}</td>
     <td>${esc(row.account||'—')}</td>
     <td>${esc(row.accountOwner||'—')}</td>
     <td>${fmtN(getUnits(row))}</td>
     <td>${stageBadge(row)}</td>
-    <td>${ihdDisplay(row)}</td>
+    <td>${ihdDisplay(row)}${requestBadge(row)}</td>
     <td>${fmtMoney(row.revenue||0)}</td>
     <td class="note-cell">${esc(row.scheduleNote||row.rescheduleNote||'—')}</td>
-    <td class="comment-cell">${commentBtn(row)}${photoBtn(row)}</td>
+    <td class="comment-cell">${commentBtn(row)}${requestActionBtn(row,'hold')}${requestActionBtn(row,'date_change')}${photoBtn(row)}</td>
   </tr>`;
 }
 
@@ -571,16 +601,17 @@ function renderBySord(rows){
             const pbContent = r.rowLink
               ? `<a class="row-link" href="${esc(r.rowLink)}" target="_blank" rel="noreferrer">${esc(r.pb||'—')}</a>`
               : esc(r.pb||'—');
-            return `<tr class="risk-${getRisk(r)}">
+            const req = getRequestType(r);
+            return `<tr class="risk-${getRisk(r)}${req ? ` request-${req}` : ''}">
               <td>${pbContent}</td>
               <td>${esc(fmtDateLabel(r.scheduledFor))}</td>
               <td>${esc(r.accountOwner||'—')}</td>
               <td>${fmtN(getUnits(r))}</td>
               <td>${stageBadge(r)}</td>
-              <td>${ihdDisplay(r)}</td>
+              <td>${ihdDisplay(r)}${requestBadge(r)}</td>
               <td>${fmtMoney(r.revenue||0)}</td>
               <td class="note-cell">${esc(r.scheduleNote||r.rescheduleNote||'—')}</td>
-              <td class="comment-cell">${commentBtn(r)}</td>
+              <td class="comment-cell">${commentBtn(r)}${requestActionBtn(r,'hold')}${requestActionBtn(r,'date_change')}${photoBtn(r)}</td>
             </tr>`;
           }).join('')}</tbody>
         </table>
@@ -646,7 +677,8 @@ function renderBoardCards(rows){
         const pbContent = r.rowLink
           ? `<a class="row-link" href="${esc(r.rowLink)}" target="_blank" rel="noreferrer">${esc(r.pb||'—')}</a>`
           : esc(r.pb||'—');
-        return `<div class="mob-card mob-ft-card risk-card-${getRisk(r)}">
+        const req = getRequestType(r);
+        return `<div class="mob-card mob-ft-card risk-card-${getRisk(r)}${req ? ` request-card-${req}` : ''}">
           <div class="mob-card-header">
             <div class="mob-card-title">
               <span class="mob-card-pb">${pbContent}</span>
@@ -658,9 +690,9 @@ function renderBoardCards(rows){
             <div class="mob-meta-item"><span class="mob-meta-label">SO</span><strong>${esc(r.so||'—')}</strong></div>
             <div class="mob-meta-item"><span class="mob-meta-label">Units</span><strong>${fmtN(getUnits(r))}</strong></div>
             <div class="mob-meta-item"><span class="mob-meta-label">Revenue</span><strong>${fmtMoney(r.revenue||0)}</strong></div>
-            <div class="mob-meta-item"><span class="mob-meta-label">In-Hands</span><strong>${ihdDisplay(r)}</strong></div>
+            <div class="mob-meta-item"><span class="mob-meta-label">In-Hands</span><strong>${ihdDisplay(r)}${requestBadge(r)}</strong></div>
           </div>
-          <div class="mob-card-actions">${commentBtn(r)}${photoBtn(r)}</div>
+          <div class="mob-card-actions">${commentBtn(r)}${requestActionBtn(r,'hold')}${requestActionBtn(r,'date_change')}${photoBtn(r)}</div>
         </div>`;
       }).join('')}
     </section>`;
@@ -722,6 +754,8 @@ const CAT_LABELS = {
   priority:     '🔴 Priority Request',
   instructions: '📋 Special Instructions',
   general:      '💬 General Note',
+  hold_request: '⏸ Hold Request',
+  date_change_request: '📅 Date Change Request',
 };
 function cmFmtTime(iso){
   const d = new Date(iso);
@@ -830,6 +864,44 @@ async function cmSubmitComment(){
   }
 }
 
+async function submitQuickRequest(action, pbId, pbName, so, account){
+  const isHold = action === 'hold';
+  const promptMsg = isHold
+    ? 'Enter a reason for the hold request:'
+    : 'Enter the requested new date and reason:';
+  const notes = window.prompt(promptMsg, '');
+  if(notes == null) return;
+  const cleaned = String(notes).trim();
+  if(!cleaned) return;
+  const author = (localStorage.getItem('ft_author_name') || 'Stakeholder').trim() || 'Stakeholder';
+  const category = isHold ? 'hold_request' : 'date_change_request';
+  const body = isHold
+    ? `Hold request: ${cleaned}`
+    : `Date change request: ${cleaned}`;
+  try{
+    const res = await fetch(commentsApiBase,{
+      method:'POST',
+      headers:{'Content-Type':'application/json',Accept:'application/json'},
+      body: JSON.stringify({
+        pb_id: pbId||'',
+        pb_name: pbName||'',
+        so: so||'',
+        account: account||'',
+        author_name: author,
+        category,
+        body
+      }),
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error||`Request failed (${res.status})`);
+    await loadCommentCounts(state.scheduled);
+    renderBoard(state.filtered.length ? state.filtered : state.scheduled);
+    renderHold(state.held);
+  }catch(err){
+    alert('Could not submit request: ' + (err.message||'Unknown error'));
+  }
+}
+
 // ── Event wiring ───────────────────────────────────────────────────────────
 cmEls.close.addEventListener('click', cmCloseModal);
 cmEls.overlay.addEventListener('click', e=>{ if(e.target===cmEls.overlay) cmCloseModal(); });
@@ -841,6 +913,17 @@ document.addEventListener('click', e=>{
   const btn = e.target.closest('.comment-btn');
   if(!btn) return;
   cmOpenModal(btn.dataset.pbid||'', btn.dataset.pbname||'', btn.dataset.so||'', btn.dataset.account||'');
+});
+document.addEventListener('click', e=>{
+  const btn = e.target.closest('[data-request-action]');
+  if(!btn) return;
+  submitQuickRequest(
+    btn.dataset.requestAction || '',
+    btn.dataset.pbid || '',
+    btn.dataset.pbname || '',
+    btn.dataset.so || '',
+    btn.dataset.account || ''
+  );
 });
 
 ['input','change'].forEach(evt=>{

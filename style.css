@@ -4743,6 +4743,25 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 .cb-badge.cb-unread {
   border: 1.5px solid #1a56db;
 }
+.cb-req-chip{
+  display:inline-flex;
+  align-items:center;
+  margin-left:5px;
+  padding:1px 6px;
+  border-radius:999px;
+  font-size:10px;
+  font-weight:800;
+}
+.cb-req-hold{background:#fff5e8;color:#8a4b00;border:1px solid #f3d19d;}
+.cb-req-date{background:#eef4ff;color:#1d4ed8;border:1px solid #c8d9ff;}
+.row-hold-request{
+  background: rgba(245, 158, 11, 0.10) !important;
+  border-left: 4px solid #f59e0b;
+}
+.row-date-request{
+  background: rgba(59, 130, 246, 0.09) !important;
+  border-left: 4px solid #3b82f6;
+}
 .cb-unread-dot {
   display: inline-block;
   width: 7px; height: 7px;

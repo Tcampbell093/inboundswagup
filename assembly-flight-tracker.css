@@ -90,6 +90,37 @@ a.row-link:hover{text-decoration:underline}
   white-space: nowrap;
 }
 .comment-btn:hover { background: var(--blue); color: #fff; }
+.ft-req-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  margin-left: 6px;
+  background: #fff;
+}
+.ft-req-hold { border-color: #f8c56f; color: #8a4b00; background: #fff8ea; }
+.ft-req-date { border-color: #b6cffb; color: #1a56db; background: #eef4ff; }
+.ft-request-chip {
+  display: inline-flex;
+  margin-left: 6px;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.ft-request-hold { background: #fff5e8; color: #8a4b00; border: 1px solid #f3d19d; }
+.ft-request-date { background: #eef4ff; color: #1d4ed8; border: 1px solid #c8d9ff; }
+tr.request-hold { background: #fffaf2; }
+tr.request-date { background: #f7faff; }
+.request-card-hold { border-left: 3px solid #f59e0b !important; }
+.request-card-date { border-left: 3px solid #3b82f6 !important; }
 
 /* ── Comment modal overlay ───────────────────────────────────────────────── */
 .cm-overlay {
@@ -179,6 +210,8 @@ a.row-link:hover{text-decoration:underline}
 .cm-cat-priority   .cm-cat-badge { background: #fff1f0; color: var(--danger); border: 1px solid #ffd6d4; }
 .cm-cat-instructions .cm-cat-badge { background: #fffbe6; color: #7a5800; border: 1px solid #ffe480; }
 .cm-cat-general    .cm-cat-badge { background: var(--blue-soft); color: var(--blue); border: 1px solid #cfe3fb; }
+.cm-cat-hold_request .cm-cat-badge { background: #fff5e8; color: #8a4b00; border: 1px solid #f3d19d; }
+.cm-cat-date_change_request .cm-cat-badge { background: #eef4ff; color: #1d4ed8; border: 1px solid #c8d9ff; }
 .cm-comment-author { font-size: 12px; font-weight: 700; color: var(--text); }
 .cm-comment-time   { font-size: 11px; color: var(--muted); margin-left: auto; }
 .cm-comment-body   { margin: 0; font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
