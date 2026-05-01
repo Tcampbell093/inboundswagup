@@ -1650,20 +1650,18 @@
     <section id="assemblyPage" class="page">
 
       <!-- ── Top bar ──────────────────────────────────────────── -->
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
-        <div>
-          <div class="eyebrow">Assembly</div>
-          <h2 style="margin:2px 0 0;">Assembly Planner</h2>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <button class="btn secondary" id="assemblyPrevDayBtn" style="font-size:15px;padding:7px 12px;line-height:1;">&#9664;</button>
-          <input id="assemblyDate" type="date" style="padding:8px 12px;border-radius:8px;border:1.5px solid var(--blue2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;" />
-          <span class="pill" id="assemblySelectedDatePill" style="font-size:13px;font-weight:700;padding:7px 14px;color:var(--text);">Today</span>
-          <button class="btn secondary" id="assemblyNextDayBtn" style="font-size:15px;padding:7px 12px;line-height:1;">&#9654;</button>
-          <div style="width:1px;height:24px;background:var(--blue2);margin:0 2px;"></div>
-          <button class="btn" id="assemblyEditModeToggleBtn" type="button">+ Add Row</button>
-          <button class="btn secondary" id="assemblyExportStyledSnapshotBtn">Export XLSX</button>
-          <button class="btn secondary" id="exportStakeholderDashboardBtn">7-Day</button>
+      <div style="margin-bottom:18px;">
+        <div class="eyebrow">Assembly</div>
+        <h2 style="margin:2px 0 14px;">Assembly Planner</h2>
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;overflow-x:auto;padding-bottom:2px;">
+          <button class="btn secondary" id="assemblyPrevDayBtn" style="font-size:14px;padding:7px 11px;flex-shrink:0;">&#9664;</button>
+          <input id="assemblyDate" type="date" style="padding:7px 10px;border-radius:8px;border:1.5px solid var(--blue2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;flex-shrink:0;" />
+          <span id="assemblySelectedDatePill" style="font-size:13px;font-weight:700;color:var(--text);background:var(--blue1);border:1px solid var(--blue2);border-radius:20px;padding:6px 14px;white-space:nowrap;flex-shrink:0;">Today</span>
+          <button class="btn secondary" id="assemblyNextDayBtn" style="font-size:14px;padding:7px 11px;flex-shrink:0;">&#9654;</button>
+          <div style="width:1px;height:22px;background:var(--blue2);margin:0 4px;flex-shrink:0;"></div>
+          <button class="btn" id="assemblyEditModeToggleBtn" type="button" style="flex-shrink:0;">+ Add Row</button>
+          <button class="btn secondary" id="assemblyExportStyledSnapshotBtn" style="flex-shrink:0;">Export XLSX</button>
+          <button class="btn secondary" id="exportStakeholderDashboardBtn" style="flex-shrink:0;">7-Day</button>
         </div>
       </div>
 
