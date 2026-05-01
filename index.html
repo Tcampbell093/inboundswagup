@@ -1651,129 +1651,144 @@
       <div class="hero">
         <div>
           <div class="eyebrow">Assembly</div>
-          <h2>Assembly daily planner</h2>
-          <p class="subtitle">Daily planning, unit forecasting, stage tracking, and rescheduling for Assembly. This version keeps the module date-based and uses one true current stage per pack builder to avoid overlap.</p>
+          <h2>Assembly Planner</h2>
         </div>
-        <div class="toolbar right">
-          <button class="btn secondary" id="assemblyExportStyledSnapshotBtn">Export Styled Snapshot XLSX</button>
-          <button class="btn secondary" id="exportStakeholderDashboardBtn">Export 7-Day Stakeholder Dashboard</button>
+        <div class="toolbar right" style="flex-wrap:wrap;gap:8px;">
+          <button class="btn secondary" id="assemblyPrevDayBtn">&#9664;</button>
+          <input id="assemblyDate" type="date" style="padding:7px 10px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);font-size:13px;font-weight:700;" />
+          <span class="pill" id="assemblySelectedDatePill" style="font-weight:700;">Today</span>
+          <button class="btn secondary" id="assemblyNextDayBtn">&#9654;</button>
+          <button class="btn" id="assemblyEditModeToggleBtn" type="button">+ Add Row</button>
+          <button class="btn secondary" id="assemblyExportStyledSnapshotBtn">Export XLSX</button>
+          <button class="btn secondary" id="exportStakeholderDashboardBtn">7-Day</button>
+        </div>
+      </div>
+
+      <!-- Two-column: Shift Setup + Live Output -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+
+        <div class="card" style="padding:16px 18px;">
+          <div class="eyebrow" style="margin-bottom:10px;">Shift Setup</div>
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px;">
+            <div class="field"><label for="assemblyHeadcount" style="font-size:11px;font-weight:700;color:var(--muted);">Headcount</label><input id="assemblyHeadcount" type="number" min="0" value="7" style="width:100%;padding:6px 8px;border-radius:7px;border:1px solid var(--blue2);background:var(--blue1);font-size:13px;" /></div>
+            <div class="field"><label for="assemblyHours" style="font-size:11px;font-weight:700;color:var(--muted);">Hours</label><input id="assemblyHours" type="number" min="0" step="0.25" value="8" style="width:100%;padding:6px 8px;border-radius:7px;border:1px solid var(--blue2);background:var(--blue1);font-size:13px;" /></div>
+            <div class="field"><label for="assemblyHoursElapsed" style="font-size:11px;font-weight:700;color:var(--muted);">Elapsed</label><input id="assemblyHoursElapsed" type="number" min="0" step="0.25" value="1" style="width:100%;padding:6px 8px;border-radius:7px;border:1px solid var(--blue2);background:var(--blue1);font-size:13px;" /></div>
+            <div class="field"><label for="assemblyUph" style="font-size:11px;font-weight:700;color:var(--muted);">Target UPH</label><input id="assemblyUph" type="number" min="0" value="150" style="width:100%;padding:6px 8px;border-radius:7px;border:1px solid var(--blue2);background:var(--blue1);font-size:13px;" /></div>
+            <div class="field"><label for="assemblyScheduledPb" style="font-size:11px;font-weight:700;color:var(--muted);">Sched. PBs</label><input id="assemblyScheduledPb" type="number" min="0" value="0" style="width:100%;padding:6px 8px;border-radius:7px;border:1px solid var(--blue2);background:var(--blue1);font-size:13px;" /></div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
+            <div style="background:var(--blue1);border-radius:8px;padding:8px 10px;text-align:center;"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Headcount</div><div style="font-size:20px;font-weight:800;" id="assemblyHeadcountStat">0</div></div>
+            <div style="background:var(--blue1);border-radius:8px;padding:8px 10px;text-align:center;"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Hours</div><div style="font-size:20px;font-weight:800;" id="assemblyHoursStat">0</div></div>
+            <div style="background:var(--blue1);border-radius:8px;padding:8px 10px;text-align:center;"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Target UPH</div><div style="font-size:20px;font-weight:800;" id="assemblyUphStat">0</div></div>
+            <div style="background:var(--blue1);border-radius:8px;padding:8px 10px;text-align:center;"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Goal %</div><div style="font-size:20px;font-weight:800;" id="assemblyGoalProgressDisplay">0%</div></div>
+          </div>
+          <div style="font-size:12px;color:var(--muted);display:flex;justify-content:space-between;margin-bottom:4px;"><span>Capacity</span><span id="assemblyCapacityStat" style="font-weight:700;">0</span></div>
+          <div style="height:5px;background:var(--blue2);border-radius:3px;overflow:hidden;"><div id="assemblyCapacityBar" style="height:5px;background:#1a73e8;border-radius:3px;width:0%;transition:width .3s;"></div></div>
+        </div>
+
+        <div class="card" style="padding:16px 18px;">
+          <div class="eyebrow" style="margin-bottom:10px;">Live Output</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">
+            <div style="background:var(--blue1);border-radius:8px;padding:8px 10px;text-align:center;"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Scheduled</div><div style="font-size:18px;font-weight:800;" id="assemblyScheduledUnitsStat">0</div></div>
+            <div style="background:#e6f9ee;border-radius:8px;padding:8px 10px;text-align:center;"><div style="font-size:11px;color:#0F6E56;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Done</div><div style="font-size:18px;font-weight:800;color:#0F6E56;" id="assemblyDoneUnitsStat2">0</div></div>
+            <div style="background:var(--blue1);border-radius:8px;padding:8px 10px;text-align:center;"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Remaining</div><div style="font-size:18px;font-weight:800;" id="assemblyRemainingUnitsStat">0</div></div>
+            <div style="background:var(--blue1);border-radius:8px;padding:8px 10px;text-align:center;"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">UPH Now</div><div style="font-size:18px;font-weight:800;" id="assemblyCurrentUphDisplay">0</div></div>
+            <div style="background:var(--blue1);border-radius:8px;padding:8px 10px;text-align:center;"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Revenue</div><div style="font-size:18px;font-weight:800;" id="assemblyScheduledRevenueStat">$0</div></div>
+            <div style="background:var(--blue1);border-radius:8px;padding:8px 10px;text-align:center;"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">PB Rows</div><div style="font-size:18px;font-weight:800;" id="assemblyRowsTodayStat">0</div></div>
+          </div>
+          <div style="font-size:12px;color:var(--muted);display:flex;justify-content:space-between;margin-bottom:4px;"><span>Completion</span><span id="assemblyCompletionStat" style="font-weight:700;">0%</span></div>
+          <div style="height:5px;background:var(--blue2);border-radius:3px;overflow:hidden;"><div id="assemblyCompletionBar" style="height:5px;background:#0F6E56;border-radius:3px;width:0%;transition:width .3s;"></div></div>
         </div>
       </div>
 
-      <div class="stats assembly-command-stats">
-        <div class="card assembly-card-tight"><div class="stat-label">Scheduled Units</div><div class="stat-value" id="assemblyScheduledUnitsStat">0</div><div class="stat-hint">All units planned on the selected day</div></div>
-        <div class="card assembly-card-tight"><div class="stat-label">Done Units</div><div class="stat-value" id="assemblyDoneUnitsStat2">0</div><div class="stat-hint">Units already completed</div></div>
-        <div class="card assembly-card-tight"><div class="stat-label">Remaining Units</div><div class="stat-value" id="assemblyRemainingUnitsStat">0</div><div class="stat-hint">Units still left today</div></div>
-        <div class="card assembly-card-tight"><div class="stat-label">Completion</div><div class="stat-value" id="assemblyCompletionStat">0%</div><div class="stat-hint">Done vs scheduled</div></div>
-        <div class="card assembly-card-tight"><div class="stat-label">Total Capacity</div><div class="stat-value" id="assemblyCapacityStat">0</div><div class="stat-hint">Headcount × hours × UPH</div></div>
-        <div class="card assembly-card-tight"><div class="stat-label">Current UPH</div><div class="stat-value" id="assemblyCurrentUphDisplay">0</div><div class="stat-hint">Done units ÷ hours elapsed</div></div>
-        <div class="card assembly-card-tight assembly-revenue-stat"><div class="stat-label">Scheduled Revenue</div><div class="stat-value" id="assemblyScheduledRevenueStat">$0</div><div class="stat-hint">Total revenue on board today</div></div>
-      </div>
-
-      <div class="card assembly-compact-shell">
-        <div class="toolbar assembly-toolbar-stack">
-          <div class="left">
-            <button class="btn secondary" id="assemblyPrevDayBtn">Previous Day</button>
-            <button class="btn secondary" id="assemblyNextDayBtn">Next Day</button>
-            <span class="pill" id="assemblySelectedDatePill">Selected day</span>
-            <span class="pill" id="assemblyBoardCountPill">0 rows</span>
+      <!-- Stage strip + controls -->
+      <div class="card" style="padding:12px 16px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <span id="assemblyBoardCountPill" style="font-size:13px;font-weight:700;color:var(--muted);white-space:nowrap;">0 rows</span>
+          <div style="flex:1;display:flex;gap:14px;flex-wrap:wrap;justify-content:center;align-items:center;">
+            <div style="text-align:center;"><div style="font-size:15px;font-weight:800;" id="asmStripAa">0</div><span style="font-size:11px;background:#E6F1FB;color:#0C447C;padding:2px 8px;border-radius:999px;font-weight:700;">A.A.</span></div>
+            <div style="text-align:center;"><div style="font-size:15px;font-weight:800;" id="asmStripPrint">0</div><span style="font-size:11px;background:#FAEEDA;color:#633806;padding:2px 8px;border-radius:999px;font-weight:700;">Print</span></div>
+            <div style="text-align:center;"><div style="font-size:15px;font-weight:800;" id="asmStripPicked">0</div><span style="font-size:11px;background:#EEEDFE;color:#3C3489;padding:2px 8px;border-radius:999px;font-weight:700;">Picked</span></div>
+            <div style="text-align:center;"><div style="font-size:15px;font-weight:800;" id="asmStripLine">0</div><span style="font-size:11px;background:#EAF3DE;color:#27500A;padding:2px 8px;border-radius:999px;font-weight:700;">Line</span></div>
+            <div style="text-align:center;"><div style="font-size:15px;font-weight:800;" id="asmStripDpmo">0</div><span style="font-size:11px;background:#FAECE7;color:#712B13;padding:2px 8px;border-radius:999px;font-weight:700;">DPMO</span></div>
+            <div style="text-align:center;"><div style="font-size:15px;font-weight:800;" id="asmStripDone">0</div><span style="font-size:11px;background:#E1F5EE;color:#085041;padding:2px 8px;border-radius:999px;font-weight:700;">Done</span></div>
           </div>
-          <div class="right">
-            <button class="btn secondary" id="assemblyBreakdownToggleBtn" type="button">Show Breakdown</button>
-            <button class="btn secondary" id="assemblyDetailsToggleBtn" type="button">Show Detail Columns</button>
-            <button class="btn" id="assemblyEditModeToggleBtn" type="button">Enter Edit Mode</button>
+          <div style="display:flex;gap:6px;flex-shrink:0;">
+            <button class="btn secondary" id="assemblyBreakdownToggleBtn" type="button" style="font-size:12px;padding:5px 12px;">Units</button>
+            <button class="btn secondary" id="assemblyDetailsToggleBtn" type="button" style="font-size:12px;padding:5px 12px;">Detail View</button>
           </div>
-        </div>
-
-        <div class="assembly-grid assembly-grid-tight">
-          <div>
-            <div class="assembly-planning-bar">
-              <div class="field"><label for="assemblyDate">Date</label><input id="assemblyDate" type="date" /></div>
-              <div class="field"><label for="assemblyHeadcount">Headcount</label><input id="assemblyHeadcount" type="number" min="0" value="7" /></div>
-              <div class="field"><label for="assemblyHours">Shift Hours</label><input id="assemblyHours" type="number" min="0" step="0.25" value="8" /></div>
-              <div class="field"><label for="assemblyHoursElapsed">Hours Elapsed</label><input id="assemblyHoursElapsed" type="number" min="0" step="0.25" value="1" /></div>
-              <div class="field"><label for="assemblyUph">Target UPH</label><input id="assemblyUph" type="number" min="0" value="150" /></div>
-              <div class="field"><label for="assemblyScheduledPb">Scheduled PBs</label><input id="assemblyScheduledPb" type="number" min="0" value="0" /></div>
-            </div>
-
-            <div class="assembly-mini-stats">
-              <div class="mini-card"><div class="mini-label">Headcount</div><div class="mini-value" id="assemblyHeadcountStat">0</div></div>
-              <div class="mini-card"><div class="mini-label">Shift Hours</div><div class="mini-value" id="assemblyHoursStat">0</div></div>
-              <div class="mini-card"><div class="mini-label">Target UPH</div><div class="mini-value" id="assemblyUphStat">0</div></div>
-              <div class="mini-card"><div class="mini-label">Goal Progress</div><div class="mini-value" id="assemblyGoalProgressDisplay">0%</div></div>
-              <div class="mini-card"><div class="mini-label">Rows Today</div><div class="mini-value" id="assemblyRowsTodayStat">0</div></div>
-              <div class="mini-card"><div class="mini-label">Scheduled PB Rows</div><div class="mini-value" id="assemblyScheduledPbDisplay">0</div></div>
-            </div>
-
-            <div class="small-note assembly-note-compact"><strong>Command view first:</strong> the top stays focused on today’s output. Breakdown, full columns, and editing stay tucked away until needed.</div>
-
-            <div class="assembly-collapse" id="assemblyBreakdownPanel" hidden>
-              <div class="assembly-stage-totals-grid assembly-stage-totals-grid-tight">
-                <div class="card assembly-card-tight"><div class="stat-label">A.A. Units</div><div class="stat-value" id="assemblyAaUnits">0</div><div class="stat-hint">Actually available</div></div>
-                <div class="card assembly-card-tight"><div class="stat-label">Print Units</div><div class="stat-value" id="assemblyPrintUnits">0</div><div class="stat-hint">Currently in print</div></div>
-                <div class="card assembly-card-tight"><div class="stat-label">Picked Units</div><div class="stat-value" id="assemblyPickedUnits">0</div><div class="stat-hint">Currently picked</div></div>
-                <div class="card assembly-card-tight"><div class="stat-label">Line Units</div><div class="stat-value" id="assemblyLineUnits">0</div><div class="stat-hint">Currently on line</div></div>
-                <div class="card assembly-card-tight"><div class="stat-label">DPMO Units</div><div class="stat-value" id="assemblyDpmoUnits">0</div><div class="stat-hint">Currently in DPMO</div></div>
-                <div class="card assembly-card-tight"><div class="stat-label">Done Units</div><div class="stat-value" id="assemblyDoneUnits">0</div><div class="stat-hint">Currently completed</div></div>
-              </div>
-            </div>
-
-            <div class="assembly-board-section">
-              <div class="toolbar" style="margin-top:18px;margin-bottom:12px">
-                <div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Today’s work</h3></div>
-                <div class="right"><span class="pill" id="assemblyViewModePill">Compact View</span></div>
-              </div>
-
-              <div class="assembly-collapse assembly-add-modal-backdrop" id="assemblyEditModePanel" hidden>
-                <div class="assembly-add-modal-card">
-                  <div class="modal-header assembly-add-modal-header">
-                    <div>
-                      <div class="eyebrow">Assembly Row Creator</div>
-                      <h3 style="margin:6px 0 4px;font-size:28px;font-weight:900">Add or stage today’s work</h3>
-                      <p class="subtitle" style="max-width:none;margin:0">Keep the board light by creating rows in this pop-out instead of leaving the full input section on-screen.</p>
-                    </div>
-                    <button class="btn secondary" id="closeAssemblyCreateBtn" type="button">Close</button>
-                  </div>
-                  <div class="small-note" style="margin-bottom:14px"><strong>Edit mode:</strong> row creation and heavier controls live here so the default view stays lighter for meetings and quick reviews.</div>
-                  <div class="form-grid assembly-board-form">
-                    <div class="field"><label for="assemblyWorkType">Work Type</label><select id="assemblyWorkType"><option value="pack_builder">Pack Builder</option><option value="jira">Jira</option><option value="placeholder">Placeholder</option></select></div>
-                    <div class="field"><label for="assemblyPb">Primary ID / Name</label><input id="assemblyPb" placeholder="PB-00031972 or JIRA-1234" /></div>
-                    <div class="field"><label for="assemblySo">Sales Order</label><input id="assemblySo" placeholder="SORD-047805" /></div>
-                    <div class="field"><label for="assemblyAccount">Account</label><input id="assemblyAccount" placeholder="Account name" /></div>
-                    <div class="field"><label for="assemblyQty">Scheduled Qty</label><input id="assemblyQty" type="number" min="0" value="0" /></div>
-                    <div class="field"><label for="assemblyFullQty">Full Qty</label><input id="assemblyFullQty" type="number" min="0" value="0" /></div>
-                    <div class="field"><label for="assemblyProducts">Total Products</label><input id="assemblyProducts" type="number" min="0" value="0" /></div>
-                    <div class="field"><label for="assemblyStatus">Status</label><input id="assemblyStatus" placeholder="Ready, Printing, On Line..." /></div>
-                    <div class="field"><label for="assemblyIhd">IHD</label><input id="assemblyIhd" type="date" /></div>
-                    <div class="field"><label for="assemblyExternalLink">External Link</label><input id="assemblyExternalLink" placeholder="Jira or other URL" /></div>
-                  </div>
-
-                  <div class="form-grid assembly-edit-subgrid">
-                    <div class="field"><label for="assemblyStage">Current Stage</label><select id="assemblyStage"><option value="aa">A.A.</option><option value="print">Print</option><option value="picked">Picked</option><option value="line">Line</option><option value="dpmo">DPMO</option><option value="done">Done</option></select></div>
-                    <div class="field"><label for="assemblyIsPartial">Partial Pack</label><select id="assemblyIsPartial"><option value="false">No</option><option value="true">Yes</option></select></div>
-                    <div class="field"><label>Units</label><input id="assemblyUnitsPreview" value="0" disabled /></div>
-                    <div class="toolbar right" style="margin:0;justify-content:flex-end"><button class="btn" id="assemblyAddBoardRowBtn" type="button">Add board row</button></div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="table-wrap assembly-table-desktop">
-                <table>
-                  <thead id="assemblyBoardHead"></thead>
-                  <tbody id="assemblyBoardBody"></tbody>
-                </table>
-              </div>
-              <div id="assemblyBoardCards" class="assembly-cards-mobile"></div>
-            </div>
-          </div>
-
+          <!-- hidden pills kept for JS compat -->
+          <span class="pill" id="assemblyViewModePill" style="display:none;"></span>
+          <span id="assemblyScheduledPbDisplay" style="display:none;"></span>
         </div>
       </div>
+
+      <!-- Stage breakdown (collapsible) -->
+      <div class="assembly-collapse" id="assemblyBreakdownPanel" hidden style="margin-bottom:10px;">
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;">
+          <div class="card assembly-card-tight"><div class="stat-label">A.A.</div><div class="stat-value" id="assemblyAaUnits">0</div></div>
+          <div class="card assembly-card-tight"><div class="stat-label">Print</div><div class="stat-value" id="assemblyPrintUnits">0</div></div>
+          <div class="card assembly-card-tight"><div class="stat-label">Picked</div><div class="stat-value" id="assemblyPickedUnits">0</div></div>
+          <div class="card assembly-card-tight"><div class="stat-label">Line</div><div class="stat-value" id="assemblyLineUnits">0</div></div>
+          <div class="card assembly-card-tight"><div class="stat-label">DPMO</div><div class="stat-value" id="assemblyDpmoUnits">0</div></div>
+          <div class="card assembly-card-tight"><div class="stat-label">Done</div><div class="stat-value" id="assemblyDoneUnits">0</div></div>
+        </div>
+      </div>
+
+      <!-- Add row panel -->
+      <div class="assembly-collapse assembly-add-modal-backdrop" id="assemblyEditModePanel" hidden style="margin-bottom:10px;">
+        <div class="assembly-add-modal-card">
+          <div class="modal-header assembly-add-modal-header">
+            <div>
+              <div class="eyebrow">Row Creator</div>
+              <h3 style="margin:4px 0;font-size:20px;font-weight:800;">Add to today's board</h3>
+            </div>
+            <button class="btn secondary" id="closeAssemblyCreateBtn" type="button">Close</button>
+          </div>
+          <div class="form-grid assembly-board-form">
+            <div class="field"><label for="assemblyWorkType">Work Type</label><select id="assemblyWorkType"><option value="pack_builder">Pack Builder</option><option value="jira">Jira</option><option value="placeholder">Placeholder</option></select></div>
+            <div class="field"><label for="assemblyPb">Primary ID / Name</label><input id="assemblyPb" placeholder="PB-00031972 or JIRA-1234" /></div>
+            <div class="field"><label for="assemblySo">Sales Order</label><input id="assemblySo" placeholder="SORD-047805" /></div>
+            <div class="field"><label for="assemblyAccount">Account</label><input id="assemblyAccount" placeholder="Account name" /></div>
+            <div class="field"><label for="assemblyQty">Scheduled Qty</label><input id="assemblyQty" type="number" min="0" value="0" /></div>
+            <div class="field"><label for="assemblyFullQty">Full Qty</label><input id="assemblyFullQty" type="number" min="0" value="0" /></div>
+            <div class="field"><label for="assemblyProducts">Total Products</label><input id="assemblyProducts" type="number" min="0" value="0" /></div>
+            <div class="field"><label for="assemblyStatus">Status</label><input id="assemblyStatus" placeholder="Ready, Printing, On Line..." /></div>
+            <div class="field"><label for="assemblyIhd">IHD</label><input id="assemblyIhd" type="date" /></div>
+            <div class="field"><label for="assemblyExternalLink">External Link</label><input id="assemblyExternalLink" placeholder="Jira or other URL" /></div>
+          </div>
+          <div class="form-grid assembly-edit-subgrid">
+            <div class="field"><label for="assemblyStage">Stage</label><select id="assemblyStage"><option value="aa">A.A.</option><option value="print">Print</option><option value="picked">Picked</option><option value="line">Line</option><option value="dpmo">DPMO</option><option value="done">Done</option></select></div>
+            <div class="field"><label for="assemblyIsPartial">Partial Pack</label><select id="assemblyIsPartial"><option value="false">No</option><option value="true">Yes</option></select></div>
+            <div class="field"><label>Units</label><input id="assemblyUnitsPreview" value="0" disabled /></div>
+            <div class="toolbar right" style="margin:0;justify-content:flex-end;"><button class="btn" id="assemblyAddBoardRowBtn" type="button">Add row</button></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filter bar -->
+      <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;" id="assemblyFilterBar">
+        <button class="btn secondary asm-filter-btn asm-filter-active" data-filter="all" style="font-size:12px;padding:5px 14px;font-weight:700;">All</button>
+        <button class="btn secondary asm-filter-btn" data-filter="overdue" style="font-size:12px;padding:5px 14px;border-color:#e74c3c;color:#a01a1a;">Overdue</button>
+        <button class="btn secondary asm-filter-btn" data-filter="at_risk" style="font-size:12px;padding:5px 14px;border-color:#f1c40f;color:#7d5a00;">At Risk</button>
+        <button class="btn secondary asm-filter-btn" data-filter="on_track" style="font-size:12px;padding:5px 14px;">On Track</button>
+        <button class="btn secondary asm-filter-btn" data-filter="done" style="font-size:12px;padding:5px 14px;border-color:#2ecc71;color:#0F6E56;">Done</button>
+      </div>
+
+      <!-- Focus list (Concept C rows) -->
+      <div id="assemblyFocusList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;"></div>
+
+      <!-- Detail table (shown when Detail View toggled) -->
+      <div class="table-wrap assembly-table-desktop" id="assemblyDetailTableWrap" style="display:none;">
+        <table>
+          <thead id="assemblyBoardHead"></thead>
+          <tbody id="assemblyBoardBody"></tbody>
+        </table>
+      </div>
+      <div id="assemblyBoardCards" class="assembly-cards-mobile"></div>
+
     </section>
 
-    
-    <!-- Queue -->
-    
 <section id="queuePage" class="page queue-page-redesign">
       <div class="queue-sticky-bar legacy-import-ui">
         <div class="queue-sticky-inner">

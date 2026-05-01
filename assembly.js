@@ -206,9 +206,114 @@ function renderAssembly(){
     const cbKey2 = row.pbId||row.so||'';
     return `<tr class="${rowClass}"><td>${escapeHtml(getAssemblyWorkTypeLabel(row.workType)+(row.isPartial?' • Partial':''))}</td><td>${escapeHtml(row.pb)}</td><td>${escapeHtml(row.so)}</td><td>${escapeHtml(row.account)}</td><td>${formatAssemblyQty(row)}</td><td>${row.products}</td><td>${formatUnitsQtyHtml(units,getAssemblyQty(row))}</td><td>${escapeHtml(row.status||'—')}${priorityBadge}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${openLink?`<a class="queue-link" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td>$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td><select onchange="setAssemblyStage(${row.id},this.value)"><option value="aa" ${row.stage==='aa'?'selected':''}>A.A.</option><option value="print" ${row.stage==='print'?'selected':''}>Print</option><option value="picked" ${row.stage==='picked'?'selected':''}>Picked</option><option value="line" ${row.stage==='line'?'selected':''}>Line</option><option value="dpmo" ${row.stage==='dpmo'?'selected':''}>DPMO</option><option value="done" ${row.stage==='done'?'selected':''}>Done</option></select></td><td>${escapeHtml(row.rescheduleNote||'—')}</td><td class="cb-cell" data-cbkey="${cbKey2}"><span class="cb-badge cb-loading">…</span></td><td><div class="row-actions"><button class="btn secondary" onclick="editAssemblyBoardRow(${row.id})">Edit</button>${isPackBuilderWorkType(row.workType)?`<button class="btn warn" onclick="openIssueHoldModal(${row.id},'assembly')">Hold</button>`:''}<button class="btn secondary" onclick="rescheduleAssemblyBoardRow(${row.id})">Reschedule</button><button class="btn warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button></div></td></tr>`;
   }).join('');
+
+  // ── Concept C additions ──────────────────────────────────
+
+  // Progress bars
+  const capBar = document.getElementById('assemblyCapacityBar');
+  const comBar = document.getElementById('assemblyCompletionBar');
+  if(capBar){ const capPct = capacity>0 ? Math.min(100,(scheduledUnitsTotal/capacity)*100) : 0; capBar.style.width=capPct.toFixed(0)+'%'; }
+  if(comBar){ comBar.style.width=completionPct.toFixed(0)+'%'; }
+
+  // Stage strip counts
+  const stageCounts={aa:0,print:0,picked:0,line:0,dpmo:0,done:0};
+  filteredRows.forEach(function(row){ if(stageCounts[row.stage]!==undefined) stageCounts[row.stage]++; });
+  ['aa','print','picked','line','dpmo','done'].forEach(function(s){
+    const el=document.getElementById('asmStrip'+s.charAt(0).toUpperCase()+s.slice(1));
+    if(el) el.textContent=stageCounts[s];
+  });
+
+  // Detail table toggle
+  const detailWrap=document.getElementById('assemblyDetailTableWrap');
+  if(detailWrap) detailWrap.style.display=assemblyShowDetails?'':'none';
+
+  // Focus list with active filter
+  renderAssemblyFocusList(sortedWithPriority);
 }
+
+let _asmActiveFilter='all';
+
+function renderAssemblyFocusList(sortedWithPriority){
+  const list=document.getElementById('assemblyFocusList');
+  if(!list) return;
+
+  const stageLabel={aa:'A.A.',print:'Print',picked:'Picked',line:'Line',dpmo:'DPMO',done:'Done'};
+  const stageBg={aa:'#E6F1FB',print:'#FAEEDA',picked:'#EEEDFE',line:'#EAF3DE',dpmo:'#FAECE7',done:'#E1F5EE'};
+  const stageColor={aa:'#0C447C',print:'#633806',picked:'#3C3489',line:'#27500A',dpmo:'#712B13',done:'#085041'};
+
+  const filtered = sortedWithPriority.filter(function({row,priority}){
+    if(_asmActiveFilter==='all') return true;
+    if(_asmActiveFilter==='overdue') return priority.risk==='overdue';
+    if(_asmActiveFilter==='at_risk') return priority.risk==='at_risk';
+    if(_asmActiveFilter==='on_track') return priority.risk!=='overdue'&&priority.risk!=='at_risk'&&row.stage!=='done';
+    if(_asmActiveFilter==='done') return row.stage==='done';
+    return true;
+  });
+
+  if(!filtered.length){
+    list.innerHTML='<div style="text-align:center;padding:24px;color:var(--muted);font-size:13px;">No rows match this filter.</div>';
+    return;
+  }
+
+  list.innerHTML=filtered.map(function({row,priority}){
+    const units=getAssemblyUnits(row);
+    const isOverdue=priority.risk==='overdue';
+    const isAtRisk=priority.risk==='at_risk';
+    const isDone=row.stage==='done';
+    const borderColor=isOverdue?'#e74c3c':isAtRisk?'#f1c40f':'transparent';
+    const initials=(row.account||row.pb||'?').trim().split(/\s+/).slice(0,2).map(function(w){return w[0]||'';}).join('').toUpperCase()||'?';
+    const ihd=getEffectiveIhdForRow(row)||'';
+    const rev=Number(getEffectiveSubtotalForRow(row)||0);
+    const openLink=getAssemblyOpenLink(row);
+
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:1px solid var(--blue2);border-left:3px solid '+borderColor+';background:var(--card);opacity:'+(isDone?'0.55':'1')+';">' +
+      '<div style="width:34px;height:34px;border-radius:50%;background:var(--blue1);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--muted);flex-shrink:0;">'+escapeHtml(initials)+'</div>' +
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">' +
+          '<span style="font-weight:700;font-size:13px;">'+escapeHtml(row.pb||row.so||'—')+'</span>' +
+          (isOverdue?'<span style="font-size:10px;background:#FCEBEB;color:#791F1F;padding:1px 6px;border-radius:999px;font-weight:700;">Overdue</span>':'') +
+          (isAtRisk&&!isOverdue?'<span style="font-size:10px;background:#fef9e7;color:#7d5a00;padding:1px 6px;border-radius:999px;font-weight:700;">At Risk</span>':'') +
+        '</div>' +
+        '<span style="font-size:12px;color:var(--muted);">'+escapeHtml(row.account||'—')+' &nbsp;·&nbsp; '+units.toLocaleString()+' units &nbsp;·&nbsp; '+getAssemblyQty(row)+' packs'+(ihd?' &nbsp;·&nbsp; IHD: '+escapeHtml(ihd):'')+(rev>0?' &nbsp;·&nbsp; $'+rev.toLocaleString(undefined,{maximumFractionDigits:0}):'')+' </span>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">' +
+        '<span style="font-size:11px;background:'+stageBg[row.stage||'aa']+';color:'+stageColor[row.stage||'aa']+';padding:3px 10px;border-radius:999px;font-weight:700;">'+( stageLabel[row.stage]||row.stage)+'</span>' +
+        '<select onchange="setAssemblyStage('+row.id+',this.value)" style="font-size:12px;padding:4px 6px;border-radius:7px;border:1px solid var(--blue2);background:var(--blue1);cursor:pointer;">' +
+          '<option value="aa" '+(row.stage==='aa'?'selected':'')+'>A.A.</option>' +
+          '<option value="print" '+(row.stage==='print'?'selected':'')+'>Print</option>' +
+          '<option value="picked" '+(row.stage==='picked'?'selected':'')+'>Picked</option>' +
+          '<option value="line" '+(row.stage==='line'?'selected':'')+'>Line</option>' +
+          '<option value="dpmo" '+(row.stage==='dpmo'?'selected':'')+'>DPMO</option>' +
+          '<option value="done" '+(row.stage==='done'?'selected':'')+'>Done</option>' +
+        '</select>' +
+        '<button class="btn secondary" onclick="editAssemblyBoardRow('+row.id+')" style="font-size:12px;padding:4px 10px;">Edit</button>' +
+        (openLink?'<a class="btn secondary" href="'+escapeHtml(openLink)+'" target="_blank" rel="noopener noreferrer" style="font-size:12px;padding:4px 10px;">Open</a>':'') +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+// Wire filter bar
+(function(){
+  function initAsmFilters(){
+    const bar=document.getElementById('assemblyFilterBar');
+    if(!bar) return;
+    bar.addEventListener('click',function(e){
+      const btn=e.target.closest('.asm-filter-btn');
+      if(!btn) return;
+      bar.querySelectorAll('.asm-filter-btn').forEach(function(b){ b.classList.remove('asm-filter-active'); b.style.fontWeight=''; });
+      btn.classList.add('asm-filter-active');
+      btn.style.fontWeight='700';
+      _asmActiveFilter=btn.getAttribute('data-filter');
+      const sortedWithPriority=typeof prioritySortRows==='function'
+        ? prioritySortRows(sanitizeRows(assemblyBoardRows.filter(function(r){ return r.date===(assemblyDateInput.value||new Date().toISOString().slice(0,10)); })))
+        : sanitizeRows(assemblyBoardRows.filter(function(r){ return r.date===(assemblyDateInput.value||new Date().toISOString().slice(0,10)); })).map(function(row){ return {row,priority:{rank:3,risk:'none',label:'',cls:''}}; });
+      renderAssemblyFocusList(sortedWithPriority);
+    });
+  }
+  if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',initAsmFilters); } else { initAsmFilters(); }
+})();
 function clearAssemblyBoardForm(){
-  assemblyWorkTypeInput.value='pack_builder';
   assemblyPbInput.value='';
   assemblySoInput.value='';
   assemblyAccountInput.value='';
