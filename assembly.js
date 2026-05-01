@@ -265,8 +265,9 @@ function renderAssemblyFocusList(sortedWithPriority){
     const ihd=getEffectiveIhdForRow(row)||'';
     const rev=Number(getEffectiveSubtotalForRow(row)||0);
     const openLink=getAssemblyOpenLink(row);
+    const cbKey=row.pbId||row.so||'';
 
-    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:1px solid var(--blue2);border-left:3px solid '+borderColor+';background:var(--card);opacity:'+(isDone?'0.55':'1')+';">' +
+    return '<div class="asm-focus-row" data-cbkey="'+escapeHtml(cbKey)+'" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:1px solid var(--blue2);border-left:3px solid '+borderColor+';background:var(--card);opacity:'+(isDone?'0.55':'1')+';">' +
       '<div style="width:34px;height:34px;border-radius:50%;background:var(--blue1);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--muted);flex-shrink:0;">'+escapeHtml(initials)+'</div>' +
       '<div style="flex:1;min-width:0;">' +
         '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">' +
@@ -274,10 +275,11 @@ function renderAssemblyFocusList(sortedWithPriority){
           (isOverdue?'<span style="font-size:10px;background:#FCEBEB;color:#791F1F;padding:1px 6px;border-radius:999px;font-weight:700;">Overdue</span>':'') +
           (isAtRisk&&!isOverdue?'<span style="font-size:10px;background:#fef9e7;color:#7d5a00;padding:1px 6px;border-radius:999px;font-weight:700;">At Risk</span>':'') +
         '</div>' +
-        '<span style="font-size:12px;color:var(--muted);">'+escapeHtml(row.account||'—')+' &nbsp;·&nbsp; '+units.toLocaleString()+' units &nbsp;·&nbsp; '+getAssemblyQty(row)+' packs'+(ihd?' &nbsp;·&nbsp; IHD: '+escapeHtml(ihd):'')+(rev>0?' &nbsp;·&nbsp; $'+rev.toLocaleString(undefined,{maximumFractionDigits:0}):'')+' </span>' +
+        '<span style="font-size:12px;color:var(--muted);">'+escapeHtml(row.account||'—')+' \u00a0\u00b7\u00a0 '+units.toLocaleString()+' units \u00a0\u00b7\u00a0 '+getAssemblyQty(row)+' packs'+(ihd?' \u00a0\u00b7\u00a0 IHD: '+escapeHtml(ihd):'')+(rev>0?' \u00a0\u00b7\u00a0 $'+rev.toLocaleString(undefined,{maximumFractionDigits:0}):'')+' </span>' +
       '</div>' +
       '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">' +
-        '<span style="font-size:11px;background:'+stageBg[row.stage||'aa']+';color:'+stageColor[row.stage||'aa']+';padding:3px 10px;border-radius:999px;font-weight:700;">'+( stageLabel[row.stage]||row.stage)+'</span>' +
+        '<span class="cb-cell cb-badge cb-loading" data-cbkey="'+escapeHtml(cbKey)+'" style="cursor:pointer;"></span>' +
+        '<span style="font-size:11px;background:'+stageBg[row.stage||'aa']+';color:'+stageColor[row.stage||'aa']+';padding:3px 10px;border-radius:999px;font-weight:700;">'+(stageLabel[row.stage]||row.stage)+'</span>' +
         '<select onchange="setAssemblyStage('+row.id+',this.value)" style="font-size:12px;padding:4px 6px;border-radius:7px;border:1px solid var(--blue2);background:var(--blue1);cursor:pointer;">' +
           '<option value="aa" '+(row.stage==='aa'?'selected':'')+'>A.A.</option>' +
           '<option value="print" '+(row.stage==='print'?'selected':'')+'>Print</option>' +
@@ -291,6 +293,50 @@ function renderAssemblyFocusList(sortedWithPriority){
       '</div>' +
     '</div>';
   }).join('');
+
+  // Apply comment badges and request highlights to focus list rows
+  _applyBadgesToFocusList();
+}
+
+function _applyBadgesToFocusList() {
+  const list = document.getElementById('assemblyFocusList');
+  if (!list) return;
+  const d = window._cmBatchData;
+  if (!d) return;
+  const { counts, hasPriority, unread, requests } = d;
+
+  list.querySelectorAll('.asm-focus-row').forEach(function(row) {
+    const key     = row.getAttribute('data-cbkey') || '';
+    const count   = counts[key]      || 0;
+    const isPri   = hasPriority[key] || false;
+    const nUnread = unread[key]      || 0;
+    const reqType = (requests && requests[key]) || '';
+
+    // Apply row background highlight for hold/date requests
+    row.classList.remove('row-hold-request','row-date-request');
+    if (reqType === 'hold') row.classList.add('row-hold-request');
+    if (reqType === 'date') row.classList.add('row-date-request');
+
+    // Update the badge span
+    const badge = row.querySelector('.cb-badge');
+    if (!badge) return;
+    badge.classList.remove('cb-loading');
+    if (count > 0) {
+      badge.className = 'cb-badge cb-has' + (isPri?' cb-priority':'') + (nUnread?' cb-unread':'');
+      const reqChip = reqType==='hold'
+        ? ' <span class="cb-req-chip cb-req-hold">Hold</span>'
+        : reqType==='date'
+          ? ' <span class="cb-req-chip cb-req-date">Date</span>' : '';
+      badge.innerHTML = (nUnread
+        ? '\u{1F4AC} '+count+'<span class="cb-unread-dot" title="'+nUnread+' unread"></span>'
+        : '\u{1F4AC} '+count) + reqChip;
+      badge.title = count+' comment'+(count===1?'':'s')+(nUnread?' \u00B7 '+nUnread+' unread':'')+(isPri?' \u00B7 includes Priority':'')+( reqType==='hold'?' \u00B7 Hold requested':'')+(reqType==='date'?' \u00B7 Date change requested':'');
+    } else {
+      badge.className = 'cb-badge cb-none';
+      badge.textContent = '\u{1F4AC} Add';
+      badge.title = 'Click to add a comment';
+    }
+  });
 }
 
 // Wire filter bar
@@ -640,6 +686,7 @@ function _applyBadgesToCells(selector) {
 async function renderAssemblyCommentBadges() {
   await _loadCommentBatch();
   _applyBadgesToCells('#assemblyBoardBody .cb-cell');
+  _applyBadgesToFocusList(); // also update focus list badges
   document.querySelectorAll('#assemblyBoardBodyCards .cb-cell, #assemblyBoardBodyCards .cb-badge').forEach(el => {
     const key = el.dataset.cbkey || '';
     if (!key) return;
