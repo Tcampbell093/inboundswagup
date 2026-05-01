@@ -2960,14 +2960,25 @@
   });
 
   // Delegated click — catches any comment badge (.cb-has, .cb-none) in Assembly board and Queue
-  // Works for both desktop table rows (<tr>), mobile cards (.mob-card), and focus list rows (.asm-focus-row)
+  // Works for table rows (<tr>), mobile cards (.mob-card), and focus list rows (.asm-focus-row)
   document.addEventListener('click', function(e){
     const badge = e.target.closest('.cb-badge');
     if(!badge || badge.classList.contains('cb-loading')) return;
+
+    // Focus list rows: badge is direct child of .asm-focus-row, no cb-cell wrapper needed
+    const focusRow = badge.closest('.asm-focus-row');
+    if(focusRow) {
+      const cbKey = focusRow.dataset.cbkey || badge.dataset.cbkey || '';
+      const so = cbKey.toUpperCase().startsWith('SORD') ? cbKey : '';
+      const actualPbId = cbKey.toUpperCase().startsWith('SORD') ? '' : cbKey;
+      window.openInternalCommentModal(actualPbId, '', so, '');
+      return;
+    }
+
+    // Detail table rows and mobile cards: need cb-cell
     const cell = badge.closest('.cb-cell');
     if(!cell) return;
-    // Try table row, mobile card, then focus list row
-    const row = cell.closest('tr') || cell.closest('.mob-card') || cell.closest('.asm-focus-row');
+    const row = cell.closest('tr') || cell.closest('.mob-card');
     if(!row) return;
     const cbKey   = row.dataset.cbkey || cell.dataset.cbkey || '';
     const pbName  = row.dataset.pbname || '';
