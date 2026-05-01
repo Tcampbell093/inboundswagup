@@ -233,6 +233,75 @@ a.row-link:hover{text-decoration:underline}
 .cm-submit:not(:disabled):hover { opacity: .88; }
 .cm-error { margin: 0; color: var(--danger); font-size: 13px; font-weight: 600; }
 
+/* ── Photo modal carousel ─────────────────────────────────────────────────── */
+.photo-carousel {
+  display: grid;
+  grid-template-columns: 40px 1fr 40px;
+  gap: 10px;
+  align-items: center;
+}
+.photo-carousel-stage {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  padding: 10px;
+}
+.photo-carousel-nav {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  width: 40px;
+  height: 40px;
+  background: #fff;
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+.photo-carousel-nav:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.photo-thumb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+.photo-thumb-large {
+  width: 100%;
+  min-height: 220px;
+  cursor: pointer;
+}
+.photo-thumb-large img {
+  width: 100%;
+  height: 220px;
+  object-fit: cover;
+  display: block;
+}
+.photo-carousel-meta {
+  margin-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+.photo-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+  padding: 8px 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 /* ── Pass 1 mobile polish for Flight Tracker (≤768px) ── */
 @media (max-width: 768px) {
 
@@ -317,6 +386,20 @@ a.row-link:hover{text-decoration:underline}
   .cm-submit {
     min-height: 44px;
     padding: 10px 20px;
+  }
+  .photo-carousel {
+    grid-template-columns: 34px 1fr 34px;
+    gap: 8px;
+  }
+  .photo-carousel-nav {
+    width: 34px;
+    height: 34px;
+    font-size: 20px;
+  }
+  .photo-thumb-large,
+  .photo-thumb-large img {
+    min-height: 180px;
+    height: 180px;
   }
 
 } /* end @media (max-width: 768px) */
