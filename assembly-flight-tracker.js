@@ -25,6 +25,43 @@ const STORAGE_KEYS = {
   held:      'ops_hub_issue_hold_queue_v1',
 };
 
+// Photo feature state (defined early so renderBoard can reference it)
+const PHOTOS_API_EARLY = '/.netlify/functions/flight-tracker-photos';
+const photoCountCache = {};
+let ftUserRole = 'external';
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'HC_ROLE') {
+    ftUserRole = e.data.role || 'external';
+  }
+});
+function canTakePhotos() {
+  return ['admin','manager','l2','l1'].includes(ftUserRole);
+}
+async function loadPhotoCountsBatch(rows) {
+  const ids = rows.map(function(r){ return r.pbId || r.pb; }).filter(Boolean);
+  if (!ids.length) return;
+  try {
+    const res = await fetch(PHOTOS_API_EARLY + '?batch=' + encodeURIComponent(ids.join(',')));
+    const data = await res.json();
+    Object.assign(photoCountCache, data.counts || {});
+  } catch(e) { /* non-fatal */ }
+}
+function getPhotoCount(row) {
+  const key = row.pbId || row.pb || '';
+  return photoCountCache[key] || 0;
+}
+function photoBtn(row) {
+  const key   = row.pbId || row.pb || '';
+  const count = getPhotoCount(row);
+  const cls   = count > 0 ? 'photo-btn has-photos' : 'photo-btn';
+  const label = count > 0 ? '&#128247; ' + count : '&#128247;';
+  return '<button class="' + cls + '" type="button"' +
+    ' data-photo-pb="' + esc(row.pbId||row.pb||'') + '"' +
+    ' data-photo-name="' + esc(row.pb||'') + '"' +
+    ' data-photo-account="' + esc(row.account||'') + '"' +
+    ' style="margin-left:6px;">' + label + '</button>';
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 function esc(v){ return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;'); }
 function fmtN(v){ return Number(v||0).toLocaleString('en-US'); }
@@ -410,7 +447,7 @@ function buildTableRow(row){
     <td>${ihdDisplay(row)}</td>
     <td>${fmtMoney(row.revenue||0)}</td>
     <td class="note-cell">${esc(row.scheduleNote||row.rescheduleNote||'—')}</td>
-    <td class="comment-cell">${commentBtn(row)}</td>
+    <td class="comment-cell">${commentBtn(row)}${photoBtn(row)}</td>
   </tr>`;
 }
 
@@ -537,6 +574,19 @@ function renderBoard(rows){
   }
   els.boardContent.innerHTML = state.groupBy==='sord' ? renderBySord(rows) : renderByDay(rows);
   renderBoardCards(rows);
+  // Load photo counts and update badges
+  if (rows.length) loadPhotoCountsBatch(rows).then(function() {
+    rows.forEach(function(r) {
+      const key = r.pbId || r.pb || '';
+      const count = photoCountCache[key] || 0;
+      if (count > 0) {
+        document.querySelectorAll(`[data-photo-pb="${key}"]`).forEach(function(btn) {
+          btn.innerHTML = '&#128247; ' + count;
+          btn.classList.add('has-photos');
+        });
+      }
+    });
+  });
 }
 
 // ── Mobile card view ───────────────────────────────────────────────────────
@@ -782,3 +832,210 @@ els.refreshBtn.addEventListener('click', loadBoard);
 applyUrlParams();
 loadBoard();
 setInterval(loadBoard, REFRESH_MS);
+
+// ══════════════════════════════════════════════════════════════
+// PHOTO FEATURE — Modal, camera, upload
+// ══════════════════════════════════════════════════════════════
+
+const PHOTOS_API = PHOTOS_API_EARLY; // alias
+
+// ── Photo Modal ───────────────────────────────────────────────
+let photoModalPb = { id:'', name:'', account:'' };
+
+const photoModal     = document.getElementById('photoModal');
+const photoModalClose= document.getElementById('photoModalClose');
+const photoStrip     = document.getElementById('photoStrip');
+const photoAddArea   = document.getElementById('photoAddArea');
+const photoStatus    = document.getElementById('photoStatus');
+const photoFileInput = document.getElementById('photoFileInput');
+
+if (photoModalClose) {
+  photoModalClose.addEventListener('click', closePhotoModal);
+}
+if (photoModal) {
+  photoModal.addEventListener('click', function(e) {
+    if (e.target === photoModal) closePhotoModal();
+  });
+}
+
+function closePhotoModal() {
+  if (photoModal) photoModal.hidden = true;
+  document.body.style.overflow = '';
+}
+
+async function openPhotoModal(pbId, pbName, account) {
+  photoModalPb = { id: pbId, name: pbName, account };
+  document.getElementById('photoModalTitle').textContent = pbName || pbId || 'Pack Builder';
+  document.getElementById('photoModalSub').textContent = account || '';
+  photoStatus.textContent = 'Loading photos…';
+  photoStrip.innerHTML = '';
+  photoAddArea.innerHTML = '';
+  if (photoModal) { photoModal.hidden = false; document.body.style.overflow = 'hidden'; }
+  await renderPhotoStrip(pbId);
+}
+
+async function renderPhotoStrip(pbId) {
+  try {
+    const res  = await fetch(`${PHOTOS_API}?pb_id=${encodeURIComponent(pbId)}`);
+    const data = await res.json();
+    const photos = data.photos || [];
+
+    photoCountCache[pbId] = photos.length;
+    photoStatus.textContent = '';
+
+    if (!photos.length && !canTakePhotos()) {
+      photoStrip.innerHTML = '<div style="font-size:13px;color:#888;padding:8px 0;">No photos taken yet.</div>';
+    } else {
+      photoStrip.innerHTML = photos.map(function(p, i) {
+        return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <div class="photo-thumb" data-photo-id="${p.id}" onclick="viewPhotoFull(${p.id})">
+            <span style="font-size:22px;">&#128247;</span>
+          </div>
+          <div style="font-size:10px;color:#666;text-align:center;">
+            ${p.taken_by ? p.taken_by.split(' ')[0] : ''}
+          </div>
+        </div>`;
+      }).join('');
+      // Load actual image data for each
+      photos.forEach(function(p) { loadThumbImage(p.id); });
+    }
+
+    // Add photo button (associates only, max 3)
+    if (canTakePhotos() && photos.length < 3) {
+      photoAddArea.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+        <button class="photo-add-btn" onclick="triggerCamera()">
+          <span style="font-size:22px;">&#43;</span>
+          <span>Add photo</span>
+        </button>
+        <span style="font-size:12px;color:#888;">${3 - photos.length} slot${3-photos.length!==1?'s':''} remaining</span>
+      </div>`;
+    } else if (canTakePhotos() && photos.length >= 3) {
+      photoAddArea.innerHTML = '<div style="font-size:12px;color:#888;margin-top:4px;">Max 3 photos reached.</div>';
+    }
+  } catch(e) {
+    photoStatus.textContent = 'Could not load photos.';
+  }
+}
+
+async function loadThumbImage(photoId) {
+  try {
+    const res  = await fetch(`${PHOTOS_API}?id=${photoId}`);
+    const data = await res.json();
+    if (!data.photo_data) return;
+    const thumb = document.querySelector(`[data-photo-id="${photoId}"]`);
+    if (thumb) {
+      thumb.innerHTML = `<img src="${data.photo_data}" alt="Confirmation photo" />`;
+      thumb._photoData = data.photo_data;
+      thumb._photoMeta = { taken_at: data.taken_at, taken_by: data.taken_by };
+    }
+  } catch(e) { /* non-fatal */ }
+}
+
+function viewPhotoFull(photoId) {
+  const thumb = document.querySelector(`[data-photo-id="${photoId}"]`);
+  const src   = thumb?._photoData;
+  if (!src) return;
+  const meta  = thumb?._photoMeta || {};
+  const bg = document.createElement('div');
+  bg.className = 'photo-lightbox-bg';
+  const inner = document.createElement('div');
+  inner.className = 'photo-lightbox-inner';
+  const takenAt = meta.taken_at ? new Date(meta.taken_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '';
+  inner.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;">${photoModalPb.name}</div>
+        <div style="font-size:12px;color:#666;">${takenAt}${meta.taken_by?' · '+meta.taken_by:''}</div>
+      </div>
+      <button onclick="this.closest('.photo-lightbox-bg').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#666;">&#215;</button>
+    </div>
+    <img src="${src}" alt="Confirmation photo" style="width:100%;border-radius:8px;" />
+  `;
+  bg.appendChild(inner);
+  bg.addEventListener('click', function(e) { if (e.target === bg) bg.remove(); });
+  document.body.appendChild(bg);
+}
+
+function triggerCamera() {
+  if (photoFileInput) photoFileInput.click();
+}
+
+if (photoFileInput) {
+  photoFileInput.addEventListener('change', async function() {
+    const file = photoFileInput.files[0];
+    if (!file) return;
+    photoStatus.textContent = 'Processing photo…';
+    photoAddArea.innerHTML  = '';
+    try {
+      const base64 = await compressAndEncode(file);
+      photoStatus.textContent = 'Uploading…';
+      const takenBy = localStorage.getItem('ft_author_name') || 'Associate';
+      const res = await fetch(PHOTOS_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pb_id:      photoModalPb.id,
+          pb_name:    photoModalPb.name,
+          account:    photoModalPb.account,
+          photo_data: base64,
+          taken_by:   takenBy,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      photoStatus.textContent = '✓ Photo saved';
+      setTimeout(function() { photoStatus.textContent = ''; }, 2000);
+      await renderPhotoStrip(photoModalPb.id);
+      // refresh board photo count badge
+      photoCountCache[photoModalPb.id] = (photoCountCache[photoModalPb.id] || 0) + 1;
+      const btn = document.querySelector(`[data-photo-pb="${photoModalPb.id}"]`);
+      if (btn) {
+        const c = photoCountCache[photoModalPb.id];
+        btn.innerHTML = `&#128247; ${c}`;
+        btn.classList.add('has-photos');
+      }
+    } catch(e) {
+      photoStatus.textContent = 'Error: ' + e.message;
+    }
+    photoFileInput.value = '';
+  });
+}
+
+function compressAndEncode(file) {
+  return new Promise(function(resolve, reject) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const img = new Image();
+      img.onload = function() {
+        const MAX = 1200;
+        let w = img.width, h = img.height;
+        if (w > MAX || h > MAX) {
+          if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+          else       { w = Math.round(w * MAX / h); h = MAX; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.75));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Wire photo button clicks
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-photo-pb]');
+  if (!btn) return;
+  openPhotoModal(
+    btn.getAttribute('data-photo-pb'),
+    btn.getAttribute('data-photo-name'),
+    btn.getAttribute('data-photo-account')
+  );
+});
+
+// Photo counts are updated inside renderBoard above
