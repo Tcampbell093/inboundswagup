@@ -865,8 +865,19 @@ function closePhotoModal() {
 
 async function openPhotoModal(pbId, pbName, account) {
   photoModalPb = { id: pbId, name: pbName, account };
-  document.getElementById('photoModalTitle').textContent = pbName || pbId || 'Pack Builder';
-  document.getElementById('photoModalSub').textContent = account || '';
+  const titleEl = document.getElementById('photoModalTitle');
+  const subEl   = document.getElementById('photoModalSub');
+  if (titleEl) titleEl.textContent = pbName || pbId || 'Pack Builder';
+  if (subEl)   subEl.textContent   = account || '';
+  if (!photoStatus || !photoStrip || !photoAddArea || !photoModal) {
+    console.error('Photo modal is missing required DOM nodes.', {
+      hasModal: !!photoModal,
+      hasStatus: !!photoStatus,
+      hasStrip: !!photoStrip,
+      hasAddArea: !!photoAddArea
+    });
+    return;
+  }
   photoStatus.textContent = 'Loading photos…';
   photoStrip.innerHTML = '';
   photoAddArea.innerHTML = '';
