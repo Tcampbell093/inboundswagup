@@ -29,13 +29,37 @@ const STORAGE_KEYS = {
 const PHOTOS_API_EARLY = '/.netlify/functions/flight-tracker-photos';
 const photoCountCache = {};
 let ftUserRole = 'external';
+
+function normRole(role) {
+  return String(role || '').trim().toLowerCase();
+}
+
+function resolveFtRole() {
+  // Prefer in-memory auth user when available
+  const liveRole = normRole(window.hcCurrentUser && window.hcCurrentUser.role);
+  if (liveRole) return liveRole;
+
+  // Fall back to persisted auth session
+  try {
+    const raw = localStorage.getItem('hcAuthUser');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const storedRole = normRole(parsed && parsed.role);
+      if (storedRole) return storedRole;
+    }
+  } catch (_) { /* non-fatal */ }
+
+  return 'external';
+}
+
+ftUserRole = resolveFtRole();
 window.addEventListener('message', function(e) {
   if (e.data && e.data.type === 'HC_ROLE') {
-    ftUserRole = e.data.role || 'external';
+    ftUserRole = normRole(e.data.role) || 'external';
   }
 });
 function canTakePhotos() {
-  return ['admin','manager','l2','l1'].includes(ftUserRole);
+  return ['admin','manager','l2','l1'].includes(normRole(ftUserRole));
 }
 async function loadPhotoCountsBatch(rows) {
   const ids = rows.map(function(r){ return r.pbId || r.pb; }).filter(Boolean);
@@ -864,6 +888,8 @@ function closePhotoModal() {
 }
 
 async function openPhotoModal(pbId, pbName, account) {
+  // Re-resolve in case auth finished after initial script load
+  ftUserRole = resolveFtRole();
   photoModalPb = { id: pbId, name: pbName, account };
   const titleEl = document.getElementById('photoModalTitle');
   const subEl   = document.getElementById('photoModalSub');
