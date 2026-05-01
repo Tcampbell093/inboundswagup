@@ -158,6 +158,7 @@
           <button class="nav-btn" data-page="assemblyFlightTrackerPage" title="Assembly Flight Tracker">
             <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M3 10h14M11 4l6 6-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 5v10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
             <span class="nav-label">Flight Tracker</span>
+            <span id="ftNavBadge" hidden style="margin-left:auto;min-width:18px;height:18px;border-radius:999px;background:#e74c3c;color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;padding:0 5px;flex-shrink:0;"></span>
           </button>
         </div>
       </div>
@@ -2591,6 +2592,88 @@
 <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
 <script src="auth.js"></script>
 <script src="access.js"></script>
+<script>
+// ── Role bridge: pass user role into flight tracker iframe ──
+(function() {
+  function sendRoleToIframe() {
+    const user = window.hcCurrentUser;
+    if (!user) return;
+    const iframe = document.getElementById('assemblyFlightTrackerIframe');
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage({ type: 'HC_ROLE', role: user.role || 'l1' }, '*');
+    }
+    if (user.role === 'external') {
+      const nav = document.querySelector('[data-page="assemblyFlightTrackerPage"]');
+      if (nav) nav.click();
+    }
+  }
+  setTimeout(sendRoleToIframe, 800);
+  const _ftIframe = document.getElementById('assemblyFlightTrackerIframe');
+  if (_ftIframe) _ftIframe.addEventListener('load', function(){ setTimeout(sendRoleToIframe, 300); });
+  document.addEventListener('click', function(e) {
+    if (e.target.closest('[data-page="assemblyFlightTrackerPage"]')) setTimeout(sendRoleToIframe, 400);
+  });
+})();
+
+// ── Flight Tracker nav badge ─────────────────────────────────
+(function() {
+  const COMMENTS_API = '/.netlify/functions/flight-tracker-comments';
+  let pollTimer = null;
+
+  function getBadge() { return document.getElementById('ftNavBadge'); }
+  function getEmail() {
+    try { return (JSON.parse(localStorage.getItem('hcAuthUser') || '{}').email || '').toLowerCase(); }
+    catch(_) { return ''; }
+  }
+
+  function updateBadge(count) {
+    const badge = getBadge();
+    if (!badge) return;
+    if (count > 0) { badge.textContent = count > 99 ? '99+' : String(count); badge.hidden = false; }
+    else { badge.hidden = true; }
+  }
+
+  async function pollUnread() {
+    const email = getEmail();
+    if (!email) return;
+    try {
+      const res = await fetch(COMMENTS_API + '?unread_for=' + encodeURIComponent(email));
+      const data = await res.json();
+      updateBadge(data.count || 0);
+    } catch(_) {}
+  }
+
+  async function markAllRead() {
+    const email = getEmail();
+    if (!email) return;
+    updateBadge(0);
+    try {
+      await fetch(COMMENTS_API, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reader: email }),
+      });
+    } catch(_) {}
+  }
+
+  document.addEventListener('click', function(e) {
+    if (e.target.closest('[data-page="assemblyFlightTrackerPage"]')) setTimeout(markAllRead, 500);
+  });
+
+  function tryStart() {
+    const user = window.hcCurrentUser;
+    if (user && user.email && ['admin','manager','l2','l1'].includes(user.role)) {
+      pollUnread();
+      clearInterval(pollTimer);
+      pollTimer = setInterval(pollUnread, 60000);
+    } else {
+      setTimeout(tryStart, 800);
+    }
+  }
+  setTimeout(tryStart, 1000);
+  window.addEventListener('focus', pollUnread);
+})();
+</script>
 <script src="settings.js"></script>
 <script>
 // ── Houston Control System Reset ──────────────────────────────
