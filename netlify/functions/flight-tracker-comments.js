@@ -100,18 +100,39 @@ exports.handler = async function handler(event) {
       return json(201, { comment: result.rows[0] });
     }
 
-    // PATCH — mark all actionable comments read for a user
+    // PATCH — mark comments read for a user
+    // { reader, pb_id? } — if pb_id provided, marks only that PB's comments read
+    // if no pb_id, marks ALL comments read (used for full clear)
     if (event.httpMethod === 'PATCH') {
       let body;
       try { body = JSON.parse(event.body || '{}'); } catch { return json(400, { error: 'Invalid JSON' }); }
       const reader = String(body.reader || '').trim().toLowerCase();
       if (!reader) return json(400, { error: 'reader required' });
-      await pool.query(
-        `UPDATE flight_tracker_comments
-            SET read_by = array_append(read_by, $1)
-          WHERE NOT ($1 = ANY(read_by))`,
-        [reader]
-      );
+      const pbId = String(body.pb_id || '').trim();
+      const so   = String(body.so   || '').trim();
+      if (pbId) {
+        await pool.query(
+          `UPDATE flight_tracker_comments
+              SET read_by = array_append(read_by, $1)
+            WHERE pb_id = $2 AND NOT ($1 = ANY(read_by))`,
+          [reader, pbId]
+        );
+      } else if (so) {
+        await pool.query(
+          `UPDATE flight_tracker_comments
+              SET read_by = array_append(read_by, $1)
+            WHERE so = $2 AND NOT ($1 = ANY(read_by))`,
+          [reader, so]
+        );
+      } else {
+        // Mark ALL read
+        await pool.query(
+          `UPDATE flight_tracker_comments
+              SET read_by = array_append(read_by, $1)
+            WHERE NOT ($1 = ANY(read_by))`,
+          [reader]
+        );
+      }
       return json(200, { ok: true });
     }
 
