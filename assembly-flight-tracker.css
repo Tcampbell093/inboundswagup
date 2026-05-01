@@ -302,6 +302,33 @@ a.row-link:hover{text-decoration:underline}
   cursor: pointer;
 }
 
+/* Keep photo modal interactive when image is tall */
+#photoModal .cm-dialog {
+  overflow-y: auto;
+}
+#photoModal .cm-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+}
+#photoModal #photoStatus,
+#photoModal #photoStrip,
+#photoModal #photoAddArea {
+  padding-left: 20px;
+  padding-right: 20px;
+}
+#photoModal #photoStatus {
+  margin-top: 10px;
+  margin-bottom: 0;
+}
+#photoModal #photoAddArea {
+  padding-bottom: 18px;
+}
+.photo-thumb-large img {
+  max-height: min(52vh, 420px);
+}
+
 /* ── Pass 1 mobile polish for Flight Tracker (≤768px) ── */
 @media (max-width: 768px) {
 
@@ -399,7 +426,8 @@ a.row-link:hover{text-decoration:underline}
   .photo-thumb-large,
   .photo-thumb-large img {
     min-height: 180px;
-    height: 180px;
+    height: auto;
+    max-height: 46vh;
   }
 
 } /* end @media (max-width: 768px) */

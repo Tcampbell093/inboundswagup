@@ -865,6 +865,7 @@ const PHOTOS_API = PHOTOS_API_EARLY; // alias
 
 // ── Photo Modal ───────────────────────────────────────────────
 let photoModalPb = { id:'', name:'', account:'' };
+const photoCarousel = { photos: [], index: 0 };
 
 const photoModal     = document.getElementById('photoModal');
 const photoModalClose= document.getElementById('photoModalClose');
@@ -922,19 +923,21 @@ async function renderPhotoStrip(pbId) {
 
     if (!photos.length && !canTakePhotos()) {
       photoStrip.innerHTML = '<div style="font-size:13px;color:#888;padding:8px 0;">No photos taken yet.</div>';
+      photoCarousel.photos = [];
+      photoCarousel.index = 0;
     } else {
-      photoStrip.innerHTML = photos.map(function(p, i) {
-        return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
-          <div class="photo-thumb" data-photo-id="${p.id}">
-            <span style="font-size:22px;">&#128247;</span>
-          </div>
-          <div style="font-size:10px;color:#666;text-align:center;">
-            ${p.taken_by ? p.taken_by.split(' ')[0] : ''}
-          </div>
-        </div>`;
-      }).join('');
-      // Load actual image data for each
-      photos.forEach(function(p) { loadThumbImage(p.id); });
+      const hydrated = await Promise.all(photos.map(async function(p) {
+        const detail = await fetchPhotoData(p.id);
+        return {
+          id: p.id,
+          taken_by: detail.taken_by || p.taken_by || '',
+          taken_at: detail.taken_at || p.taken_at || '',
+          photo_data: detail.photo_data || ''
+        };
+      }));
+      photoCarousel.photos = hydrated;
+      photoCarousel.index = Math.min(photoCarousel.index, Math.max(0, hydrated.length - 1));
+      renderPhotoCarousel();
     }
 
     // Add photo button (associates only, max 3)
@@ -954,6 +957,48 @@ async function renderPhotoStrip(pbId) {
   }
 }
 
+function renderPhotoCarousel() {
+  const photos = photoCarousel.photos || [];
+  if (!photos.length) {
+    photoStrip.innerHTML = '<div style="font-size:13px;color:#888;padding:8px 0;">No photos taken yet.</div>';
+    return;
+  }
+  const current = photos[photoCarousel.index] || photos[0];
+  const total = photos.length;
+  const takenBy = current.taken_by ? String(current.taken_by).split(' ')[0] : '';
+  const imgHtml = current.photo_data
+    ? `<img src="${current.photo_data}" alt="Confirmation photo" />`
+    : '<span style="font-size:22px;">&#128247;</span>';
+  const navPrevDisabled = total <= 1 ? 'disabled' : '';
+  const navNextDisabled = total <= 1 ? 'disabled' : '';
+  photoStrip.innerHTML = `
+    <div class="photo-carousel">
+      <button type="button" class="photo-carousel-nav" data-photo-nav="prev" ${navPrevDisabled} aria-label="Previous photo">&#8249;</button>
+      <div class="photo-carousel-stage">
+        <button type="button" class="photo-thumb photo-thumb-large" data-photo-open="${current.id}">
+          ${imgHtml}
+        </button>
+        <div class="photo-carousel-meta">
+          <span>${takenBy || 'Associate'}</span>
+          <span>${photoCarousel.index + 1} / ${total}</span>
+        </div>
+      </div>
+      <button type="button" class="photo-carousel-nav" data-photo-nav="next" ${navNextDisabled} aria-label="Next photo">&#8250;</button>
+    </div>
+  `;
+}
+
+async function fetchPhotoData(photoId) {
+  try {
+    const res  = await fetch(`${PHOTOS_API}?id=${photoId}`);
+    const data = await res.json();
+    if (!res.ok) return {};
+    return data || {};
+  } catch (_) {
+    return {};
+  }
+}
+
 async function loadThumbImage(photoId) {
   try {
     const res  = await fetch(`${PHOTOS_API}?id=${photoId}`);
@@ -969,10 +1014,11 @@ async function loadThumbImage(photoId) {
 }
 
 function viewPhotoFull(photoId) {
+  const carouselPhoto = (photoCarousel.photos || []).find(function(p) { return Number(p.id) === Number(photoId); });
   const thumb = document.querySelector(`[data-photo-id="${photoId}"]`);
-  const src   = thumb?._photoData;
+  const src   = carouselPhoto?.photo_data || thumb?._photoData;
   if (!src) return;
-  const meta  = thumb?._photoMeta || {};
+  const meta  = carouselPhoto ? { taken_at: carouselPhoto.taken_at, taken_by: carouselPhoto.taken_by } : (thumb?._photoMeta || {});
   const bg = document.createElement('div');
   bg.className = 'photo-lightbox-bg';
   const inner = document.createElement('div');
@@ -1011,9 +1057,19 @@ if (photoAddArea) {
 
 if (photoStrip) {
   photoStrip.addEventListener('click', function(e) {
-    const thumb = e.target.closest('[data-photo-id]');
-    if (!thumb) return;
-    const photoId = Number(thumb.getAttribute('data-photo-id'));
+    const navBtn = e.target.closest('[data-photo-nav]');
+    if (navBtn) {
+      if (!photoCarousel.photos.length) return;
+      const dir = navBtn.getAttribute('data-photo-nav');
+      const total = photoCarousel.photos.length;
+      if (dir === 'prev') photoCarousel.index = (photoCarousel.index - 1 + total) % total;
+      if (dir === 'next') photoCarousel.index = (photoCarousel.index + 1) % total;
+      renderPhotoCarousel();
+      return;
+    }
+    const openBtn = e.target.closest('[data-photo-open]');
+    if (!openBtn) return;
+    const photoId = Number(openBtn.getAttribute('data-photo-open'));
     if (!photoId) return;
     viewPhotoFull(photoId);
   });
@@ -1046,13 +1102,11 @@ if (photoFileInput) {
       setTimeout(function() { photoStatus.textContent = ''; }, 2000);
       await renderPhotoStrip(photoModalPb.id);
       // refresh board photo count badge
-      photoCountCache[photoModalPb.id] = (photoCountCache[photoModalPb.id] || 0) + 1;
-      const btn = document.querySelector(`[data-photo-pb="${photoModalPb.id}"]`);
-      if (btn) {
-        const c = photoCountCache[photoModalPb.id];
+      const c = photoCountCache[photoModalPb.id] || 0;
+      document.querySelectorAll(`[data-photo-pb="${photoModalPb.id}"]`).forEach(function(btn) {
         btn.innerHTML = `&#128247; ${c}`;
         btn.classList.add('has-photos');
-      }
+      });
     } catch(e) {
       photoStatus.textContent = 'Error: ' + e.message;
     }
