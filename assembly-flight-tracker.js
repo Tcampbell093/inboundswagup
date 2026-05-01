@@ -853,6 +853,8 @@ async function cmSubmitComment(){
     cmEls.body.value         = '';
     cmEls.charCount.textContent = '0 / 2000';
     await cmLoadComments();
+    // Notify parent to refresh badge immediately
+    try { window.parent.postMessage({ type: 'FT_COMMENT_POSTED' }, '*'); } catch(_) {}
     // refresh counts in background
     loadCommentCounts(state.scheduled).then(()=>renderBoard(state.filtered));
   }catch(err){

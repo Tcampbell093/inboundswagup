@@ -2643,21 +2643,12 @@
     } catch(_) {}
   }
 
-  async function markAllRead() {
-    const email = getEmail();
-    if (!email) return;
-    updateBadge(0);
-    try {
-      await fetch(COMMENTS_API, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reader: email }),
-      });
-    } catch(_) {}
-  }
-
-  document.addEventListener('click', function(e) {
-    if (e.target.closest('[data-page="assemblyFlightTrackerPage"]')) setTimeout(markAllRead, 500);
+  // Listen for postMessage from iframe when a comment is posted
+  // so badge updates instantly without waiting for next poll
+  window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'FT_COMMENT_POSTED') {
+      pollUnread();
+    }
   });
 
   function tryStart() {
@@ -2665,7 +2656,7 @@
     if (user && user.email && ['admin','manager','l2','l1'].includes(user.role)) {
       pollUnread();
       clearInterval(pollTimer);
-      pollTimer = setInterval(pollUnread, 60000);
+      pollTimer = setInterval(pollUnread, 10000); // poll every 10s
     } else {
       setTimeout(tryStart, 800);
     }
