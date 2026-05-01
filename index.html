@@ -2629,6 +2629,7 @@
   function updateBadge(count) {
     const badge = getBadge();
     if (!badge) return;
+    console.log('HC Badge: updateBadge called with count=' + count, new Error().stack.split('\n')[2]);
     if (count > 0) { badge.textContent = count > 99 ? '99+' : String(count); badge.hidden = false; }
     else { badge.hidden = true; }
   }
@@ -2959,14 +2960,14 @@
   });
 
   // Delegated click — catches any comment badge (.cb-has, .cb-none) in Assembly board and Queue
-  // Works for both desktop table rows (<tr>) and mobile cards (.mob-card)
+  // Works for both desktop table rows (<tr>), mobile cards (.mob-card), and focus list rows (.asm-focus-row)
   document.addEventListener('click', function(e){
     const badge = e.target.closest('.cb-badge');
     if(!badge || badge.classList.contains('cb-loading')) return;
     const cell = badge.closest('.cb-cell');
     if(!cell) return;
-    // Try table row first, then mobile card div
-    const row = cell.closest('tr') || cell.closest('.mob-card');
+    // Try table row, mobile card, then focus list row
+    const row = cell.closest('tr') || cell.closest('.mob-card') || cell.closest('.asm-focus-row');
     if(!row) return;
     const cbKey   = row.dataset.cbkey || cell.dataset.cbkey || '';
     const pbName  = row.dataset.pbname || '';
