@@ -361,25 +361,25 @@
     });
   }
 
-  // ── Hook: watch hidden tbody for DOM changes → refresh UI ───
+  // ── Hook into renderQueue (now exported on window by queue.js) ─
   function hookRenderQueue() {
-    // Wait for the tbody element to exist
-    var tbody = document.getElementById('queueTableBody');
-    if (!tbody) { setTimeout(hookRenderQueue, 300); return; }
-
-    var debounce = null;
-    var observer = new MutationObserver(function() {
-      clearTimeout(debounce);
-      debounce = setTimeout(function() {
+    if (typeof window.renderQueue !== 'function') {
+      setTimeout(hookRenderQueue, 200);
+      return;
+    }
+    var orig = window.renderQueue;
+    window.renderQueue = function() {
+      orig.apply(this, arguments);
+      applyFilters();
+    };
+    // Also patch renderIssueHoldSection if it exists
+    if (typeof window.renderIssueHoldSection === 'function') {
+      var origHold = window.renderIssueHoldSection;
+      window.renderIssueHoldSection = function() {
+        origHold.apply(this, arguments);
         applyFilters();
-      }, 80);
-    });
-    observer.observe(tbody, { childList: true, subtree: true });
-
-    // Also watch issueHoldQueueTableBody
-    var holdTbody = document.getElementById('issueHoldQueueTableBody');
-    if (holdTbody) observer.observe(holdTbody, { childList: true, subtree: true });
-
+      };
+    }
     // Initial render
     applyFilters();
   }

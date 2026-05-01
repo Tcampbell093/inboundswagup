@@ -1037,7 +1037,14 @@ function renderQueueCardViews(readyRows, incompleteRows, scheduledRows) {
 }
 window.renderQueueCardViews = renderQueueCardViews;
 
-// Hook into renderQueue
+// Export data arrays so queue-command-center.js can read them
+Object.defineProperty(window, 'availableQueueRows',  { get: function(){ return availableQueueRows;  }, configurable:true });
+Object.defineProperty(window, 'incompleteQueueRows', { get: function(){ return incompleteQueueRows; }, configurable:true });
+Object.defineProperty(window, 'scheduledQueueRows',  { get: function(){ return scheduledQueueRows;  }, configurable:true });
+Object.defineProperty(window, 'issueHoldQueueRows',  { get: function(){ return issueHoldQueueRows;  }, configurable:true });
+
+// Export renderQueue so command center can hook it
+window.renderQueue = renderQueue;
 const _origRenderQueuePhase2 = window.renderQueue || (typeof renderQueue!=='undefined'?renderQueue:null);
 if (_origRenderQueuePhase2 && !window._queuePhase2Hooked) {
   window._queuePhase2Hooked = true;
