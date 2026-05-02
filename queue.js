@@ -998,6 +998,7 @@ window.closeBulkScheduleModal = function() {
   const backdrop = document.getElementById('bulkScheduleModalBackdrop');
   if (backdrop) backdrop.classList.remove('show');
   _bulkPendingItems = [];
+  // Do NOT clear QCC_SELECTED — user may want to retry or cancel via the bulk bar
 };
 
 window.confirmBulkSchedule = function() {

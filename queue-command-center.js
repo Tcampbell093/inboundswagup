@@ -293,6 +293,8 @@
 
   function clearSelection() {
     QCC_SELECTED.clear();
+    // Also close bulk modal if open
+    if (typeof window.closeBulkScheduleModal === 'function') window.closeBulkScheduleModal();
     renderPage();
     updateBulkBar();
   }
@@ -334,16 +336,17 @@
 
     // Multiple PBs — open bulk modal
     if (typeof window.openBulkScheduleModal === 'function') {
-      // Patch confirmBulkSchedule to also refresh QCC
+      // Patch confirmBulkSchedule to clear selection + refresh QCC after confirming
       var origConfirm = window.confirmBulkSchedule;
       window.confirmBulkSchedule = function() {
         origConfirm();
+        QCC_SELECTED.clear();
+        updateBulkBar();
         applyFilters();
         window.confirmBulkSchedule = origConfirm; // restore
       };
       window.openBulkScheduleModal(items);
-      QCC_SELECTED.clear();
-      updateBulkBar();
+      // Do NOT clear QCC_SELECTED here — only clear on confirm or explicit cancel
     }
   }
 
