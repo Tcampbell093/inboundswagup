@@ -2321,6 +2321,54 @@
   </div>
 </div>
 
+<!-- ── Bulk Schedule Modal ──────────────────────────────────── -->
+<div class="modal-backdrop" id="bulkScheduleModalBackdrop">
+  <div class="modal" style="width:min(540px,100%)">
+    <div class="modal-header">
+      <div>
+        <div class="eyebrow">Schedule to Assembly</div>
+        <h2 style="margin:6px 0 4px;font-size:26px;" id="bulkScheduleTitle">Schedule N pack builders</h2>
+      </div>
+      <button class="btn secondary" onclick="window.closeBulkScheduleModal()">Close</button>
+    </div>
+
+    <!-- Stats row -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:14px 20px 0;">
+      <div style="background:var(--blue1);border-radius:8px;padding:10px 12px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:var(--text);line-height:1;margin-bottom:2px;" id="bulkStatCount">0</div>
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Builders</div>
+      </div>
+      <div style="background:#E1F5EE;border-radius:8px;padding:10px 12px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:#0F6E56;line-height:1;margin-bottom:2px;" id="bulkStatUnits">0</div>
+        <div style="font-size:11px;font-weight:700;color:#0F6E56;text-transform:uppercase;letter-spacing:.05em;">Total units</div>
+      </div>
+      <div style="background:var(--blue1);border-radius:8px;padding:10px 12px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:var(--text);line-height:1;margin-bottom:2px;" id="bulkStatPacks">0</div>
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Total packs</div>
+      </div>
+    </div>
+
+    <!-- PB list -->
+    <div style="padding:14px 20px 0;">
+      <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Pack builders</div>
+      <div id="bulkScheduleList" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:5px;"></div>
+    </div>
+
+    <!-- Date + note -->
+    <div class="schedule-modal-grid" style="padding:14px 20px 0;">
+      <div class="field"><label for="bulkScheduleDate">Assembly Date</label><input id="bulkScheduleDate" type="date" oninput="window.updateBulkScheduleBtn()" /></div>
+      <div class="field"><label for="bulkScheduleNote">Note <span style="font-weight:400;opacity:.7;">(optional — applies to all)</span></label><input id="bulkScheduleNote" placeholder="e.g. Priority shift, rush order…" /></div>
+    </div>
+
+    <div class="toolbar" style="margin:16px 20px 0 20px;margin-bottom:0;justify-content:flex-end;padding-bottom:20px;">
+      <div class="right">
+        <button class="btn secondary" onclick="window.closeBulkScheduleModal()">Cancel</button>
+        <button class="btn" id="bulkScheduleConfirmBtn" onclick="window.confirmBulkSchedule()" disabled>Schedule all</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 <div class="modal-backdrop" id="issueHoldModalBackdrop">
   <div class="modal" style="width:min(620px,100%)">

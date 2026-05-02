@@ -312,17 +312,39 @@
   function bulkSchedule() {
     var ids = Array.from(QCC_SELECTED);
     if (!ids.length) return;
-    var count = 0;
+
+    // Build items array for bulk modal
+    var items = [];
     ids.forEach(function(id) {
-      // Find which pool this row is in
-      var readyRow    = (window.availableQueueRows||[]).find(function(r){ return String(r.id)===String(id); });
-      var pendingRow  = (window.incompleteQueueRows||[]).find(function(r){ return String(r.id)===String(id); });
-      if (readyRow   && typeof scheduleQueueRow==='function') { scheduleQueueRow(String(id),'ready'); count++; }
-      if (pendingRow && typeof scheduleQueueRow==='function') { scheduleQueueRow(String(id),'incomplete'); count++; }
+      var readyRow   = (window.availableQueueRows||[]).find(function(r){ return String(r.id)===String(id); });
+      var pendingRow = (window.incompleteQueueRows||[]).find(function(r){ return String(r.id)===String(id); });
+      if (readyRow)   items.push({ id: String(id), source: 'ready' });
+      else if (pendingRow) items.push({ id: String(id), source: 'incomplete' });
     });
-    QCC_SELECTED.clear();
-    updateBulkBar();
-    if (count > 0) applyFilters();
+
+    if (!items.length) return;
+
+    // Single PB — use existing single modal
+    if (items.length === 1) {
+      scheduleQueueRow(items[0].id, items[0].source);
+      QCC_SELECTED.clear();
+      updateBulkBar();
+      return;
+    }
+
+    // Multiple PBs — open bulk modal
+    if (typeof window.openBulkScheduleModal === 'function') {
+      // Patch confirmBulkSchedule to also refresh QCC
+      var origConfirm = window.confirmBulkSchedule;
+      window.confirmBulkSchedule = function() {
+        origConfirm();
+        applyFilters();
+        window.confirmBulkSchedule = origConfirm; // restore
+      };
+      window.openBulkScheduleModal(items);
+      QCC_SELECTED.clear();
+      updateBulkBar();
+    }
   }
 
   // ── Collapsible sections ────────────────────────────────────

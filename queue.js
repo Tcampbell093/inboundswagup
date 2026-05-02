@@ -907,6 +907,170 @@ window.getIssueHoldQueueRows=function(){ return issueHoldQueueRows; };
 window.unscheduleQueueRow=unscheduleQueueRow;
 window.deleteScheduledQueueRow=deleteScheduledQueueRow;
 
+// ── Bulk Schedule ─────────────────────────────────────────────
+let _bulkPendingItems = []; // [{id, source, row}]
+
+function openBulkScheduleModal(items) {
+  // items: array of {id, source} where source is 'ready' or 'incomplete'
+  _bulkPendingItems = [];
+  items.forEach(function(item) {
+    const sourceRows = item.source === 'incomplete' ? incompleteQueueRows : availableQueueRows;
+    const row = sourceRows.find(function(r){ return String(r.id) === String(item.id); });
+    if (row) _bulkPendingItems.push({ id: item.id, source: item.source, row });
+  });
+  if (!_bulkPendingItems.length) return;
+
+  // Set suggested date
+  const suggestedDate = assemblyDateInput ? assemblyDateInput.value : new Date().toISOString().slice(0,10);
+  const dateEl = document.getElementById('bulkScheduleDate');
+  const noteEl = document.getElementById('bulkScheduleNote');
+  if (dateEl) dateEl.value = suggestedDate;
+  if (noteEl) noteEl.value = '';
+
+  // Render PB list + stats
+  window.renderBulkScheduleList();
+  window.updateBulkScheduleBtn();
+
+  // Open modal
+  const backdrop = document.getElementById('bulkScheduleModalBackdrop');
+  if (backdrop) backdrop.classList.add('show');
+}
+
+window.renderBulkScheduleList = function() {
+  const list = document.getElementById('bulkScheduleList');
+  const titleEl = document.getElementById('bulkScheduleTitle');
+  const countEl = document.getElementById('bulkStatCount');
+  const unitsEl = document.getElementById('bulkStatUnits');
+  const packsEl = document.getElementById('bulkStatPacks');
+  if (!list) return;
+
+  let totalUnits = 0, totalPacks = 0;
+  _bulkPendingItems.forEach(function(item) {
+    totalUnits += Number(item.row.units || 0);
+    totalPacks += Number(item.row.qty || item.row.packs || 0);
+  });
+
+  const count = _bulkPendingItems.length;
+  if (titleEl) titleEl.textContent = 'Schedule ' + count + ' pack builder' + (count !== 1 ? 's' : '');
+  if (countEl) countEl.textContent = count;
+  if (unitsEl) unitsEl.textContent = totalUnits.toLocaleString();
+  if (packsEl) packsEl.textContent = totalPacks.toLocaleString();
+
+  list.innerHTML = _bulkPendingItems.map(function(item, idx) {
+    const r = item.row;
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;border:1px solid var(--blue2);background:var(--card);">' +
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="font-size:12px;font-weight:800;color:var(--text);">' + escapeHtml(r.pb || '—') + '</div>' +
+        '<div style="font-size:11px;color:var(--muted);">' + escapeHtml(r.account || '—') + '</div>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--muted);text-align:right;white-space:nowrap;">' +
+        Number(r.units||0).toLocaleString() + 'u · ' + Number(r.qty||0) + ' packs' +
+      '</div>' +
+      '<button onclick="window.removeBulkItem(' + idx + ')" title="Remove" ' +
+        'style="width:20px;height:20px;border-radius:50%;border:1px solid var(--blue2);background:none;cursor:pointer;font-size:13px;color:var(--muted);display:flex;align-items:center;justify-content:center;flex-shrink:0;">' +
+        '&#215;' +
+      '</button>' +
+    '</div>';
+  }).join('');
+};
+
+window.removeBulkItem = function(idx) {
+  _bulkPendingItems.splice(idx, 1);
+  if (_bulkPendingItems.length === 0) {
+    window.closeBulkScheduleModal();
+    return;
+  }
+  window.renderBulkScheduleList();
+  window.updateBulkScheduleBtn();
+};
+
+window.updateBulkScheduleBtn = function() {
+  const btn = document.getElementById('bulkScheduleConfirmBtn');
+  const date = (document.getElementById('bulkScheduleDate') || {}).value || '';
+  const count = _bulkPendingItems.length;
+  if (!btn) return;
+  const ready = date.length === 10 && count > 0;
+  btn.disabled = !ready;
+  btn.textContent = 'Schedule all ' + count;
+};
+
+window.closeBulkScheduleModal = function() {
+  const backdrop = document.getElementById('bulkScheduleModalBackdrop');
+  if (backdrop) backdrop.classList.remove('show');
+  _bulkPendingItems = [];
+};
+
+window.confirmBulkSchedule = function() {
+  const dateEl = document.getElementById('bulkScheduleDate');
+  const noteEl = document.getElementById('bulkScheduleNote');
+  const trimmedDate = String((dateEl || {}).value || '').trim();
+  const parts = trimmedDate.split('-');
+  if (parts.length !== 3 || parts[0].length !== 4) {
+    alert('Choose a valid Assembly date first.');
+    return;
+  }
+  const note = String((noteEl || {}).value || '').trim();
+
+  _bulkPendingItems.forEach(function(item) {
+    const r = item.row;
+    const revenueMatch = getRevenueReferenceForSalesOrder(r.so || '');
+    const matchedSubtotal = Number(revenueMatch && revenueMatch.originalSubtotal || 0);
+    const matchedIhd = String(revenueMatch && revenueMatch.ihd || r.ihd || '').trim();
+    if (matchedIhd) r.ihd = matchedIhd;
+
+    const newRow = {
+      id: Date.now() + Math.random(),
+      date: trimmedDate,
+      pb: r.pb, so: r.so, account: r.account,
+      qty: Number(r.qty || 0),
+      fullQty: Number(r.qty || 0),
+      isPartial: false,
+      products: Number(r.products || 0),
+      status: 'Scheduled',
+      ihd: matchedIhd || r.ihd || '',
+      subtotal: matchedSubtotal,
+      stage: 'aa',
+      rescheduleNote: note,
+      pbId: r.pbId || '',
+      pdfUrl: r.pdfUrl || '',
+      workType: 'pack_builder',
+      externalLink: '',
+      accountOwner: r.accountOwner || '',
+      sourceQueue: item.source,
+      sourceStatus: r.status || '',
+    };
+    assemblyBoardRows.unshift(newRow);
+
+    // Also add to scheduledQueueRows
+    const scheduledEntry = Object.assign({}, r, {
+      scheduledFor: trimmedDate,
+      scheduledAt: new Date().toISOString().slice(0,10),
+      scheduleNote: note,
+      ihd: matchedIhd || r.ihd || '',
+    });
+    scheduledQueueRows.unshift(scheduledEntry);
+
+    // Remove from source queue
+    if (item.source === 'incomplete') {
+      incompleteQueueRows = incompleteQueueRows.filter(function(x){ return String(x.id) !== String(item.id); });
+    } else {
+      availableQueueRows = availableQueueRows.filter(function(x){ return String(x.id) !== String(item.id); });
+    }
+  });
+
+  saveScheduledQueue();
+  saveQueue();
+  saveIncompleteQueue();
+  saveJson(assemblyBoardStorageKey, assemblyBoardRows);
+  if (assemblyDateInput) assemblyDateInput.value = trimmedDate;
+  renderAssembly();
+  renderHome();
+  renderQueue();
+  window.closeBulkScheduleModal();
+};
+
+window.openBulkScheduleModal = openBulkScheduleModal;
+
 if(issueHoldQueueLimit){issueHoldQueueLimit.addEventListener('change',renderQueue);}
 if(closeIssueHoldBtn){closeIssueHoldBtn.addEventListener('click',closeIssueHoldModal);}
 if(cancelIssueHoldBtn){cancelIssueHoldBtn.addEventListener('click',closeIssueHoldModal);}
