@@ -181,15 +181,16 @@
 
       if (!collapsed) {
         rows.forEach(function(r) {
+          var sid  = String(r.id);
           var urg  = isUrgent(r);
-          var rowCls = 'qcc-row' + (urg?' qcc-urgent':r._qStatus==='hold'?' qcc-hold-r':r._qStatus==='pending'?' qcc-warn':'') + (QCC_SELECTED.has(r.id)?' qcc-sel':'');
+          var rowCls = 'qcc-row' + (urg?' qcc-urgent':r._qStatus==='hold'?' qcc-hold-r':r._qStatus==='pending'?' qcc-warn':'') + (QCC_SELECTED.has(sid)?' qcc-sel':'');
           var initials = getInitials(r);
           var rev = r.revenue || r.subtotal || 0;
           var cbKey = esc(r.pbId || r.so || '');
           var issue = r.issueType || r.holdNote || '';
 
-          html += '<div class="' + rowCls + '" data-id="' + r.id + '" data-cbkey="' + cbKey + '">';
-          html += '<div class="qcc-chk' + (QCC_SELECTED.has(r.id)?' on':'') + '" onclick="event.stopPropagation();window.qcc.toggleSelect(\'' + r.id + '\')"></div>';
+          html += '<div class="' + rowCls + '" data-id="' + esc(sid) + '" data-cbkey="' + cbKey + '">';
+          html += '<div class="qcc-chk' + (QCC_SELECTED.has(sid)?' on':'') + '" onclick="event.stopPropagation();window.qcc.toggleSelect(\'' + esc(sid) + '\')"></div>';
           html += '<div class="qcc-av">' + esc(initials) + '</div>';
           html += '<div style="flex:1;min-width:0;">';
           html += '<div class="qcc-pb">' + esc(r.pb || r.so || '—') + (r.priority ? ' &#11088;' : '') + '</div>';
@@ -285,9 +286,19 @@
 
   // ── Selection ────────────────────────────────────────────────
   function toggleSelect(id) {
-    if (QCC_SELECTED.has(id)) QCC_SELECTED.delete(id);
-    else QCC_SELECTED.add(id);
-    renderPage();
+    var sid = String(id);
+    if (QCC_SELECTED.has(sid)) QCC_SELECTED.delete(sid);
+    else QCC_SELECTED.add(sid);
+
+    // Update just the affected row in-place — no full re-render to prevent layout shift
+    var row = document.querySelector('.qcc-row[data-id="' + sid + '"]');
+    if (row) {
+      var chk = row.querySelector('.qcc-chk');
+      var isNowSelected = QCC_SELECTED.has(sid);
+      if (chk) chk.classList.toggle('on', isNowSelected);
+      row.classList.toggle('qcc-sel', isNowSelected);
+    }
+
     updateBulkBar();
   }
 
