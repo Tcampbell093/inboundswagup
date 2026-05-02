@@ -67,8 +67,8 @@
 </div>
 </header>
 
-
-    <section class="role-tabs-wrap">
+<!-- ── PO Lookup ──────────────────────────────────────────── -->
+<div id="poLookupWidget" style="margin:12px 24px 0;"></div>
       <div class="role-tabs" id="roleTabs">
         <button class="role-tab active" data-page="dock" data-i18n="tabDock">Docker</button>
         <button class="role-tab" data-page="receiving" data-i18n="tabReceiving">QA Receiving</button>
@@ -571,6 +571,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="app.js"></script>
   <script src="inbound-pallets.js"></script>
+  <script src="po-lookup.js"></script>
   <script>
   // ── Put-Away auto-container creation hook ─────────────────────────────
   // Patches plt_advance so that when a pallet moves to 'done',
