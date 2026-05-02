@@ -41,27 +41,32 @@ exports.handler = async function(event) {
       ORDER BY pe.event_ts ASC
     `, [term]);
 
-    // 2. Putaway PO lines — what is/was in the PO
-    const linesRes = await pool.query(`
-      SELECT l.*,
-        c.pallet_label, c.pallet_date, c.status AS container_status,
-        c.created_at AS container_created_at
-      FROM putaway_po_lines l
-      JOIN putaway_containers c ON c.id = l.container_id
-      WHERE l.po_number ILIKE $1
-      ORDER BY c.created_at DESC
-    `, [term]);
+    // 2. Putaway PO lines — what is/was in the PO (skip if table doesn't exist)
+    let linesRes = { rows: [] };
+    try {
+      linesRes = await pool.query(`
+        SELECT l.*,
+          c.pallet_label, c.pallet_date, c.status AS container_status,
+          c.created_at AS container_created_at
+        FROM putaway_po_lines l
+        JOIN putaway_containers c ON c.id = l.container_id
+        WHERE l.po_number ILIKE $1
+        ORDER BY c.created_at DESC
+      `, [term]);
+    } catch(_) { /* putaway tables may not exist yet */ }
 
     // 3. Placements for those lines
     let placements = [];
-    const lineIds = linesRes.rows.map(r => r.id);
-    if (lineIds.length) {
-      const pRes = await pool.query(
-        `SELECT * FROM putaway_placements WHERE po_line_id = ANY($1) ORDER BY placed_at DESC`,
-        [lineIds]
-      );
-      placements = pRes.rows;
-    }
+    try {
+      const lineIds = linesRes.rows.map(r => r.id);
+      if (lineIds.length) {
+        const pRes = await pool.query(
+          `SELECT * FROM putaway_placements WHERE po_line_id = ANY($1) ORDER BY placed_at DESC`,
+          [lineIds]
+        );
+        placements = pRes.rows;
+      }
+    } catch(_) { /* putaway tables may not exist yet */ }
 
     // 4. Pull current inbound state to check if PO is still active on floor
     const stateRes = await pool.query(
