@@ -96,6 +96,12 @@
             })
             .then(function(r) { return r.json(); })
             .then(function(dbUser) {
+              if (dbUser.unauthorized) {
+                localStorage.removeItem(HC_USER_KEY);
+                localStorage.removeItem(USER_KEY);
+                window.location.href = 'login.html?reason=unauthorized';
+                return;
+              }
               const refreshed = {
                 id:        user.id,
                 email:     user.email,

@@ -101,6 +101,13 @@
       .then(function(dbUser) {
         if (dbUser.suspended) throw new Error('Your account has been suspended. Contact your manager.');
 
+        if (dbUser.unauthorized) {
+          fetch(API_URL + '/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } }).catch(function(){});
+          localStorage.removeItem(HC_USER_KEY);
+          localStorage.removeItem(USER_KEY);
+          throw new Error('This Google account doesn\'t have access to Houston Control. Ask your manager to invite you.');
+        }
+
         localStorage.setItem(USER_KEY, name);
         localStorage.setItem(HC_USER_KEY, JSON.stringify({
           id: user.id, email: user.email, name: name,
@@ -119,6 +126,12 @@
       loginBtn.disabled = false;
       history.replaceState(null, '', 'login.html');
     });
+
+  // Show message if redirected here due to unauthorized access
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('reason') === 'unauthorized') {
+    setStatus("This Google account doesn\'t have access to Houston Control. Ask your manager to invite you.", true);
+  }
 
   } else {
     // ── Normal login button ───────────────────────────────────
