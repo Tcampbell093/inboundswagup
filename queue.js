@@ -675,7 +675,22 @@ function openScheduleModal(id,source='ready'){
   scheduleFullQtyInput.value=Number(row.qty||0);
   scheduleRemainderToggleInput.value='false';
   scheduleRemainderDateInput.value='';
-  scheduleModalSummary.innerHTML=`<strong>${escapeHtml(row.pb||'Pack Builder')}</strong><div>${escapeHtml(row.account||'—')}</div><div>${Number(row.units||0).toLocaleString()} units • ${escapeHtml(row.so||'—')}</div>`;
+  // Option C: rich summary card
+  const initials=(row.account||row.pb||'?').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  const ihdStr=row.ihd?` · IHD ${escapeHtml(row.ihd)}`:'';
+  scheduleModalSummary.innerHTML=
+    `<div style="display:flex;gap:12px;align-items:center;padding:10px 0 2px;">
+      <div style="width:38px;height:38px;border-radius:8px;background:#E6F1FB;color:#0C447C;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;">${escapeHtml(initials)}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:15px;font-weight:700;color:var(--text);">${escapeHtml(row.pb||'Pack Builder')}</div>
+        <div style="font-size:12px;color:var(--muted);">${escapeHtml(row.account||'—')} · <strong>${Number(row.units||row.qty||0).toLocaleString()} units</strong> · ${escapeHtml(row.so||'—')}${ihdStr}</div>
+      </div>
+    </div>`;
+  // Hide qty field (full mode default)
+  const qtyField=document.getElementById('scheduleQtyField');
+  if(qtyField) qtyField.style.display='none';
+  // Update live summary
+  if(typeof window._sched_updateSummary==='function') window._sched_updateSummary();
   scheduleModalBackdrop.classList.add('show');
 }
 function openRescheduleModal(id){
@@ -685,7 +700,18 @@ function openRescheduleModal(id){
   pendingScheduleQueueId='';
   scheduleModalDate.value=row.date||assemblyDateInput.value||new Date().toISOString().slice(0,10);
   scheduleModalNote.value=row.rescheduleNote||'';
-  scheduleModalSummary.innerHTML=`<strong>Reschedule ${escapeHtml(row.pb||'Pack Builder')}</strong><div>${escapeHtml(row.account||'—')}</div><div>${Number(getAssemblyUnits(row)||0).toLocaleString()} units • ${escapeHtml(row.so||'—')}</div>`;
+  const units=Number(getAssemblyUnits(row)||0);
+  const initials=(row.account||row.pb||'?').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  scheduleModalSummary.innerHTML=
+    `<div style="display:flex;gap:12px;align-items:center;padding:10px 0 2px;">
+      <div style="width:38px;height:38px;border-radius:8px;background:#E6F1FB;color:#0C447C;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;">${escapeHtml(initials)}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:15px;font-weight:700;color:var(--text);">Reschedule — ${escapeHtml(row.pb||'Pack Builder')}</div>
+        <div style="font-size:12px;color:var(--muted);">${escapeHtml(row.account||'—')} · <strong>${units.toLocaleString()} units</strong> · ${escapeHtml(row.so||'—')}</div>
+      </div>
+    </div>`;
+  scheduleFullQtyInput.value=units;
+  if(typeof window._sched_updateSummary==='function') window._sched_updateSummary();
   scheduleModalBackdrop.classList.add('show');
 }
 function closeScheduleModal(){

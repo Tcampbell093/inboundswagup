@@ -2376,30 +2376,136 @@
 </div>
 
 <div class="modal-backdrop" id="scheduleModalBackdrop">
-  <div class="modal" style="width:min(560px,100%)">
-    <div class="modal-header">
-      <div>
-        <div class="eyebrow">Schedule Pack Builder</div>
-        <h2 style="margin:6px 0 4px;font-size:30px">Choose a date</h2>
-        <p class="subtitle" style="max-width:none">Pick the Assembly date from the calendar input below. This is safer than typing dates manually.</p>
+  <div class="modal" style="width:min(580px,100%)">
+
+    <!-- Header: PB summary card -->
+    <div class="modal-header" style="padding-bottom:12px;">
+      <div style="flex:1;">
+        <div class="eyebrow">Schedule to Assembly</div>
+        <div id="scheduleModalSummary" style="margin-top:6px;"></div>
       </div>
       <button class="btn secondary" id="closeScheduleBtn">Close</button>
     </div>
-    <div class="schedule-summary" id="scheduleModalSummary"></div>
-    <div class="schedule-modal-grid">
-      <div class="field"><label for="scheduleModalDate">Assembly Date</label><input id="scheduleModalDate" type="date" /></div>
-      <div class="field"><label for="scheduleModalNote">Schedule Note</label><input id="scheduleModalNote" placeholder="Optional note for the schedule" /></div>
-      <div class="field"><label for="scheduleMode">Schedule Mode</label><select id="scheduleMode"><option value="full">Full amount</option><option value="partial">Partial amount</option></select></div>
-      <div class="field"><label for="scheduleQty">Scheduled Qty</label><input id="scheduleQty" type="number" min="0" value="0" /></div>
-      <div class="field"><label for="scheduleFullQty">Full Qty</label><input id="scheduleFullQty" type="number" min="0" value="0" disabled /></div>
-      <div class="field"><label for="scheduleRemainderToggle">Auto-schedule Remainder</label><select id="scheduleRemainderToggle"><option value="false">No</option><option value="true">Yes</option></select></div>
-      <div class="field"><label for="scheduleRemainderDate">Remainder Date</label><input id="scheduleRemainderDate" type="date" /></div>
+
+    <!-- Body: two-column split -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid var(--border,#eee);">
+
+      <!-- Left: inputs -->
+      <div style="padding:16px 18px;border-right:1px solid var(--border,#eee);">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted,#888);margin-bottom:10px;padding-bottom:6px;border-bottom:0.5px solid var(--border,#eee);">Schedule</div>
+
+        <div class="field" style="margin-bottom:12px;">
+          <label for="scheduleModalDate">Assembly date</label>
+          <input id="scheduleModalDate" type="date" />
+        </div>
+
+        <div class="field" style="margin-bottom:12px;">
+          <label for="scheduleMode">Mode</label>
+          <select id="scheduleMode" onchange="window._sched_onModeChange()">
+            <option value="full">Full amount</option>
+            <option value="partial">Partial amount</option>
+          </select>
+        </div>
+
+        <div id="scheduleQtyField" class="field" style="margin-bottom:12px;display:none;">
+          <label for="scheduleQty">Qty to schedule</label>
+          <input id="scheduleQty" type="number" min="0" value="0" oninput="window._sched_onQtyChange()" />
+        </div>
+
+        <!-- Hidden full qty (read by confirmSchedule) -->
+        <input id="scheduleFullQty" type="number" min="0" value="0" style="display:none;" />
+
+        <div class="field" style="margin-bottom:0;">
+          <label for="scheduleModalNote">Note <span style="font-weight:400;opacity:.6;">(optional)</span></label>
+          <input id="scheduleModalNote" placeholder="Rush, priority…" />
+        </div>
+      </div>
+
+      <!-- Right: live summary -->
+      <div style="padding:16px 18px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted,#888);margin-bottom:10px;padding-bottom:6px;border-bottom:0.5px solid var(--border,#eee);">Summary</div>
+
+        <!-- Qty display boxes -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+          <div style="background:var(--blue1,#f0f6ff);border-radius:8px;padding:10px 12px;text-align:center;">
+            <div style="font-size:22px;font-weight:500;color:#185FA5;line-height:1;margin-bottom:2px;" id="schedSummScheduling">0</div>
+            <div style="font-size:10px;color:#0C447C;font-weight:700;">Scheduling</div>
+          </div>
+          <div style="background:var(--blue1,#f0f6ff);border-radius:8px;padding:10px 12px;text-align:center;">
+            <div style="font-size:22px;font-weight:500;color:var(--muted,#888);line-height:1;margin-bottom:2px;" id="schedSummRemaining">0</div>
+            <div style="font-size:10px;color:var(--muted,#888);font-weight:700;">Remaining</div>
+          </div>
+        </div>
+
+        <!-- Split bar -->
+        <div style="height:6px;background:var(--border,#e5e7eb);border-radius:3px;overflow:hidden;margin-bottom:14px;">
+          <div id="schedSplitBar" style="height:6px;background:#185FA5;border-radius:3px;width:100%;transition:width .2s;"></div>
+        </div>
+
+        <!-- Remainder section -->
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted,#888);margin-bottom:8px;">Remainder</div>
+
+        <div class="field" style="margin-bottom:10px;">
+          <label for="scheduleRemainderToggle">Auto-schedule?</label>
+          <select id="scheduleRemainderToggle">
+            <option value="false">No</option>
+            <option value="true">Yes — set date below</option>
+          </select>
+        </div>
+
+        <div class="field" style="margin-bottom:0;">
+          <label for="scheduleRemainderDate">Remainder date</label>
+          <input id="scheduleRemainderDate" type="date" />
+        </div>
+
+      </div>
     </div>
-    <div class="toolbar" style="margin-top:16px;margin-bottom:0;justify-content:flex-end">
-      <div class="right"><button class="btn secondary" id="cancelScheduleBtn">Cancel</button><button class="btn" id="confirmScheduleBtn">Confirm Schedule</button></div>
+
+    <!-- Footer -->
+    <div class="toolbar" style="padding:12px 18px;border-top:1px solid var(--border,#eee);justify-content:flex-end;">
+      <div class="right">
+        <button class="btn secondary" id="cancelScheduleBtn">Cancel</button>
+        <button class="btn" id="confirmScheduleBtn">Confirm Schedule</button>
+      </div>
     </div>
+
   </div>
 </div>
+
+<script>
+window._sched_onModeChange = function() {
+  var mode = document.getElementById('scheduleMode')?.value;
+  var qtyField = document.getElementById('scheduleQtyField');
+  if (qtyField) qtyField.style.display = mode === 'partial' ? '' : 'none';
+  window._sched_updateSummary();
+};
+window._sched_onQtyChange = function() {
+  window._sched_updateSummary();
+};
+window._sched_updateSummary = function() {
+  var mode     = document.getElementById('scheduleMode')?.value || 'full';
+  var fullQty  = Number(document.getElementById('scheduleFullQty')?.value || 0);
+  var schedQty = mode === 'partial'
+    ? Number(document.getElementById('scheduleQty')?.value || 0)
+    : fullQty;
+  var remaining = Math.max(0, fullQty - schedQty);
+  var pct = fullQty > 0 ? Math.min(100, Math.round(schedQty / fullQty * 100)) : 100;
+
+  var elS = document.getElementById('schedSummScheduling');
+  var elR = document.getElementById('schedSummRemaining');
+  var elB = document.getElementById('schedSplitBar');
+  if (elS) elS.textContent = schedQty.toLocaleString();
+  if (elR) {
+    elR.textContent = remaining.toLocaleString();
+    elR.style.color = remaining > 0 ? '#854F0B' : 'var(--muted,#888)';
+  }
+  if (elB) {
+    elB.style.width = pct + '%';
+    elB.style.background = remaining > 0 ? '#185FA5' : '#1D9E75';
+  }
+};
+</script>
+
 
 <!-- ── Bulk Schedule Modal ──────────────────────────────────── -->
 <div class="modal-backdrop" id="bulkScheduleModalBackdrop">
