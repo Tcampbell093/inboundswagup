@@ -2744,6 +2744,10 @@
           if (key && key.startsWith('ops_hub_')) keysToRemove.push(key);
         }
         keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
+        // Additional module-specific keys not prefixed with ops_hub_
+        ['ft_author_name', 'cc_active_name', 'qaWorkflowCurrentUserV2'].forEach(function(k) {
+          localStorage.removeItem(k);
+        });
 
         setTimeout(function() {
           if (status) status.innerHTML = `<span style="color:#2ecc71;">✓ ${data.message} Reloading…</span>`;
