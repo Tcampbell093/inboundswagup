@@ -506,6 +506,109 @@ function buildTableRow(row){
 }
 
 // ── Board — grouped by Day ─────────────────────────────────────────────────
+// ── Journey card helper ──────────────────────────────────────────────────────
+function journeyCard(row) {
+  const risk  = getRisk(row);
+  const sk    = getStageKey(row.stage||'');
+  const isDone = sk === 'done';
+
+  // Avatar initials + color class
+  const initials = (row.account||row.pb||'?').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  const avCls = isDone ? 'ft-av done' : risk==='critical'||risk==='high' ? 'ft-av risk' : 'ft-av';
+
+  // Status badge
+  let badge = '';
+  if (risk==='critical') badge = '<span class="ft-badge ft-badge-risk">⚠ Overdue</span>';
+  else if (risk==='high') badge = '<span class="ft-badge ft-badge-final">Due soon</span>';
+  else if (isDone) badge = '<span class="ft-badge ft-badge-done">✓ Complete</span>';
+  else {
+    const lbl = customerStageLabel(sk);
+    const cls = sk==='line'||sk==='dpmo' ? 'ft-badge-final' : sk==='done' ? 'ft-badge-done' : 'ft-badge-prod';
+    badge = `<span class="ft-badge ${cls}">${esc(lbl)}</span>`;
+  }
+
+  // Journey steps: Received, Scheduled, In Production, Finalizing, Complete
+  const STEPS = [
+    { key:'sched',   label:'Scheduled',    order:1 },
+    { key:'prod',    label:'In Production',order:2 },
+    { key:'final',   label:'Finalizing',   order:3 },
+    { key:'qa',      label:'Quality Check',order:4 },
+    { key:'done',    label:'Complete',     order:5 },
+  ];
+  const STAGE_ORDER_FT = { aa:2, print:2, picked:2, line:3, dpmo:4, done:5 };
+  const curOrder = STAGE_ORDER_FT[sk] || 1;
+
+  let stepsHtml = '';
+  STEPS.forEach(function(step, i) {
+    const stepDone   = curOrder > step.order;
+    const stepActive = curOrder === step.order;
+    const isLast = i === STEPS.length - 1;
+    const dotCls = stepDone ? 'ft-j-dot done'
+                 : stepActive && (risk==='critical') ? 'ft-j-dot risk'
+                 : stepActive && (risk==='high'||risk==='watch') ? 'ft-j-dot watch'
+                 : stepActive ? 'ft-j-dot active'
+                 : 'ft-j-dot';
+    const lblCls = stepDone ? 'ft-j-label done'
+                 : stepActive && risk==='critical' ? 'ft-j-label risk'
+                 : stepActive ? 'ft-j-label active'
+                 : 'ft-j-label';
+    const lineCls = stepDone ? 'ft-j-line done' : 'ft-j-line';
+    const dotContent = stepDone ? '✓' : stepActive ? '→' : '';
+    stepsHtml +=
+      `<div class="ft-j-step">` +
+        (!isLast ? `<div class="${lineCls}"></div>` : '') +
+        `<div class="${dotCls}">${dotContent}</div>` +
+        `<div class="${lblCls}">${step.label}</div>` +
+      `</div>`;
+  });
+
+  // IHD display
+  let ihdHtml = '—';
+  const ihd = String(row.ihd||'').trim();
+  if (ihd) {
+    if (risk==='critical') ihdHtml = `<span class="ft-ihd-crit">${esc(ihd)} — overdue</span>`;
+    else if (risk==='high'||risk==='watch') ihdHtml = `<span class="ft-ihd-warn">${esc(ihd)}</span>`;
+    else ihdHtml = `<span class="ft-ihd-ok">${esc(ihd)}</span>`;
+  }
+
+  const req = getRequestType(row);
+  const reqHtml = req==='hold' ? '<span class="ft-req-chip ft-req-hold">Hold requested</span>'
+                : req==='date' ? '<span class="ft-req-chip ft-req-date">Date change requested</span>'
+                : '';
+
+  const note = row.scheduleNote||row.rescheduleNote||'';
+  const cardCls = risk==='critical' ? ' risk-critical' : risk==='high' ? ' risk-high' : '';
+
+  return `<div class="ft-card${cardCls}">
+    <div class="ft-card-inner">
+      <div class="ft-card-body">
+        <div class="ft-top">
+          <div class="${avCls}">${esc(initials)}</div>
+          <div style="flex:1;min-width:0;">
+            <div class="ft-name">${esc(row.account||'—')}</div>
+            <div class="ft-meta">${esc(row.pb||'—')} · ${esc(row.so||'—')}</div>
+          </div>
+          ${badge}
+          ${commentBtn(row)}
+          ${photoBtn(row)}
+          ${requestActionBtn(row,'hold')}
+          ${requestActionBtn(row,'date_change')}
+        </div>
+        <div class="ft-journey">${stepsHtml}</div>
+        <div class="ft-bottom">
+          <span>In-hands: <strong>${ihdHtml}</strong></span>
+          <span>${fmtN(getUnits(row))} units</span>
+          ${row.accountOwner ? `<span>Owner: <strong>${esc(row.accountOwner)}</strong></span>` : ''}
+          ${fmtMoney(row.revenue||0) !== '$0' ? `<span>${fmtMoney(row.revenue||0)}</span>` : ''}
+          ${note ? `<span class="ft-note">${esc(note)}</span>` : ''}
+          ${reqHtml}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── Board — grouped by Day ────────────────────────────────────────────────
 function renderByDay(rows){
   const groups = new Map();
   rows.forEach(r=>{
@@ -522,33 +625,18 @@ function renderByDay(rows){
     const dayUnits   = dayRows.reduce((s,r)=>s+getUnits(r),0);
     const dayRevenue = dayRows.reduce((s,r)=>s+Number(r.revenue||0),0);
     const atRisk     = dayRows.filter(r=>['critical','high'].includes(getRisk(r))).length;
-    return `<section class="day-card">
-      <div class="day-header">
-        <div>
-          <h2 class="day-title">${esc(fmtDateLabel(dateKey))}</h2>
-          ${atRisk ? `<span class="day-risk-flag">⚠ ${atRisk} needs attention</span>` : ''}
-        </div>
-        <div class="day-summary">
-          <span class="summary-chip">${fmtN(dayRows.length)} PBs</span>
-          <span class="summary-chip">${fmtN(dayUnits)} units</span>
-          <span class="summary-chip">${fmtMoney(dayRevenue)}</span>
-        </div>
+    return `<div class="day-card">
+      <div class="ft-day-label">
+        ${esc(fmtDateLabel(dateKey))}
+        <span class="ft-day-chip">${fmtN(dayRows.length)} order${dayRows.length!==1?'s':''} · ${fmtN(dayUnits)} units · ${fmtMoney(dayRevenue)}</span>
+        ${atRisk ? `<span class="ft-day-risk">⚠ ${atRisk} needs attention</span>` : ''}
       </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Pack Builder</th><th>Sales Order</th><th>Account</th>
-            <th>Account Owner</th><th>Units</th><th>Stage</th>
-            <th>In-Hands Date</th><th>Revenue</th><th>Note</th><th>Comments</th>
-          </tr></thead>
-          <tbody>${dayRows.map(buildTableRow).join('')}</tbody>
-        </table>
-      </div>
-    </section>`;
+      ${dayRows.map(journeyCard).join('')}
+    </div>`;
   }).join('');
 }
 
-// ── Board — grouped by SORD ────────────────────────────────────────────────
+// ── Board — grouped by SORD ───────────────────────────────────────────────
 function renderBySord(rows){
   const groups = new Map();
   rows.forEach(r=>{
@@ -569,54 +657,21 @@ function renderBySord(rows){
     const pct          = sRows.length ? Math.round((doneCount/sRows.length)*100) : 0;
     const allIhds      = sRows.map(r=>r.ihd).filter(Boolean).sort();
     const earliestIhd  = allIhds[0]||'';
-    return `<section class="day-card sord-card">
-      <div class="day-header">
+    return `<div class="day-card">
+      <div class="ft-sord-header">
         <div>
-          <div class="sord-eyebrow">${esc(g.account||'Unknown account')} · ${esc(g.accountOwner||'')}</div>
-          <h2 class="day-title sord-title">${esc(soKey)}</h2>
-          ${atRisk ? `<span class="day-risk-flag">⚠ ${atRisk} PB${atRisk!==1?'s':''} needs attention</span>` : ''}
+          <div class="ft-sord-eyebrow">${esc(g.account||'Unknown account')}${g.accountOwner ? ' · '+esc(g.accountOwner) : ''}</div>
+          <div class="ft-sord-title">${esc(soKey)}</div>
+          ${atRisk ? `<span class="ft-day-risk" style="display:inline-block;margin-top:4px;">⚠ ${atRisk} PB${atRisk!==1?'s':''} needs attention</span>` : ''}
         </div>
-        <div class="sord-meta-right">
-          <div class="sord-progress-wrap">
-            <div class="sord-prog-bar-outer">
-              <div class="sord-prog-bar-fill" style="width:${pct}%"></div>
-            </div>
-            <span class="sord-prog-label">${doneCount} / ${sRows.length} complete</span>
-          </div>
-          <div class="day-summary">
-            <span class="summary-chip">${fmtN(totalUnits)} units</span>
-            <span class="summary-chip">${fmtMoney(totalRevenue)}</span>
-            ${earliestIhd ? `<span class="summary-chip">IHD ${esc(earliestIhd)}</span>` : ''}
-          </div>
+        <div style="text-align:right;">
+          <div class="ft-sord-prog-outer"><div class="ft-sord-prog-fill" style="width:${pct}%"></div></div>
+          <div class="ft-sord-prog-label">${doneCount} / ${sRows.length} complete</div>
+          <div style="margin-top:4px;font-size:11px;color:var(--muted);">${fmtN(totalUnits)} units · ${fmtMoney(totalRevenue)}${earliestIhd ? ' · IHD '+esc(earliestIhd) : ''}</div>
         </div>
       </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Pack Builder</th><th>Scheduled</th><th>Account Owner</th>
-            <th>Units</th><th>Stage</th><th>In-Hands Date</th>
-            <th>Revenue</th><th>Note</th><th>Comments</th>
-          </tr></thead>
-          <tbody>${sRows.map(r=>{
-            const pbContent = r.rowLink
-              ? `<a class="row-link" href="${esc(r.rowLink)}" target="_blank" rel="noreferrer">${esc(r.pb||'—')}</a>`
-              : esc(r.pb||'—');
-            const req = getRequestType(r);
-            return `<tr class="risk-${getRisk(r)}${req ? ` request-${req}` : ''}">
-              <td>${pbContent}</td>
-              <td>${esc(fmtDateLabel(r.scheduledFor))}</td>
-              <td>${esc(r.accountOwner||'—')}</td>
-              <td>${fmtN(getUnits(r))}</td>
-              <td>${stageBadge(r)}</td>
-              <td>${ihdDisplay(r)}${requestBadge(r)}</td>
-              <td>${fmtMoney(r.revenue||0)}</td>
-              <td class="note-cell">${esc(r.scheduleNote||r.rescheduleNote||'—')}</td>
-              <td class="comment-cell">${commentBtn(r)}${requestActionBtn(r,'hold')}${requestActionBtn(r,'date_change')}${photoBtn(r)}</td>
-            </tr>`;
-          }).join('')}</tbody>
-        </table>
-      </div>
-    </section>`;
+      ${sRows.map(journeyCard).join('')}
+    </div>`;
   }).join('');
 }
 
