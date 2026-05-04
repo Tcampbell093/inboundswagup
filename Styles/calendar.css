@@ -1,1 +1,89 @@
+/* ── Calendar Option A — Executive ───────────────────────────────────────── */
 
+.cal-cell {
+  min-height: 88px;
+  border-right: 0.5px solid var(--border, #e5e7eb);
+  border-bottom: 0.5px solid var(--border, #e5e7eb);
+  padding: 0;
+  position: relative;
+  background: var(--card, #fff);
+  transition: background .12s;
+}
+.cal-cell:nth-child(7n) { border-right: none; }
+.cal-cell:hover:not([data-muted]) { background: var(--blue1, #f5f8ff); }
+.cal-cell[data-muted] { background: var(--bg, #fafafa); opacity: .55; pointer-events: none; }
+.cal-cell-today { background: #E6F1FB !important; }
+
+.cal-cell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 6px 2px;
+}
+
+.cal-date-num {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text, #111);
+  line-height: 1;
+}
+.cal-date-today {
+  width: 22px;
+  height: 22px;
+  background: #185FA5;
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+.cal-date-muted { color: var(--muted, #aaa); }
+
+.cal-add-btn {
+  opacity: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 0.5px solid var(--blue2, #d0e4ff);
+  background: none;
+  color: var(--muted, #888);
+  font-size: 14px;
+  cursor: pointer;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity .12s, background .12s;
+  flex-shrink: 0;
+}
+.cal-cell:hover .cal-add-btn { opacity: 1; }
+.cal-add-btn:hover { background: #185FA5; color: #fff; border-color: #185FA5; }
+
+.cal-cell-events {
+  padding: 0 5px 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cal-ev {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+.cal-ev-custom { cursor: pointer; }
+.cal-ev-custom:hover { filter: brightness(.92); }
+
+.cal-ev-blue   { background: #E6F1FB; color: #0C447C; }
+.cal-ev-green  { background: #EAF3DE; color: #27500A; }
+.cal-ev-amber  { background: #FAEEDA; color: #633806; }
+.cal-ev-purple { background: #EEEDFE; color: #3C3489; }
+.cal-ev-red    { background: #FCEBEB; color: #791F1F; }
+
+/* Make system-reset also clear calendar events */
