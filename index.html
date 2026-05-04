@@ -2745,19 +2745,57 @@
         }
         keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
         // Additional module-specific keys not prefixed with ops_hub_
-        ['ft_author_name', 'cc_active_name', 'qaWorkflowCurrentUserV2',
-         'houston_control_fulfillment_scan_prototype_v2_manual_carriers',
-         'qaV5SeparatedWorkflowData_v4fixed',
-         'qaActiveImportedMonthKeyV1', 'qaCompareImportedMonthKeyV1',
-         'qaWorkflowPerformanceDeptViewV1'].forEach(function(k) {
-          localStorage.removeItem(k);
+        [
+          // Fulfillment scan-out
+          'houston_control_fulfillment_scan_prototype_v2_manual_carriers',
+          // QA inbound workflow
+          'qaV5SeparatedWorkflowData_v4fixed',
+          'qaBlueSheetMastersV5',
+          'qaLeadershipUnlockedV1',
+          'qaWorkflowCurrentUserV2',
+          'qaWorkflowLanguageV1',
+          'qaWorkflowUphPaceCustomImagesV1',
+          'qaActiveImportedMonthKeyV1',
+          'qaCompareImportedMonthKeyV1',
+          'qaWorkflowPerformanceDeptViewV1',
+          // Flight tracker
+          'ft_author_name',
+          // Cycle count
+          'cc_active_name',
+          // SORD
+          'sord_imports_v1',
+          // Overstock
+          'overstockFormDraft_v1',
+          // Misc
+          'wf_activeTab',
+        ].forEach(function(k) { localStorage.removeItem(k); });
+
+        // Explicitly write empty state to key data stores so they load clean
+        var emptyStores = {
+          'ops_hub_returns_records_v1':          '[]',
+          'ops_hub_errors_records_v2':            '[]',
+          'ops_hub_assembly_board_v1':            '[]',
+          'ops_hub_assembly_board_v2':            '[]',
+          'ops_hub_available_queue_v1':           '[]',
+          'ops_hub_scheduled_queue_v1':           '[]',
+          'ops_hub_incomplete_queue_v1':          '[]',
+          'ops_hub_issue_hold_queue_v1':          '[]',
+          'ops_hub_attendance_records_v2':        '[]',
+          'ops_hub_cycle_count_v1':               '[]',
+          'ops_hub_rev_tracker_v1':               '[]',
+          'houston_control_fulfillment_scan_prototype_v2_manual_carriers': '{}',
+          'qaV5SeparatedWorkflowData_v4fixed':    '{}',
+        };
+        Object.keys(emptyStores).forEach(function(k) {
+          localStorage.setItem(k, emptyStores[k]);
         });
 
         setTimeout(function() {
           if (status) status.innerHTML = `<span style="color:#2ecc71;">✓ ${data.message} Reloading…</span>`;
           setTimeout(function() {
             closeModal();
-            window.location.reload();
+            // Hard reload — bypasses browser cache
+            window.location.href = window.location.origin + '/index.html';
           }, 1500);
         }, 500);
       })
