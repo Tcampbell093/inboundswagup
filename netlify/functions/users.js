@@ -213,6 +213,44 @@ exports.handler = async function(event) {
     return json(200, { ok: true });
   }
 
+  // ── POST /users?action=upsert — called on every login ───────
+  if (method === 'POST' && action === 'upsert') {
+    let body;
+    try { body = JSON.parse(event.body || '{}'); } catch { return json(400, { error: 'Invalid JSON' }); }
+    const { id, email, name } = body;
+    if (!email) return json(400, { error: 'email required' });
+
+    // Add invited column if missing
+    await pool.query(`ALTER TABLE hc_users ADD COLUMN IF NOT EXISTS invited BOOLEAN DEFAULT true`);
+
+    // Check if user exists in our DB
+    const existing = await pool.query('SELECT * FROM hc_users WHERE email=$1', [email]);
+
+    if (existing.rows.length === 0) {
+      // Not in our system — block
+      return json(200, { unauthorized: true, reason: 'not_invited' });
+    }
+
+    const u = existing.rows[0];
+
+    if (u.suspended) return json(200, { suspended: true });
+    if (u.invited === false) return json(200, { unauthorized: true, reason: 'not_invited' });
+
+    // Update last login
+    await pool.query(
+      `UPDATE hc_users SET last_login=now(), name=COALESCE(NULLIF($2,''), name), updated_at=now() WHERE email=$1`,
+      [email, name || '']
+    );
+
+    return json(200, {
+      role:            u.role,
+      overrides:       u.overrides || {},
+      tempAdmin:       u.temp_admin  || false,
+      tempAdminExpiry: u.temp_admin_expiry || null,
+      suspended:       u.suspended   || false,
+    });
+  }
+
   // ── GET /users?action=audit ────────────────────────────────
   if (method === 'GET' && action === 'audit') {
     const caller = await verifyAdmin(event);
