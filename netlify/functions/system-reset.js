@@ -27,21 +27,36 @@ async function verifyAdmin(event) {
   const token = auth.replace('Bearer ', '').trim();
   if (!token) return null;
 
+  // Verify token with Netlify Identity
   const res = await fetch(`${GOTRUE_URL}/user`, {
     headers: { Authorization: `Bearer ${token}` }
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    console.error('system-reset: identity check failed', res.status);
+    return null;
+  }
   const user = await res.json();
+  if (!user || !user.email) return null;
 
-  // Check role in DB
-  const dbRes = await pool.query('SELECT role FROM hc_users WHERE email=$1', [user.email]);
-  const role  = dbRes.rows[0]?.role
-             || user.app_metadata?.role
-             || user.app_metadata?.roles?.[0]
-             || 'l1';
-
-  if (role !== 'admin') return null;
-  return { email: user.email, role };
+  // Check role from hc_users (Neon) — source of truth
+  try {
+    const dbRes = await pool.query('SELECT role FROM hc_users WHERE email=$1', [user.email]);
+    const dbRole = dbRes.rows[0]?.role;
+    if (dbRole === 'admin') return { email: user.email, role: 'admin' };
+    // Fall back to Netlify Identity metadata
+    const metaRole = user.app_metadata?.role || user.app_metadata?.roles?.[0] || 'l1';
+    if (metaRole !== 'admin') {
+      console.error('system-reset: insufficient role', dbRole || metaRole, 'for', user.email);
+      return null;
+    }
+    return { email: user.email, role: 'admin' };
+  } catch(e) {
+    console.error('system-reset: db check failed', e.message);
+    // Last resort — trust Identity metadata
+    const metaRole = user.app_metadata?.role || user.app_metadata?.roles?.[0] || 'l1';
+    if (metaRole !== 'admin') return null;
+    return { email: user.email, role: 'admin' };
+  }
 }
 
 exports.handler = async function(event) {
