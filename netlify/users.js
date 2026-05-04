@@ -38,11 +38,28 @@ async function verifyAdmin(event) {
     return null;
   }
   const user = await res.json();
-  const role = user?.app_metadata?.role
-            || (user?.app_metadata?.roles && user.app_metadata.roles[0])
-            || 'l1';
+
+  // ── Check role from hc_users (Neon) first — source of truth ──
+  let role = 'l1';
+  try {
+    const dbRes = await pool.query('SELECT role FROM hc_users WHERE email=$1', [user.email]);
+    if (dbRes.rows.length > 0 && dbRes.rows[0].role) {
+      role = dbRes.rows[0].role;
+    } else {
+      // Fall back to Netlify Identity app_metadata
+      role = user?.app_metadata?.role
+          || (user?.app_metadata?.roles && user.app_metadata.roles[0])
+          || 'l1';
+    }
+  } catch(e) {
+    // DB unavailable — fall back to Identity metadata
+    role = user?.app_metadata?.role
+        || (user?.app_metadata?.roles && user.app_metadata.roles[0])
+        || 'l1';
+  }
+
   if (!['admin', 'manager'].includes(role)) {
-    console.error('HC Users: insufficient role', role);
+    console.error('HC Users: insufficient role', role, 'for', user.email);
     return null;
   }
   return { user, role, token };
@@ -123,26 +140,56 @@ exports.handler = async function(event) {
     if (!caller) return json(401, { error: 'Unauthorized' });
 
     const body = JSON.parse(event.body || '{}');
-    const { email, role = 'l1' } = body;
+    const { email, role = 'l1', name = '' } = body;
     if (!email) return json(400, { error: 'Email required' });
 
-    const res = await fetch(
-      `${NETLIFY_API}/sites/${SITE_ID}/identity/users/invite`,
-      {
+    // Add invited column if missing
+    await pool.query(`ALTER TABLE hc_users ADD COLUMN IF NOT EXISTS invited BOOLEAN DEFAULT true`);
+
+    // Upsert into hc_users — create or update role
+    const existing = await pool.query('SELECT id FROM hc_users WHERE email=$1', [email]);
+    if (existing.rows.length > 0) {
+      // User exists — update role and mark as invited
+      await pool.query(
+        `UPDATE hc_users SET role=$2, invited=true, updated_at=now() WHERE email=$1`,
+        [email, role]
+      );
+    } else {
+      // New user — insert with invited=true
+      await pool.query(
+        `INSERT INTO hc_users (id, email, name, role, invited, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,true,now(),now())`,
+        [email, email, name, role]
+      );
+    }
+
+    // Send invite email via Resend if configured
+    const RESEND_API_KEY = process.env.RESEND_API_KEY;
+    if (RESEND_API_KEY) {
+      const roleLabels = { admin:'Admin', manager:'Manager', l2:'Associate L2', l1:'Associate L1', external:'External / Stakeholder' };
+      const roleLabel = roleLabels[role] || role;
+      await fetch('https://api.resend.com/emails', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${NETLIFY_PAT}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email,
-          data: { role },
+          from: 'Houston Control <onboarding@resend.dev>',
+          to: email,
+          subject: "You've been invited to Houston Control",
+          html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;">
+            <h2 style="margin:0 0 12px;font-size:20px;color:#0f2444;">You've been invited!</h2>
+            <p style="color:#374151;line-height:1.6;">
+              ${caller.user.email} has invited you to join <strong>Houston Control</strong> as <strong>${roleLabel}</strong>.
+            </p>
+            <p style="margin-top:20px;">
+              <a href="https://inboundswagup.netlify.app/login.html"
+                style="background:#185FA5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">
+                Sign in with Google →
+              </a>
+            </p>
+            <p style="color:#9ca3af;font-size:12px;margin-top:24px;">Sign in with the Google account associated with ${email}</p>
+          </div>`,
         }),
-      }
-    );
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      return json(502, { error: err.msg || 'Invite failed' });
+      }).catch(() => {});
     }
 
     await writeAudit(caller.user.email, email, 'invite', { role });
@@ -194,6 +241,44 @@ exports.handler = async function(event) {
     });
 
     return json(200, { ok: true });
+  }
+
+  // ── POST /users?action=upsert — called on every login ───────
+  if (method === 'POST' && action === 'upsert') {
+    let body;
+    try { body = JSON.parse(event.body || '{}'); } catch { return json(400, { error: 'Invalid JSON' }); }
+    const { id, email, name } = body;
+    if (!email) return json(400, { error: 'email required' });
+
+    // Add invited column if missing
+    await pool.query(`ALTER TABLE hc_users ADD COLUMN IF NOT EXISTS invited BOOLEAN DEFAULT true`);
+
+    // Check if user exists in our DB
+    const existing = await pool.query('SELECT * FROM hc_users WHERE email=$1', [email]);
+
+    if (existing.rows.length === 0) {
+      // Not in our system — block
+      return json(200, { unauthorized: true, reason: 'not_invited' });
+    }
+
+    const u = existing.rows[0];
+
+    if (u.suspended) return json(200, { suspended: true });
+    if (u.invited === false) return json(200, { unauthorized: true, reason: 'not_invited' });
+
+    // Update last login
+    await pool.query(
+      `UPDATE hc_users SET last_login=now(), name=COALESCE(NULLIF($2,''), name), updated_at=now() WHERE email=$1`,
+      [email, name || '']
+    );
+
+    return json(200, {
+      role:            u.role,
+      overrides:       u.overrides || {},
+      tempAdmin:       u.temp_admin  || false,
+      tempAdminExpiry: u.temp_admin_expiry || null,
+      suspended:       u.suspended   || false,
+    });
   }
 
   // ── GET /users?action=audit ────────────────────────────────
