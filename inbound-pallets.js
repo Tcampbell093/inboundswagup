@@ -1365,9 +1365,33 @@ function plt_buildPalletModal(pallet,dept){
 
   /* advance */
   overlay.querySelector('#plt_advanceBtn')?.addEventListener('click',()=>{
+    // ── Overstock gate (prep stage only) ─────────────────────────────────────
+    if (pallet.status === 'prep') {
+      const currentPallet = plt_get(pallet.id);
+      const problematicPOs = (currentPallet?.pos || []).filter(function(po) {
+        const prepQty = plt_hasVal(po.prepReceivedQty) ? Number(po.prepReceivedQty) : null;
+        const ordQty  = plt_hasVal(po.orderedQty)      ? Number(po.orderedQty)      : null;
+        if (prepQty === null || ordQty === null) return false;
+        const overstock = prepQty - ordQty;
+        if (overstock <= 0) return false;
+        // Has overstock — check if it's been assigned to a box
+        const boxedQty = Number(po.overstockBoxedQty || 0);
+        return boxedQty < overstock;
+      });
+
+      if (problematicPOs.length > 0) {
+        const poNums = problematicPOs.map(function(p){ return p.poNum || p.po || p.id; }).join(', ');
+        const msg = plt_t(
+          `${problematicPOs.length} PO(s) have unboxed overstock: ${poNums}.\n\nYou should assign the overstock to a container before advancing.\n\nAdvance anyway without boxing the overstock?`,
+          `${problematicPOs.length} OC(s) tienen excedente sin asignar: ${poNums}.\n\nDeberías asignar el excedente a un contenedor antes de avanzar.\n\n¿Avanzar de todos modos sin encajar el excedente?`
+        );
+        if (!window.confirm(msg)) return;
+      }
+    }
+
     plt_advance(pallet.id);
-    plt_closeAll();        // close the modal — the pallet has moved to next dept
-    plt_renderAllPanels(); // refresh the queue panels
+    plt_closeAll();
+    plt_renderAllPanels();
   });
 
   /* toggle history */
@@ -1385,27 +1409,33 @@ function plt_buildPalletModal(pallet,dept){
   /* PO card actions — delegated to shared helper */
   plt_bindPoCardEvents(overlay.querySelector('#plt_poList'), pallet, dept);
 
-  /* Collapse already-verified PO cards immediately on open (prep dept only) */
-  if (dept === 'prep' && pallet.status === 'prep') {
-    overlay.querySelectorAll('.po-card[data-po-id]').forEach(function(card) {
-      const poId  = card.getAttribute('data-po-id');
-      const poObj = (pallet.pos || []).find(function(p){ return p.id === poId; });
-      if (!poObj || !poObj.prepVerified) return;
-      const poNum = poObj.poNum || poObj.po || poObj.id || '';
-      const cat   = poObj.category || '';
-      card.style.overflow = 'hidden';
-      card.innerHTML = `
-        <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;">
-          <div style="width:18px;height:18px;border-radius:50%;background:#1D9E75;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-            <svg width="10" height="7" viewBox="0 0 10 7" fill="none"><path d="M1 3.5L3.8 6 9 1" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </div>
-          <span style="font-size:13px;font-weight:500;">${plt_esc(poNum)}</span>
-          ${cat ? `<span style="font-size:12px;color:var(--text-secondary,#888);">${plt_esc(cat)}</span>` : ''}
-          <span style="margin-left:auto;font-size:11px;font-weight:500;color:#1D9E75;">${plt_t('Done','Listo')}</span>
-        </div>`;
-      card.style.background = 'var(--surface-secondary, #f9fafb)';
-    });
-  }
+  /* Collapse done PO cards on modal open */
+  overlay.querySelectorAll('.po-card[data-po-id]').forEach(function(card) {
+    const poId  = card.getAttribute('data-po-id');
+    const poObj = (pallet.pos || []).find(function(p){ return p.id === poId; });
+    if (!poObj) return;
+    const isDone = dept === 'prep' ? poObj.prepVerified
+                 : dept === 'receiving' ? poObj.receivingDone
+                 : false;
+    if (isDone) collapseToStrip(card, poObj, pallet.id, poId, dept);
+  });
+
+  /* Reopen: click on a done strip rebuilds just that card */
+  overlay.addEventListener('click', function(e) {
+    const strip = e.target.closest('.plt-done-strip');
+    if (!strip) return;
+    const poId      = strip.getAttribute('data-po-id');
+    const palId     = strip.getAttribute('data-pallet-id');
+    const stripDept = strip.getAttribute('data-dept');
+    const latestPallet = plt_get(palId);
+    if (!latestPallet) return;
+    const clearField = stripDept === 'prep'      ? { prepVerified: false }
+                     : stripDept === 'receiving' ? { receivingDone: false }
+                     : {};
+    plt_updatePo(palId, poId, clearField);
+    plt_closeAll();
+    plt_buildPalletModal(plt_get(palId), stripDept);
+  });
 }
 
 /* ------------------------------------------------------------------
@@ -1437,29 +1467,41 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
   // Shows what the Docker entered: PO#, ordered qty, category. Clean read-only.
   const hasBoxes = plt_hasVal(po.boxes);
   const dockView = `
-    <!-- Dock zone row: ordered qty, boxes, category -->
-    <div class="prep-zone-row">
-      <div class="prep-zone" style="border-top:3px solid #6366f1;">
-        <div class="prep-zone-lbl" style="color:#4338ca;">${plt_t('Ordered Qty','Cant. Ordenada')}</div>
-        <div class="prep-total-val">${hasOrd ? `<strong>${po.orderedQty}</strong>` : '<span class="act-dim">—</span>'}</div>
-      </div>
-      <div class="prep-zone" style="border-top:3px solid #7c3aed;">
-        <div class="prep-zone-lbl" style="color:#6d28d9;">${plt_t('Boxes','Cajas')}</div>
-        <div class="prep-total-val">${hasBoxes ? `<strong>${po.boxes}</strong>` : '<span class="act-dim">—</span>'}</div>
-      </div>
-      <div class="prep-zone" style="border-top:3px solid #0891b2;">
-        <div class="prep-zone-lbl" style="color:#0e7490;">${plt_t('Category','Categoría')}</div>
-        <div style="font-size:0.9rem;font-weight:600;color:var(--text-primary,#111);padding:6px 0;">${plt_esc(po.category)||'—'}</div>
+    <!-- ── CONCEPT C DOCK CARD ─────────────────────────────────────────── -->
+    <div style="padding:12px 14px 8px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <span style="font-size:12px;color:var(--text-secondary,#888);">${plt_esc(po.category||'—')}</span>
         ${po.sizeBreakdown && Object.keys(po.sizeBreakdown).length
-          ? `<div style="font-size:0.68rem;color:var(--text-secondary,#888);">👕 ${Object.entries(po.sizeBreakdown).map(([s,q])=>`${plt_esc(s)}:${q}`).join(' · ')}</div>`
+          ? `<span style="font-size:11px;color:var(--text-secondary,#888);">👕 ${Object.entries(po.sizeBreakdown).map(([s,q])=>`${plt_esc(s)}:${q}`).join(' · ')}</span>`
           : ''}
       </div>
-    </div>
-    ${po.dockNotes?`<p class="po-note" style="padding:8px 14px;margin:0;border-bottom:1px solid var(--border,#eee);">📦 ${plt_esc(po.dockNotes)}</p>`:''}
-    <div class="po-card-actions" style="padding:8px 12px;">
-      <button class="pallet-btn-ghost plt-tiny plt-po-edit">${plt_t('Edit','Editar')}</button>
-      ${canTransfer?`<button class="pallet-btn-ghost plt-tiny plt-po-transfer">⇄ ${plt_t('Transfer','Transferir')}</button>`:''}
-      <button class="pallet-btn-danger plt-tiny plt-po-delete">✕ ${plt_t('Remove','Eliminar')}</button>
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;">
+        <div>
+          <div style="font-size:11px;color:var(--text-secondary,#888);margin-bottom:4px;">${plt_t('Ordered qty','Cant. ordenada')}</div>
+          <input type="number" min="0" class="plt-qty-input plt-dock-qty prep-big-input" data-po-id="${po.id}"
+            value="${hasOrd?po.orderedQty:''}" placeholder="0"
+            style="width:100%;font-size:20px;font-weight:600;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border,#ddd);background:var(--surface,#fff);color:var(--text-primary,#111);" />
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-secondary,#888);margin-bottom:4px;">${plt_t('Boxes','Cajas')}</div>
+          <input type="number" min="0" class="plt-qty-input plt-boxes-qty prep-big-input" data-po-id="${po.id}"
+            value="${hasBoxes?po.boxes:''}" placeholder="0"
+            style="width:100%;font-size:20px;font-weight:600;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border,#ddd);background:var(--surface,#fff);color:var(--text-primary,#111);" />
+        </div>
+        <div>
+          <div style="font-size:11px;color:transparent;margin-bottom:4px;">·</div>
+          <button class="plt-dock-done-btn" data-po-id="${po.id}"
+            style="padding:8px 20px;border-radius:8px;font-size:14px;font-weight:600;border:none;background:#1D9E75;color:#fff;cursor:pointer;white-space:nowrap;">
+            ${plt_t('Done','Listo')}
+          </button>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        <button class="pallet-btn-ghost plt-tiny plt-po-edit">${plt_t('Edit','Editar')}</button>
+        ${canTransfer?`<button class="pallet-btn-ghost plt-tiny plt-po-transfer">⇄ ${plt_t('Transfer','Transferir')}</button>`:''}
+        <button class="pallet-btn-danger plt-tiny plt-po-delete" style="margin-left:auto;">✕</button>
+      </div>
+      ${po.dockNotes?`<p class="po-note" style="padding:6px 0 0;">📦 ${plt_esc(po.dockNotes)}</p>`:''}
     </div>`;
 
   // ── RECEIVING VIEW ────────────────────────────────────────────────────────
@@ -1467,55 +1509,43 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
   // Dock numbers only revealed on demand to prevent count anchoring/bias.
   const recvRevealId = `recvReveal_${po.id}`;
   const recvView = `
-    <!-- Receiving: count input + vs ordered display -->
-    <div class="prep-zone-row">
-      <div class="prep-zone" style="border-top:3px solid #1d4ed8;">
-        <div class="prep-zone-lbl" style="color:#1d4ed8;">${plt_t('Your count — Qty Received','Tu conteo — Cant. Recibida')} ✏️</div>
-        <input type="number" min="0"
-          class="plt-qty-input plt-received-qty prep-big-input" data-po-id="${po.id}"
-          value="${hasRecv?po.receivedQty:''}" placeholder="0"/>
+    <!-- ── CONCEPT C RECEIVING CARD ──────────────────────────────────────── -->
+    <div style="padding:12px 14px 8px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <span style="font-size:12px;color:var(--text-secondary,#888);">${plt_esc(po.category||'—')} · ${plt_t('Ordered','Ordenado')}: <strong>${hasOrd?po.orderedQty:'—'}</strong></span>
+        <span style="margin-left:auto;">${plt_extrasHtml(po)||''}</span>
       </div>
-      <div class="prep-zone prep-zone-display" style="border-top:3px solid #16a34a;">
-        <div class="prep-zone-lbl" style="color:#166534;">${plt_t('vs Ordered','vs Ordenado')}</div>
-        <div class="plt-extras-display" id="extrasDisplay_${po.id}">
-          ${plt_extrasHtml(po)||'<span class="act-dim">—</span>'}
+      <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;">
+        <div>
+          <div style="font-size:11px;color:var(--text-secondary,#888);margin-bottom:4px;">${plt_t('Your count','Tu conteo')} ✏️</div>
+          <input type="number" min="0"
+            class="plt-qty-input plt-received-qty prep-big-input" data-po-id="${po.id}"
+            value="${hasRecv?po.receivedQty:''}" placeholder="0"
+            style="width:100%;font-size:20px;font-weight:600;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border,#ddd);background:var(--surface,#fff);color:var(--text-primary,#111);" />
+        </div>
+        <div>
+          <div style="font-size:11px;color:transparent;margin-bottom:4px;">·</div>
+          <button class="plt-recv-done-btn" data-po-id="${po.id}"
+            style="padding:8px 20px;border-radius:8px;font-size:14px;font-weight:600;border:none;background:#1D9E75;color:#fff;cursor:pointer;white-space:nowrap;">
+            ${plt_t('Done','Listo')}
+          </button>
         </div>
       </div>
-      <div class="prep-zone" style="border-top:3px solid #0891b2;justify-content:center;">
-        <div class="prep-zone-lbl" style="color:#0e7490;">${plt_t('Ordered','Ordenado')}</div>
-        <div class="prep-total-val">${hasOrd ? `<strong style="color:#0e7490;">${po.orderedQty}</strong>` : '<span class="act-dim">—</span>'}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        <button class="pallet-btn-ghost plt-tiny plt-po-edit">${plt_t('Notes','Notas')}</button>
+        <button type="button" class="plt-reveal-toggle plt-recv-reveal-btn pallet-btn-ghost plt-tiny" data-target="${recvRevealId}">
+          👁 ${plt_t('Show dock details','Ver muelle')}
+        </button>
+        ${canTransfer?`<button class="pallet-btn-ghost plt-tiny plt-po-transfer">⇄ ${plt_t('Transfer','Transferir')}</button>`:''}
+        <button class="pallet-btn-danger plt-tiny plt-po-delete" style="margin-left:auto;">✕</button>
       </div>
-    </div>
-    ${plt_fulfillmentBadge(po)?`<div style="padding:6px 12px;border-bottom:1px solid var(--border,#eee);">${plt_fulfillmentBadge(po)}</div>`:''}
-    <!-- Reference: dock numbers hidden by default -->
-    <div class="prep-ref-toggle-wrap">
-      <button type="button" class="plt-reveal-toggle plt-recv-reveal-btn" data-target="${recvRevealId}">
-        👁 ${plt_t('Show dock details','Ver detalles del muelle')}
-      </button>
-    </div>
-    <div class="plt-prev-dept-block hidden" id="${recvRevealId}">
-      <div class="plt-prev-dept-label">⚠️ ${plt_t('Dock reference — verify only after your own count.','Referencia del muelle — verifica solo después de tu propio conteo.')}</div>
-      <div class="plt-ref-row">
-        <span class="plt-ref-label">📋 ${plt_t('Ordered (Dock)','Ordenado (Muelle)')}</span>
-        <span class="plt-ref-value">${hasOrd ? po.orderedQty : plt_t('Not set','No ingresado')}</span>
+      <div class="plt-prev-dept-block hidden" id="${recvRevealId}" style="margin-top:8px;">
+        <div class="plt-prev-dept-label">⚠️ ${plt_t('Dock reference — count first.','Referencia del muelle — cuenta primero.')}</div>
+        <div class="plt-ref-row"><span class="plt-ref-label">${plt_t('Ordered (Dock)','Ordenado (Muelle)')}</span><span class="plt-ref-value">${hasOrd?po.orderedQty:'—'}</span></div>
+        <div class="plt-ref-row"><span class="plt-ref-label">${plt_t('Boxes','Cajas')}</span><span class="plt-ref-value">${plt_hasVal(po.boxes)?po.boxes:'—'}</span></div>
+        ${po.dockNotes?`<p class="po-note" style="margin:4px 0 0;">📦 ${plt_esc(po.dockNotes)}</p>`:''}
       </div>
-      <div class="plt-ref-row">
-        <span class="plt-ref-label">📦 ${plt_t('Boxes','Cajas')}</span>
-        <span class="plt-ref-value">${plt_hasVal(po.boxes) ? po.boxes : '—'}</span>
-      </div>
-      ${po.dockNotes?`<p class="po-note" style="margin:4px 0 0;">📦 ${plt_esc(po.dockNotes)}</p>`:''}
-    </div>
-    ${po.receivingNotes?`<p class="po-note" style="padding:4px 12px 6px;margin:0;">📝 ${plt_esc(po.receivingNotes)}</p>`:''}
-    <div class="po-card-actions" style="padding:8px 12px;">
-      <label class="plt-check-label">
-        <input type="checkbox" class="plt-recv-check" ${po.receivingDone?'checked':''}/>
-        ${po.receivingDone
-          ? `<span class="plt-done-label">✓ ${plt_t('Receiving count done','Conteo de recepción listo')}</span>`
-          : plt_t('Mark receiving count done','Marcar conteo de recepción como listo')}
-      </label>
-      <button class="pallet-btn-ghost plt-tiny plt-po-edit">${plt_t('Notes','Notas')}</button>
-      ${canTransfer?`<button class="pallet-btn-ghost plt-tiny plt-po-transfer">⇄ ${plt_t('Transfer','Transferir')}</button>`:''}
-      <button class="pallet-btn-danger plt-tiny plt-po-delete">✕</button>
+      ${po.receivingNotes?`<p class="po-note" style="padding:4px 0 0;">📝 ${plt_esc(po.receivingNotes)}</p>`:''}
     </div>`;
 
   // ── PREP VIEW ─────────────────────────────────────────────────────────────
@@ -1808,6 +1838,27 @@ function plt_bindAddPoForm(formEl,palletId,dept){
 }
 
 /* Bind PO card events — extracted so we can re-bind after live list refresh */
+// ── collapseToStrip — shared by dock/recv/prep Done buttons ──────────────────
+function collapseToStrip(card, poObj, palletId, poId, dept) {
+  const poNum = poObj ? (poObj.poNum || poObj.po || poObj.id || '') : poId;
+  const cat   = poObj ? (poObj.category || '') : '';
+  card.style.transition = 'all .2s ease';
+  card.innerHTML =
+    '<div class="plt-done-strip" data-po-id="' + plt_esc(poId) + '" data-pallet-id="' + plt_esc(palletId) + '" data-dept="' + plt_esc(dept) + '" ' +
+    'style="display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;" title="' + plt_t('Click to reopen','Clic para reabrir') + '">' +
+      '<div style="width:18px;height:18px;border-radius:50%;background:#1D9E75;display:flex;align-items:center;justify-content:center;flex-shrink:0;">' +
+        '<svg width="10" height="7" viewBox="0 0 10 7" fill="none"><path d="M1 3.5L3.8 6 9 1" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+      '</div>' +
+      '<span style="font-size:13px;font-weight:500;color:var(--text-primary,#111);">' + plt_esc(poNum) + '</span>' +
+      (cat ? '<span style="font-size:12px;color:var(--text-secondary,#888);">' + plt_esc(cat) + '</span>' : '') +
+      '<span style="margin-left:auto;font-size:11px;font-weight:500;color:#1D9E75;">' + plt_t('Done','Listo') + '</span>' +
+      '<span style="font-size:11px;color:var(--text-secondary,#888);">↩ ' + plt_t('reopen','reabrir') + '</span>' +
+    '</div>';
+  card.style.background = 'var(--surface-secondary,#f9fafb)';
+  card.style.border = '0.5px solid var(--border,#e5e7eb)';
+  card.style.opacity = '0.75';
+}
+
 function plt_bindPoCardEvents(container, pallet, dept){
   if(!container) return;
   container.querySelectorAll('.po-card[data-po-id]').forEach(card=>{
@@ -1826,8 +1877,31 @@ function plt_bindPoCardEvents(container, pallet, dept){
       }
     });
     card.querySelector('.plt-po-transfer')?.addEventListener('click',()=>plt_openTransferModal(pallet.id,poId,dept));
-    card.querySelector('.plt-recv-check')?.addEventListener('change',e=>{
-      plt_updatePo(pallet.id,poId,{receivingDone:e.target.checked});
+    // ── Recv Done button ─────────────────────────────────────────────────────
+    card.querySelector('.plt-recv-done-btn')?.addEventListener('click', function() {
+      const btn = card.querySelector('.plt-recv-done-btn');
+      if (btn?.dataset.done === '1') return;
+      if (btn) btn.dataset.done = '1';
+      plt_updatePo(pallet.id, poId, { receivingDone: true });
+      const updatedPallet = plt_get(pallet.id);
+      const poObj = (updatedPallet?.pos || []).find(function(p){ return p.id === poId; });
+      collapseToStrip(card, poObj, pallet.id, poId, dept);
+      plt_renderAllPanels();
+    });
+
+    // ── Dock Done button ─────────────────────────────────────────────────────
+    card.querySelector('.plt-dock-done-btn')?.addEventListener('click', function() {
+      const btn = card.querySelector('.plt-dock-done-btn');
+      if (btn?.dataset.done === '1') return;
+      if (btn) btn.dataset.done = '1';
+      // Save ordered qty from input
+      const dockInput = card.querySelector('.plt-dock-qty');
+      if (dockInput && dockInput.value !== '') {
+        plt_updatePo(pallet.id, poId, { orderedQty: Number(dockInput.value) });
+      }
+      const updatedPallet = plt_get(pallet.id);
+      const poObj = (updatedPallet?.pos || []).find(function(p){ return p.id === poId; });
+      collapseToStrip(card, poObj, pallet.id, poId, dept);
       plt_renderAllPanels();
     });
 
@@ -1860,7 +1934,6 @@ function plt_bindPoCardEvents(container, pallet, dept){
       const poNum = poObj ? (poObj.poNum || poObj.po || poObj.id || '') : poId;
       const cat   = poObj ? (poObj.category || '') : '';
 
-      card.style.transition = 'all .2s ease';
       card.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;">'
         + '<div style="width:18px;height:18px;border-radius:50%;background:#1D9E75;display:flex;align-items:center;justify-content:center;flex-shrink:0;">'
         + '<svg width="10" height="7" viewBox="0 0 10 7" fill="none"><path d="M1 3.5L3.8 6 9 1" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
@@ -1868,6 +1941,7 @@ function plt_bindPoCardEvents(container, pallet, dept){
         + '<span style="font-size:13px;font-weight:500;color:var(--text-primary,#111);">' + plt_esc(poNum) + '</span>'
         + (cat ? '<span style="font-size:12px;color:var(--text-secondary,#888);">' + plt_esc(cat) + '</span>' : '')
         + '<span style="margin-left:auto;font-size:11px;font-weight:500;color:#1D9E75;">' + plt_t('Done','Listo') + '</span>'
+        + '<span style="font-size:11px;color:var(--text-secondary,#888);">↩ ' + plt_t('reopen','reabrir') + '</span>'
         + '</div>';
       card.style.background = 'var(--surface-secondary,#f9fafb)';
       card.style.border = '0.5px solid var(--border,#e5e7eb)';
