@@ -1239,25 +1239,24 @@ function plt_buildPalletModal(pallet,dept){
         <button class="pallet-modal-close">✕</button>
       </div>
 
+      <!-- Prep progress: fraction top-right + bar above stage strip -->
+      ${dept==='prep'&&pallet.status==='prep' ? `
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:12px 22px 0;gap:16px;">
+        <div style="flex:1;padding-top:6px;">
+          <div style="height:8px;background:var(--border,#e5e7eb);border-radius:4px;overflow:hidden;margin-bottom:8px;">
+            <div id="plt_prepProgBar" style="height:8px;background:#1D9E75;border-radius:4px;transition:width .3s;width:${pos.length?Math.round(pos.filter(p=>p.prepVerified).length/pos.length*100):0}%;"></div>
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;min-width:60px;">
+          <div style="font-size:26px;font-weight:500;color:var(--text-primary,#111);line-height:1;" id="plt_prepFrac">${pos.filter(p=>p.prepVerified).length}/${pos.length}</div>
+          <div style="font-size:11px;color:var(--text-secondary,#888);">${plt_t('POs done','OCs listas')}</div>
+        </div>
+      </div>` : ''}
+
       <!-- Compact progress strip -->
       <div class="plt-progress-strip">
         ${progressHtml}
       </div>
-
-      <!-- Prep progress bar (only shown in prep dept) -->
-      ${dept==='prep'&&pallet.status==='prep' ? `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 22px 12px;border-bottom:1px solid var(--border,#eee);gap:16px;">
-        <div style="flex:1;">
-          <div style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:5px;">${plt_t('Progress','Progreso')}</div>
-          <div style="height:8px;background:var(--border,#e5e7eb);border-radius:4px;overflow:hidden;">
-            <div id="plt_prepProgBar" style="height:8px;background:#1D9E75;border-radius:4px;transition:width .3s;width:${pos.length?Math.round(pos.filter(p=>p.prepVerified).length/pos.length*100):0}%;"></div>
-          </div>
-        </div>
-        <div style="text-align:right;flex-shrink:0;">
-          <div style="font-size:24px;font-weight:500;color:var(--text-primary,#111);line-height:1;" id="plt_prepFrac">${pos.filter(p=>p.prepVerified).length}/${pos.length}</div>
-          <div style="font-size:11px;color:var(--text-secondary,#888);">${plt_t('POs done','OCs listas')}</div>
-        </div>
-      </div>` : ''}
 
       <div class="pallet-modal-body">
         <!-- Concurrent editor warning — shown when another associate has this pallet open -->
@@ -1528,98 +1527,76 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
   const prepRevealId = `prepReveal_${po.id}`;
 
   const prepView = `
-    <!-- ── NEW PREP CARD LAYOUT ─────────────────────────────────────────── -->
+    <!-- ── CONCEPT C PREP CARD ─────────────────────────────────────────── -->
+    <div style="padding:12px 14px 8px;">
 
-    <!-- Row 1: Count zone (3 columns) -->
-    <div class="prep-zone-row prep-count-row">
-      <div class="prep-zone">
-        <div class="prep-zone-lbl">${plt_t('Your prep count','Tu conteo Prep')} ✏️</div>
-        <input type="number" min="0" class="plt-qty-input plt-prep-qty prep-big-input" data-po-id="${po.id}"
-          value="${hasPrep?po.prepReceivedQty:''}" placeholder="0"/>
+      <!-- Header row: PO info + discrepancy pill -->
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <span style="font-size:12px;color:var(--text-secondary,#888);">${plt_esc(po.category||'—')} · ${plt_t('Ordered','Ordenado')}: <strong>${plt_hasVal(po.orderedQty)?po.orderedQty:'—'}</strong></span>
+        <span style="margin-left:auto;">${plt_discrepancyHtml(po)||plt_prepVsOrderedHtml(po)||''}</span>
       </div>
-      <div class="prep-zone prep-zone-display">
-        <div class="prep-zone-lbl">${plt_t('Prep vs Receiving','Prep vs Recepción')}</div>
-        <div class="plt-extras-display" id="prepDiscrepDisplay_${po.id}">
-          ${plt_discrepancyHtml(po)||'<span class="act-dim">—</span>'}
+
+      <!-- Main row: Count | Route | Done -->
+      <div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:end;">
+
+        <!-- Count input -->
+        <div>
+          <div style="font-size:11px;color:var(--text-secondary,#888);margin-bottom:4px;">${plt_t('Count','Conteo')}</div>
+          <input type="number" min="0"
+            class="plt-qty-input plt-prep-qty prep-big-input"
+            data-po-id="${po.id}"
+            value="${plt_hasVal(po.prepReceivedQty)?po.prepReceivedQty:''}"
+            placeholder="0"
+            style="width:100%;font-size:20px;font-weight:600;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border,#ddd);background:var(--surface,#fff);color:var(--text-primary,#111);" />
         </div>
-      </div>
-      <div class="prep-zone prep-zone-display">
-        <div class="prep-zone-lbl">${plt_t('Prep vs Ordered','Prep vs Ordenado')}</div>
-        <div class="plt-extras-display" id="prepOrderVarianceDisplay_${po.id}">
-          ${plt_prepVsOrderedHtml(po)||'<span class="act-dim">—</span>'}
+
+        <!-- Route buttons -->
+        <div>
+          <div style="font-size:11px;color:var(--text-secondary,#888);margin-bottom:4px;">${plt_t('Route to','Ruta')}</div>
+          <div style="display:flex;gap:6px;">
+            <button type="button" class="plt-qty-input plt-sts-chip routing-chip ${plt_hasVal(po.stsQty)&&po.destination==='sts'?'selected-sts':''}" data-po-id="${po.id}"
+              style="padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1.5px solid var(--border,#ddd);background:var(--surface,#fff);cursor:pointer;">
+              STS
+            </button>
+            <button type="button" class="plt-qty-input plt-lts-chip routing-chip ${plt_hasVal(po.ltsQty)&&po.destination==='lts'?'selected-lts':''}" data-po-id="${po.id}"
+              style="padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1.5px solid var(--border,#ddd);background:var(--surface,#fff);cursor:pointer;">
+              LTS
+            </button>
+          </div>
         </div>
-      </div>
-    </div>
 
-    <!-- Row 2: Routing zone (3 columns with colored top accents) -->
-    <div class="prep-zone-row prep-route-row">
-      <div class="prep-route-zone prep-rz-sts">
-        <div class="prep-zone-lbl prep-rz-sts-lbl">📦 ${plt_rl('sts')}</div>
-        <input type="number" min="0" class="plt-qty-input plt-sts-qty prep-big-input" data-po-id="${po.id}"
-          value="${hasSts?po.stsQty:''}" placeholder="0"/>
-        <div class="prep-rz-sub">${plt_t('units → STS','uds → CP')}</div>
-      </div>
-      <div class="prep-route-zone prep-rz-lts">
-        <div class="prep-zone-lbl prep-rz-lts-lbl">🏭 ${plt_rl('lts')}</div>
-        <input type="number" min="0" class="plt-qty-input plt-lts-qty prep-big-input" data-po-id="${po.id}"
-          value="${hasLts?po.ltsQty:''}" placeholder="0"/>
-        <div class="prep-rz-sub">${plt_t('units → LTS','uds → CL')}</div>
-      </div>
-      <div class="prep-route-zone prep-rz-total">
-        <div class="prep-zone-lbl prep-rz-total-lbl">${plt_t('Storage total','Total almacenado')}</div>
-        <div class="prep-total-val" id="routedTotalDisplay_${po.id}"><span class="act-dim">—</span></div>
-        <div class="prep-rz-confirm" id="prepRouteConfirm_${po.id}"></div>
-      </div>
-    </div>
+        <!-- Done button -->
+        <div>
+          <div style="font-size:11px;color:transparent;margin-bottom:4px;">·</div>
+          <button class="plt-prep-done-btn" data-po-id="${po.id}"
+            style="padding:8px 20px;border-radius:8px;font-size:14px;font-weight:600;border:none;background:#1D9E75;color:#fff;cursor:pointer;white-space:nowrap;">
+            ${plt_t('Done','Listo')}
+          </button>
+        </div>
 
-    <!-- Row 3: Overstock boxing (amber tinted) -->
-    <div class="prep-overstock-row">
-      <span class="prep-os-label">📤 ${plt_t('Overstock','Exceso')}</span>
-      <span class="prep-os-qty" id="prepOverstockBoxQty_${po.id}">
-        ${overstockQty!==null ? (overstockQty>0 ? `+${overstockQty}` : '0') : '—'}
-      </span>
-      <select class="plt-overstock-box-select prep-os-select" data-po-id="${po.id}">
-        <option value="">${plt_t('Select open box…','Selecciona caja…')}</option>
-      </select>
-      <button type="button" class="pallet-btn-ghost prep-os-btn plt-overstock-refresh-btn" data-po-id="${po.id}" title="${plt_t('Refresh','Actualizar')}">↺</button>
-      <button type="button" class="pallet-btn-ghost prep-os-btn plt-overstock-new-box-btn" data-po-id="${po.id}">+ ${plt_t('New box','Nueva caja')}</button>
-      <button type="button" class="pallet-btn-primary prep-os-btn plt-overstock-assign-btn" data-po-id="${po.id}">${plt_t('Add to box','Agregar')}</button>
-    </div>
-    <div id="prepOverstockAssignStatus_${po.id}" class="po-note" style="padding:4px 14px 8px;font-size:11px;color:#92400e;">
-      ${po.overstockContainerCode
-        ? `📦 ${plt_t('Assigned to box','Asignado a caja')}: <strong>${plt_esc(po.overstockContainerCode)}</strong>`
-        : `${plt_t('When extras exist, assign them to a shared open box here.','Cuando haya excedentes, asígnalos aquí a una caja abierta compartida.')}`}
-    </div>
-
-    <!-- Row 4: Previous counts (collapsible) -->
-    <div class="prep-ref-toggle-wrap">
-      <button type="button" class="plt-reveal-toggle plt-prep-reveal-btn" data-target="${prepRevealId}">
-        👁 ${plt_t('Show previous counts','Ver conteos anteriores')}
-      </button>
-    </div>
-    <div class="plt-prev-dept-block hidden" id="${prepRevealId}">
-      <div class="plt-prev-dept-label">⚠️ ${plt_t('Previous dept numbers — enter your own count first, then compare.','Números anteriores — ingresa tu conteo primero, luego compara.')}</div>
-      <div class="plt-ref-row">
-        <span class="plt-ref-label">📋 ${plt_t('Ordered (Dock)','Ordenado (Muelle)')}</span>
-        <span class="plt-ref-value">${hasOrd ? po.orderedQty : '—'}</span>
       </div>
-      <div class="plt-ref-row">
-        <span class="plt-ref-label">📦 ${plt_t('Receiving count','Conteo Recepción')}</span>
-        <span class="plt-ref-value">${hasRecv ? po.receivedQty : '—'}</span>
-      </div>
-      ${plt_fulfillmentBadge(po)?`<div style="margin:6px 0;">${plt_fulfillmentBadge(po)}</div>`:''}
-    </div>
 
-    <!-- Row 5: Actions -->
-    <div class="po-card-actions" style="flex-wrap:wrap;gap:8px;padding:10px 14px;">
-      <button class="pallet-btn-ghost plt-tiny plt-po-edit">${plt_t('Notes','Notas')}</button>
-      ${canTransfer?`<button class="pallet-btn-ghost plt-tiny plt-po-transfer">⇄ ${plt_t('Transfer','Transferir')}</button>`:''}
-      <button class="pallet-btn-danger plt-tiny plt-po-delete">✕</button>
-      <button class="plt-prep-done-btn pallet-btn-primary plt-tiny" data-po-id="${po.id}" style="margin-left:auto;background:#1D9E75;border-color:#1D9E75;${po.prepVerified?'opacity:.5;cursor:default;':''}">
-        ${po.prepVerified ? `✓ ${plt_t('Done','Listo')}` : plt_t('Done','Listo')}
-      </button>
+      <!-- Utility row: notes, transfer, delete, show previous -->
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        <button class="pallet-btn-ghost plt-tiny plt-po-edit">${plt_t('Notes','Notas')}</button>
+        ${canTransfer?`<button class="pallet-btn-ghost plt-tiny plt-po-transfer">⇄ ${plt_t('Transfer','Transferir')}</button>`:''}
+        <button type="button" class="plt-reveal-toggle plt-prep-reveal-btn pallet-btn-ghost plt-tiny" data-target="prepReveal_${po.id}">
+          👁 ${plt_t('Show counts','Ver conteos')}
+        </button>
+        <button class="pallet-btn-danger plt-tiny plt-po-delete" style="margin-left:auto;">✕</button>
+      </div>
+
+      <!-- Collapsible previous counts -->
+      <div class="plt-prev-dept-block hidden" id="prepReveal_${po.id}" style="margin-top:8px;">
+        <div class="plt-prev-dept-label">⚠️ ${plt_t('Previous counts — enter your own first.','Conteos anteriores — ingresa el tuyo primero.')}</div>
+        <div class="plt-ref-row"><span class="plt-ref-label">${plt_t('Ordered (Dock)','Ordenado (Muelle)')}</span><span class="plt-ref-value">${plt_hasVal(po.orderedQty)?po.orderedQty:'—'}</span></div>
+        <div class="plt-ref-row"><span class="plt-ref-label">${plt_t('Receiving count','Conteo Recepción')}</span><span class="plt-ref-value">${plt_hasVal(po.receivedQty)?po.receivedQty:'—'}</span></div>
+      </div>
+
     </div>
-    ${po.prepNotes?`<p class="po-note">🔀 ${plt_esc(po.prepNotes)}</p>`:''}`;
+    ${po.prepNotes?`<p class="po-note">🔀 ${plt_esc(po.prepNotes)}</p>`:''}` ;
+
+
 
   // ── READ-ONLY summary (done state or non-active dept) ─────────────────────
   const readonlyView = `
@@ -1899,6 +1876,28 @@ function plt_bindPoCardEvents(container, pallet, dept){
       }
 
       plt_renderAllPanels();
+    });
+
+    // ── STS/LTS chip buttons (Concept C simplified prep card) ────────────────
+    card.querySelector('.plt-sts-chip')?.addEventListener('click', function() {
+      const po = (plt_get(pallet.id)?.pos||[]).find(function(r){return r.id===poId;});
+      if (!po) return;
+      const prepInput = card.querySelector('.plt-prep-qty');
+      const prepQty = prepInput && prepInput.value !== '' ? Number(prepInput.value) : (plt_hasVal(po.prepReceivedQty) ? Number(po.prepReceivedQty) : 0);
+      plt_updatePo(pallet.id, poId, { stsQty: prepQty, destination: 'sts', prepReceivedQty: prepQty });
+      card.querySelectorAll('.plt-sts-chip,.plt-lts-chip').forEach(function(b){b.style.background='';b.style.color='';b.style.borderColor='';});
+      const stsBtn = card.querySelector('.plt-sts-chip');
+      if (stsBtn) {stsBtn.style.background='#185FA5';stsBtn.style.color='#fff';stsBtn.style.borderColor='#185FA5';}
+    });
+    card.querySelector('.plt-lts-chip')?.addEventListener('click', function() {
+      const po = (plt_get(pallet.id)?.pos||[]).find(function(r){return r.id===poId;});
+      if (!po) return;
+      const prepInput = card.querySelector('.plt-prep-qty');
+      const prepQty = prepInput && prepInput.value !== '' ? Number(prepInput.value) : (plt_hasVal(po.prepReceivedQty) ? Number(po.prepReceivedQty) : 0);
+      plt_updatePo(pallet.id, poId, { ltsQty: prepQty, destination: 'lts', prepReceivedQty: prepQty });
+      card.querySelectorAll('.plt-sts-chip,.plt-lts-chip').forEach(function(b){b.style.background='';b.style.color='';b.style.borderColor='';});
+      const ltsBtn = card.querySelector('.plt-lts-chip');
+      if (ltsBtn) {ltsBtn.style.background='#7c3aed';ltsBtn.style.color='#fff';ltsBtn.style.borderColor='#7c3aed';}
     });
 
     // ── Prep qty input — live recalc + save on blur ──────────────────────────
