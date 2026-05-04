@@ -1420,7 +1420,7 @@ function plt_buildPalletModal(pallet,dept){
     if (isDone) collapseToStrip(card, poObj, pallet.id, poId, dept);
   });
 
-  /* Reopen: click on a done strip rebuilds just that card */
+  /* Reopen: click on a done strip rebuilds just that card in place */
   overlay.addEventListener('click', function(e) {
     const strip = e.target.closest('.plt-done-strip');
     if (!strip) return;
@@ -1429,12 +1429,34 @@ function plt_buildPalletModal(pallet,dept){
     const stripDept = strip.getAttribute('data-dept');
     const latestPallet = plt_get(palId);
     if (!latestPallet) return;
+    const poObj = (latestPallet.pos || []).find(function(p){ return p.id === poId; });
+    if (!poObj) return;
+
+    // Clear the done flag
     const clearField = stripDept === 'prep'      ? { prepVerified: false }
                      : stripDept === 'receiving' ? { receivingDone: false }
                      : {};
     plt_updatePo(palId, poId, clearField);
-    plt_closeAll();
-    plt_buildPalletModal(plt_get(palId), stripDept);
+
+    // Rebuild just this card in place — no full modal rebuild
+    const refreshedPallet = plt_get(palId);
+    const refreshedPo = (refreshedPallet?.pos || []).find(function(p){ return p.id === poId; });
+    if (!refreshedPo) return;
+    const otherPallets = plt_all().filter(function(x){ return x.id !== palId && x.status !== 'done'; });
+    const newCardHtml = plt_poCardHtml(refreshedPallet, refreshedPo, stripDept, otherPallets);
+
+    // Find the po-card wrapper (parent of the strip)
+    const cardWrapper = strip.closest('.po-card') || strip.parentElement;
+    if (!cardWrapper) return;
+    cardWrapper.style.background = '';
+    cardWrapper.style.border = '';
+    cardWrapper.style.opacity = '';
+    cardWrapper.outerHTML = newCardHtml;
+
+    // Re-bind events for the updated card
+    const poList = overlay.querySelector('#plt_poList');
+    if (poList) plt_bindPoCardEvents(poList, refreshedPallet, stripDept);
+    plt_renderAllPanels();
   });
 }
 
@@ -1612,6 +1634,25 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
         </div>
 
       </div>
+
+      <!-- Overstock row -->
+      ${overstockQty > 0 ? `
+      <div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:#FEF9E7;border:1px solid #F1C40F;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          <span style="font-size:12px;font-weight:700;color:#7D5A00;">📦 ${plt_t('Overstock','Excedente')}</span>
+          <span style="font-size:13px;font-weight:800;color:#854F0B;">+${overstockQty}</span>
+          <span id="prepOverstockAssignStatus_${po.id}" style="font-size:12px;color:var(--text-secondary,#888);flex:1;"></span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select class="plt-overstock-box-select" data-po-id="${po.id}"
+            style="flex:1;padding:6px 10px;border-radius:7px;border:1px solid #F1C40F;background:#fff;font-size:12px;">
+            <option value="">${plt_t('Select open box','Seleccionar caja abierta')}</option>
+          </select>
+          <button type="button" class="pallet-btn-ghost prep-os-btn plt-overstock-refresh-btn plt-tiny" data-po-id="${po.id}" title="${plt_t('Refresh','Actualizar')}">↺</button>
+          <button type="button" class="pallet-btn-ghost prep-os-btn plt-overstock-new-box-btn plt-tiny" data-po-id="${po.id}">+ ${plt_t('New box','Nueva caja')}</button>
+          <button type="button" class="pallet-btn-primary prep-os-btn plt-overstock-assign-btn plt-tiny" data-po-id="${po.id}">${plt_t('Add to box','Agregar a caja')}</button>
+        </div>
+      </div>` : ''}
 
       <!-- Utility row: notes, transfer, delete, show previous -->
       <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
