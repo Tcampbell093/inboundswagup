@@ -1244,6 +1244,18 @@ function plt_buildPalletModal(pallet,dept){
         ${progressHtml}
       </div>
 
+      <!-- Prep progress bar (only shown in prep dept) -->
+      ${dept==='prep'&&pallet.status==='prep' ? `
+      <div style="padding:8px 22px 10px;border-bottom:1px solid var(--border,#eee);">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:5px;">
+          <span style="font-size:12px;color:var(--text-secondary,#888);">${plt_t('POs completed','OCs completadas')}</span>
+          <span style="font-size:18px;font-weight:500;color:var(--text-primary,#111);" id="plt_prepFrac">${pos.filter(p=>p.prepVerified).length}/${pos.length}</span>
+        </div>
+        <div style="height:6px;background:var(--border,#e5e7eb);border-radius:3px;overflow:hidden;">
+          <div id="plt_prepProgBar" style="height:6px;background:#1D9E75;border-radius:3px;transition:width .3s;width:${pos.length?Math.round(pos.filter(p=>p.prepVerified).length/pos.length*100):0}%;"></div>
+        </div>
+      </div>` : ''}
+
       <div class="pallet-modal-body">
         <!-- Concurrent editor warning — shown when another associate has this pallet open -->
         ${(()=>{ const w=plt_editorWarningHtml(pallet.id); return `<div id="plt_editorWarning" style="${w?'':'display:none;'}">${w}</div>`; })()}
@@ -1370,6 +1382,28 @@ function plt_buildPalletModal(pallet,dept){
 
   /* PO card actions — delegated to shared helper */
   plt_bindPoCardEvents(overlay.querySelector('#plt_poList'), pallet, dept);
+
+  /* Collapse already-verified PO cards immediately on open (prep dept only) */
+  if (dept === 'prep' && pallet.status === 'prep') {
+    overlay.querySelectorAll('.po-card[data-po-id]').forEach(function(card) {
+      const poId  = card.getAttribute('data-po-id');
+      const poObj = (pallet.pos || []).find(function(p){ return p.id === poId; });
+      if (!poObj || !poObj.prepVerified) return;
+      const poNum = poObj.poNum || poObj.po || poObj.id || '';
+      const cat   = poObj.category || '';
+      card.style.overflow = 'hidden';
+      card.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;">
+          <div style="width:18px;height:18px;border-radius:50%;background:#1D9E75;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg width="10" height="7" viewBox="0 0 10 7" fill="none"><path d="M1 3.5L3.8 6 9 1" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <span style="font-size:13px;font-weight:500;">${plt_esc(poNum)}</span>
+          ${cat ? `<span style="font-size:12px;color:var(--text-secondary,#888);">${plt_esc(cat)}</span>` : ''}
+          <span style="margin-left:auto;font-size:11px;font-weight:500;color:#1D9E75;">${plt_t('Done','Listo')}</span>
+        </div>`;
+      card.style.background = 'var(--surface-secondary, #f9fafb)';
+    });
+  }
 }
 
 /* ------------------------------------------------------------------
@@ -1575,15 +1609,12 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
 
     <!-- Row 5: Actions -->
     <div class="po-card-actions" style="flex-wrap:wrap;gap:8px;padding:10px 14px;">
-      <label class="plt-check-label">
-        <input type="checkbox" class="plt-prep-verify-check" ${po.prepVerified?'checked':''}/>
-        ${po.prepVerified
-          ? `<span class="plt-done-label">✓ ${plt_t('Prep count done','Conteo de prep listo')}</span>`
-          : plt_t('Mark prep count done','Marcar conteo de prep como listo')}
-      </label>
       <button class="pallet-btn-ghost plt-tiny plt-po-edit">${plt_t('Notes','Notas')}</button>
       ${canTransfer?`<button class="pallet-btn-ghost plt-tiny plt-po-transfer">⇄ ${plt_t('Transfer','Transferir')}</button>`:''}
       <button class="pallet-btn-danger plt-tiny plt-po-delete">✕</button>
+      <button class="plt-prep-done-btn pallet-btn-primary plt-tiny" data-po-id="${po.id}" style="margin-left:auto;background:#1D9E75;border-color:#1D9E75;${po.prepVerified?'opacity:.5;cursor:default;':''}">
+        ${po.prepVerified ? `✓ ${plt_t('Done','Listo')}` : plt_t('Done','Listo')}
+      </button>
     </div>
     ${po.prepNotes?`<p class="po-note">🔀 ${plt_esc(po.prepNotes)}</p>`:''}`;
 
@@ -1829,9 +1860,44 @@ function plt_bindPoCardEvents(container, pallet, dept){
       });
     });
 
-    // ── Prep verify checkbox ──
-    card.querySelector('.plt-prep-verify-check')?.addEventListener('change',e=>{
-      plt_updatePo(pallet.id,poId,{prepVerified:e.target.checked});
+    // ── Prep Done button — collapses card to slim strip ──────────────────────
+    card.querySelector('.plt-prep-done-btn')?.addEventListener('click', function(e) {
+      if (e.target.style.cursor === 'default') return; // already done
+      const pallet = plt_get(palletId);
+      if (!pallet) return;
+      // Save prepVerified
+      plt_updatePo(pallet.id, poId, { prepVerified: true });
+
+      // Collapse card body to slim strip — show only PO number + done badge
+      const poObj = (plt_get(pallet.id)?.pos || []).find(r => r.id === poId);
+      const poNum = poObj ? (poObj.poNum || poObj.id || '') : poId;
+      const cat   = poObj ? (poObj.category || '') : '';
+
+      // Shrink the card
+      card.style.transition = 'all .2s ease';
+      card.style.overflow = 'hidden';
+      card.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;">
+          <div style="width:18px;height:18px;border-radius:50%;background:#1D9E75;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg width="10" height="7" viewBox="0 0 10 7" fill="none"><path d="M1 3.5L3.8 6 9 1" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <span style="font-size:13px;font-weight:500;">${plt_esc(poNum)}</span>
+          ${cat ? `<span style="font-size:12px;color:var(--text-secondary,#888);">${plt_esc(cat)}</span>` : ''}
+          <span style="margin-left:auto;font-size:11px;font-weight:500;color:#1D9E75;">${plt_t('Done','Listo')}</span>
+        </div>`;
+      card.style.background = 'var(--surface-secondary, #f9fafb)';
+
+      // Update the progress bar + fraction
+      const updatedPallet = plt_get(pallet.id);
+      if (updatedPallet) {
+        const total = updatedPallet.pos.length;
+        const done  = updatedPallet.pos.filter(p => p.prepVerified).length;
+        const frac  = document.getElementById('plt_prepFrac');
+        const bar   = document.getElementById('plt_prepProgBar');
+        if (frac) frac.textContent = done + '/' + total;
+        if (bar)  bar.style.width  = total ? Math.round(done / total * 100) + '%' : '0%';
+      }
+
       plt_renderAllPanels();
     });
 
