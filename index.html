@@ -984,33 +984,113 @@
     
     <!-- Calendar -->
     <section id="calendarPage" class="page">
+
+      <!-- Add Event Modal -->
+      <div class="modal-backdrop" id="calEventModalBackdrop">
+        <div class="modal" style="width:min(480px,100%)">
+          <div class="modal-header">
+            <div>
+              <div class="eyebrow">Calendar</div>
+              <h2 id="calEventModalTitle" style="margin:6px 0 4px;font-size:24px;">Add event</h2>
+            </div>
+            <button class="btn secondary" onclick="window.calUI.closeModal()">Close</button>
+          </div>
+          <div style="padding:0 20px 20px;display:flex;flex-direction:column;gap:14px;">
+            <div class="field">
+              <label for="calEvTitle">Event title</label>
+              <input id="calEvTitle" type="text" placeholder="e.g. Team meeting, Inventory count…" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="field">
+                <label for="calEvDate">Date</label>
+                <input id="calEvDate" type="date" />
+              </div>
+              <div class="field">
+                <label for="calEvType">Type</label>
+                <select id="calEvType">
+                  <option value="event">General event</option>
+                  <option value="shift">Shift / schedule</option>
+                  <option value="reminder">Reminder</option>
+                  <option value="meeting">Meeting</option>
+                  <option value="deadline">Deadline</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label for="calEvNote">Note <span style="font-weight:400;opacity:.6;">(optional)</span></label>
+              <input id="calEvNote" type="text" placeholder="Any extra detail…" />
+            </div>
+          </div>
+          <div class="toolbar" style="margin:0 20px 20px;justify-content:flex-end;">
+            <div class="right">
+              <button class="btn secondary" onclick="window.calUI.closeModal()">Cancel</button>
+              <button class="btn" id="calEvSaveBtn" onclick="window.calUI.saveEvent()">Save event</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Page header -->
       <div class="hero">
         <div>
           <div class="eyebrow">Calendar</div>
           <h2>Planning calendar</h2>
-          <p class="subtitle">This is the safe Phase 1 version: a simple calendar tab only. No birthday wiring yet, no event automation yet. It gives the site a clean place for birthdays and upcoming events in later phases.</p>
+        </div>
+        <div class="toolbar right">
+          <button class="btn" onclick="window.calUI.openModal()">+ Add event</button>
         </div>
       </div>
 
+      <!-- Stats bar -->
       <div class="stats">
-        <div class="card"><div class="stat-label">Current month</div><div class="stat-value" id="calendarCurrentMonthLabel">—</div><div class="stat-hint">Simple calendar shell for planning</div></div>
-        <div class="card"><div class="stat-label">Birthdays linked</div><div class="stat-value" id="calendarBirthdaysLinked">0</div><div class="stat-hint">Employee birthdays now appear on the calendar</div></div>
-        <div class="card"><div class="stat-label">Upcoming events</div><div class="stat-value">0</div><div class="stat-hint">Phase 3 can add custom events and reminders</div></div>
-        <div class="card"><div class="stat-label">Status</div><div class="stat-value">Phase 1</div><div class="stat-hint">Structure only, safe incremental build</div></div>
+        <div class="card"><div class="stat-label">Current month</div><div class="stat-value" id="calendarCurrentMonthLabel">—</div><div class="stat-hint">Planning calendar</div></div>
+        <div class="card"><div class="stat-label">Birthdays</div><div class="stat-value" id="calendarBirthdaysLinked">0</div><div class="stat-hint">Employee birthdays this month</div></div>
+        <div class="card"><div class="stat-label">Custom events</div><div class="stat-value" id="calCustomEventCount">0</div><div class="stat-hint">Events you've added</div></div>
+        <div class="card"><div class="stat-label">Assembly days</div><div class="stat-value" id="calAssemblyDayCount">0</div><div class="stat-hint">Scheduled this month</div></div>
       </div>
 
-      <div class="calendar-grid">
-        <div class="card">
-          <div class="calendar-controls">
-            <button class="btn secondary" id="calendarPrevBtn">Previous</button>
-            <div class="calendar-month-title" id="calendarMonthTitle">Month</div>
-            <button class="btn secondary" id="calendarNextBtn">Next</button>
+      <!-- Calendar card -->
+      <div style="margin-top:16px;">
+        <div class="card" style="padding:0;overflow:hidden;">
+
+          <!-- Calendar header -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border,#eee);">
+            <div>
+              <div class="calendar-month-title" id="calendarMonthTitle" style="font-size:18px;font-weight:500;"></div>
+              <div id="calWeekHint" style="font-size:12px;color:var(--muted,#888);margin-top:2px;"></div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button class="btn secondary" id="calendarPrevBtn">‹</button>
+              <button class="btn secondary" id="calTodayBtn">Today</button>
+              <button class="btn secondary" id="calendarNextBtn">›</button>
+            </div>
           </div>
-          <div class="calendar-days" id="calendarHeaderRow"></div>
-          <div class="calendar-days" id="calendarGrid"></div>
-        </div>
 
+          <!-- Day name header -->
+          <div style="display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--border,#eee);background:var(--blue1,#f9fafb);" id="calendarHeaderRow"></div>
+
+          <!-- Grid -->
+          <div style="display:grid;grid-template-columns:repeat(7,1fr);" id="calendarGrid"></div>
+
+          <!-- Footer stats -->
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--border,#eee);">
+            <div style="padding:10px 18px;border-right:1px solid var(--border,#eee);">
+              <div style="font-size:18px;font-weight:500;" id="calFootBirthdays">0</div>
+              <div style="font-size:11px;color:var(--muted,#888);">Birthdays this month</div>
+            </div>
+            <div style="padding:10px 18px;border-right:1px solid var(--border,#eee);">
+              <div style="font-size:18px;font-weight:500;" id="calFootAssembly">0</div>
+              <div style="font-size:11px;color:var(--muted,#888);">Assembly days scheduled</div>
+            </div>
+            <div style="padding:10px 18px;">
+              <div style="font-size:18px;font-weight:500;" id="calFootEvents">0</div>
+              <div style="font-size:11px;color:var(--muted,#888);">Custom events this month</div>
+            </div>
+          </div>
+
+        </div>
       </div>
+
     </section>
 
     
@@ -2774,6 +2854,7 @@
         var emptyStores = {
           'ops_hub_returns_records_v1':          '[]',
           'ops_hub_errors_records_v2':            '[]',
+          'ops_hub_calendar_events_v1':           '[]',
           'ops_hub_assembly_board_v1':            '[]',
           'ops_hub_assembly_board_v2':            '[]',
           'ops_hub_available_queue_v1':           '[]',
