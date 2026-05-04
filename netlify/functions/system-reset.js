@@ -77,6 +77,7 @@ exports.handler = async function(event) {
     'cycle_count_sync_state',
     'employees_sync_state',
     'flight_tracker_comments',
+    'flight_tracker_photos',
     'fulfillment_sync_state',
     'huddle_recaps',
     'sord_snapshots',
@@ -93,11 +94,8 @@ exports.handler = async function(event) {
     'workflow_sync_state',
     'pallet_events',
     'hc_notifications',
+    'workspaces',
   ];
-
-  // workspaces table is shared — only clear rows that aren't user management related
-  // We'll reset it too since it's just settings state
-  operationalTables.push('workspaces');
 
   for (const table of operationalTables) {
     try {
