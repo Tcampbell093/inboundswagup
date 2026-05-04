@@ -1536,8 +1536,8 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
         <span style="margin-left:auto;">${plt_discrepancyHtml(po)||plt_prepVsOrderedHtml(po)||''}</span>
       </div>
 
-      <!-- Main row: Count | Route | Done -->
-      <div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:end;">
+      <!-- Main row: Count | STS | LTS | Done -->
+      <div style="display:grid;grid-template-columns:1.2fr 1fr 1fr auto;gap:10px;align-items:end;">
 
         <!-- Count input -->
         <div>
@@ -1550,19 +1550,26 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
             style="width:100%;font-size:20px;font-weight:600;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border,#ddd);background:var(--surface,#fff);color:var(--text-primary,#111);" />
         </div>
 
-        <!-- Route buttons -->
+        <!-- STS qty input -->
         <div>
-          <div style="font-size:11px;color:var(--text-secondary,#888);margin-bottom:4px;">${plt_t('Route to','Ruta')}</div>
-          <div style="display:flex;gap:6px;">
-            <button type="button" class="plt-qty-input plt-sts-chip routing-chip ${plt_hasVal(po.stsQty)&&po.destination==='sts'?'selected-sts':''}" data-po-id="${po.id}"
-              style="padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1.5px solid var(--border,#ddd);background:var(--surface,#fff);cursor:pointer;">
-              STS
-            </button>
-            <button type="button" class="plt-qty-input plt-lts-chip routing-chip ${plt_hasVal(po.ltsQty)&&po.destination==='lts'?'selected-lts':''}" data-po-id="${po.id}"
-              style="padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1.5px solid var(--border,#ddd);background:var(--surface,#fff);cursor:pointer;">
-              LTS
-            </button>
-          </div>
+          <div style="font-size:11px;color:var(--text-secondary,#888);margin-bottom:4px;">📦 ${plt_t('STS','STS')}</div>
+          <input type="number" min="0"
+            class="plt-qty-input plt-sts-qty prep-big-input"
+            data-po-id="${po.id}"
+            value="${plt_hasVal(po.stsQty)?po.stsQty:''}"
+            placeholder="0"
+            style="width:100%;font-size:18px;font-weight:600;padding:8px 10px;border-radius:8px;border:1.5px solid #185FA5;background:var(--surface,#fff);color:#185FA5;" />
+        </div>
+
+        <!-- LTS qty input -->
+        <div>
+          <div style="font-size:11px;color:var(--text-secondary,#888);margin-bottom:4px;">🏢 ${plt_t('LTS','LTS')}</div>
+          <input type="number" min="0"
+            class="plt-qty-input plt-lts-qty prep-big-input"
+            data-po-id="${po.id}"
+            value="${plt_hasVal(po.ltsQty)?po.ltsQty:''}"
+            placeholder="0"
+            style="width:100%;font-size:18px;font-weight:600;padding:8px 10px;border-radius:8px;border:1.5px solid #7c3aed;background:var(--surface,#fff);color:#7c3aed;" />
         </div>
 
         <!-- Done button -->
@@ -1878,27 +1885,30 @@ function plt_bindPoCardEvents(container, pallet, dept){
       plt_renderAllPanels();
     });
 
-    // ── STS/LTS chip buttons (Concept C simplified prep card) ────────────────
-    card.querySelector('.plt-sts-chip')?.addEventListener('click', function() {
-      const po = (plt_get(pallet.id)?.pos||[]).find(function(r){return r.id===poId;});
-      if (!po) return;
-      const prepInput = card.querySelector('.plt-prep-qty');
-      const prepQty = prepInput && prepInput.value !== '' ? Number(prepInput.value) : (plt_hasVal(po.prepReceivedQty) ? Number(po.prepReceivedQty) : 0);
-      plt_updatePo(pallet.id, poId, { stsQty: prepQty, destination: 'sts', prepReceivedQty: prepQty });
-      card.querySelectorAll('.plt-sts-chip,.plt-lts-chip').forEach(function(b){b.style.background='';b.style.color='';b.style.borderColor='';});
-      const stsBtn = card.querySelector('.plt-sts-chip');
-      if (stsBtn) {stsBtn.style.background='#185FA5';stsBtn.style.color='#fff';stsBtn.style.borderColor='#185FA5';}
-    });
-    card.querySelector('.plt-lts-chip')?.addEventListener('click', function() {
-      const po = (plt_get(pallet.id)?.pos||[]).find(function(r){return r.id===poId;});
-      if (!po) return;
-      const prepInput = card.querySelector('.plt-prep-qty');
-      const prepQty = prepInput && prepInput.value !== '' ? Number(prepInput.value) : (plt_hasVal(po.prepReceivedQty) ? Number(po.prepReceivedQty) : 0);
-      plt_updatePo(pallet.id, poId, { ltsQty: prepQty, destination: 'lts', prepReceivedQty: prepQty });
-      card.querySelectorAll('.plt-sts-chip,.plt-lts-chip').forEach(function(b){b.style.background='';b.style.color='';b.style.borderColor='';});
-      const ltsBtn = card.querySelector('.plt-lts-chip');
-      if (ltsBtn) {ltsBtn.style.background='#7c3aed';ltsBtn.style.color='#fff';ltsBtn.style.borderColor='#7c3aed';}
-    });
+    // ── STS/LTS qty inputs (Concept C) — save on blur ────────────────────────
+    const stsQtyInput = card.querySelector('.plt-sts-qty');
+    const ltsQtyInput = card.querySelector('.plt-lts-qty');
+
+    if (stsQtyInput) {
+      stsQtyInput.addEventListener('change', function() {
+        const val = stsQtyInput.value !== '' ? Number(stsQtyInput.value) : null;
+        plt_updatePo(pallet.id, poId, { stsQty: val, destination: val ? 'sts' : undefined });
+      });
+      stsQtyInput.addEventListener('blur', function() {
+        const val = stsQtyInput.value !== '' ? Number(stsQtyInput.value) : null;
+        plt_updatePo(pallet.id, poId, { stsQty: val });
+      });
+    }
+    if (ltsQtyInput) {
+      ltsQtyInput.addEventListener('change', function() {
+        const val = ltsQtyInput.value !== '' ? Number(ltsQtyInput.value) : null;
+        plt_updatePo(pallet.id, poId, { ltsQty: val, destination: val ? 'lts' : undefined });
+      });
+      ltsQtyInput.addEventListener('blur', function() {
+        const val = ltsQtyInput.value !== '' ? Number(ltsQtyInput.value) : null;
+        plt_updatePo(pallet.id, poId, { ltsQty: val });
+      });
+    }
 
     // ── Prep qty input — live recalc + save on blur ──────────────────────────
     const prepInput      = card.querySelector('.plt-prep-qty');
