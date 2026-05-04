@@ -38,11 +38,28 @@ async function verifyAdmin(event) {
     return null;
   }
   const user = await res.json();
-  const role = user?.app_metadata?.role
-            || (user?.app_metadata?.roles && user.app_metadata.roles[0])
-            || 'l1';
+
+  // ── Check role from hc_users (Neon) first — source of truth ──
+  let role = 'l1';
+  try {
+    const dbRes = await pool.query('SELECT role FROM hc_users WHERE email=$1', [user.email]);
+    if (dbRes.rows.length > 0 && dbRes.rows[0].role) {
+      role = dbRes.rows[0].role;
+    } else {
+      // Fall back to Netlify Identity app_metadata
+      role = user?.app_metadata?.role
+          || (user?.app_metadata?.roles && user.app_metadata.roles[0])
+          || 'l1';
+    }
+  } catch(e) {
+    // DB unavailable — fall back to Identity metadata
+    role = user?.app_metadata?.role
+        || (user?.app_metadata?.roles && user.app_metadata.roles[0])
+        || 'l1';
+  }
+
   if (!['admin', 'manager'].includes(role)) {
-    console.error('HC Users: insufficient role', role);
+    console.error('HC Users: insufficient role', role, 'for', user.email);
     return null;
   }
   return { user, role, token };
