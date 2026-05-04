@@ -5,9 +5,12 @@ const pool = new Pool({
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : undefined,
 });
 
-const GOTRUE_URL  = 'https://inboundswagup.netlify.app/.netlify/identity';
+const NETLIFY_API = 'https://api.netlify.com/api/v1';
+const SITE_ID     = process.env.SITE_ID || 'e0682cfd-2c71-4105-b217-1dc6863a3747';
 const NETLIFY_PAT = process.env.NETLIFY_PAT;
-const SITE_ID     = 'e0682cfd-2c71-4105-b217-1dc6863a3747';
+
+// Identity API uses a different base URL
+const IDENTITY_API = `https://inboundswagup.netlify.app/.netlify/identity`;
 
 function json(code, body) {
   return {
@@ -17,249 +20,194 @@ function json(code, body) {
   };
 }
 
-// ── Ensure schema exists ─────────────────────────────────────
-async function ensureSchema() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS hc_users (
-      id          TEXT PRIMARY KEY,
-      email       TEXT UNIQUE NOT NULL,
-      name        TEXT DEFAULT '',
-      role        TEXT DEFAULT 'l1',
-      overrides   JSONB DEFAULT '{}'::jsonb,
-      temp_admin  BOOLEAN DEFAULT false,
-      temp_admin_expiry TIMESTAMPTZ,
-      suspended   BOOLEAN DEFAULT false,
-      last_login  TIMESTAMPTZ,
-      created_at  TIMESTAMPTZ DEFAULT now(),
-      updated_at  TIMESTAMPTZ DEFAULT now()
-    );
-    CREATE TABLE IF NOT EXISTS access_audit (
-      id         SERIAL PRIMARY KEY,
-      actor      TEXT,
-      target     TEXT,
-      action     TEXT,
-      detail     JSONB,
-      created_at TIMESTAMPTZ DEFAULT now()
-    );
-  `);
-}
-
 // ── Verify caller is admin or manager ────────────────────────
 async function verifyAdmin(event) {
-  const auth  = event.headers['authorization'] || event.headers['Authorization'] || '';
+  const auth = event.headers['authorization'] || event.headers['Authorization'] || '';
   const token = auth.replace('Bearer ', '').trim();
-  if (!token) return null;
+  if (!token) {
+    console.error('HC Users: no authorization token in request');
+    return null;
+  }
 
-  // Verify token with Identity
-  const res = await fetch(`${GOTRUE_URL}/user`, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-  if (!res.ok) return null;
+  const res = await fetch(
+    `https://inboundswagup.netlify.app/.netlify/identity/user`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) {
+    console.error('HC Users: token verification failed', res.status);
+    return null;
+  }
   const user = await res.json();
-
-  // Check role in our DB first, fall back to Identity metadata
-  await ensureSchema();
-  const dbRes = await pool.query('SELECT * FROM hc_users WHERE email=$1', [user.email]);
-  const dbUser = dbRes.rows[0];
-  const role = dbUser?.role
-            || user.app_metadata?.role
-            || user.app_metadata?.roles?.[0]
+  const role = user?.app_metadata?.role
+            || (user?.app_metadata?.roles && user.app_metadata.roles[0])
             || 'l1';
-
-  if (!['admin', 'manager'].includes(role)) return null;
-  return { user, role, email: user.email };
+  if (!['admin', 'manager'].includes(role)) {
+    console.error('HC Users: insufficient role', role);
+    return null;
+  }
+  return { user, role, token };
 }
 
-// ── Write audit entry ────────────────────────────────────────
+// ── Write audit log entry ─────────────────────────────────────
 async function writeAudit(actor, target, action, detail) {
   try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS access_audit (
+        id SERIAL PRIMARY KEY,
+        actor TEXT,
+        target TEXT,
+        action TEXT,
+        detail JSONB,
+        created_at TIMESTAMPTZ DEFAULT now()
+      )
+    `);
     await pool.query(
       `INSERT INTO access_audit (actor, target, action, detail) VALUES ($1,$2,$3,$4)`,
       [actor, target, action, JSON.stringify(detail)]
     );
-  } catch(e) { console.error('Audit write failed:', e.message); }
+  } catch(e) {
+    console.error('Audit log write failed:', e.message);
+  }
 }
 
 exports.handler = async function(event) {
   const method = event.httpMethod;
-  const action = (event.queryStringParameters || {}).action;
+  const params = event.queryStringParameters || {};
+  const action = params.action;
 
-  await ensureSchema();
-
-  // ── LIST users ─────────────────────────────────────────────
+  // ── GET /users?action=list ─────────────────────────────────
   if (method === 'GET' && action === 'list') {
     const caller = await verifyAdmin(event);
     if (!caller) return json(401, { error: 'Unauthorized' });
 
-    const result = await pool.query(
-      `SELECT * FROM hc_users ORDER BY created_at DESC`
-    );
-    return json(200, { users: result.rows.map(u => ({
-      id:              u.id,
-      email:           u.email,
-      name:            u.name,
-      role:            u.role,
-      overrides:       u.overrides || {},
-      tempAdmin:       u.temp_admin,
-      tempAdminExpiry: u.temp_admin_expiry,
-      suspended:       u.suspended,
-      lastLogin:       u.last_login,
-      createdAt:       u.created_at,
-    }))});
-  }
-
-  // ── UPSERT user on login (called from auth flow) ───────────
-  if (method === 'POST' && action === 'upsert') {
-    const { id, email, name } = JSON.parse(event.body || '{}');
-    if (!email) return json(400, { error: 'email required' });
-
-    // Check if user exists
-    const existing = await pool.query('SELECT role FROM hc_users WHERE email=$1', [email]);
-
-    if (existing.rows.length === 0) {
-      // New user — insert with default role
-      await pool.query(
-        `INSERT INTO hc_users (id, email, name, role, last_login)
-         VALUES ($1,$2,$3,'l1',now())
-         ON CONFLICT (email) DO UPDATE SET last_login=now(), name=EXCLUDED.name`,
-        [id || email, email, name || '']
-      );
-      return json(200, { role: 'l1', overrides: {}, tempAdmin: false, suspended: false });
-    } else {
-      // Existing user — update last login
-      await pool.query(
-        `UPDATE hc_users SET last_login=now(), name=COALESCE(NULLIF($2,''), name), updated_at=now()
-         WHERE email=$1`,
-        [email, name || '']
-      );
-      const u = (await pool.query('SELECT * FROM hc_users WHERE email=$1', [email])).rows[0];
-      return json(200, {
-        role:            u.role,
-        overrides:       u.overrides || {},
-        tempAdmin:       u.temp_admin,
-        tempAdminExpiry: u.temp_admin_expiry,
-        suspended:       u.suspended,
-      });
+    if (!NETLIFY_PAT) {
+      console.error('HC Users: NETLIFY_PAT environment variable is not set');
+      return json(500, { error: 'NETLIFY_PAT not configured. Add it to your Netlify environment variables.' });
     }
+
+    console.log('HC Users: fetching users from Netlify API, site:', SITE_ID);
+    const listUrl = `${NETLIFY_API}/sites/${SITE_ID}/identity/users?per_page=100`;
+    console.log('HC Users: URL:', listUrl);
+    console.log('HC Users: PAT set:', !!NETLIFY_PAT, 'PAT length:', NETLIFY_PAT?.length);
+
+    const res = await fetch(listUrl,
+      { headers: { Authorization: `Bearer ${NETLIFY_PAT}` } }
+    );
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error('HC Users: Netlify API error', res.status, errText);
+      return json(502, { error: `Netlify API error ${res.status}: ${errText}` });
+    }
+    const data = await res.json();
+
+    const users = (data.users || []).map(u => ({
+      id:        u.id,
+      email:     u.email,
+      name:      u.user_metadata?.full_name || u.user_metadata?.name || '',
+      role:      u.app_metadata?.role || (u.app_metadata?.roles && u.app_metadata.roles[0]) || 'l1',
+      overrides: u.app_metadata?.overrides || {},
+      tempAdmin: u.app_metadata?.tempAdmin || false,
+      tempAdminExpiry: u.app_metadata?.tempAdminExpiry || null,
+      suspended: u.app_metadata?.suspended || false,
+      lastLogin: u.last_sign_in_at || null,
+      createdAt: u.created_at || null,
+    }));
+
+    return json(200, { users });
   }
 
-  // ── INVITE user ────────────────────────────────────────────
+  // ── POST /users?action=invite ──────────────────────────────
   if (method === 'POST' && action === 'invite') {
     const caller = await verifyAdmin(event);
     if (!caller) return json(401, { error: 'Unauthorized' });
 
-    const { email, role = 'l1', name = '' } = JSON.parse(event.body || '{}');
+    const body = JSON.parse(event.body || '{}');
+    const { email, role = 'l1' } = body;
     if (!email) return json(400, { error: 'Email required' });
 
-    // Add to our DB first
-    await pool.query(
-      `INSERT INTO hc_users (id, email, name, role)
-       VALUES ($1,$2,$3,$4)
-       ON CONFLICT (email) DO UPDATE SET role=$4, updated_at=now()`,
-      [email, email, name, role]
-    );
-
-    // Send invite email via Resend
-    const RESEND_API_KEY = process.env.RESEND_API_KEY;
-    const roleLabel = { admin:'Admin', manager:'Manager', l2:'Associate L2', l1:'Associate L1' }[role] || 'Associate';
-    const loginUrl  = 'https://inboundswagup.netlify.app/login.html';
-
-    if (RESEND_API_KEY) {
-      try {
-        const emailRes = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${RESEND_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: 'Houston Control <onboarding@resend.dev>',
-            to: email,
-            subject: "You've been invited to Houston Control",
-            html: `
-              <div style="font-family:Inter,system-ui,sans-serif;max-width:520px;margin:0 auto;background:#f0f7ff;border-radius:16px;overflow:hidden;">
-                <div style="background:linear-gradient(135deg,#0a1628,#0f2444);padding:40px 32px;text-align:center;">
-                  <h1 style="color:#fff;margin:0;font-size:24px;font-weight:800;letter-spacing:-.5px;">Houston Control</h1>
-                  <p style="color:rgba(255,255,255,.6);margin:8px 0 0;font-size:14px;">Warehouse Operations Hub</p>
-                </div>
-                <div style="padding:32px;">
-                  <h2 style="margin:0 0 12px;font-size:20px;color:#0f2444;">You've been invited!</h2>
-                  <p style="color:#444;line-height:1.6;margin:0 0 8px;">
-                    ${caller.email} has invited you to join <strong>Houston Control</strong> as <strong>${roleLabel}</strong>.
-                  </p>
-                  <p style="color:#444;line-height:1.6;margin:0 0 24px;">
-                    Sign in with your Google account to get started. Make sure to use this email address (${email}) when signing in.
-                  </p>
-                  <div style="text-align:center;margin-bottom:24px;">
-                    <a href="${loginUrl}" style="display:inline-block;background:#0f2444;color:#fff;padding:14px 32px;border-radius:10px;font-weight:700;font-size:15px;text-decoration:none;">
-                      Sign in to Houston Control →
-                    </a>
-                  </div>
-                  <p style="color:#888;font-size:12px;text-align:center;margin:0;">
-                    If you weren't expecting this invitation, you can ignore this email.
-                  </p>
-                </div>
-              </div>
-            `,
-          }),
-        });
-        if (!emailRes.ok) {
-          const errText = await emailRes.text();
-          console.error('Resend error:', emailRes.status, errText);
-        } else {
-          console.log('HC Users: invite email sent to', email);
-        }
-      } catch(e) {
-        console.error('Resend invite error (non-fatal):', e.message);
+    const res = await fetch(
+      `${NETLIFY_API}/sites/${SITE_ID}/identity/users/invite`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${NETLIFY_PAT}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          data: { role },
+        }),
       }
-    } else {
-      console.warn('HC Users: RESEND_API_KEY not set — invite email skipped');
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return json(502, { error: err.msg || 'Invite failed' });
     }
 
-    await writeAudit(caller.email, email, 'invite', { role });
+    await writeAudit(caller.user.email, email, 'invite', { role });
     return json(200, { ok: true });
   }
 
-  // ── UPDATE user ────────────────────────────────────────────
+  // ── POST /users?action=update ──────────────────────────────
   if (method === 'POST' && action === 'update') {
     const caller = await verifyAdmin(event);
     if (!caller) return json(401, { error: 'Unauthorized' });
 
-    const { email, role, overrides, suspended, tempAdmin, tempAdminExpiry }
-      = JSON.parse(event.body || '{}');
-    if (!email) return json(400, { error: 'email required' });
+    const body = JSON.parse(event.body || '{}');
+    const { userId, role, overrides, suspended, tempAdmin, tempAdminExpiry, targetEmail } = body;
+    if (!userId) return json(400, { error: 'userId required' });
 
-    // Get current state for audit
-    const before = (await pool.query('SELECT * FROM hc_users WHERE email=$1', [email])).rows[0];
-
-    await pool.query(
-      `UPDATE hc_users SET
-        role            = COALESCE($2, role),
-        overrides       = COALESCE($3::jsonb, overrides),
-        suspended       = COALESCE($4, suspended),
-        temp_admin      = COALESCE($5, temp_admin),
-        temp_admin_expiry = $6,
-        updated_at      = now()
-       WHERE email = $1`,
-      [
-        email,
-        role       ?? null,
-        overrides  ? JSON.stringify(overrides) : null,
-        suspended  ?? null,
-        tempAdmin  ?? null,
-        tempAdminExpiry ? new Date(tempAdminExpiry) : null,
-      ]
+    // Fetch current app_metadata first
+    const getRes = await fetch(
+      `${NETLIFY_API}/sites/${SITE_ID}/identity/users/${userId}`,
+      { headers: { Authorization: `Bearer ${NETLIFY_PAT}` } }
     );
+    if (!getRes.ok) return json(502, { error: 'Failed to fetch user' });
+    const currentUser = await getRes.json();
+    const currentMeta = currentUser.app_metadata || {};
 
-    await writeAudit(caller.email, email, 'update', { before, after: { role, overrides, suspended, tempAdmin, tempAdminExpiry } });
+    const newMeta = {
+      ...currentMeta,
+      ...(role      !== undefined && { role }),
+      ...(overrides !== undefined && { overrides }),
+      ...(suspended !== undefined && { suspended }),
+      ...(tempAdmin !== undefined && { tempAdmin }),
+      ...(tempAdminExpiry !== undefined && { tempAdminExpiry }),
+    };
+
+    const updateRes = await fetch(
+      `${NETLIFY_API}/sites/${SITE_ID}/identity/users/${userId}`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${NETLIFY_PAT}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ app_metadata: newMeta }),
+      }
+    );
+    if (!updateRes.ok) return json(502, { error: 'Update failed' });
+
+    await writeAudit(caller.user.email, targetEmail || userId, 'update', {
+      before: currentMeta, after: newMeta
+    });
+
     return json(200, { ok: true });
   }
 
-  // ── AUDIT log ──────────────────────────────────────────────
+  // ── GET /users?action=audit ────────────────────────────────
   if (method === 'GET' && action === 'audit') {
     const caller = await verifyAdmin(event);
     if (!caller) return json(401, { error: 'Unauthorized' });
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS access_audit (
+        id SERIAL PRIMARY KEY,
+        actor TEXT, target TEXT, action TEXT,
+        detail JSONB, created_at TIMESTAMPTZ DEFAULT now()
+      )
+    `);
     const result = await pool.query(
       `SELECT * FROM access_audit ORDER BY created_at DESC LIMIT 100`
     );
