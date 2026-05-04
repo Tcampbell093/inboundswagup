@@ -960,7 +960,7 @@ async function submitQuickRequest(action, pbId, pbName, so, account){
 }
 
 // ── Event wiring ───────────────────────────────────────────────────────────
-cmEls.close.addEventListener('click', cmCloseModal);
+cmEls.close.addEventListener('click', function(e){ e.stopPropagation(); cmCloseModal(); });
 cmEls.overlay.addEventListener('click', e=>{ if(e.target===cmEls.overlay) cmCloseModal(); });
 document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !cmEls.overlay.hidden) cmCloseModal(); });
 cmEls.submit.addEventListener('click', cmSubmitComment);
@@ -1015,7 +1015,7 @@ const photoStatus    = document.getElementById('photoStatus');
 const photoFileInput = document.getElementById('photoFileInput');
 
 if (photoModalClose) {
-  photoModalClose.addEventListener('click', closePhotoModal);
+  photoModalClose.addEventListener('click', function(e){ e.stopPropagation(); closePhotoModal(); });
 }
 if (photoModal) {
   photoModal.addEventListener('click', function(e) {
