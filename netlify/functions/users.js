@@ -97,38 +97,23 @@ exports.handler = async function(event) {
     const caller = await verifyAdmin(event);
     if (!caller) return json(401, { error: 'Unauthorized' });
 
-    if (!NETLIFY_PAT) {
-      console.error('HC Users: NETLIFY_PAT environment variable is not set');
-      return json(500, { error: 'NETLIFY_PAT not configured. Add it to your Netlify environment variables.' });
-    }
-
-    console.log('HC Users: fetching users from Netlify API, site:', SITE_ID);
-    const listUrl = `${NETLIFY_API}/sites/${SITE_ID}/identity/users?per_page=100`;
-    console.log('HC Users: URL:', listUrl);
-    console.log('HC Users: PAT set:', !!NETLIFY_PAT, 'PAT length:', NETLIFY_PAT?.length);
-
-    const res = await fetch(listUrl,
-      { headers: { Authorization: `Bearer ${NETLIFY_PAT}` } }
+    // Read users directly from Neon — no Netlify API needed
+    const result = await pool.query(
+      `SELECT id, email, name, role, overrides, temp_admin, temp_admin_expiry, suspended, last_login, created_at
+       FROM hc_users ORDER BY created_at DESC`
     );
 
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error('HC Users: Netlify API error', res.status, errText);
-      return json(502, { error: `Netlify API error ${res.status}: ${errText}` });
-    }
-    const data = await res.json();
-
-    const users = (data.users || []).map(u => ({
-      id:        u.id,
-      email:     u.email,
-      name:      u.user_metadata?.full_name || u.user_metadata?.name || '',
-      role:      u.app_metadata?.role || (u.app_metadata?.roles && u.app_metadata.roles[0]) || 'l1',
-      overrides: u.app_metadata?.overrides || {},
-      tempAdmin: u.app_metadata?.tempAdmin || false,
-      tempAdminExpiry: u.app_metadata?.tempAdminExpiry || null,
-      suspended: u.app_metadata?.suspended || false,
-      lastLogin: u.last_sign_in_at || null,
-      createdAt: u.created_at || null,
+    const users = result.rows.map(u => ({
+      id:             u.id,
+      email:          u.email,
+      name:           u.name || '',
+      role:           u.role || 'l1',
+      overrides:      u.overrides || {},
+      tempAdmin:      u.temp_admin || false,
+      tempAdminExpiry:u.temp_admin_expiry || null,
+      suspended:      u.suspended || false,
+      lastLogin:      u.last_login || null,
+      createdAt:      u.created_at || null,
     }));
 
     return json(200, { users });
@@ -140,26 +125,56 @@ exports.handler = async function(event) {
     if (!caller) return json(401, { error: 'Unauthorized' });
 
     const body = JSON.parse(event.body || '{}');
-    const { email, role = 'l1' } = body;
+    const { email, role = 'l1', name = '' } = body;
     if (!email) return json(400, { error: 'Email required' });
 
-    const res = await fetch(
-      `${NETLIFY_API}/sites/${SITE_ID}/identity/users/invite`,
-      {
+    // Add invited column if missing
+    await pool.query(`ALTER TABLE hc_users ADD COLUMN IF NOT EXISTS invited BOOLEAN DEFAULT true`);
+
+    // Upsert into hc_users — create or update role
+    const existing = await pool.query('SELECT id FROM hc_users WHERE email=$1', [email]);
+    if (existing.rows.length > 0) {
+      // User exists — update role and mark as invited
+      await pool.query(
+        `UPDATE hc_users SET role=$2, invited=true, updated_at=now() WHERE email=$1`,
+        [email, role]
+      );
+    } else {
+      // New user — insert with invited=true
+      await pool.query(
+        `INSERT INTO hc_users (id, email, name, role, invited, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,true,now(),now())`,
+        [email, email, name, role]
+      );
+    }
+
+    // Send invite email via Resend if configured
+    const RESEND_API_KEY = process.env.RESEND_API_KEY;
+    if (RESEND_API_KEY) {
+      const roleLabels = { admin:'Admin', manager:'Manager', l2:'Associate L2', l1:'Associate L1', external:'External / Stakeholder' };
+      const roleLabel = roleLabels[role] || role;
+      await fetch('https://api.resend.com/emails', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${NETLIFY_PAT}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email,
-          data: { role },
+          from: 'Houston Control <onboarding@resend.dev>',
+          to: email,
+          subject: "You've been invited to Houston Control",
+          html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;">
+            <h2 style="margin:0 0 12px;font-size:20px;color:#0f2444;">You've been invited!</h2>
+            <p style="color:#374151;line-height:1.6;">
+              ${caller.user.email} has invited you to join <strong>Houston Control</strong> as <strong>${roleLabel}</strong>.
+            </p>
+            <p style="margin-top:20px;">
+              <a href="https://inboundswagup.netlify.app/login.html"
+                style="background:#185FA5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">
+                Sign in with Google →
+              </a>
+            </p>
+            <p style="color:#9ca3af;font-size:12px;margin-top:24px;">Sign in with the Google account associated with ${email}</p>
+          </div>`,
         }),
-      }
-    );
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      return json(502, { error: err.msg || 'Invite failed' });
+      }).catch(() => {});
     }
 
     await writeAudit(caller.user.email, email, 'invite', { role });
@@ -173,41 +188,34 @@ exports.handler = async function(event) {
 
     const body = JSON.parse(event.body || '{}');
     const { userId, role, overrides, suspended, tempAdmin, tempAdminExpiry, targetEmail } = body;
-    if (!userId) return json(400, { error: 'userId required' });
 
-    // Fetch current app_metadata first
-    const getRes = await fetch(
-      `${NETLIFY_API}/sites/${SITE_ID}/identity/users/${userId}`,
-      { headers: { Authorization: `Bearer ${NETLIFY_PAT}` } }
-    );
-    if (!getRes.ok) return json(502, { error: 'Failed to fetch user' });
-    const currentUser = await getRes.json();
-    const currentMeta = currentUser.app_metadata || {};
+    // userId can be email or id — find the user
+    const email = targetEmail || userId;
+    if (!email) return json(400, { error: 'userId or targetEmail required' });
 
-    const newMeta = {
-      ...currentMeta,
-      ...(role      !== undefined && { role }),
-      ...(overrides !== undefined && { overrides }),
-      ...(suspended !== undefined && { suspended }),
-      ...(tempAdmin !== undefined && { tempAdmin }),
-      ...(tempAdminExpiry !== undefined && { tempAdminExpiry }),
-    };
+    const existing = await pool.query('SELECT * FROM hc_users WHERE email=$1 OR id=$1', [email]);
+    if (!existing.rows.length) return json(404, { error: 'User not found' });
+    const before = existing.rows[0];
 
-    const updateRes = await fetch(
-      `${NETLIFY_API}/sites/${SITE_ID}/identity/users/${userId}`,
-      {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${NETLIFY_PAT}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ app_metadata: newMeta }),
-      }
-    );
-    if (!updateRes.ok) return json(502, { error: 'Update failed' });
+    // Build update fields
+    const updates = [];
+    const vals = [];
+    let i = 1;
+    if (role      !== undefined) { updates.push(`role=$${i++}`);            vals.push(role); }
+    if (overrides !== undefined) { updates.push(`overrides=$${i++}`);       vals.push(JSON.stringify(overrides)); }
+    if (suspended !== undefined) { updates.push(`suspended=$${i++}`);       vals.push(suspended); }
+    if (tempAdmin !== undefined) { updates.push(`temp_admin=$${i++}`);      vals.push(tempAdmin); }
+    if (tempAdminExpiry !== undefined) { updates.push(`temp_admin_expiry=$${i++}`); vals.push(tempAdminExpiry); }
+    updates.push(`updated_at=now()`);
 
-    await writeAudit(caller.user.email, targetEmail || userId, 'update', {
-      before: currentMeta, after: newMeta
+    if (vals.length) {
+      vals.push(before.email);
+      await pool.query(`UPDATE hc_users SET ${updates.join(',')} WHERE email=$${i}`, vals);
+    }
+
+    await writeAudit(caller.user.email, before.email, 'update', {
+      before: { role: before.role, suspended: before.suspended },
+      after:  { role, suspended }
     });
 
     return json(200, { ok: true });
