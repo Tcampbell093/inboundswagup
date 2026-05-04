@@ -2745,7 +2745,11 @@
         }
         keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
         // Additional module-specific keys not prefixed with ops_hub_
-        ['ft_author_name', 'cc_active_name', 'qaWorkflowCurrentUserV2'].forEach(function(k) {
+        ['ft_author_name', 'cc_active_name', 'qaWorkflowCurrentUserV2',
+         'houston_control_fulfillment_scan_prototype_v2_manual_carriers',
+         'qaV5SeparatedWorkflowData_v4fixed',
+         'qaActiveImportedMonthKeyV1', 'qaCompareImportedMonthKeyV1',
+         'qaWorkflowPerformanceDeptViewV1'].forEach(function(k) {
           localStorage.removeItem(k);
         });
 
