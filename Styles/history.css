@@ -1,0 +1,128 @@
+/* ── History Log Page ─────────────────────────────────────────── */
+
+.hist-entry {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+
+.hist-entry-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.hist-action-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+
+.hist-entity-label {
+  font-size: 13px;
+  color: var(--text, #111);
+}
+
+.hist-entity-label strong {
+  font-weight: 700;
+}
+
+.hist-related {
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+}
+
+.hist-sf-link {
+  font-size: 11px;
+  color: var(--accent, #185fa5);
+  text-decoration: none;
+  opacity: .8;
+}
+.hist-sf-link:hover { opacity: 1; text-decoration: underline; }
+
+.hist-timestamp {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+  white-space: nowrap;
+}
+
+.hist-by {
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+  white-space: nowrap;
+}
+
+/* ── Diff ─────────────────────────────────────────────────────── */
+
+.hist-diff {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hist-diff-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.hist-diff-key {
+  color: var(--text-muted, #6b7280);
+  min-width: 100px;
+  text-transform: capitalize;
+}
+
+.hist-diff-val {
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+}
+
+.hist-diff-del {
+  background: #fef2f2;
+  color: #7f1d1d;
+  text-decoration: line-through;
+}
+
+.hist-diff-add {
+  background: #f0fdf4;
+  color: #14532d;
+}
+
+.hist-diff-arrow {
+  color: var(--text-muted, #9ca3af);
+  font-size: 11px;
+}
+
+/* Note */
+.hist-note {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+  font-style: italic;
+}
+
+/* Empty / error states */
+.hist-empty {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-muted, #9ca3af);
+  font-size: 14px;
+}
+
+.hist-error {
+  color: #b91c1c;
+}
