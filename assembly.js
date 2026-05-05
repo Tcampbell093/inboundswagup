@@ -402,12 +402,16 @@ function addAssemblyBoardRow(){
     sourceQueue:'',
     sourceStatus:assemblyStatusInput.value.trim()
   });
+  const _newRow=assemblyBoardRows[0];
+  if(typeof logHistory==='function') logHistory({entity_type:'pack_builder',entity_id:_newRow.pb||String(_newRow.id),salesforce_id:null,action:'created',after_data:{pb:_newRow.pb,so:_newRow.so,account:_newRow.account,qty:_newRow.qty,stage:_newRow.stage,ihd:_newRow.ihd,workType:_newRow.workType},related_type:_newRow.so?'sales_order':null,related_id:_newRow.so||null});
   clearAssemblyBoardForm();
   updateAssemblyData();
   assemblyEditMode=false;
   renderAssembly();
 }
 function deleteAssemblyBoardRow(id){
+  const _del=assemblyBoardRows.find(row=>row.id===id);
+  if(typeof logHistory==='function'&&_del) logHistory({entity_type:'pack_builder',entity_id:_del.pb||String(_del.id),salesforce_id:_del.pbId||null,action:'deleted',before_data:{pb:_del.pb,so:_del.so,account:_del.account,qty:_del.qty,stage:_del.stage,ihd:_del.ihd},related_type:_del.so?'sales_order':null,related_id:_del.so||null});
   assemblyBoardRows=assemblyBoardRows.filter(row=>row.id!==id);
   if(assemblyInlineEditId===id) assemblyInlineEditId=null;
   saveJson(assemblyBoardStorageKey,assemblyBoardRows);
@@ -465,6 +469,7 @@ function removeAssemblyBoardRow(id){
     ));
   }
 
+  if(typeof logHistory==='function') logHistory({entity_type:'pack_builder',entity_id:row.pb||String(row.id),salesforce_id:row.pbId||null,action:'unscheduled',before_data:{stage:row.stage,scheduledFor:row.date,qty:row.qty},related_type:row.so?'sales_order':null,related_id:row.so||null});
   assemblyBoardRows=assemblyBoardRows.filter(item=>String(item.id)!==targetId);
   if(assemblyInlineEditId===row.id) assemblyInlineEditId=null;
   updateAllData();
@@ -531,6 +536,7 @@ function saveAssemblyBoardRow(id){
   const targetId=id ?? pendingAssemblyEditId;
   const row=assemblyBoardRows.find(r=>r.id===targetId);
   if(!row) return;
+  const _before={pb:row.pb,so:row.so,account:row.account,qty:row.qty,stage:row.stage,ihd:row.ihd,rescheduleNote:row.rescheduleNote,status:row.status,workType:row.workType};
   row.workType=(document.getElementById('assemblyEditWorkType')?.value||'pack_builder');
   row.pb=(document.getElementById('assemblyEditPb')?.value||'').trim();
   row.so=(document.getElementById('assemblyEditSo')?.value||'').trim();
@@ -545,14 +551,16 @@ function saveAssemblyBoardRow(id){
   row.sourceStatus=row.sourceStatus||row.status||'';
   row.stage=(document.getElementById('assemblyEditStage')?.value||'aa');
   row.rescheduleNote=(document.getElementById('assemblyEditRescheduleNote')?.value||'').trim();
+  if(typeof logHistory==='function') logHistory({entity_type:'pack_builder',entity_id:row.pb||String(row.id),salesforce_id:row.pbId||null,action:'updated',before_data:_before,after_data:{pb:row.pb,so:row.so,account:row.account,qty:row.qty,stage:row.stage,ihd:row.ihd,rescheduleNote:row.rescheduleNote,status:row.status,workType:row.workType},related_type:row.so?'sales_order':null,related_id:row.so||null});
   closeAssemblyEditModal();
   updateAssemblyData();
 }
 function setAssemblyStage(id,stage){
-
   const row=assemblyBoardRows.find(r=>r.id===id);
   if(!row) return;
+  const _prevStage=row.stage;
   row.stage=stage;
+  if(typeof logHistory==='function') logHistory({entity_type:'pack_builder',entity_id:row.pb||String(row.id),salesforce_id:row.pbId||null,action:'stage_change',before_data:{stage:_prevStage},after_data:{stage},related_type:row.so?'sales_order':null,related_id:row.so||null,note:row.rescheduleNote||null});
   updateAssemblyData();
 }
 function rescheduleAssemblyBoardRow(id){openRescheduleModal(id)}
