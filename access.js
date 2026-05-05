@@ -20,7 +20,7 @@
       'returnsPage', 'cycleCountPage', 'errorsPage',
       'assemblyPage', 'queuePage', 'assemblyFlightTrackerPage',
       'sordPage', 'calendarPage', 'productivityPage', 'policyPage',
-      'helpPage', 'importHubPage'
+      'helpPage', 'importHubPage', 'historyPage'
     ],
     l2: [
       'homePage',
