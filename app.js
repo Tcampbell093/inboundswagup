@@ -3438,6 +3438,12 @@ function setOverstockContainerLookupStatus(message, tone = "muted") {
   el.className = `os-scan-status os-scan-status-${tone}`;
 }
 
+function closeActiveOverstockAuditModal() {
+  osCloseModal("osMdAudit");
+  const body = document.getElementById("osAuBody");
+  if (body) body.innerHTML = "";
+}
+
 function openOverstockAuditByContainerScan(value) {
   const code = normalizeOverstockContainerScan(value);
   if (!code) {
@@ -3459,14 +3465,57 @@ function openOverstockAuditByContainerScan(value) {
   if (input) input.value = container.code || code;
   const loc = container.currentLocation || "the cart";
   setOverstockContainerLookupStatus(`Opening ${container.code || code}${container.currentLocation ? ` at ${container.currentLocation}` : ""}.`, "success");
+  closeActiveOverstockAuditModal();
   osOpenAudit(loc, container.id);
   return true;
+}
+
+let overstockScannerBuffer = "";
+let overstockScannerTimer = null;
+
+function resetOverstockScannerBuffer() {
+  overstockScannerBuffer = "";
+  if (overstockScannerTimer) {
+    clearTimeout(overstockScannerTimer);
+    overstockScannerTimer = null;
+  }
+}
+
+function bindOverstockScannerCapture() {
+  if (window.__overstockScannerCaptureBound) return;
+  window.__overstockScannerCaptureBound = true;
+  document.addEventListener("keydown", (event) => {
+    if (state.currentPage !== "overstock") return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const active = document.activeElement;
+    if (active && active.id === "overstockContainerLookupInput") return;
+    if (active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName || "")) return;
+    if (active && active.isContentEditable) return;
+
+    if (event.key === "Enter") {
+      const scanned = overstockScannerBuffer.trim();
+      resetOverstockScannerBuffer();
+      if (!scanned) return;
+      if (/^(OSC-?\d+|\d+)$/i.test(scanned)) {
+        event.preventDefault();
+        openOverstockAuditByContainerScan(scanned);
+      }
+      return;
+    }
+
+    if (event.key.length === 1 && /^[a-z0-9-]$/i.test(event.key)) {
+      overstockScannerBuffer += event.key;
+      if (overstockScannerTimer) clearTimeout(overstockScannerTimer);
+      overstockScannerTimer = setTimeout(resetOverstockScannerBuffer, 700);
+    }
+  });
 }
 
 function bindOverstockContainerLookup() {
   const form = document.getElementById("overstockContainerLookupForm");
   const input = document.getElementById("overstockContainerLookupInput");
   if (!form || !input) return;
+  bindOverstockScannerCapture();
   form.onsubmit = (event) => {
     event.preventDefault();
     openOverstockAuditByContainerScan(input.value);
