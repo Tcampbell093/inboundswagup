@@ -213,7 +213,7 @@
             html += '<button class="qcc-act" onclick="event.stopPropagation();openIssueHoldModal(\'' + esc(String(r.id)) + '\',\'scheduled\')" style="color:#791F1F;">Hold</button>';
             html += '<button class="qcc-act" onclick="event.stopPropagation();unscheduleQueueRow(\'' + esc(String(r.id)) + '\')" style="color:#e74c3c;">Unschedule</button>';
           } else if (r._qStatus === 'hold') {
-            html += '<button class="qcc-act" onclick="event.stopPropagation();openIssueHoldModal(\'' + esc(String(r.id)) + '\',\'hold\')" style="color:#791F1F;">View hold</button>';
+            html += '<button class="qcc-act" onclick="event.stopPropagation();releaseIssueHoldRow(\'' + esc(String(r.id)) + '\')" style="color:#1A6B2A;">Release</button>';
           }
           if (link) {
             html += '<a class="qcc-act" href="' + esc(link) + '" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" style="text-decoration:none;">SF &#8599;</a>';
