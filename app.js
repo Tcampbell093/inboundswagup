@@ -3398,6 +3398,84 @@ function getOverstockContainerSearchResults(query) {
   });
 }
 
+function normalizeOverstockContainerScan(value) {
+  const raw = String(value || "").trim().toUpperCase().replace(/\s+/g, "");
+  if (!raw) return "";
+  const oscMatch = raw.match(/^OSC-?0*(\d+)$/);
+  if (oscMatch) return `OSC-${String(Number(oscMatch[1] || 0)).padStart(4, "0")}`;
+  const digitMatch = raw.match(/^0*(\d+)$/);
+  if (digitMatch) return `OSC-${String(Number(digitMatch[1] || 0)).padStart(4, "0")}`;
+  return raw;
+}
+
+function getOverstockContainerScanKeys(container) {
+  const values = [container?.code, container?.barcode, container?.id].filter(Boolean);
+  return values.flatMap((value) => {
+    const text = String(value || "").trim().toUpperCase();
+    return [
+      text,
+      normalizeOverstockContainerScan(text),
+      text.replace(/[^A-Z0-9]/g, ""),
+      normalizeOverstockContainerScan(text).replace(/[^A-Z0-9]/g, ""),
+    ].filter(Boolean);
+  });
+}
+
+function findOverstockContainerByScan(value) {
+  const normalized = normalizeOverstockContainerScan(value);
+  const compact = normalized.replace(/[^A-Z0-9]/g, "");
+  if (!normalized) return null;
+  return (state.data.overstockContainers || []).find((container) => {
+    const keys = getOverstockContainerScanKeys(container);
+    return keys.includes(normalized) || keys.includes(compact);
+  }) || null;
+}
+
+function setOverstockContainerLookupStatus(message, tone = "muted") {
+  const el = document.getElementById("overstockContainerLookupStatus");
+  if (!el) return;
+  el.textContent = message || "";
+  el.className = `os-scan-status os-scan-status-${tone}`;
+}
+
+function openOverstockAuditByContainerScan(value) {
+  const code = normalizeOverstockContainerScan(value);
+  if (!code) {
+    setOverstockContainerLookupStatus("Scan or type a container code first.", "warning");
+    document.getElementById("overstockContainerLookupInput")?.focus();
+    return false;
+  }
+
+  const container = findOverstockContainerByScan(code);
+  if (!container) {
+    setOverstockContainerLookupStatus(`No container found for ${code}.`, "error");
+    document.getElementById("overstockContainerLookupInput")?.select?.();
+    return false;
+  }
+
+  if (!state.data.overstockContainerUi) state.data.overstockContainerUi = { selectedId: "", search: "" };
+  state.data.overstockContainerUi.selectedId = container.id;
+  const input = document.getElementById("overstockContainerLookupInput");
+  if (input) input.value = container.code || code;
+  const loc = container.currentLocation || "the cart";
+  setOverstockContainerLookupStatus(`Opening ${container.code || code}${container.currentLocation ? ` at ${container.currentLocation}` : ""}.`, "success");
+  osOpenAudit(loc, container.id);
+  return true;
+}
+
+function bindOverstockContainerLookup() {
+  const form = document.getElementById("overstockContainerLookupForm");
+  const input = document.getElementById("overstockContainerLookupInput");
+  if (!form || !input) return;
+  form.onsubmit = (event) => {
+    event.preventDefault();
+    openOverstockAuditByContainerScan(input.value);
+  };
+  input.oninput = () => {
+    if (!input.value.trim()) setOverstockContainerLookupStatus("");
+  };
+}
+
 
 function computePrepPoOverstockCandidate(palletId, poId) {
   const pallet = (state.data.pallets || []).find((p) => p.id === palletId);
@@ -3905,6 +3983,8 @@ function renderOverstockPage() {
       ? `<div class="os-warn-banner">⚠ ${unboxed.length} PO${unboxed.length > 1 ? 's' : ''} from Prep have unassigned overstock (${unboxed.map(u => `PO# ${escapeHtml(u.po)}`).join(', ')}). Assign them a box in the <strong>Prep tab</strong>.</div>`
       : '';
   }
+
+  bindOverstockContainerLookup();
 
   // ── Cart queue ──────────────────────────────────────────────────────────
   const hub = document.getElementById('overstockContainerHub');

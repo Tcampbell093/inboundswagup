@@ -135,6 +135,23 @@
       <!-- ── Put Away — cart queue (rendered by JS) ── -->
       <div id="overstockContainerHub"></div>
 
+      <!-- ── Container scan / lookup ── -->
+      <section class="os-panel os-container-lookup-panel" id="overstockContainerLookupPanel">
+        <div class="os-panel-head">
+          <div>
+            <div class="os-panel-title">🔎 Scan or type box code</div>
+            <div class="os-panel-sub">Enter a container code like OSC-003 and press Enter to open its audit modal.</div>
+          </div>
+        </div>
+        <div class="os-panel-body">
+          <form id="overstockContainerLookupForm" class="os-container-lookup-form">
+            <input id="overstockContainerLookupInput" type="text" class="os-input os-container-lookup-input" placeholder="OSC-003" autocomplete="off" inputmode="text" />
+            <button id="overstockContainerLookupBtn" class="os-action-btn" type="submit">Open audit</button>
+          </form>
+          <div id="overstockContainerLookupStatus" class="os-scan-status" aria-live="polite"></div>
+        </div>
+      </section>
+
       <!-- ── Location map (rendered by JS) ── -->
       <div id="overstockLocationMap"></div>
 

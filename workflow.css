@@ -2669,6 +2669,33 @@ font-weight:800
 }
 .workflow-page .os-container-card-active .os-cc-cta { color: #0a7c4e; }
 
+.workflow-page .os-container-lookup-panel .os-panel-body {
+  padding-top: 14px;
+}
+.workflow-page .os-container-lookup-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+.workflow-page .os-container-lookup-input {
+  font-family: monospace;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.workflow-page .os-scan-status {
+  min-height: 18px;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.workflow-page .os-scan-status-success { color: #0a7c4e; }
+.workflow-page .os-scan-status-warning { color: #854d0e; }
+.workflow-page .os-scan-status-error { color: #991b1b; }
+
 /* Detail panel */
 .workflow-page .os-hub-right { position: sticky; top: 80px; }
 .workflow-page .os-detail-panel {
@@ -3059,6 +3086,7 @@ font-weight:800
 
 /* ── Mobile ── */
 @media (max-width: 540px) {
+  .workflow-page .os-container-lookup-form { grid-template-columns: 1fr; }
   .workflow-page .os-loc-grid { grid-template-columns: repeat(4, 1fr); }
   .workflow-page .os-card-grid { grid-template-columns: 1fr 1fr; }
   .workflow-page .os-modal { max-height: 92vh; }
