@@ -984,113 +984,64 @@
     
     <!-- Calendar -->
     <section id="calendarPage" class="page">
-
-      <!-- Add Event Modal -->
-      <div class="modal-backdrop" id="calEventModalBackdrop">
-        <div class="modal" style="width:min(480px,100%)">
-          <div class="modal-header">
-            <div>
-              <div class="eyebrow">Calendar</div>
-              <h2 id="calEventModalTitle" style="margin:6px 0 4px;font-size:24px;">Add event</h2>
-            </div>
-            <button class="btn secondary" onclick="window.calUI.closeModal()">Close</button>
-          </div>
-          <div style="padding:0 20px 20px;display:flex;flex-direction:column;gap:14px;">
-            <div class="field">
-              <label for="calEvTitle">Event title</label>
-              <input id="calEvTitle" type="text" placeholder="e.g. Team meeting, Inventory count…" />
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-              <div class="field">
-                <label for="calEvDate">Date</label>
-                <input id="calEvDate" type="date" />
-              </div>
-              <div class="field">
-                <label for="calEvType">Type</label>
-                <select id="calEvType">
-                  <option value="event">General event</option>
-                  <option value="shift">Shift / schedule</option>
-                  <option value="reminder">Reminder</option>
-                  <option value="meeting">Meeting</option>
-                  <option value="deadline">Deadline</option>
-                </select>
-              </div>
-            </div>
-            <div class="field">
-              <label for="calEvNote">Note <span style="font-weight:400;opacity:.6;">(optional)</span></label>
-              <input id="calEvNote" type="text" placeholder="Any extra detail…" />
-            </div>
-          </div>
-          <div class="toolbar" style="margin:0 20px 20px;justify-content:flex-end;">
-            <div class="right">
-              <button class="btn secondary" onclick="window.calUI.closeModal()">Cancel</button>
-              <button class="btn" id="calEvSaveBtn" onclick="window.calUI.saveEvent()">Save event</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Page header -->
       <div class="hero">
         <div>
           <div class="eyebrow">Calendar</div>
           <h2>Planning calendar</h2>
-        </div>
-        <div class="toolbar right">
-          <button class="btn" onclick="window.calUI.openModal()">+ Add event</button>
+          <p class="subtitle">A live planning view for assembly load and employee birthdays. Days with scheduled pack builders can jump straight into the Assembly board for that date.</p>
         </div>
       </div>
 
-      <!-- Stats bar -->
       <div class="stats">
-        <div class="card"><div class="stat-label">Current month</div><div class="stat-value" id="calendarCurrentMonthLabel">—</div><div class="stat-hint">Planning calendar</div></div>
-        <div class="card"><div class="stat-label">Birthdays</div><div class="stat-value" id="calendarBirthdaysLinked">0</div><div class="stat-hint">Employee birthdays this month</div></div>
-        <div class="card"><div class="stat-label">Custom events</div><div class="stat-value" id="calCustomEventCount">0</div><div class="stat-hint">Events you've added</div></div>
-        <div class="card"><div class="stat-label">Assembly days</div><div class="stat-value" id="calAssemblyDayCount">0</div><div class="stat-hint">Scheduled this month</div></div>
+        <div class="card"><div class="stat-label">Current month</div><div class="stat-value" id="calendarCurrentMonthLabel">—</div><div class="stat-hint">Calendar updates with the selected month</div></div>
+        <div class="card"><div class="stat-label">Scheduled events</div><div class="stat-value" id="calendarEventCount">0</div><div class="stat-hint">Custom calendar events this month</div></div>
+        <div class="card"><div class="stat-label">Assembly days</div><div class="stat-value" id="calendarAssemblyDays">0</div><div class="stat-hint">Scheduled production days this month</div></div>
+        <div class="card"><div class="stat-label">Scheduled units</div><div class="stat-value" id="calendarScheduledUnits">0</div><div class="stat-hint">Total units on the Assembly calendar</div></div>
       </div>
 
-      <!-- Calendar card -->
-      <div style="margin-top:16px;">
-        <div class="card" style="padding:0;overflow:hidden;">
+      <div class="calendar-grid">
+        <div class="card">
+          <div class="calendar-controls">
+            <button class="btn secondary" id="calendarPrevBtn">Previous</button>
+            <div class="calendar-month-title" id="calendarMonthTitle">Month</div>
+            <button class="btn secondary" id="calendarNextBtn">Next</button>
+          </div>
+          <div class="calendar-days" id="calendarHeaderRow"></div>
+          <div class="calendar-days" id="calendarGrid"></div>
+        </div>
 
-          <!-- Calendar header -->
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border,#eee);">
+        <div class="card calendar-side-panel">
+          <div class="calendar-panel-head">
             <div>
-              <div class="calendar-month-title" id="calendarMonthTitle" style="font-size:18px;font-weight:500;"></div>
-              <div id="calWeekHint" style="font-size:12px;color:var(--muted,#888);margin-top:2px;"></div>
+              <div class="eyebrow">Selected Day</div>
+              <h3 id="calendarSelectedDateLabel">Today</h3>
             </div>
-            <div style="display:flex;gap:8px;align-items:center;">
-              <button class="btn secondary" id="calendarPrevBtn">‹</button>
-              <button class="btn secondary" id="calTodayBtn">Today</button>
-              <button class="btn secondary" id="calendarNextBtn">›</button>
-            </div>
+            <button class="btn secondary" id="calendarTodayBtn" type="button">Today</button>
           </div>
 
-          <!-- Day name header -->
-          <div style="display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--border,#eee);background:var(--blue1,#f9fafb);" id="calendarHeaderRow"></div>
-
-          <!-- Grid -->
-          <div style="display:grid;grid-template-columns:repeat(7,1fr);" id="calendarGrid"></div>
-
-          <!-- Footer stats -->
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--border,#eee);">
-            <div style="padding:10px 18px;border-right:1px solid var(--border,#eee);">
-              <div style="font-size:18px;font-weight:500;" id="calFootBirthdays">0</div>
-              <div style="font-size:11px;color:var(--muted,#888);">Birthdays this month</div>
-            </div>
-            <div style="padding:10px 18px;border-right:1px solid var(--border,#eee);">
-              <div style="font-size:18px;font-weight:500;" id="calFootAssembly">0</div>
-              <div style="font-size:11px;color:var(--muted,#888);">Assembly days scheduled</div>
-            </div>
-            <div style="padding:10px 18px;">
-              <div style="font-size:18px;font-weight:500;" id="calFootEvents">0</div>
-              <div style="font-size:11px;color:var(--muted,#888);">Custom events this month</div>
-            </div>
+          <div class="calendar-section">
+            <div class="calendar-section-title">Assembly scheduled</div>
+            <div id="calendarSelectedAssemblyList" class="calendar-list"></div>
           </div>
 
+          <div class="calendar-section">
+            <div class="calendar-section-title">Add scheduled event</div>
+            <div class="form-grid calendar-event-form">
+              <div class="field"><label for="calendarEventDate">Date</label><input id="calendarEventDate" type="date" /></div>
+              <div class="field"><label for="calendarEventTime">Time</label><input id="calendarEventTime" type="time" /></div>
+              <div class="field field-span-2"><label for="calendarEventTitle">Event</label><input id="calendarEventTitle" placeholder="Team lunch, carrier pickup, deadline..." /></div>
+              <div class="field"><label for="calendarEventType">Type</label><select id="calendarEventType"><option value="event">Event</option><option value="meeting">Meeting</option><option value="deadline">Deadline</option><option value="reminder">Reminder</option></select></div>
+              <div class="field field-span-2"><label for="calendarEventNote">Note</label><textarea id="calendarEventNote" placeholder="Optional details"></textarea></div>
+            </div>
+            <button class="btn" id="calendarAddEventBtn" type="button">Add Event</button>
+          </div>
+
+          <div class="calendar-section">
+            <div class="calendar-section-title">Scheduled events</div>
+            <div id="calendarCustomEventList" class="calendar-list"></div>
+          </div>
         </div>
       </div>
-
     </section>
 
     
@@ -1954,11 +1905,15 @@
         </div>
 
         <!-- Stats row -->
-        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:18px;" id="qccStats">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:18px;" id="qccStats">
           <div class="qcc-stat"><div class="qcc-stat-n" id="qccTotal">0</div><div class="qcc-stat-l">Total builders</div></div>
           <div class="qcc-stat"><div class="qcc-stat-n" style="color:#27500A;" id="qccReady">0</div><div class="qcc-stat-l">Ready</div></div>
           <div class="qcc-stat"><div class="qcc-stat-n" style="color:#A32D2D;" id="qccHold">0</div><div class="qcc-stat-l">On hold</div></div>
-          <div class="qcc-stat"><div class="qcc-stat-n" style="color:#0F6E56;" id="qccRev">$0</div><div class="qcc-stat-l">Ready revenue</div></div>
+          <div class="qcc-stat"><div class="qcc-stat-n" style="color:#0F6E56;" id="qccRev">$0</div><div class="qcc-stat-l">Total value</div></div>
+          <div class="qcc-stat"><div class="qcc-stat-n" style="color:#0F6E56;" id="qccReadyRev">$0</div><div class="qcc-stat-l">Ready value</div></div>
+          <div class="qcc-stat"><div class="qcc-stat-n" style="color:#854F0B;" id="qccPendingRev">$0</div><div class="qcc-stat-l">Pending value</div></div>
+          <div class="qcc-stat"><div class="qcc-stat-n" style="color:#185FA5;" id="qccScheduledRev">$0</div><div class="qcc-stat-l">Scheduled value</div></div>
+          <div class="qcc-stat"><div class="qcc-stat-n" style="color:#A32D2D;" id="qccHoldRev">$0</div><div class="qcc-stat-l">Hold value</div></div>
           <div class="qcc-stat"><div class="qcc-stat-n" id="qccIhd">—</div><div class="qcc-stat-l">Next IHD</div></div>
         </div>
 
@@ -1992,8 +1947,9 @@
         </div>
 
         <!-- Bulk action bar -->
-        <div id="qccBulkBar" style="display:none;align-items:center;gap:10px;padding:8px 14px;border-radius:8px;background:#E6F1FB;margin-bottom:10px;font-size:13px;color:#0C447C;">
+        <div id="qccBulkBar" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 14px;border-radius:8px;background:#E6F1FB;margin-bottom:10px;font-size:13px;color:#0C447C;">
           <span id="qccBulkCount">0 selected</span>
+          <strong id="qccBulkValue" style="margin-left:auto;color:#0F6E56;">$0 schedule value</strong>
           <button class="btn" onclick="window.qcc&&window.qcc.bulkSchedule()" style="font-size:12px;padding:5px 14px;background:#185FA5;border-color:#185FA5;">Schedule selected</button>
           <button class="btn secondary" onclick="window.qcc&&window.qcc.clearSelection()" style="font-size:12px;padding:5px 14px;">Clear</button>
         </div>
@@ -2044,7 +2000,7 @@
           <div class="toolbar" style="margin-bottom:14px"><div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Scheduled pack builders</h3></div>
             <div class="right"><label style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="scheduledQueueLimitLeg"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="all">All</option></select></div>
           </div>
-          <div class="table-wrap queue-table-wrap"><table><thead><tr><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>Scheduled For</th><th>Scheduled At</th><th>Flags</th><th>Note</th><th>Comments</th><th>Action</th></tr></thead><tbody id="scheduledQueueTableBodyLeg"></tbody></table></div>
+          <div class="table-wrap queue-table-wrap"><table><thead><tr><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>Scheduled For</th><th>Scheduled At</th><th>Revenue</th><th>Flags</th><th>Note</th><th>Comments</th><th>Action</th></tr></thead><tbody id="scheduledQueueTableBodyLeg"></tbody></table></div>
         </div>
         <div class="card queue-section-card" style="margin-top:20px">
           <div class="toolbar" style="margin-bottom:14px"><div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Issue Hold</h3></div>
@@ -2056,14 +2012,14 @@
           <div class="toolbar" style="margin-bottom:14px"><div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Ready pack builders</h3></div>
             <div class="right"><label style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="readyQueueLimitLeg"><option value="10">10</option><option value="25">25</option><option value="all">All</option></select></div>
           </div>
-          <div class="table-wrap queue-table-wrap"><table><thead><tr><th>Priority</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Qty</th><th>Total Products</th><th>Units</th><th>IHD</th><th>Status</th><th>Flags</th><th>Account Owner</th><th>Link</th><th>Action</th></tr></thead><tbody id="queueTableBodyLeg"></tbody></table></div>
+          <div class="table-wrap queue-table-wrap"><table><thead><tr><th>Priority</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Qty</th><th>Total Products</th><th>Units</th><th>IHD</th><th>Revenue</th><th>Status</th><th>Flags</th><th>Account Owner</th><th>Link</th><th>Action</th></tr></thead><tbody id="queueTableBodyLeg"></tbody></table></div>
           <div id="readyQueueCardsLeg" class="assembly-cards-mobile"></div>
         </div>
         <div class="card queue-section-card" style="margin-top:20px">
           <div class="toolbar" style="margin-bottom:14px"><div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Incomplete / pending</h3></div>
             <div class="right"><label style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="incompleteQueueLimitLeg"><option value="10">10</option><option value="25">25</option><option value="all">All</option></select></div>
           </div>
-          <div class="table-wrap queue-table-wrap"><table><thead><tr><th>Priority</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Qty</th><th>Total Products</th><th>Units</th><th>IHD</th><th>Status</th><th>Flags</th><th>Account Owner</th><th>Link</th><th>Action</th></tr></thead><tbody id="incompleteQueueTableBodyLeg"></tbody></table></div>
+          <div class="table-wrap queue-table-wrap"><table><thead><tr><th>Priority</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Qty</th><th>Total Products</th><th>Units</th><th>IHD</th><th>Revenue</th><th>Status</th><th>Flags</th><th>Account Owner</th><th>Link</th><th>Action</th></tr></thead><tbody id="incompleteQueueTableBodyLeg"></tbody></table></div>
           <div id="incompleteQueueCardsLeg" class="assembly-cards-mobile"></div>
         </div>
       </div>
@@ -2376,136 +2332,31 @@
 </div>
 
 <div class="modal-backdrop" id="scheduleModalBackdrop">
-  <div class="modal" style="width:min(580px,100%)">
-
-    <!-- Header: PB summary card -->
-    <div class="modal-header" style="padding-bottom:12px;">
-      <div style="flex:1;">
-        <div class="eyebrow">Schedule to Assembly</div>
-        <div id="scheduleModalSummary" style="margin-top:6px;"></div>
+  <div class="modal" style="width:min(560px,100%)">
+    <div class="modal-header">
+      <div>
+        <div class="eyebrow">Schedule Pack Builder</div>
+        <h2 style="margin:6px 0 4px;font-size:30px">Choose a date</h2>
+        <p class="subtitle" style="max-width:none">Pick the Assembly date from the calendar input below. This is safer than typing dates manually.</p>
       </div>
       <button class="btn secondary" id="closeScheduleBtn">Close</button>
     </div>
-
-    <!-- Body: two-column split -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid var(--border,#eee);">
-
-      <!-- Left: inputs -->
-      <div style="padding:16px 18px;border-right:1px solid var(--border,#eee);">
-        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted,#888);margin-bottom:10px;padding-bottom:6px;border-bottom:0.5px solid var(--border,#eee);">Schedule</div>
-
-        <div class="field" style="margin-bottom:12px;">
-          <label for="scheduleModalDate">Assembly date</label>
-          <input id="scheduleModalDate" type="date" />
-        </div>
-
-        <div class="field" style="margin-bottom:12px;">
-          <label for="scheduleMode">Mode</label>
-          <select id="scheduleMode" onchange="window._sched_onModeChange()">
-            <option value="full">Full amount</option>
-            <option value="partial">Partial amount</option>
-          </select>
-        </div>
-
-        <div id="scheduleQtyField" class="field" style="margin-bottom:12px;display:none;">
-          <label for="scheduleQty">Qty to schedule</label>
-          <input id="scheduleQty" type="number" min="0" value="0" oninput="window._sched_onQtyChange()" />
-        </div>
-
-        <!-- Hidden full qty (read by confirmSchedule) -->
-        <input id="scheduleFullQty" type="number" min="0" value="0" style="display:none;" />
-
-        <div class="field" style="margin-bottom:0;">
-          <label for="scheduleModalNote">Note <span style="font-weight:400;opacity:.6;">(optional)</span></label>
-          <input id="scheduleModalNote" placeholder="Rush, priority…" />
-        </div>
-      </div>
-
-      <!-- Right: live summary -->
-      <div style="padding:16px 18px;">
-        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted,#888);margin-bottom:10px;padding-bottom:6px;border-bottom:0.5px solid var(--border,#eee);">Summary</div>
-
-        <!-- Qty display boxes -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
-          <div style="background:var(--blue1,#f0f6ff);border-radius:8px;padding:10px 12px;text-align:center;">
-            <div style="font-size:22px;font-weight:500;color:#185FA5;line-height:1;margin-bottom:2px;" id="schedSummScheduling">0</div>
-            <div style="font-size:10px;color:#0C447C;font-weight:700;">Scheduling</div>
-          </div>
-          <div style="background:var(--blue1,#f0f6ff);border-radius:8px;padding:10px 12px;text-align:center;">
-            <div style="font-size:22px;font-weight:500;color:var(--muted,#888);line-height:1;margin-bottom:2px;" id="schedSummRemaining">0</div>
-            <div style="font-size:10px;color:var(--muted,#888);font-weight:700;">Remaining</div>
-          </div>
-        </div>
-
-        <!-- Split bar -->
-        <div style="height:6px;background:var(--border,#e5e7eb);border-radius:3px;overflow:hidden;margin-bottom:14px;">
-          <div id="schedSplitBar" style="height:6px;background:#185FA5;border-radius:3px;width:100%;transition:width .2s;"></div>
-        </div>
-
-        <!-- Remainder section -->
-        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted,#888);margin-bottom:8px;">Remainder</div>
-
-        <div class="field" style="margin-bottom:10px;">
-          <label for="scheduleRemainderToggle">Auto-schedule?</label>
-          <select id="scheduleRemainderToggle">
-            <option value="false">No</option>
-            <option value="true">Yes — set date below</option>
-          </select>
-        </div>
-
-        <div class="field" style="margin-bottom:0;">
-          <label for="scheduleRemainderDate">Remainder date</label>
-          <input id="scheduleRemainderDate" type="date" />
-        </div>
-
-      </div>
+    <div class="schedule-summary" id="scheduleModalSummary"></div>
+    <div class="queue-modal-financial" id="scheduleFinancialImpact"></div>
+    <div class="schedule-modal-grid">
+      <div class="field"><label for="scheduleModalDate">Assembly Date</label><input id="scheduleModalDate" type="date" /></div>
+      <div class="field"><label for="scheduleModalNote">Schedule Note</label><input id="scheduleModalNote" placeholder="Optional note for the schedule" /></div>
+      <div class="field"><label for="scheduleMode">Schedule Mode</label><select id="scheduleMode"><option value="full">Full amount</option><option value="partial">Partial amount</option></select></div>
+      <div class="field"><label for="scheduleQty">Scheduled Qty</label><input id="scheduleQty" type="number" min="0" value="0" /></div>
+      <div class="field"><label for="scheduleFullQty">Full Qty</label><input id="scheduleFullQty" type="number" min="0" value="0" disabled /></div>
+      <div class="field"><label for="scheduleRemainderToggle">Auto-schedule Remainder</label><select id="scheduleRemainderToggle"><option value="false">No</option><option value="true">Yes</option></select></div>
+      <div class="field"><label for="scheduleRemainderDate">Remainder Date</label><input id="scheduleRemainderDate" type="date" /></div>
     </div>
-
-    <!-- Footer -->
-    <div class="toolbar" style="padding:12px 18px;border-top:1px solid var(--border,#eee);justify-content:flex-end;">
-      <div class="right">
-        <button class="btn secondary" id="cancelScheduleBtn">Cancel</button>
-        <button class="btn" id="confirmScheduleBtn">Confirm Schedule</button>
-      </div>
+    <div class="toolbar" style="margin-top:16px;margin-bottom:0;justify-content:flex-end">
+      <div class="right"><button class="btn secondary" id="cancelScheduleBtn">Cancel</button><button class="btn" id="confirmScheduleBtn">Confirm Schedule</button></div>
     </div>
-
   </div>
 </div>
-
-<script>
-window._sched_onModeChange = function() {
-  var mode = document.getElementById('scheduleMode')?.value;
-  var qtyField = document.getElementById('scheduleQtyField');
-  if (qtyField) qtyField.style.display = mode === 'partial' ? '' : 'none';
-  window._sched_updateSummary();
-};
-window._sched_onQtyChange = function() {
-  window._sched_updateSummary();
-};
-window._sched_updateSummary = function() {
-  var mode     = document.getElementById('scheduleMode')?.value || 'full';
-  var fullQty  = Number(document.getElementById('scheduleFullQty')?.value || 0);
-  var schedQty = mode === 'partial'
-    ? Number(document.getElementById('scheduleQty')?.value || 0)
-    : fullQty;
-  var remaining = Math.max(0, fullQty - schedQty);
-  var pct = fullQty > 0 ? Math.min(100, Math.round(schedQty / fullQty * 100)) : 100;
-
-  var elS = document.getElementById('schedSummScheduling');
-  var elR = document.getElementById('schedSummRemaining');
-  var elB = document.getElementById('schedSplitBar');
-  if (elS) elS.textContent = schedQty.toLocaleString();
-  if (elR) {
-    elR.textContent = remaining.toLocaleString();
-    elR.style.color = remaining > 0 ? '#854F0B' : 'var(--muted,#888)';
-  }
-  if (elB) {
-    elB.style.width = pct + '%';
-    elB.style.background = remaining > 0 ? '#185FA5' : '#1D9E75';
-  }
-};
-</script>
-
 
 <!-- ── Bulk Schedule Modal ──────────────────────────────────── -->
 <div class="modal-backdrop" id="bulkScheduleModalBackdrop">
@@ -2519,7 +2370,7 @@ window._sched_updateSummary = function() {
     </div>
 
     <!-- Stats row -->
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:14px 20px 0;">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:14px 20px 0;">
       <div style="background:var(--blue1);border-radius:8px;padding:10px 12px;text-align:center;">
         <div style="font-size:20px;font-weight:800;color:var(--text);line-height:1;margin-bottom:2px;" id="bulkStatCount">0</div>
         <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Builders</div>
@@ -2531,6 +2382,10 @@ window._sched_updateSummary = function() {
       <div style="background:var(--blue1);border-radius:8px;padding:10px 12px;text-align:center;">
         <div style="font-size:20px;font-weight:800;color:var(--text);line-height:1;margin-bottom:2px;" id="bulkStatPacks">0</div>
         <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Total packs</div>
+      </div>
+      <div style="background:#E1F5EE;border-radius:8px;padding:10px 12px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:#0F6E56;line-height:1;margin-bottom:2px;" id="bulkStatRevenue">$0</div>
+        <div style="font-size:11px;font-weight:700;color:#0F6E56;text-transform:uppercase;letter-spacing:.05em;">Total value</div>
       </div>
     </div>
 
@@ -2931,58 +2786,19 @@ window._sched_updateSummary = function() {
         }
         keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
         // Additional module-specific keys not prefixed with ops_hub_
-        [
-          // Fulfillment scan-out
-          'houston_control_fulfillment_scan_prototype_v2_manual_carriers',
-          // QA inbound workflow
-          'qaV5SeparatedWorkflowData_v4fixed',
-          'qaBlueSheetMastersV5',
-          'qaLeadershipUnlockedV1',
-          'qaWorkflowCurrentUserV2',
-          'qaWorkflowLanguageV1',
-          'qaWorkflowUphPaceCustomImagesV1',
-          'qaActiveImportedMonthKeyV1',
-          'qaCompareImportedMonthKeyV1',
-          'qaWorkflowPerformanceDeptViewV1',
-          // Flight tracker
-          'ft_author_name',
-          // Cycle count
-          'cc_active_name',
-          // SORD
-          'sord_imports_v1',
-          // Overstock
-          'overstockFormDraft_v1',
-          // Misc
-          'wf_activeTab',
-        ].forEach(function(k) { localStorage.removeItem(k); });
-
-        // Explicitly write empty state to key data stores so they load clean
-        var emptyStores = {
-          'ops_hub_returns_records_v1':          '[]',
-          'ops_hub_errors_records_v2':            '[]',
-          'ops_hub_calendar_events_v1':           '[]',
-          'ops_hub_assembly_board_v1':            '[]',
-          'ops_hub_assembly_board_v2':            '[]',
-          'ops_hub_available_queue_v1':           '[]',
-          'ops_hub_scheduled_queue_v1':           '[]',
-          'ops_hub_incomplete_queue_v1':          '[]',
-          'ops_hub_issue_hold_queue_v1':          '[]',
-          'ops_hub_attendance_records_v2':        '[]',
-          'ops_hub_cycle_count_v1':               '[]',
-          'ops_hub_rev_tracker_v1':               '[]',
-          'houston_control_fulfillment_scan_prototype_v2_manual_carriers': '{}',
-          'qaV5SeparatedWorkflowData_v4fixed':    '{}',
-        };
-        Object.keys(emptyStores).forEach(function(k) {
-          localStorage.setItem(k, emptyStores[k]);
+        ['ft_author_name', 'cc_active_name', 'qaWorkflowCurrentUserV2',
+         'houston_control_fulfillment_scan_prototype_v2_manual_carriers',
+         'qaV5SeparatedWorkflowData_v4fixed',
+         'qaActiveImportedMonthKeyV1', 'qaCompareImportedMonthKeyV1',
+         'qaWorkflowPerformanceDeptViewV1'].forEach(function(k) {
+          localStorage.removeItem(k);
         });
 
         setTimeout(function() {
           if (status) status.innerHTML = `<span style="color:#2ecc71;">✓ ${data.message} Reloading…</span>`;
           setTimeout(function() {
             closeModal();
-            // Hard reload — bypasses browser cache
-            window.location.href = window.location.origin + '/index.html';
+            window.location.reload();
           }, 1500);
         }, 500);
       })

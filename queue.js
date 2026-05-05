@@ -65,6 +65,7 @@ const homeBirthdaysList=document.getElementById('homeBirthdaysList');
 const homeErrorsList=document.getElementById('homeErrorsList');
 const scheduleModalBackdrop=document.getElementById('scheduleModalBackdrop');
 const scheduleModalSummary=document.getElementById('scheduleModalSummary');
+const scheduleFinancialImpact=document.getElementById('scheduleFinancialImpact');
 const scheduleModalDate=document.getElementById('scheduleModalDate');
 const scheduleModalNote=document.getElementById('scheduleModalNote');
 const scheduleModeInput=document.getElementById('scheduleMode');
@@ -122,6 +123,31 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+function getQueueRowRevenue(row){
+  if(!row) return 0;
+  if(typeof getEffectiveSubtotalForRow==='function') return Number(getEffectiveSubtotalForRow(row)||0);
+  return Number(row.revenue||row.subtotal||0);
+}
+function getProratedQueueRevenue(row, qty, fullQty){
+  const revenue=getQueueRowRevenue(row);
+  const full=Number(fullQty||row?.fullQty||row?.qty||0);
+  const amount=Number(qty||0);
+  if(revenue<=0) return 0;
+  if(full<=0 || amount<=0 || amount>=full) return revenue;
+  return revenue*(amount/full);
+}
+function formatQueueMoney(value,{blankZero=false,decimals=0}={}){
+  const amount=Number(value||0);
+  if(blankZero && amount<=0) return '—';
+  return '$'+amount.toLocaleString(undefined,{minimumFractionDigits:decimals,maximumFractionDigits:decimals});
+}
+function buildQueueFinancialLine(row, qty, fullQty){
+  const revenue=getQueueRowRevenue(row);
+  const scheduledValue=getProratedQueueRevenue(row,qty,fullQty);
+  if(revenue<=0) return '<div class="queue-financial-line">Revenue: —</div>';
+  const partial=Number(qty||0)>0 && Number(fullQty||row?.qty||0)>0 && Number(qty||0)<Number(fullQty||row?.qty||0);
+  return `<div class="queue-financial-line">Revenue: <strong>${formatQueueMoney(partial?scheduledValue:revenue)}</strong>${partial?` scheduled of ${formatQueueMoney(revenue)} total`:''}</div>`;
 }
 function hydrateIssueHoldReasonOptions(){
   if(!issueHoldTypeInput) return;
@@ -355,7 +381,7 @@ function releaseIssueHoldRow(id){
     renderCalendar();
   }else{
     const target=row.sourceQueue==='incomplete'?incompleteQueueRows:availableQueueRows;
-    mergeReturnedQueueRow(target,{priority:row.priority,pb:row.pb,pbId:row.pbId,so:row.so,account:row.account,qty:Number(row.qty||0),products:Number(row.products||0),ihd:row.ihd,accountOwner:row.accountOwner,pdfUrl:row.pdfUrl,status:row.sourceStatus||'Pending Items'});
+    mergeReturnedQueueRow(target,{priority:row.priority,pb:row.pb,pbId:row.pbId,so:row.so,account:row.account,qty:Number(row.qty||0),products:Number(row.products||0),ihd:row.ihd,accountOwner:row.accountOwner,pdfUrl:row.pdfUrl,status:row.sourceStatus||'Pending Items',subtotal:Number(row.revenue||0),revenue:Number(row.revenue||0)});
     if(row.sourceQueue==='incomplete') saveIncompleteQueue(); else saveQueue();
   }
 
@@ -414,7 +440,9 @@ function unscheduleQueueRow(id){
     ihd:scheduledMatch.ihd,
     accountOwner:scheduledMatch.accountOwner,
     pdfUrl:scheduledMatch.pdfUrl,
-    status:scheduledMatch.sourceStatus||scheduledMatch.status||''
+    status:scheduledMatch.sourceStatus||scheduledMatch.status||'',
+    subtotal:Number(scheduledMatch.subtotal||scheduledMatch.revenue||0),
+    revenue:Number(scheduledMatch.revenue||scheduledMatch.subtotal||0)
   });
 
   updateAllData();
@@ -529,18 +557,18 @@ function renderQueue(){
   // queuePriorityUnits removed to prevent script crash
   queueSortModeLabel.textContent=(queueSortByInput.value||'ihd_asc').startsWith('ihd')?'IHD':(queueSortByInput.value||'').startsWith('units')?'Units':(queueSortByInput.value||'').startsWith('account')?'Account':'Pack Builder';
   if(!readyFiltered.length){
-    queueTableBody.innerHTML='<tr><td colspan="13" class="empty">No ready pack builders found for this view.</td></tr>';
+    queueTableBody.innerHTML='<tr><td colspan="14" class="empty">No ready pack builders found for this view.</td></tr>';
   } else {
-    queueTableBody.innerHTML=readyVisible.map(row=>{const link=buildSalesforcePbLink(row.pbId,row.pdfUrl);return `<tr><td>${row.priority?'⭐':'—'}</td><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.so||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${Number(row.qty||0)}</td><td>${Number(row.products||0)}</td><td>${Number(row.units||0).toLocaleString()}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${escapeHtml(row.status||'—')}</td><td>${renderQueueFlags(row)}</td><td>${escapeHtml(row.accountOwner||'—')}</td><td>${link?`<a class="queue-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td><div class="row-actions"><button class="btn secondary" onclick="toggleQueuePriority('${escapeJs(String(row.id))}','ready')">${row.priority?'Unmark':'Priority'}</button><button class="btn warn" onclick="openIssueHoldModal('${escapeJs(String(row.id))}','ready')">Hold</button><button class="btn" onclick="scheduleQueueRow('${escapeJs(String(row.id))}','ready')">Schedule</button></div></td></tr>`}).join('');
+    queueTableBody.innerHTML=readyVisible.map(row=>{const link=buildSalesforcePbLink(row.pbId,row.pdfUrl);const revenue=getQueueRowRevenue(row);return `<tr><td>${row.priority?'⭐':'—'}</td><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.so||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${Number(row.qty||0)}</td><td>${Number(row.products||0)}</td><td>${Number(row.units||0).toLocaleString()}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${formatQueueMoney(revenue,{blankZero:true})}</td><td>${escapeHtml(row.status||'—')}</td><td>${renderQueueFlags(row)}</td><td>${escapeHtml(row.accountOwner||'—')}</td><td>${link?`<a class="queue-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td><div class="row-actions"><button class="btn secondary" onclick="toggleQueuePriority('${escapeJs(String(row.id))}','ready')">${row.priority?'Unmark':'Priority'}</button><button class="btn warn" onclick="openIssueHoldModal('${escapeJs(String(row.id))}','ready')">Hold</button><button class="btn" onclick="scheduleQueueRow('${escapeJs(String(row.id))}','ready')">Schedule</button></div></td></tr>`}).join('');
   }
   if(!incompleteFiltered.length){
-    incompleteQueueTableBody.innerHTML='<tr><td colspan="13" class="empty">No incomplete or pending pack builders found for this view.</td></tr>';
+    incompleteQueueTableBody.innerHTML='<tr><td colspan="14" class="empty">No incomplete or pending pack builders found for this view.</td></tr>';
   } else {
-    incompleteQueueTableBody.innerHTML=incompleteVisible.map(row=>{const link=buildSalesforcePbLink(row.pbId,row.pdfUrl);return `<tr><td>${row.priority?'⭐':'—'}</td><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.so||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${Number(row.qty||0)}</td><td>${Number(row.products||0)}</td><td>${Number(row.units||0).toLocaleString()}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${escapeHtml(row.status||'—')}</td><td>${renderQueueFlags(row)}</td><td>${escapeHtml(row.accountOwner||'—')}</td><td>${link?`<a class="queue-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td><div class="row-actions"><button class="btn secondary" onclick="toggleQueuePriority('${escapeJs(String(row.id))}','incomplete')">${row.priority?'Unmark':'Priority'}</button><button class="btn warn" onclick="openIssueHoldModal('${escapeJs(String(row.id))}','incomplete')">Hold</button><button class="btn" onclick="scheduleQueueRow('${escapeJs(String(row.id))}','incomplete')">Schedule</button></div></td></tr>`}).join('');
+    incompleteQueueTableBody.innerHTML=incompleteVisible.map(row=>{const link=buildSalesforcePbLink(row.pbId,row.pdfUrl);const revenue=getQueueRowRevenue(row);return `<tr><td>${row.priority?'⭐':'—'}</td><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.so||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${Number(row.qty||0)}</td><td>${Number(row.products||0)}</td><td>${Number(row.units||0).toLocaleString()}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${formatQueueMoney(revenue,{blankZero:true})}</td><td>${escapeHtml(row.status||'—')}</td><td>${renderQueueFlags(row)}</td><td>${escapeHtml(row.accountOwner||'—')}</td><td>${link?`<a class="queue-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td><div class="row-actions"><button class="btn secondary" onclick="toggleQueuePriority('${escapeJs(String(row.id))}','incomplete')">${row.priority?'Unmark':'Priority'}</button><button class="btn warn" onclick="openIssueHoldModal('${escapeJs(String(row.id))}','incomplete')">Hold</button><button class="btn" onclick="scheduleQueueRow('${escapeJs(String(row.id))}','incomplete')">Schedule</button></div></td></tr>`}).join('');
   }
   const scheduledSorted=getSortedQueueRows(scheduledQueueRows.filter(matchesQueueSearch)).sort((a,b)=>String(b.scheduledAt||'').localeCompare(String(a.scheduledAt||''))||String(a.scheduledFor||'').localeCompare(String(b.scheduledFor||'')));
   const scheduledVisible=applyQueueLimit(scheduledSorted,scheduledQueueLimit?.value||'10');
-  scheduledQueueTableBody.innerHTML=scheduledSorted.length?scheduledVisible.map(row=>{const link=buildSalesforcePbLink(row.pbId,row.pdfUrl);return `<tr data-cbkey="${escapeHtml(row.pbId||row.so||'')}"><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.so||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${Number(row.units||0).toLocaleString()}</td><td>${escapeHtml(row.scheduledFor||'—')}</td><td>${escapeHtml(row.scheduledAt||'—')}</td><td>${renderQueueFlags(row)}</td><td>${escapeHtml(row.scheduleNote||'—')}</td><td>${link?`<a class="queue-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td class="cb-cell" data-cbkey="${escapeHtml(row.pbId||row.so||'')}"><span class="cb-badge cb-loading">…</span></td><td><div class="row-actions"><button class="btn secondary" onclick="viewScheduledInAssembly('${escapeJs(String(row.id))}')">View in Assembly</button><button class="btn warn" onclick="openIssueHoldModal('${escapeJs(String(row.id))}','scheduled')">Hold</button><button class="btn secondary" onclick="unscheduleQueueRow('${escapeJs(String(row.id))}')">Unschedule</button><button class="btn danger" onclick="deleteScheduledQueueRow('${escapeJs(String(row.id))}')">Delete</button></div></td></tr>`}).join(''):'<tr><td colspan="10" class="empty">Nothing has been scheduled from the queue yet.</td></tr>';
+  scheduledQueueTableBody.innerHTML=scheduledSorted.length?scheduledVisible.map(row=>{const link=buildSalesforcePbLink(row.pbId,row.pdfUrl);const revenue=getQueueRowRevenue(row);return `<tr data-cbkey="${escapeHtml(row.pbId||row.so||'')}"><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.so||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${Number(row.units||0).toLocaleString()}</td><td>${escapeHtml(row.scheduledFor||'—')}</td><td>${escapeHtml(row.scheduledAt||'—')}</td><td>${formatQueueMoney(revenue,{blankZero:true})}</td><td>${renderQueueFlags(row)}</td><td>${escapeHtml(row.scheduleNote||'—')}</td><td>${link?`<a class="queue-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td class="cb-cell" data-cbkey="${escapeHtml(row.pbId||row.so||'')}"><span class="cb-badge cb-loading">…</span></td><td><div class="row-actions"><button class="btn secondary" onclick="viewScheduledInAssembly('${escapeJs(String(row.id))}')">View in Assembly</button><button class="btn warn" onclick="openIssueHoldModal('${escapeJs(String(row.id))}','scheduled')">Hold</button><button class="btn secondary" onclick="unscheduleQueueRow('${escapeJs(String(row.id))}')">Unschedule</button><button class="btn danger" onclick="deleteScheduledQueueRow('${escapeJs(String(row.id))}')">Delete</button></div></td></tr>`}).join(''):'<tr><td colspan="12" class="empty">Nothing has been scheduled from the queue yet.</td></tr>';
   renderIssueHoldSection();
 }
 function setQueueImportStatus(message,isError=false){
@@ -662,6 +690,22 @@ async function importQueueReport(){
 }
 function clearQueue(){const confirmed=confirm('Clear the ready and incomplete pack builder queues?');if(!confirmed) return;availableQueueRows=[];incompleteQueueRows=[];queueRawRowCount=0;saveQueue();saveIncompleteQueue();renderQueue()}
 function toggleQueuePriority(id,source='ready'){const sourceRows=source==='incomplete'?incompleteQueueRows:availableQueueRows;const row=sourceRows.find(item=>String(item.id)===String(id));if(!row) return;row.priority=!row.priority;if(source==='incomplete')saveIncompleteQueue();else saveQueue();renderQueue()}
+function updateScheduleFinancialImpact(){
+  if(!scheduleFinancialImpact) return;
+  let row=null;
+  if(pendingRescheduleAssemblyId){
+    row=assemblyBoardRows.find(item=>String(item.id)===String(pendingRescheduleAssemblyId));
+    scheduleFinancialImpact.innerHTML=row?buildQueueFinancialLine(row,row.qty,row.fullQty||row.qty):'';
+    return;
+  }
+  const sourceRows=pendingScheduleSource==='incomplete'?incompleteQueueRows:availableQueueRows;
+  row=sourceRows.find(item=>String(item.id)===String(pendingScheduleQueueId));
+  if(!row){scheduleFinancialImpact.innerHTML='';return;}
+  const fullQty=Number(row.qty||0);
+  const mode=scheduleModeInput?.value||'full';
+  const scheduledQty=mode==='partial'?Number(scheduleQtyInput?.value||0):fullQty;
+  scheduleFinancialImpact.innerHTML=buildQueueFinancialLine(row,scheduledQty,fullQty);
+}
 function openScheduleModal(id,source='ready'){
   const sourceRows=source==='incomplete'?incompleteQueueRows:availableQueueRows;
   const row=sourceRows.find(item=>String(item.id)===String(id));
@@ -678,6 +722,7 @@ function openScheduleModal(id,source='ready'){
   scheduleRemainderToggleInput.value='false';
   scheduleRemainderDateInput.value='';
   scheduleModalSummary.innerHTML=`<strong>${escapeHtml(row.pb||'Pack Builder')}</strong><div>${escapeHtml(row.account||'—')}</div><div>${Number(row.units||0).toLocaleString()} units • ${escapeHtml(row.so||'—')}</div>`;
+  updateScheduleFinancialImpact();
   scheduleModalBackdrop.classList.add('show');
 }
 function openRescheduleModal(id){
@@ -688,6 +733,7 @@ function openRescheduleModal(id){
   scheduleModalDate.value=row.date||assemblyDateInput.value||new Date().toISOString().slice(0,10);
   scheduleModalNote.value=row.rescheduleNote||'';
   scheduleModalSummary.innerHTML=`<strong>Reschedule ${escapeHtml(row.pb||'Pack Builder')}</strong><div>${escapeHtml(row.account||'—')}</div><div>${Number(getAssemblyUnits(row)||0).toLocaleString()} units • ${escapeHtml(row.so||'—')}</div>`;
+  updateScheduleFinancialImpact();
   scheduleModalBackdrop.classList.add('show');
 }
 function closeScheduleModal(){
@@ -699,6 +745,7 @@ function closeScheduleModal(){
   scheduleFullQtyInput.value=0;
   scheduleRemainderToggleInput.value='false';
   scheduleRemainderDateInput.value='';
+  if(scheduleFinancialImpact) scheduleFinancialImpact.innerHTML='';
 }
 function confirmSchedule(){
   const trimmedDate=String(scheduleModalDate.value||'').trim();
@@ -752,12 +799,14 @@ function confirmSchedule(){
   }
 
   const revenueMatch=getRevenueReferenceForSalesOrder(row.so||'');
-  const matchedSubtotal=Number(revenueMatch?.originalSubtotal||0);
+  const matchedSubtotal=Number(revenueMatch?.originalSubtotal||getQueueRowRevenue(row)||0);
   const matchedIhd=String(revenueMatch?.ihd||row.ihd||'').trim();
   if(matchedIhd) row.ihd=matchedIhd;
 
   const isPartial=mode==='partial' && scheduledQty<fullQty;
   const remainderQty=Math.max(0,fullQty-scheduledQty);
+  const scheduledSubtotal=getProratedQueueRevenue({...row,subtotal:matchedSubtotal,revenue:matchedSubtotal},scheduledQty,fullQty);
+  const remainderSubtotal=isPartial?Math.max(0,matchedSubtotal-scheduledSubtotal):0;
   const shouldScheduleRemainder=isPartial && scheduleRemainderToggleInput.value==='true';
   const remainderDate=String(scheduleRemainderDateInput.value||'').trim();
   if(shouldScheduleRemainder){
@@ -787,7 +836,8 @@ function confirmSchedule(){
     products:Number(row.products||0),
     status:'Scheduled',
     ihd:matchedIhd,
-    subtotal:matchedSubtotal,
+    subtotal:scheduledSubtotal,
+    revenue:scheduledSubtotal,
     stage:'aa',
     rescheduleNote:note,
     pbId:sourcePbId,
@@ -818,6 +868,8 @@ function confirmSchedule(){
     scheduledAt:scheduledAtText,
     scheduleNote:mainRow.rescheduleNote,
     status:mainRow.status,
+    subtotal:scheduledSubtotal,
+    revenue:scheduledSubtotal,
     sourceQueue:sourceQueue,
     sourceStatus:sourceStatus
   });
@@ -835,7 +887,8 @@ function confirmSchedule(){
       products:Number(row.products||0),
       status:'Scheduled',
       ihd:matchedIhd,
-      subtotal:matchedSubtotal,
+      subtotal:remainderSubtotal,
+      revenue:remainderSubtotal,
       stage:'aa',
       rescheduleNote:`Remainder from ${trimmedDate}${note?` • ${note}`:''}`,
       pbId:sourcePbId,
@@ -863,6 +916,8 @@ function confirmSchedule(){
       scheduledAt:scheduledAtText,
       scheduleNote:remainderRow.rescheduleNote,
       status:remainderRow.status,
+      subtotal:remainderSubtotal,
+      revenue:remainderSubtotal,
       sourceQueue:sourceQueue,
       sourceStatus:sourceStatus
     });
@@ -872,6 +927,8 @@ function confirmSchedule(){
     row.qty=remainderQty;
     row.units=Number(remainderQty||0)*Number(row.products||0);
     row.ihd=matchedIhd||row.ihd||'';
+    row.subtotal=remainderSubtotal;
+    row.revenue=remainderSubtotal;
     if(sourceQueue==='incomplete') saveIncompleteQueue(); else saveQueue();
   } else {
     if(sourceQueue==='incomplete'){
@@ -944,12 +1001,14 @@ window.renderBulkScheduleList = function() {
   const countEl = document.getElementById('bulkStatCount');
   const unitsEl = document.getElementById('bulkStatUnits');
   const packsEl = document.getElementById('bulkStatPacks');
+  const revenueEl = document.getElementById('bulkStatRevenue');
   if (!list) return;
 
-  let totalUnits = 0, totalPacks = 0;
+  let totalUnits = 0, totalPacks = 0, totalRevenue = 0;
   _bulkPendingItems.forEach(function(item) {
     totalUnits += Number(item.row.units || 0);
     totalPacks += Number(item.row.qty || item.row.packs || 0);
+    totalRevenue += getQueueRowRevenue(item.row);
   });
 
   const count = _bulkPendingItems.length;
@@ -957,16 +1016,18 @@ window.renderBulkScheduleList = function() {
   if (countEl) countEl.textContent = count;
   if (unitsEl) unitsEl.textContent = totalUnits.toLocaleString();
   if (packsEl) packsEl.textContent = totalPacks.toLocaleString();
+  if (revenueEl) revenueEl.textContent = formatQueueMoney(totalRevenue);
 
   list.innerHTML = _bulkPendingItems.map(function(item, idx) {
     const r = item.row;
+    const revenue = getQueueRowRevenue(r);
     return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;border:1px solid var(--blue2);background:var(--card);">' +
       '<div style="flex:1;min-width:0;">' +
         '<div style="font-size:12px;font-weight:800;color:var(--text);">' + escapeHtml(r.pb || '—') + '</div>' +
         '<div style="font-size:11px;color:var(--muted);">' + escapeHtml(r.account || '—') + '</div>' +
       '</div>' +
       '<div style="font-size:12px;color:var(--muted);text-align:right;white-space:nowrap;">' +
-        Number(r.units||0).toLocaleString() + 'u · ' + Number(r.qty||0) + ' packs' +
+        Number(r.units||0).toLocaleString() + 'u · ' + Number(r.qty||0) + ' packs · ' + formatQueueMoney(revenue,{blankZero:true}) +
       '</div>' +
       '<button onclick="window.removeBulkItem(' + idx + ')" title="Remove" ' +
         'style="width:20px;height:20px;border-radius:50%;border:1px solid var(--blue2);background:none;cursor:pointer;font-size:13px;color:var(--muted);display:flex;align-items:center;justify-content:center;flex-shrink:0;">' +
@@ -1017,7 +1078,7 @@ window.confirmBulkSchedule = function() {
   _bulkPendingItems.forEach(function(item) {
     const r = item.row;
     const revenueMatch = getRevenueReferenceForSalesOrder(r.so || '');
-    const matchedSubtotal = Number(revenueMatch && revenueMatch.originalSubtotal || 0);
+    const matchedSubtotal = Number((revenueMatch && revenueMatch.originalSubtotal) || getQueueRowRevenue(r) || 0);
     const matchedIhd = String(revenueMatch && revenueMatch.ihd || r.ihd || '').trim();
     if (matchedIhd) r.ihd = matchedIhd;
 
@@ -1041,15 +1102,23 @@ window.confirmBulkSchedule = function() {
       accountOwner: r.accountOwner || '',
       sourceQueue: item.source,
       sourceStatus: r.status || '',
+      revenue: matchedSubtotal,
     };
     assemblyBoardRows.unshift(newRow);
 
     // Also add to scheduledQueueRows
     const scheduledEntry = Object.assign({}, r, {
+      id: newRow.id,
+      units: getAssemblyUnits(newRow),
       scheduledFor: trimmedDate,
-      scheduledAt: new Date().toISOString().slice(0,10),
+      scheduledAt: new Date().toLocaleString(),
       scheduleNote: note,
       ihd: matchedIhd || r.ihd || '',
+      status: 'Scheduled',
+      subtotal: matchedSubtotal,
+      revenue: matchedSubtotal,
+      sourceQueue: item.source,
+      sourceStatus: r.status || '',
     });
     scheduledQueueRows.unshift(scheduledEntry);
 
@@ -1136,6 +1205,7 @@ function buildReadyQueueCard(row, source) {
   const link = buildSalesforcePbLink(row.pbId, row.pdfUrl);
   const id   = escapeJs(String(row.id));
   const ihd  = escapeHtml(getEffectiveIhdForRow(row)||'—');
+  const revenue = getQueueRowRevenue(row);
   const scheduleLabel = source==='incomplete' ? 'Schedule' : 'Schedule';
   return `<div class="mob-card">
     <div class="mob-card-header">
@@ -1148,6 +1218,7 @@ function buildReadyQueueCard(row, source) {
     <div class="mob-card-meta">
       <div class="mob-meta-item"><span class="mob-meta-label">Units</span><strong>${Number(row.units||0).toLocaleString()}</strong></div>
       <div class="mob-meta-item"><span class="mob-meta-label">IHD</span><strong>${ihd}</strong></div>
+      <div class="mob-meta-item"><span class="mob-meta-label">Revenue</span><strong>${formatQueueMoney(revenue,{blankZero:true})}</strong></div>
       <div class="mob-meta-item"><span class="mob-meta-label">SO</span><strong>${escapeHtml(row.so||'—')}</strong></div>
       <div class="mob-meta-item"><span class="mob-meta-label">Owner</span><strong>${escapeHtml(row.accountOwner||'—')}</strong></div>
     </div>
@@ -1164,6 +1235,7 @@ function buildScheduledQueueCard(row) {
   const link = buildSalesforcePbLink(row.pbId, row.pdfUrl);
   const id   = escapeJs(String(row.id));
   const cbKey = escapeHtml(row.pbId||row.so||'');
+  const revenue = getQueueRowRevenue(row);
   return `<div class="mob-card" data-cbkey="${cbKey}">
     <div class="mob-card-header">
       <div class="mob-card-title">
@@ -1174,6 +1246,7 @@ function buildScheduledQueueCard(row) {
     </div>
     <div class="mob-card-meta">
       <div class="mob-meta-item"><span class="mob-meta-label">Units</span><strong>${Number(row.units||0).toLocaleString()}</strong></div>
+      <div class="mob-meta-item"><span class="mob-meta-label">Revenue</span><strong>${formatQueueMoney(revenue,{blankZero:true})}</strong></div>
       <div class="mob-meta-item"><span class="mob-meta-label">SO</span><strong>${escapeHtml(row.so||'—')}</strong></div>
       <div class="mob-meta-item"><span class="mob-meta-label">Note</span><strong>${escapeHtml(row.scheduleNote||'—')}</strong></div>
       <div class="mob-meta-item"><span class="mob-meta-label">Comments</span><span class="cb-cell cb-badge cb-loading" data-cbkey="${cbKey}">…</span></div>

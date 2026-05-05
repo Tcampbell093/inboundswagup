@@ -4913,7 +4913,7 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 }
 
 /* ===== Queue Command Center ===== */
-.qcc-stat{background:var(--blue1);border-radius:8px;padding:12px 14px;}
+.qcc-stat{background:var(--blue1);border-radius:8px;padding:12px 14px;min-width:0;}
 .qcc-stat-n{font-size:22px;font-weight:800;line-height:1;margin-bottom:3px;color:var(--text);}
 .qcc-stat-l{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;}
 .qcc-pill{padding:5px 14px;border-radius:999px;border:1px solid var(--blue2);background:none;font-size:12px;cursor:pointer;color:var(--muted);font-weight:700;white-space:nowrap;}
@@ -4932,6 +4932,7 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 .qcc-row.qcc-warn{border-left:3px solid #EF9F27;border-radius:0 8px 8px 0;}
 .qcc-row.qcc-hold-r{border-left:3px solid #7F77DD;border-radius:0 8px 8px 0;}
 .qcc-chk{width:14px;height:14px;border-radius:3px;border:1px solid var(--blue2);flex-shrink:0;cursor:pointer;background:var(--card);position:relative;}
+.qcc-chk-disabled{cursor:default;background:transparent;border-color:transparent;}
 .qcc-chk.on{background:#185FA5;border-color:#185FA5;}
 .qcc-chk.on::after{content:'';position:absolute;left:3px;top:1px;width:6px;height:3.5px;border-left:1.5px solid #fff;border-bottom:1.5px solid #fff;transform:rotate(-45deg);}
 .qcc-av{width:28px;height:28px;border-radius:50%;background:#E6F1FB;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#0C447C;flex-shrink:0;}
@@ -4947,3 +4948,13 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 .qcc-pager-btn{padding:4px 10px;border-radius:7px;border:1px solid var(--blue2);background:none;font-size:12px;cursor:pointer;color:var(--muted);}
 .qcc-pager-btn.on{background:#185FA5;border-color:#185FA5;color:#fff;}
 .qcc-pager-btn:disabled{opacity:.4;cursor:default;}
+.queue-modal-financial{
+  margin:10px 20px 0;
+  padding:10px 12px;
+  border-radius:8px;
+  background:#E1F5EE;
+  color:#0F6E56;
+  font-size:13px;
+  font-weight:700;
+}
+.queue-financial-line strong{font-size:18px;}

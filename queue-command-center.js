@@ -69,6 +69,24 @@
     return v > 0 ? '$' + Math.round(v) : '';
   }
 
+  function fmtMoneyFull(n) {
+    return '$' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  }
+
+  function rowRevenue(row) {
+    if (!row) return 0;
+    if (typeof getEffectiveSubtotalForRow === 'function') return Number(getEffectiveSubtotalForRow(row) || 0);
+    return Number(row.revenue || row.subtotal || 0);
+  }
+
+  function selectedScheduleRows() {
+    return Array.from(QCC_SELECTED).map(function(id) {
+      return (window.availableQueueRows||[]).find(function(r){ return String(r.id)===String(id); }) ||
+        (window.incompleteQueueRows||[]).find(function(r){ return String(r.id)===String(id); }) ||
+        null;
+    }).filter(Boolean);
+  }
+
   function getInitials(row) {
     var acc = row.account || row.pb || '?';
     return acc.trim().split(/\s+/).slice(0,2).map(function(w){ return w[0]||''; }).join('').toUpperCase() || '?';
@@ -79,7 +97,7 @@
     var s = (el('qccSort') || {}).value || 'ihd';
     return rows.slice().sort(function(a, b) {
       if (s === 'rev') {
-        return Number(b.revenue || b.subtotal || 0) - Number(a.revenue || a.subtotal || 0);
+        return rowRevenue(b) - rowRevenue(a);
       }
       if (s === 'units') {
         return Number(b.units || 0) - Number(a.units || 0);
@@ -168,7 +186,7 @@
       var rows = groups[st];
       if (!rows || !rows.length) return;
       var collapsed = QCC_COLLAPSED[st];
-      var groupRev  = rows.reduce(function(s,r){ return s + Number(r.revenue || r.subtotal || 0); }, 0);
+      var groupRev  = rows.reduce(function(s,r){ return s + rowRevenue(r); }, 0);
       var col       = STATUS_COLOR[st] || 'var(--muted)';
       var revCol    = STATUS_REV_COLOR[st] || 'var(--muted)';
 
@@ -185,12 +203,16 @@
           var urg  = isUrgent(r);
           var rowCls = 'qcc-row' + (urg?' qcc-urgent':r._qStatus==='hold'?' qcc-hold-r':r._qStatus==='pending'?' qcc-warn':'') + (QCC_SELECTED.has(sid)?' qcc-sel':'');
           var initials = getInitials(r);
-          var rev = r.revenue || r.subtotal || 0;
+          var rev = rowRevenue(r);
           var cbKey = esc(r.pbId || r.so || '');
           var issue = r.issueType || r.holdNote || '';
 
           html += '<div class="' + rowCls + '" data-id="' + esc(sid) + '" data-cbkey="' + cbKey + '">';
-          html += '<div class="qcc-chk' + (QCC_SELECTED.has(sid)?' on':'') + '" onclick="event.stopPropagation();window.qcc.toggleSelect(\'' + esc(sid) + '\')"></div>';
+          if (r._qStatus === 'ready' || r._qStatus === 'pending') {
+            html += '<div class="qcc-chk' + (QCC_SELECTED.has(sid)?' on':'') + '" onclick="event.stopPropagation();window.qcc.toggleSelect(\'' + esc(sid) + '\')"></div>';
+          } else {
+            html += '<div class="qcc-chk qcc-chk-disabled"></div>';
+          }
           html += '<div class="qcc-av">' + esc(initials) + '</div>';
           html += '<div style="flex:1;min-width:0;">';
           html += '<div class="qcc-pb">' + esc(r.pb || r.so || '—') + (r.priority ? ' &#11088;' : '') + '</div>';
@@ -261,7 +283,13 @@
     var all      = getAllRows();
     var ready    = all.filter(function(r){ return r._qStatus==='ready'; });
     var hold     = all.filter(function(r){ return r._qStatus==='hold'; });
-    var readyRev = ready.reduce(function(s,r){ return s+Number(r.revenue||r.subtotal||0); }, 0);
+    var pending  = all.filter(function(r){ return r._qStatus==='pending'; });
+    var scheduled= all.filter(function(r){ return r._qStatus==='scheduled'; });
+    var readyRev = ready.reduce(function(s,r){ return s+rowRevenue(r); }, 0);
+    var pendingRev = pending.reduce(function(s,r){ return s+rowRevenue(r); }, 0);
+    var scheduledRev = scheduled.reduce(function(s,r){ return s+rowRevenue(r); }, 0);
+    var holdRev = hold.reduce(function(s,r){ return s+rowRevenue(r); }, 0);
+    var totalRev = readyRev + pendingRev + scheduledRev + holdRev;
     var nextIhd  = ready.concat(all.filter(isUrgent)).sort(function(a,b){
       var ai = typeof getEffectiveIhdForRow==='function'?getEffectiveIhdForRow(a):(a.ihd||'');
       var bi = typeof getEffectiveIhdForRow==='function'?getEffectiveIhdForRow(b):(b.ihd||'');
@@ -272,7 +300,11 @@
     setN('qccTotal', all.length.toLocaleString());
     setN('qccReady', ready.length);
     setN('qccHold',  hold.length);
-    setN('qccRev',   fmtRevTotal(readyRev));
+    setN('qccRev',   fmtRevTotal(totalRev) || '$0');
+    setN('qccReadyRev', fmtRevTotal(readyRev) || '$0');
+    setN('qccPendingRev', fmtRevTotal(pendingRev) || '$0');
+    setN('qccScheduledRev', fmtRevTotal(scheduledRev) || '$0');
+    setN('qccHoldRev', fmtRevTotal(holdRev) || '$0');
     setN('qccIhd',   nextIhd
       ? (function(){
           var i = typeof getEffectiveIhdForRow==='function'?getEffectiveIhdForRow(nextIhd):(nextIhd.ihd||'');
@@ -313,10 +345,16 @@
   function updateBulkBar() {
     var bar = el('qccBulkBar');
     var cnt = el('qccBulkCount');
+    var val = el('qccBulkValue');
     if (!bar) return;
     if (QCC_SELECTED.size > 0) {
+      var selectedRows = selectedScheduleRows();
+      var selectedRevenue = selectedRows.reduce(function(s,r){ return s + rowRevenue(r); }, 0);
       bar.style.display = 'flex';
       if (cnt) cnt.textContent = QCC_SELECTED.size + ' builder' + (QCC_SELECTED.size>1?'s':'') + ' selected';
+      if (val) val.textContent = selectedRows.length
+        ? fmtMoneyFull(selectedRevenue) + ' schedule value'
+        : 'Select ready or pending builders to schedule';
     } else {
       bar.style.display = 'none';
     }
