@@ -7,6 +7,7 @@
   const SEARCH_LIMIT_DEFAULT = 250;
   const SALESFORCE_BASE = 'https://swagup.lightning.force.com';
   const PURCHASE_ORDER_OBJECT = 'Purchase_Order__c';
+  const SYNC_ENDPOINT = '/netlify/functions/sord-imports';
 
   const els = {
     page: document.getElementById('sordPage'),
@@ -184,34 +185,107 @@
     };
   }
 
+  // ── Cloud sync helpers ────────────────────────────────────────────
+  async function fetchImportsFromServer(){
+    try {
+      const res = await fetch(SYNC_ENDPOINT, { method: 'GET', headers: { 'Accept': 'application/json' } });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!data.found) return null;
+      return normalizeImportedPayload(data);
+    } catch (_) {
+      return null; // offline or function unavailable — fail silently
+    }
+  }
+
+  async function pushImportsToServer(imports){
+    try {
+      const payload = {
+        importedAt:  imports.importedAt,
+        fileNames:   imports.fileNames,
+        queueRows:   imports.queueRows,
+        revenueRows: imports.revenueRows,
+        eomRows:     imports.eomRows,
+      };
+      const res = await fetch(SYNC_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      return res.ok;
+    } catch (_) {
+      return false; // offline — fail silently, local copy is fine
+    }
+  }
+
+  async function clearServerImports(){
+    try {
+      await fetch(SYNC_ENDPOINT, { method: 'DELETE' });
+    } catch (_) {}
+  }
+
   async function loadPersistedImports(){
+    // ── 1. Migrate any old inline-localStorage payload to IndexedDB ──
     const meta = loadJson(STORAGE_KEY, null);
     if(meta && (Array.isArray(meta.queueRows) || Array.isArray(meta.revenueRows) || Array.isArray(meta.eomRows)) && ((meta.queueRows||[]).length || (meta.revenueRows||[]).length || (meta.eomRows||[]).length)){
       const migrated = normalizeImportedPayload(meta);
       await writeLargeImportRecord(migrated);
       saveJson(STORAGE_KEY, buildImportMeta(migrated));
+      // Push this migrated data to the server too
+      pushImportsToServer(migrated).catch(()=>{});
       return migrated;
     }
-    const large = await readLargeImportRecord();
-    if(large){
-      const normalized = normalizeImportedPayload(large);
+
+    // ── 2. Fetch local + server in parallel ──────────────────────────
+    const [localLarge, serverData] = await Promise.all([
+      readLargeImportRecord(),
+      fetchImportsFromServer(),
+    ]);
+
+    // Normalize what we have
+    let local = localLarge ? normalizeImportedPayload(localLarge) : null;
+    if(local){
       const metaCounts = meta?.counts || {};
-      if(meta && (!normalized.importedAt || !normalized.fileNames.queue && !normalized.fileNames.revenue && !normalized.fileNames.eom)){
-        normalized.importedAt = normalized.importedAt || safeText(meta.importedAt);
-        normalized.fileNames = {
-          queue: normalized.fileNames.queue || safeText(meta.fileNames?.queue),
-          revenue: normalized.fileNames.revenue || safeText(meta.fileNames?.revenue),
-          eom: normalized.fileNames.eom || safeText(meta.fileNames?.eom)
+      if(meta && (!local.importedAt || (!local.fileNames.queue && !local.fileNames.revenue && !local.fileNames.eom))){
+        local.importedAt = local.importedAt || safeText(meta.importedAt);
+        local.fileNames = {
+          queue:   local.fileNames.queue   || safeText(meta.fileNames?.queue),
+          revenue: local.fileNames.revenue || safeText(meta.fileNames?.revenue),
+          eom:     local.fileNames.eom     || safeText(meta.fileNames?.eom)
         };
       }
-      normalized.counts = {
-        queue: normalized.queueRows.length || Number(metaCounts.queue || 0),
-        revenue: normalized.revenueRows.length || Number(metaCounts.revenue || 0),
-        eom: normalized.eomRows.length || Number(metaCounts.eom || 0)
+      local.counts = {
+        queue:   local.queueRows.length   || Number(metaCounts.queue   || 0),
+        revenue: local.revenueRows.length || Number(metaCounts.revenue || 0),
+        eom:     local.eomRows.length     || Number(metaCounts.eom     || 0)
       };
-      return normalized;
     }
-    return normalizeImportedPayload(meta || emptyImports());
+
+    // ── 3. Pick the winner: whichever importedAt is newer ────────────
+    const localTs  = local?.importedAt  ? new Date(local.importedAt).getTime()  : 0;
+    const serverTs = serverData?.importedAt ? new Date(serverData.importedAt).getTime() : 0;
+
+    let winner;
+    if (!local && !serverData) {
+      // Nothing anywhere
+      return normalizeImportedPayload(meta || emptyImports());
+    } else if (!local) {
+      // Server only — save it locally so this device is caught up
+      winner = serverData;
+      await writeLargeImportRecord(winner);
+      saveJson(STORAGE_KEY, buildImportMeta(winner));
+    } else if (!serverData || localTs >= serverTs) {
+      // Local is newer (or server is empty) — push local up to server
+      winner = local;
+      pushImportsToServer(winner).catch(()=>{});
+    } else {
+      // Server is newer — save it locally
+      winner = serverData;
+      await writeLargeImportRecord(winner);
+      saveJson(STORAGE_KEY, buildImportMeta(winner));
+    }
+
+    return winner;
   }
 
   const PRIORITY_KEY = 'ops_hub_sord_priority_v1';
@@ -1354,7 +1428,7 @@ function finalizeOrder(order){
           ${item.invoiceName?`<div class="ac-kv-row"><span class="ac-kv-key">Invoice</span><span class="ac-kv-val">${escape(item.invoiceName)}</span></div>`:''}
           <div class="ac-kv-row"><span class="ac-kv-key">SO Status</span><span class="ac-kv-val"><span class="ac-chip ${acStatusColor(item.status)}">${escape(item.status||'—')}</span></span></div>
           <div class="ac-kv-row"><span class="ac-kv-key">PO Status</span><span class="ac-kv-val"><span class="ac-chip ${acStatusColor(item.poStatus)}">${escape(item.poStatus||'—')}</span></span></div>
-          <div class="ac-kv-row"><span class="ac-kv-key">Complexity</span><span class="ac-kv-val"><span class="ac-cx-inline ac-cx-${(item.complexity||'Low').toLowerCase()}">${escape(item.complexity||'—')}</span></span></div>
+          <div class="ac-kv-row"><span class="ac-kv-key">Complexity</span><span class="ac-kv-val"><span class="ac-cx-inline ac-cx-${item.complexity==='High'?'high':item.complexity==='Medium'?'med':'low'}">${escape(item.complexity||'—')}</span></span></div>
           ${item.productionTypes?.length?`<div class="ac-kv-row"><span class="ac-kv-key">Production Types</span><span class="ac-kv-val">${escape(item.productionTypes.join(', '))}</span></div>`:''}
           ${item.supplierCount?`<div class="ac-kv-row"><span class="ac-kv-key">Suppliers</span><span class="ac-kv-val">${escape([...item.raw.suppliers||[]].slice(0,5).join(', ')||'—')}</span></div>`:''}
           ${item.poOwners?.length?`<div class="ac-kv-row"><span class="ac-kv-key">PO Owner(s)</span><span class="ac-kv-val">${escape(item.poOwners.join(', '))}</span></div>`:''}
@@ -1588,8 +1662,15 @@ function finalizeOrder(order){
       if (typeof window.huddleRefresh === 'function') {
         try { window.huddleRefresh(); } catch (_) {}
       }
-      const text = `SORD data imported. Queue rows: ${fmtInt(state.imports.queueRows.length)} • Revenue rows: ${fmtInt(state.imports.revenueRows.length)} • EOM rows: ${fmtInt(state.imports.eomRows.length)}${summarizeFileNames() ? ' • ' + summarizeFileNames() : ''}`;
-      setStatus(text);
+      const baseText = `SORD data imported. Queue rows: ${fmtInt(state.imports.queueRows.length)} • Revenue rows: ${fmtInt(state.imports.revenueRows.length)} • EOM rows: ${fmtInt(state.imports.eomRows.length)}${summarizeFileNames() ? ' • ' + summarizeFileNames() : ''}`;
+      setStatus(baseText + ' • ☁ Syncing…');
+      // Push to server in background — update status when done
+      pushImportsToServer(state.imports).then(ok => {
+        setStatus(baseText + (ok ? ' • ☁ Synced to all devices' : ' • ⚠ Cloud sync failed — data saved locally'));
+      }).catch(() => {
+        setStatus(baseText + ' • ⚠ Cloud sync failed — data saved locally');
+      });
+      const text = baseText;
       return { message: text, counts: { queue: state.imports.queueRows.length, revenue: state.imports.revenueRows.length, eom: state.imports.eomRows.length } };
     } catch (error) {
       console.error(error);
@@ -1603,6 +1684,7 @@ function finalizeOrder(order){
     state.imports = emptyImports();
     await deleteLargeImportRecord();
     saveJson(STORAGE_KEY, buildImportMeta(state.imports));
+    clearServerImports(); // fire-and-forget — clears server copy too
     rebuildAndRender();
     if (els.queueInput) els.queueInput.value='';
     if (els.revenueInput) els.revenueInput.value='';
@@ -1992,6 +2074,43 @@ function finalizeOrder(order){
   
       return '';
     }
+
+  // ── Image preview modal ────────────────────────────────────────────
+  function openImagePreview(title, src){
+    if(!src) return;
+    let overlay = document.getElementById('sordImageOverlay');
+    if(!overlay){
+      overlay = document.createElement('div');
+      overlay.id = 'sordImageOverlay';
+      overlay.className = 'sord-image-overlay';
+      overlay.innerHTML = `
+        <div class="sord-image-modal" role="dialog" aria-modal="true">
+          <div class="sord-image-header">
+            <span id="sordImageTitle" style="font-weight:700;font-size:14px"></span>
+            <button id="sordImageCloseBtn" class="btn secondary" type="button" aria-label="Close">✕ Close</button>
+          </div>
+          <div class="sord-image-frame">
+            <img id="sordImageImg" src="" alt="PO image" />
+          </div>
+          <div class="sord-image-footer">
+            <a id="sordImageOpenLink" class="btn secondary" href="#" target="_blank" rel="noopener noreferrer">↗ Open in new tab</a>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      document.getElementById('sordImageCloseBtn').addEventListener('click', closeImagePreview);
+      overlay.addEventListener('click', (e)=>{ if(e.target === overlay) closeImagePreview(); });
+    }
+    document.getElementById('sordImageTitle').textContent = title || 'PO Image';
+    document.getElementById('sordImageImg').src = src;
+    document.getElementById('sordImageOpenLink').href = src;
+    overlay.hidden = false;
+    overlay.style.display = 'flex';
+  }
+
+  function closeImagePreview(){
+    const overlay = document.getElementById('sordImageOverlay');
+    if(overlay){ overlay.hidden = true; overlay.style.display = 'none'; }
+  }
 
   window.importSordSharedFiles = importSharedFiles;
   window.clearSordSharedImports = clearSharedImports;
