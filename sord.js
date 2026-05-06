@@ -7,7 +7,7 @@
   const SEARCH_LIMIT_DEFAULT = 250;
   const SALESFORCE_BASE = 'https://swagup.lightning.force.com';
   const PURCHASE_ORDER_OBJECT = 'Purchase_Order__c';
-  const SYNC_ENDPOINT = '/netlify/functions/sord-imports';
+  const SYNC_ENDPOINT = '/.netlify/functions/sord-imports';
 
   const els = {
     page: document.getElementById('sordPage'),
