@@ -293,6 +293,7 @@ function confirmIssueHold(){
     stage:String(row.stage||'aa').trim()
   };
   issueHoldQueueRows.unshift(holdEntry);
+  if(typeof logHistory==='function') logHistory({entity_type:'pack_builder',entity_id:holdEntry.pb||String(holdEntry.sourceId),salesforce_id:holdEntry.pbId||null,action:'hold_added',after_data:{issueType:holdEntry.issueType,holdNote:holdEntry.holdNote,holdStartDate:holdEntry.holdStartDate,sourceQueue:holdEntry.sourceQueue},related_type:holdEntry.so?'sales_order':null,related_id:holdEntry.so||null,note:holdEntry.holdNote||null});
 
   if(pendingIssueHoldSource==='scheduled'){
     sourceRows.splice(idx,1);
@@ -385,6 +386,7 @@ function releaseIssueHoldRow(id){
     if(row.sourceQueue==='incomplete') saveIncompleteQueue(); else saveQueue();
   }
 
+  if(typeof logHistory==='function') logHistory({entity_type:'pack_builder',entity_id:row.pb||String(row.sourceId||row.id),salesforce_id:row.pbId||null,action:'hold_released',before_data:{issueType:row.issueType,holdNote:row.holdNote,holdStartDate:row.holdStartDate},related_type:row.so?'sales_order':null,related_id:row.so||null});
   issueHoldQueueRows.splice(idx,1);
   saveIssueHoldQueue();
   renderQueue();
@@ -393,6 +395,8 @@ function releaseIssueHoldRow(id){
 function deleteIssueHoldRow(id){
   const idx=issueHoldQueueRows.findIndex(item=>String(item.id)===String(id));
   if(idx<0) return;
+  const _held=issueHoldQueueRows[idx];
+  if(typeof logHistory==='function') logHistory({entity_type:'pack_builder',entity_id:_held.pb||String(_held.sourceId||id),salesforce_id:_held.pbId||null,action:'hold_removed',before_data:{issueType:_held.issueType,holdNote:_held.holdNote,holdStartDate:_held.holdStartDate},related_type:_held.so?'sales_order':null,related_id:_held.so||null});
   issueHoldQueueRows.splice(idx,1);
   saveIssueHoldQueue();
   renderQueue();
@@ -849,6 +853,7 @@ function confirmSchedule(){
     sourceStatus:sourceStatus
   };
   assemblyBoardRows.unshift(mainRow);
+  if(typeof logHistory==='function') logHistory({entity_type:'pack_builder',entity_id:mainRow.pb||String(mainRow.id),salesforce_id:mainRow.pbId||null,action:'scheduled',after_data:{scheduledFor:mainRow.date,stage:mainRow.stage,qty:mainRow.qty,sourceQueue:sourceQueue},related_type:mainRow.so?'sales_order':null,related_id:mainRow.so||null,note:mainRow.rescheduleNote||null});
 
   const scheduledAtText=new Date().toLocaleString();
   scheduledQueueRows.unshift({
