@@ -19,29 +19,23 @@
     importStatus: document.getElementById('sordImportStatus'),
     topStats: document.getElementById('sordTopStats'),
     searchInput: document.getElementById('sordSearchInput'),
+    sortSelect: document.getElementById('sordSortSelect'),
     statusFilter: document.getElementById('sordStatusFilter'),
     readinessFilter: document.getElementById('sordReadinessFilter'),
     complexityFilter: document.getElementById('sordComplexityFilter'),
     riskFilter: document.getElementById('sordRiskFilter'),
     confirmedFilter: document.getElementById('sordConfirmedFilter'),
     resetFiltersBtn: document.getElementById('sordResetFiltersBtn'),
-    explorerBody: document.getElementById('sordExplorerBody'),
     explorerCount: document.getElementById('sordExplorerCount'),
-    dossierTitle: document.getElementById('sordDossierTitle'),
-    dossierBadges: document.getElementById('sordDossierBadges'),
-    summaryGrid: document.getElementById('sordSummaryGrid'),
-    flagsWrap: document.getElementById('sordFlagsWrap'),
-    packBuilderBody: document.getElementById('sordPackBuilderBody'),
-    revenuePanel: document.getElementById('sordRevenuePanel'),
-    timelinePanel: document.getElementById('sordTimelinePanel'),
-    poBody: document.getElementById('sordPoBody'),
-    accountProductBody: document.getElementById('sordAccountProductBody'),
+    accordionList: document.getElementById('sordAccordionList'),
+    typeCntAll:  document.getElementById('sordTypeCntAll'),
+    typeCntPb:   document.getElementById('sordTypeCntPb'),
+    typeCntBulk: document.getElementById('sordTypeCntBulk'),
+    typeCntMix:  document.getElementById('sordTypeCntMix'),
     ownerMapBody: document.getElementById('sordOwnerMapBody'),
     ownerUtilityLabel: document.getElementById('sordOwnerUtilityLabel'),
     ownerUtilityUrl: document.getElementById('sordOwnerUtilityUrl'),
     ownerUtilityLink: document.getElementById('sordOwnerUtilityLink'),
-    poCategoryChips: document.getElementById('sordPoCategoryChips'),
-    poCategorySummary: document.getElementById('sordPoCategorySummary'),
     addOwnerRowBtn: document.getElementById('sordAddOwnerRowBtn'),
     saveOwnerMapBtn: document.getElementById('sordSaveOwnerMapBtn'),
     priorityPanel: document.getElementById('priorityBuilderPanel'),
@@ -227,6 +221,9 @@
     imports: emptyImports(),
     dataset: [],
     selectedKey: '',
+    expandedKey: '',
+    expandedTabMap: {},
+    activeTypeFilter: 'all',
     ownerMap: loadJson(OWNER_MAP_KEY, DEFAULT_OWNER_MAP),
     prioritySords: new Set(JSON.parse(localStorage.getItem(PRIORITY_KEY) || '[]'))
   };
@@ -1080,13 +1077,18 @@ function finalizeOrder(order){
     return rows;
   }
 
+  function itemHasPb(item)   { return item.pbCount > 0 || item.totalPackItems > 0; }
+  function itemHasBulk(item) { return item.totalBulkProducts > 0; }
+
   function getFilteredDataset(){
-    const q = norm(els.searchInput.value);
-    const statusFilter = safeText(els.statusFilter.value);
-    const readinessFilter = safeText(els.readinessFilter.value);
-    const complexityFilter = safeText(els.complexityFilter.value);
-    const riskFilter = safeText(els.riskFilter.value);
-    return state.dataset.filter(item=>{
+    const q = norm(els.searchInput?.value || '');
+    const statusFilter = safeText(els.statusFilter?.value);
+    const readinessFilter = safeText(els.readinessFilter?.value);
+    const complexityFilter = safeText(els.complexityFilter?.value);
+    const riskFilter = safeText(els.riskFilter?.value);
+    const confirmedFilter = safeText(els.confirmedFilter?.value);
+    const sortVal = safeText(els.sortSelect?.value) || 'ihd';
+    let list = state.dataset.filter(item=>{
       if(q){
         const hay = [item.sord, item.salesOrderId, item.account, item.accountOwner, item.orderOwner, item.createdBy, item.status, item.poStatus, ...(item.notes||[]), ...(item.relatedSords||[]), ...item.packBuilders.map(pb=>pb.pb), ...item.poRows.flatMap(po=>[po.supplier, po.poOwner, po.purchaseOrderName]), ...item.accountProducts.map(ap=>ap.accountProductName)].join(' ').toLowerCase();
         if(!hay.includes(q)) return false;
@@ -1096,10 +1098,24 @@ function finalizeOrder(order){
       if(complexityFilter && item.complexity !== complexityFilter) return false;
       if(riskFilter === 'none' && item.flagCount) return false;
       if(riskFilter === 'flagged' && !item.flagCount) return false;
-      const confirmedFilter = safeText(els.confirmedFilter?.value);
       if(confirmedFilter === 'confirmed' && !item.confirmedThisMonth) return false;
+      // Production type filter
+      if(state.activeTypeFilter === 'pb'   && !(itemHasPb(item) && !itemHasBulk(item))) return false;
+      if(state.activeTypeFilter === 'bulk' && !(!itemHasPb(item) && itemHasBulk(item)))  return false;
+      if(state.activeTypeFilter === 'mix'  && !(itemHasPb(item) && itemHasBulk(item)))   return false;
       return true;
     });
+    list.sort((a,b)=>{
+      if(sortVal === 'rev-desc') return num(b.subtotal) - num(a.subtotal);
+      if(sortVal === 'readiness-asc') { const order = {'Blocked':0,'Needs Review':1,'Partially Ready':2,'Ready':3}; return (order[a.readiness]??1) - (order[b.readiness]??1); }
+      if(sortVal === 'flags-desc') return num(b.flagCount) - num(a.flagCount);
+      if(sortVal === 'account') return safeText(a.account).localeCompare(safeText(b.account));
+      // default: IHD ascending
+      const aDate = a.earliestIhd || a.dueDate || '9999';
+      const bDate = b.earliestIhd || b.dueDate || '9999';
+      return aDate < bDate ? -1 : aDate > bDate ? 1 : 0;
+    });
+    return list;
   }
 
   function renderTopStats(list){
@@ -1178,42 +1194,306 @@ function finalizeOrder(order){
     return counts;
   }
 
-function renderExplorer(){
+  // ── Accordion helpers ─────────────────────────────────────────────────────
+  function acStatusColor(s){
+    const t=(s||'').toLowerCase();
+    if(/complete|received|mission complete|delivered|qa approved/.test(t)) return 'ac-chip-green';
+    if(/progress|packing|ship|scheduled|confirmed/.test(t)) return 'ac-chip-blue';
+    if(/delay|exception|case|hold|block|pending|partial/.test(t)) return 'ac-chip-red';
+    return 'ac-chip-gray';
+  }
+  function acPbStageColor(s){
+    if(s==='Complete') return 'ac-pb-green';
+    if(/Packing|Build Ready|QC Check/.test(s)) return 'ac-pb-blue';
+    return 'ac-pb-yellow';
+  }
+
+  function renderAccordion(){
     const list = getFilteredDataset();
     renderTopStats(list);
-    els.explorerCount.textContent = `${list.length} result${list.length===1?'':'s'}`;
+
+    // Update type pill counts
+    const allDs = state.dataset;
+    if(els.typeCntAll)  els.typeCntAll.textContent  = allDs.length;
+    if(els.typeCntPb)   els.typeCntPb.textContent   = allDs.filter(x => itemHasPb(x) && !itemHasBulk(x)).length;
+    if(els.typeCntBulk) els.typeCntBulk.textContent = allDs.filter(x => !itemHasPb(x) && itemHasBulk(x)).length;
+    if(els.typeCntMix)  els.typeCntMix.textContent  = allDs.filter(x => itemHasPb(x) && itemHasBulk(x)).length;
+
+    // Update active pill styling
+    document.querySelectorAll('[data-type-filter]').forEach(btn=>{
+      const f = btn.getAttribute('data-type-filter');
+      btn.classList.toggle('sord-type-pill-active', f === state.activeTypeFilter);
+    });
+
+    if(els.explorerCount) els.explorerCount.textContent = `${list.length} result${list.length===1?'':'s'}`;
+    if(!els.accordionList) return;
+
     if(!list.length){
-      els.explorerBody.innerHTML = '<tr><td colspan="10" class="empty">No SORDs match the current filters.</td></tr>';
-      renderDossier(null);
+      els.accordionList.innerHTML = '<div class="sord-accordion-empty">No SORDs match the current filters. Try adjusting your search or filters.</div>';
       return;
     }
+
     const visible = list.slice(0, SEARCH_LIMIT_DEFAULT);
-    els.explorerBody.innerHTML = visible.map(item=>{
-      const selected = item.key === state.selectedKey ? ' class="sord-selected-row"' : '';
-      const orderUrl = salesOrderUrl(item.salesOrderId);
-      const sordLabel = orderUrl
-        ? `<a class="queue-link" href="${escape(orderUrl)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escape(item.sord)}</a>`
-        : `<strong>${escape(item.sord)}</strong>`;
-      const ownerLabel = item.ownerMapping?.accountManager || item.accountOwner || item.orderOwner || '—';
-      const ownerHint = item.ownerMapping?.projectManager ? `PM: ${item.ownerMapping.projectManager}` : (item.salesOrderId || '—');
-      const isPinned = state.prioritySords.has(item.key);
-      const pinnedClass = isPinned ? ' class="sord-selected-row pb-pinned-row"' : (item.key === state.selectedKey ? ' class="sord-selected-row"' : '');
-      const starBtn = `<button class="pb-star-btn${isPinned ? ' pb-star-active' : ''}" type="button" title="${isPinned ? 'Remove from priority' : 'Add to priority'}" onclick="event.stopPropagation();window.pbToggleSord('${escJs(item.key)}')">★</button>`;
-      return `<tr${pinnedClass} onclick="window.selectSordRecord('${escJs(item.key)}')">`+
-        `<td class="pb-select-col">${starBtn}</td>`+
-        `<td>${sordLabel}<div class="sord-subline">${escape(item.account || '—')}</div></td>`+
-        `<td>${escape(ownerLabel)}<div class="sord-subline">${escape(ownerHint)}</div></td>`+
-        `<td>${escape(item.status || item.poStatus || '—')}</td>`+
-        `<td>${escape(fmtMoney(item.subtotal || item.originalSubtotal))}</td>`+
-        `<td>${escape(fmtInt(item.pbCount))}</td>`+
-        `<td>${escape(fmtInt(item.supplierCount))}</td>`+
-        `<td>${renderBadge(item.readiness, badgeToneForReadiness(item.readiness))}</td>`+
-        `<td>${renderBadge(item.complexity, badgeToneForComplexity(item.complexity))}</td>`+
-        `<td>${item.flagCount ? `<span class="sord-flag-count">${item.flagCount}</span>` : '—'}</td>`+
-      `</tr>`;
-    }).join('');
-    if(!state.selectedKey || !visible.find(v=>v.key===state.selectedKey)) state.selectedKey = visible[0].key;
-    renderDossier(state.dataset.find(x=>x.key===state.selectedKey) || null);
+
+    // Group: flagged/blocked float to top when showing all
+    let html = '';
+    if(state.activeTypeFilter === 'all' && !safeText(els.searchInput?.value)){
+      const urgent = visible.filter(x => x.flagCount > 0 || /block|exception/.test((x.readiness||'').toLowerCase()));
+      const rest   = visible.filter(x => !urgent.includes(x));
+      if(urgent.length){
+        html += `<div class="sord-section-hdr"><span>Needs Attention (${urgent.length})</span><div class="sord-section-line"></div></div>`;
+        html += urgent.map(item => renderAccordionRow(item)).join('');
+        if(rest.length){
+          html += `<div class="sord-section-hdr" style="margin-top:10px"><span>Active (${rest.length})</span><div class="sord-section-line"></div></div>`;
+          html += rest.map(item => renderAccordionRow(item)).join('');
+        }
+      } else {
+        html = visible.map(item => renderAccordionRow(item)).join('');
+      }
+    } else {
+      html = visible.map(item => renderAccordionRow(item)).join('');
+    }
+
+    els.accordionList.innerHTML = html;
+  }
+
+  function renderAccordionRow(item){
+    const isExp   = state.expandedKey === item.key;
+    const hasPb   = itemHasPb(item);
+    const hasBulk = itemHasBulk(item);
+    const tc      = hasPb && !hasBulk ? 'pb' : !hasPb && hasBulk ? 'bulk' : 'mix';
+    const isPinned = state.prioritySords.has(item.key);
+
+    const typeBadge = tc==='pb'
+      ? '<span class="ac-type-badge ac-badge-pb">📦 PB</span>'
+      : tc==='bulk'
+        ? '<span class="ac-type-badge ac-badge-bulk">🏭 Bulk</span>'
+        : '<span class="ac-type-badge ac-badge-mix">⚡ PB+Bulk</span>';
+
+    const complexClass = item.complexity === 'High' ? 'ac-cx-high' : item.complexity === 'Medium' ? 'ac-cx-med' : 'ac-cx-low';
+    const ownerLabel = item.ownerMapping?.accountManager || item.accountOwner || item.orderOwner || '—';
+    const starBtn = `<button class="pb-star-btn${isPinned?' pb-star-active':''}" type="button" title="${isPinned?'Remove from priority':'Add to priority'}" onclick="event.stopPropagation();window.pbToggleSord('${escJs(item.key)}')">★</button>`;
+
+    return `
+      <div class="sord-accordion-row${isExp?' sord-acc-expanded':''}" id="sord-acc-${escJs(item.key)}">
+        <div class="sord-acc-header" onclick="window.sordToggleRow('${escJs(item.key)}')">
+          <div class="sord-acc-stripe sord-stripe-${tc}"></div>
+          <div class="sord-acc-main">
+            <div class="sord-acc-top">
+              <span class="sord-acc-id">${escape(item.sord)}</span>
+              ${typeBadge}
+              <span class="sord-acc-cx ${complexClass}">${escape(item.complexity)}</span>
+              ${item.flagCount ? `<span class="sord-acc-flag">⚑ ${item.flagCount} flag${item.flagCount>1?'s':''}</span>` : ''}
+              ${item.confirmedThisMonth ? '<span class="sord-acc-confirmed">✓ Confirmed</span>' : ''}
+            </div>
+            <div class="sord-acc-bottom">
+              <span class="sord-acc-account">${escape(item.account||'—')}</span>
+              <span class="sord-acc-owner">AO: ${escape(ownerLabel)}</span>
+              <span class="sord-acc-status-chip ${acStatusColor(item.status||item.poStatus)}">${escape(item.status||item.poStatus||'—')}</span>
+            </div>
+          </div>
+          <div class="sord-acc-right">
+            ${starBtn}
+            <div>
+              <div class="sord-acc-rev">${fmtMoney(item.subtotal||item.originalSubtotal)}</div>
+              <div class="sord-acc-ihd">IHD ${fmtDate(item.earliestIhd||item.dueDate||'')}</div>
+            </div>
+            <div class="sord-acc-read-bar"><div class="sord-acc-read-fill sord-read-${item.readiness==='Ready'?'green':item.readiness==='Blocked'?'red':'yellow'}"></div></div>
+            <span class="sord-acc-chevron">›</span>
+          </div>
+        </div>
+        <div class="sord-acc-dossier">${isExp ? buildInlineDossier(item) : ''}</div>
+      </div>`;
+  }
+
+  function buildInlineDossier(item){
+    const hasPb   = itemHasPb(item);
+    const hasBulk = itemHasBulk(item);
+    const ownerMap = item.ownerMapping;
+    const orderUrl = salesOrderUrl(item.salesOrderId);
+
+    // ── Overview tab ─────────────────────────────────────────────────────────
+    const readPct = item.readiness === 'Ready' ? 95
+      : item.readiness === 'Partially Ready' ? 55
+      : item.readiness === 'Blocked' ? 15 : 30;
+    const readCls = item.readiness === 'Ready' ? 'fill-green' : item.readiness === 'Blocked' ? 'fill-red' : 'fill-yellow';
+    const readHex = item.readiness === 'Ready' ? '#059669' : item.readiness === 'Blocked' ? '#dc2626' : '#d97706';
+
+    const overviewHTML = `
+      <div class="ac-readiness-wrap">
+        <div class="ac-readiness-hdr"><span class="ac-readiness-lbl">Readiness: ${escape(item.readiness)}</span><span style="font-size:11px;font-weight:700;color:${readHex}">${readPct}%</span></div>
+        <div class="ac-readiness-bg"><div class="ac-readiness-fill ${readCls}" style="width:${readPct}%"></div></div>
+      </div>
+      <div class="ac-stat-row">
+        <div class="ac-stat"><div class="ac-stat-lbl">Revenue</div><div class="ac-stat-val green">${fmtMoney(item.subtotal||item.originalSubtotal)}</div></div>
+        <div class="ac-stat"><div class="ac-stat-lbl">IHD</div><div class="ac-stat-val blue">${fmtDate(item.earliestIhd||item.dueDate||'')}</div></div>
+        <div class="ac-stat"><div class="ac-stat-lbl">Pack Builders</div><div class="ac-stat-val" style="color:#185fa5">${fmtInt(item.pbCount)}</div></div>
+        <div class="ac-stat"><div class="ac-stat-lbl">Bulk POs</div><div class="ac-stat-val" style="color:#059669">${fmtInt(item.poRows.filter(p=>p.category==='bulk'||(!itemHasPb(item)&&itemHasBulk(item))).length||item.totalBulkProducts>0?item.poCount-item.pbCount:0)}</div></div>
+        <div class="ac-stat"><div class="ac-stat-lbl">Total Qty</div><div class="ac-stat-val">${fmtInt(item.totalQty)}</div></div>
+        <div class="ac-stat"><div class="ac-stat-lbl">Products</div><div class="ac-stat-val">${fmtInt(item.totalUniqueProducts)}</div></div>
+      </div>
+
+      <div class="ac-section">
+        <div class="ac-section-title">Account Owner &amp; Team</div>
+        <div class="ac-people-row">
+          <div class="ac-person-card"><div class="ac-person-role">Account Owner</div><div class="ac-person-name">${escape(item.accountOwner||'—')}</div></div>
+          <div class="ac-person-card"><div class="ac-person-role">Order Owner</div><div class="ac-person-name">${escape(item.orderOwner||'—')}</div></div>
+          <div class="ac-person-card"><div class="ac-person-role">Created By</div><div class="ac-person-name">${escape(item.createdBy||'—')}</div></div>
+        </div>
+        ${ownerMap ? `<div class="ac-people-row" style="margin-top:8px">
+          <div class="ac-person-card"><div class="ac-person-role">Account Manager</div><div class="ac-person-name">${escape(ownerMap.accountManager||'—')}</div>${ownerMap.accountManagerLink?`<a class="ac-person-link" href="${escape(ownerMap.accountManagerLink)}" target="_blank">↗ Slack</a>`:''}</div>
+          <div class="ac-person-card"><div class="ac-person-role">Project Manager</div><div class="ac-person-name">${escape(ownerMap.projectManager||'—')}</div>${ownerMap.projectManagerLink?`<a class="ac-person-link" href="${escape(ownerMap.projectManagerLink)}" target="_blank">↗ Slack</a>`:''}</div>
+          <div class="ac-person-card"><div class="ac-person-role">PSA</div><div class="ac-person-name">${escape(ownerMap.psa||'—')}</div>${ownerMap.psaLink?`<a class="ac-person-link" href="${escape(ownerMap.psaLink)}" target="_blank">↗ Slack</a>`:''}</div>
+        </div>` : ''}
+      </div>
+
+      <div class="ac-section">
+        <div class="ac-section-title">Order Details</div>
+        <div class="ac-kv-list">
+          <div class="ac-kv-row"><span class="ac-kv-key">SORD</span><span class="ac-kv-val">${orderUrl?`<a class="queue-link" href="${escape(orderUrl)}" target="_blank">${escape(item.sord)}</a>`:escape(item.sord)}</span></div>
+          ${item.invoiceName?`<div class="ac-kv-row"><span class="ac-kv-key">Invoice</span><span class="ac-kv-val">${escape(item.invoiceName)}</span></div>`:''}
+          <div class="ac-kv-row"><span class="ac-kv-key">SO Status</span><span class="ac-kv-val"><span class="ac-chip ${acStatusColor(item.status)}">${escape(item.status||'—')}</span></span></div>
+          <div class="ac-kv-row"><span class="ac-kv-key">PO Status</span><span class="ac-kv-val"><span class="ac-chip ${acStatusColor(item.poStatus)}">${escape(item.poStatus||'—')}</span></span></div>
+          <div class="ac-kv-row"><span class="ac-kv-key">Complexity</span><span class="ac-kv-val"><span class="ac-cx-inline ac-cx-${(item.complexity||'Low').toLowerCase()}">${escape(item.complexity||'—')}</span></span></div>
+          ${item.productionTypes?.length?`<div class="ac-kv-row"><span class="ac-kv-key">Production Types</span><span class="ac-kv-val">${escape(item.productionTypes.join(', '))}</span></div>`:''}
+          ${item.supplierCount?`<div class="ac-kv-row"><span class="ac-kv-key">Suppliers</span><span class="ac-kv-val">${escape([...item.raw.suppliers||[]].slice(0,5).join(', ')||'—')}</span></div>`:''}
+          ${item.poOwners?.length?`<div class="ac-kv-row"><span class="ac-kv-key">PO Owner(s)</span><span class="ac-kv-val">${escape(item.poOwners.join(', '))}</span></div>`:''}
+          ${item.relatedSords?.length?`<div class="ac-kv-row"><span class="ac-kv-key">Related SORDs</span><span class="ac-kv-val">${item.relatedSords.map(r=>`<span class="ac-related-chip">${escape(r)}</span>`).join(' ')}</span></div>`:''}
+        </div>
+      </div>
+
+      ${item.flags?.length?`<div class="ac-section">
+        <div class="ac-section-title">⚑ Flags (${item.flags.length})</div>
+        <div class="ac-flags-list">${item.flags.map(f=>`<div class="ac-flag-row"><span>⚑</span><span>${escape(f)}</span></div>`).join('')}</div>
+      </div>`:''}
+
+      ${item.notes?.length?`<div class="ac-section">
+        <div class="ac-section-title">Notes</div>
+        ${item.notes.map(n=>`<div class="ac-note">${escape(n)}</div>`).join('')}
+      </div>`:''}
+    `;
+
+    // ── Timeline tab ──────────────────────────────────────────────────────────
+    const timelineHTML = item.timeline?.length
+      ? `<div class="ac-timeline">${item.timeline.map(t=>`
+          <div class="ac-tl-row">
+            <div class="ac-tl-dot"></div>
+            <span class="ac-tl-label">${escape(t.label)}</span>
+            <span class="ac-tl-val">${escape(fmtDate(t.value))}</span>
+          </div>`).join('')}
+        </div>`
+      : '<div class="ac-empty">No timeline dates available from imported data.</div>';
+
+    // ── Pack Builders tab ─────────────────────────────────────────────────────
+    const pbHTML = !item.packBuilders?.length
+      ? '<div class="ac-empty">No pack builder detail found for this SORD.</div>'
+      : `<div class="ac-pb-list">${item.packBuilders.map(pb=>{
+          const stCls = acPbStageColor(pb.stage||pb.status||'');
+          return `<div class="ac-pb-row">
+            <div class="ac-pb-top">
+              <span class="ac-pb-id">${escape(pb.pb||'—')}</span>
+              ${pb.pbId?`<span class="ac-pb-sfid">${escape(pb.pbId)}</span>`:''}
+              <span class="ac-pb-stage ${stCls}">${escape(pb.stage||pb.status||'—')}</span>
+              ${pb.link?`<a class="ac-pb-link" href="${escape(pb.link)}" target="_blank">📄 PDF</a>`:'<span class="ac-pb-nopdf">No PDF</span>'}
+            </div>
+            <div class="ac-pb-meta">
+              <span>${fmtInt(pb.qty)} kits</span>
+              <span>${fmtInt(pb.products)} products</span>
+              <span>${fmtInt(pb.units)} units</span>
+              ${pb.scheduledFor?`<span>Sched: <strong>${escape(pb.scheduledFor)}</strong></span>`:''}
+              ${pb.source?`<span>Source: ${escape(pb.source)}</span>`:''}
+            </div>
+          </div>`;
+        }).join('')}</div>`;
+
+    // ── POs tab ───────────────────────────────────────────────────────────────
+    const visiblePoRows = (item.poRows||[]).filter(po=>
+      state.poCategoryFilter==='all' ? true : classifyPoCategoryForItem(item,po)===state.poCategoryFilter
+    );
+    const poCounts = computePoCategoryCounts(item);
+    const poHTML = `
+      <div class="po-category-filters" style="margin-bottom:10px">
+        ${['all','pack','bulk','mix'].map(f=>`<button class="po-chip${state.poCategoryFilter===f?' active':''}" type="button" data-po-filter="${f}">${poCategoryLabel(f)} (${poCounts[f]})</button>`).join('')}
+      </div>
+      ${!visiblePoRows.length
+        ? '<div class="ac-empty">No PO detail found for this filter.</div>'
+        : `<div class="ac-po-list">${visiblePoRows.map(po=>{
+            const poUrl = purchaseOrderUrl(po.purchaseOrderId);
+            const cat = classifyPoCategoryForItem(item,po);
+            const imageUrl = parseSalesforceImageUrl(po.image||po.imageUrl||po.thumbnail||'');
+            return `<div class="ac-po-row">
+              <div class="ac-po-top">
+                <div class="ac-po-dot" style="background:${cat==='pack'?'#185fa5':cat==='bulk'?'#059669':'#7c3aed'}"></div>
+                <span class="ac-po-num">${poUrl?`<a class="queue-link" href="${escape(poUrl)}" target="_blank">${escape(po.purchaseOrderName||'—')}</a>`:escape(po.purchaseOrderName||'—')}</span>
+                <span class="ac-chip ${acStatusColor(po.status)}">${escape(po.status||'—')}</span>
+              </div>
+              <div class="ac-po-meta">
+                ${po.supplier?`<span>Supplier: <strong>${escape(po.supplier)}</strong></span>`:''}
+                ${po.poOwner?`<span>Owner: <strong>${escape(po.poOwner)}</strong></span>`:''}
+                ${po.quantity?`<span>${fmtInt(po.quantity)} units</span>`:''}
+                ${po.estimatedShipDate?`<span>Est. Ship: <strong>${escape(fmtDate(po.estimatedShipDate))}</strong></span>`:''}
+                ${po.ihd?`<span>IHD: <strong>${escape(fmtDate(po.ihd))}</strong></span>`:''}
+                ${po.itemTotalCost?`<span>Item Cost: <strong>${fmtMoney(po.itemTotalCost)}</strong></span>`:''}
+                ${po.accountProductName?`<span>${escape(po.accountProductName)}</span>`:''}
+                ${imageUrl?`<span><button class="btn secondary btn-sm po-image-link" type="button" data-po-image="${escape(imageUrl)}" data-po-title="${escape(po.purchaseOrderName||'')} image">View image</button></span>`:''}
+              </div>
+            </div>`;
+          }).join('')}</div>`
+      }`;
+
+    // ── Account Products tab ──────────────────────────────────────────────────
+    const apHTML = !item.accountProducts?.length
+      ? '<div class="ac-empty">No account-product detail found for this SORD.</div>'
+      : `<div class="ac-po-list">${item.accountProducts.map(ap=>`
+          <div class="ac-po-row">
+            <div class="ac-po-top"><span class="ac-po-num" style="font-size:12px">${escape(ap.accountProductName||'—')}</span></div>
+            <div class="ac-po-meta">
+              ${ap.accountProductExternalId?`<span>ID: ${escape(ap.accountProductExternalId)}</span>`:''}
+              <span>${fmtInt(ap.poCount)} POs</span>
+              <span>${fmtInt(ap.supplierCount)} suppliers</span>
+              <span>${fmtInt(ap.quantity)} units</span>
+              ${ap.itemTotalCost?`<span>Cost: ${fmtMoney(ap.itemTotalCost)}</span>`:''}
+            </div>
+          </div>`).join('')}</div>`;
+
+    // ── Financials tab ────────────────────────────────────────────────────────
+    const delta = (item.subtotal||0) - (item.originalSubtotal||0);
+    const deltaHtml = delta ? `<span style="font-size:11px;color:${delta>0?'#059669':'#dc2626'}"> (${delta>0?'+':''}${fmtMoney(delta)})</span>` : '';
+    const finHTML = `
+      <div class="ac-fin-grid">
+        <div class="ac-fin-card"><div class="ac-fin-lbl">Revenue</div><div class="ac-fin-val green">${fmtMoney(item.subtotal||item.originalSubtotal)}${deltaHtml}</div></div>
+        <div class="ac-fin-card"><div class="ac-fin-lbl">Original Rev</div><div class="ac-fin-val">${fmtMoney(item.originalSubtotal||item.subtotal)}</div></div>
+        <div class="ac-fin-card"><div class="ac-fin-lbl">Item Cost</div><div class="ac-fin-val">${fmtMoney(item.totalItemCost)}</div></div>
+        <div class="ac-fin-card"><div class="ac-fin-lbl">Gross Spread</div><div class="ac-fin-val green">${fmtMoney(item.grossSpread)}</div></div>
+        <div class="ac-fin-card"><div class="ac-fin-lbl">Margin Est.</div><div class="ac-fin-val">${item.subtotal?item.marginPct.toFixed(1)+'%':'—'}</div></div>
+        <div class="ac-fin-card"><div class="ac-fin-lbl">Pack Items</div><div class="ac-fin-val">${fmtInt(item.totalPackItems)}</div></div>
+        <div class="ac-fin-card"><div class="ac-fin-lbl">Bulk Products</div><div class="ac-fin-val">${fmtInt(item.totalBulkProducts)}</div></div>
+      </div>`;
+
+    const tabs = [
+      {id:'ov',  label:'Overview'},
+      {id:'tl',  label:'Timeline'},
+      {id:'pbs', label:`Pack Builders${item.pbCount?` (${item.pbCount})`:''}`, hidden: !hasPb},
+      {id:'pos', label:`POs (${item.poCount})`},
+      {id:'ap',  label:`Products (${item.accountProducts?.length||0})`, hidden: !item.accountProducts?.length},
+      {id:'fin', label:'Financials'},
+    ].filter(t => !t.hidden);
+
+    const activeDossierTab = state.expandedTabMap?.[item.key] || tabs[0].id;
+
+    return `
+      <div class="ac-dossier-tabs">${tabs.map(t=>`<div class="ac-dtab${activeDossierTab===t.id?' active':''}" data-key="${escJs(item.key)}" data-dtab="${t.id}" onclick="window.sordSwitchTab('${escJs(item.key)}','${t.id}')">${escape(t.label)}</div>`).join('')}</div>
+      <div class="ac-dossier-body">
+        ${tabs.map(t=>{
+          const body = t.id==='ov'?overviewHTML : t.id==='tl'?timelineHTML : t.id==='pbs'?pbHTML : t.id==='pos'?poHTML : t.id==='ap'?apHTML : finHTML;
+          return `<div class="ac-dtab-pane${activeDossierTab===t.id?' active':''}" id="ac-pane-${escJs(item.key)}-${t.id}">${body}</div>`;
+        }).join('')}
+      </div>
+      <div class="ac-dossier-footer">
+        ${orderUrl?`<a class="btn secondary" href="${escape(orderUrl)}" target="_blank" rel="noopener noreferrer">↗ Salesforce</a>`:''}
+        <button class="btn secondary" onclick="navigator.clipboard?.writeText('${escJs(item.sord)}').then(()=>{this.textContent='✓ Copied';setTimeout(()=>{this.textContent='Copy ID'},1500)}).catch(()=>{})">Copy ID</button>
+        <button class="pb-star-btn${state.prioritySords.has(item.key)?' pb-star-active':''}" type="button" title="Toggle priority" style="margin-left:auto;font-size:18px" onclick="window.pbToggleSord('${escJs(item.key)}')">★</button>
+      </div>`;
   }
 
   function renderBadge(text, tone){
@@ -1230,132 +1510,7 @@ function renderExplorer(){
     return `<div class="sord-summary-card"><div class="sord-summary-label">${escape(label)}</div><div class="sord-summary-value">${escape(value || '—')}</div>${hint?`<div class="sord-summary-hint">${escape(hint)}</div>`:''}</div>`;
   }
 
-  function renderDossier(item){
-    if(!item){
-      els.dossierTitle.textContent = 'Select a SORD';
-      els.dossierBadges.innerHTML = '';
-      els.summaryGrid.innerHTML = '<div class="empty-state">Import your reports and choose a SORD from the explorer.</div>';
-      els.flagsWrap.innerHTML = '<div class="empty-state">No SORD selected.</div>';
-      els.packBuilderBody.innerHTML = '<tr><td colspan="10" class="empty">No SORD selected.</td></tr>';
-      els.revenuePanel.innerHTML = '<div class="empty-state">No SORD selected.</div>';
-      els.timelinePanel.innerHTML = '<div class="empty-state">No SORD selected.</div>';
-      els.poBody.innerHTML = '<tr><td colspan="8" class="empty">No SORD selected.</td></tr>';
-      els.accountProductBody.innerHTML = '<tr><td colspan="6" class="empty">No SORD selected.</td></tr>';
-      return;
-    }
-    const orderUrl = salesOrderUrl(item.salesOrderId);
-    els.dossierTitle.innerHTML = orderUrl
-      ? `<a class="queue-link" href="${escape(orderUrl)}" target="_blank" rel="noopener noreferrer">${escape(item.sord)}</a>`
-      : escape(item.sord);
-    els.dossierBadges.innerHTML = [
-      renderBadge(item.readiness, badgeToneForReadiness(item.readiness)),
-      renderBadge(item.complexity, badgeToneForComplexity(item.complexity)),
-      item.confirmedThisMonth ? renderBadge('Confirmed This Month', 'confirmed') : renderBadge('Not Confirmed', 'neutral'),
-      item.flagCount ? renderBadge(`${item.flagCount} flags`, 'bad') : renderBadge('No active flags','good')
-    ].join('');
-
-    const notePreview = item.notes[0] ? (item.notes[0].length > 96 ? item.notes[0].slice(0,96) + '…' : item.notes[0]) : '';
-    const ownerMap = item.ownerMapping;
-    const ownerCoverage = ownerMap
-      ? `${ownerMap.projectManager || '—'} • ${ownerMap.psa || '—'}`
-      : (item.accountOwner || item.orderOwner || 'Unmapped owner');
-    els.summaryGrid.innerHTML = [
-      renderSummaryField('SORD', item.sord, item.salesOrderId || ''),
-      renderSummaryField('Account', item.account || '—', ownerMap?.accountManager || item.accountOwner || item.orderOwner || '—'),
-      renderSummaryField('Status', item.status || '—', item.poStatus || '—'),
-      renderSummaryField('In-Hands Date', fmtDate(item.earliestIhd || item.dueDate || item.earliestEta), `Due: ${fmtDate(item.dueDate)} • ETA: ${fmtDate(item.earliestEta)}`),
-      renderSummaryField('Subtotal', fmtMoney(item.subtotal || item.originalSubtotal), item.originalSubtotal ? `Original: ${fmtMoney(item.originalSubtotal)}` : ''),
-      renderSummaryField('Pack Builders', fmtInt(item.pbCount), `Suppliers: ${fmtInt(item.supplierCount)} • POs: ${fmtInt(item.poCount)}`),
-      renderSummaryField('Production Mix', `${fmtInt(item.totalPackItems)} pack • ${fmtInt(item.totalBulkProducts)} bulk`, item.productionTypes.length ? item.productionTypes.join(' • ') : ''),
-      renderSummaryField('Owner Coverage', ownerMap?.accountManager || item.accountOwner || '—', ownerCoverage),
-      renderSummaryField('Feasibility Snapshot', item.readiness, `${item.flagCount} flags • Margin est.: ${item.subtotal ? item.marginPct.toFixed(1)+'%' : '—'}`),
-      renderSummaryField('Created / Owned By', item.createdBy || item.orderOwner || '—', item.orderOwner && item.createdBy && item.orderOwner !== item.createdBy ? `Owner: ${item.orderOwner}` : ''),
-      renderSummaryField('PO Owners', item.poOwners.length ? item.poOwners.slice(0,2).join(', ') : '—', item.poOwners.length > 2 ? `+${item.poOwners.length - 2} more` : ''),
-      renderSummaryField('Notes / Linked SORDs', item.relatedSords[0] || '—', notePreview || '')
-    ].join('');
-
-    const noteCards = item.notes.map(note=>`<div class="sord-flag-card">📝 ${escape(note)}</div>`);
-    const linkedCards = item.relatedSords.map(s=>`<div class="sord-flag-card">🔁 Related SORD: ${internalSordLink(s)}</div>`);
-    const ownerCards = ownerMap ? [
-      `<div class="sord-flag-card sord-flag-card-good">👤 Account Manager: ${roleLink(ownerMap.accountManager, ownerMap.accountManagerLink)}</div>`,
-      `<div class="sord-flag-card sord-flag-card-good">🧭 Project Manager: ${roleLink(ownerMap.projectManager, ownerMap.projectManagerLink)}</div>`,
-      `<div class="sord-flag-card sord-flag-card-good">💬 PSA: ${roleLink(ownerMap.psa, ownerMap.psaLink)}</div>`
-    ] : [`<div class="sord-flag-card">👤 Unmapped owner: ${escape(item.accountOwner || item.orderOwner || item.createdBy || '—')}</div>`];
-    els.flagsWrap.innerHTML = (item.flags.length || noteCards.length || linkedCards.length)
-      ? [
-          ...ownerCards,
-          ...item.flags.map(flag=>`<div class="sord-flag-card">⚠ ${escape(flag)}</div>`),
-          ...linkedCards,
-          ...noteCards
-        ].join('')
-      : '<div class="sord-flag-card sord-flag-card-good">No active risk flags or notes for this SORD.</div>';
-
-    els.packBuilderBody.innerHTML = item.packBuilders.length
-      ? item.packBuilders.map(pb=>`<tr><td>${escape(pb.pb || '—')}</td><td>${escape(pb.pbId || '—')}</td><td>${escape(pb.source || '—')}</td><td>${escape(fmtInt(pb.qty))}</td><td>${escape(fmtInt(pb.products))}</td><td>${escape(fmtInt(pb.units))}</td><td>${escape(pb.status || '—')}</td><td>${escape(fmtDate(pb.ihd))}</td><td>${escape(pb.stage || pb.scheduledFor || '—')}</td><td>${pb.link ? `<a class="queue-link" href="${escape(pb.link)}" target="_blank" rel="noopener noreferrer">Open</a>` : '—'}</td></tr>`).join('')
-      : '<tr><td colspan="10" class="empty">No pack builder detail found for this SORD.</td></tr>';
-
-    els.revenuePanel.innerHTML = [
-      renderSummaryField('Revenue', fmtMoney(item.subtotal || item.originalSubtotal)),
-      renderSummaryField('Original Revenue', fmtMoney(item.originalSubtotal || item.subtotal)),
-      renderSummaryField('Revenue Delta', fmtMoney(item.revenueDelta)),
-      renderSummaryField('Estimated Item Cost', fmtMoney(item.totalItemCost)),
-      renderSummaryField('Gross Spread', fmtMoney(item.grossSpread)),
-      renderSummaryField('Margin Estimate', item.subtotal ? `${item.marginPct.toFixed(1)}%` : '—'),
-      renderSummaryField('Pack Items', fmtInt(item.totalPackItems)),
-      renderSummaryField('Bulk Products', fmtInt(item.totalBulkProducts))
-    ].join('');
-
-    els.timelinePanel.innerHTML = item.timeline.length
-      ? item.timeline.map(row=>`<div class="sord-timeline-row"><div class="sord-timeline-dot"></div><div><div class="sord-timeline-label">${escape(row.label)}</div><div class="sord-timeline-value">${escape(fmtDate(row.value))}</div></div></div>`).join('')
-      : '<div class="empty-state">No timeline dates were available from the imported data.</div>';
-
-    const poCounts = computePoCategoryCounts(item);
-    if (els.poCategoryChips) {
-      els.poCategoryChips.innerHTML = [
-        `<button class="po-chip ${state.poCategoryFilter === 'all' ? 'active' : ''}" type="button" data-po-filter="all">All (${poCounts.all})</button>`,
-        `<button class="po-chip ${state.poCategoryFilter === 'pack' ? 'active' : ''}" type="button" data-po-filter="pack">Pack Items (${poCounts.pack})</button>`,
-        `<button class="po-chip ${state.poCategoryFilter === 'bulk' ? 'active' : ''}" type="button" data-po-filter="bulk">Bulk Products (${poCounts.bulk})</button>`,
-        `<button class="po-chip ${state.poCategoryFilter === 'mix' ? 'active' : ''}" type="button" data-po-filter="mix">Mix (${poCounts.mix})</button>`
-      ].join('');
-    }
-    const visiblePoRows = (item.poRows || []).filter(po => {
-      const category = classifyPoCategoryForItem(item, po);
-      return state.poCategoryFilter === 'all' ? true : category === state.poCategoryFilter;
-    });
-    if (els.poCategorySummary) {
-      els.poCategorySummary.textContent = `Showing ${visiblePoRows.length} ${state.poCategoryFilter === 'all' ? 'purchase orders' : poCategoryLabel(state.poCategoryFilter).toLowerCase()} for ${item.sord}.`;
-    }
-    els.poBody.innerHTML = visiblePoRows.length
-      ? visiblePoRows.map(po=>{
-          const poUrl = purchaseOrderUrl(po.purchaseOrderId);
-          const poName = escape(po.purchaseOrderName || '—');
-          const poStatus = escape(po.status || po.poStatus || '—');
-          const category = classifyPoCategoryForItem(item, po);
-          const categoryLabel = poCategoryLabel(category);
-          const categoryClass = category === 'pack' ? 'pack' : category === 'bulk' ? 'bulk' : 'mix';
-          const imageUrl = parseSalesforceImageUrl(po.image || po.imageUrl || po.thumbnail || '');
-          const imageCell = imageUrl
-            ? `<button class="btn secondary btn-sm po-image-link" type="button" data-po-image="${escape(imageUrl)}" data-po-title="${poName} image">View image</button>`
-            : '—';
-          return `<tr>
-            <td>${poUrl ? `<a class="queue-link" href="${escape(poUrl)}" target="_blank" rel="noopener noreferrer">${poName}</a>` : poName}${po.purchaseOrderId ? `<div class="sord-subline">${escape(po.purchaseOrderId)}</div>` : ''}</td>
-            <td>${poUrl ? `<a class="queue-link" href="${escape(poUrl)}" target="_blank" rel="noopener noreferrer">${poStatus}</a>` : poStatus}</td>
-            <td><span class="po-category-badge ${categoryClass}">${escape(categoryLabel)}</span></td>
-            <td>${escape(po.poOwner || '—')}</td>
-            <td>${escape(po.supplier || '—')}${po.printerName ? `<div class="sord-subline">Printer: ${escape(po.printerName)}</div>` : ''}</td>
-            <td>${escape(fmtDate(po.estimatedShipDate || po.ihd))}${po.createdDate ? `<div class="sord-subline">Created: ${escape(fmtDate(po.createdDate))}</div>` : ''}</td>
-            <td>${escape(fmtMoney(po.itemTotalCost))}</td>
-            <td>${escape(fmtMoney(po.lineItemPrice))}</td>
-            <td>${escape(po.accountProductName || '—')}</td>
-            <td>${imageCell}</td>
-          </tr>`;
-        }).join('')
-      : '<tr><td colspan="10" class="empty">No PO detail found for this filter.</td></tr>';
-
-    els.accountProductBody.innerHTML = item.accountProducts.length
-      ? item.accountProducts.map(ap=>`<tr><td>${escape(ap.accountProductName || '—')}${ap.printers?.size ? `<div class="sord-subline">${escape([...ap.printers].slice(0,2).join(', '))}${ap.printers.size>2 ? ' +' + (ap.printers.size-2) + ' more' : ''}</div>` : ''}</td><td>${escape(ap.accountProductExternalId || '—')}</td><td>${escape(fmtInt(ap.poCount))}</td><td>${escape(fmtInt(ap.supplierCount))}</td><td>${escape(fmtInt(ap.quantity))}</td><td>${escape(fmtMoney(ap.itemTotalCost))}</td></tr>`).join('')
-      : '<tr><td colspan="6" class="empty">No account-product detail found for this SORD.</td></tr>';
-  }
+  function renderDossier(item){ /* replaced by inline accordion dossier — no-op */ }
 
   function fillStatusFilter(){
     const values = unique(state.dataset.flatMap(item=>[item.status, item.poStatus]).filter(Boolean)).sort((a,b)=>a.localeCompare(b));
@@ -1390,7 +1545,7 @@ function renderExplorer(){
   function rebuildAndRender(){
     buildDataset();
     fillStatusFilter();
-    renderExplorer();
+    renderAccordion();
   }
 
 
@@ -1586,7 +1741,7 @@ function renderExplorer(){
       savePriority();
       renderPriorityChips();
       els.pbPostWrap && (els.pbPostWrap.hidden = true);
-      renderExplorer();
+      renderAccordion();
     });
 
     els.pbCopyBtn?.addEventListener('click', () => {
@@ -1628,24 +1783,59 @@ function renderExplorer(){
     renderPriorityChips();
     // Refresh post if it's currently visible
     if (els.pbPostWrap && !els.pbPostWrap.hidden) renderPriorityPost();
-    renderExplorer();
+    renderAccordion();
   };
 
+  // Toggle a SORD row open/closed
+  window.sordToggleRow = function(key) {
+    state.expandedKey = (state.expandedKey === key) ? '' : key;
+    renderAccordion();
+    if (state.expandedKey) {
+      requestAnimationFrame(()=>{
+        const el = document.getElementById('sord-acc-' + state.expandedKey);
+        if(el) el.scrollIntoView({ behavior:'smooth', block:'nearest' });
+      });
+    }
+  };
+
+  // Switch the active tab inside an already-expanded dossier (in-place, no full re-render)
+  window.sordSwitchTab = function(key, tabId) {
+    if (!state.expandedTabMap) state.expandedTabMap = {};
+    state.expandedTabMap[key] = tabId;
+    const row = document.getElementById('sord-acc-' + key);
+    if (row) {
+      row.querySelectorAll('.ac-dtab').forEach(t =>
+        t.classList.toggle('active', t.getAttribute('data-dtab') === tabId)
+      );
+      row.querySelectorAll('.ac-dtab-pane').forEach(p => {
+        const paneId = p.id.replace('ac-pane-' + key + '-', '');
+        p.classList.toggle('active', paneId === tabId);
+      });
+    }
+  };
+
+  // Set the production-type filter pill (called from onclick on pill buttons)
+  window.sordSetTypeFilter = function(f) {
+    state.activeTypeFilter = f || 'all';
+    renderAccordion();
+  };
 
   function bind(){
     els.importBtn.addEventListener('click', importFiles);
     bindPriorityBuilder();
     els.clearBtn.addEventListener('click', clearImports);
     els.refreshBtn.addEventListener('click', ()=>{ rebuildAndRender(); setStatus(`Refreshed SORD explorer from imported reports and live app data${summarizeFileNames() ? ' • ' + summarizeFileNames() : ''}.`); });
-    [els.searchInput, els.statusFilter, els.readinessFilter, els.complexityFilter, els.riskFilter, els.confirmedFilter].filter(Boolean).forEach(el=>el.addEventListener('input', renderExplorer));
-    els.resetFiltersBtn.addEventListener('click', ()=>{
-      els.searchInput.value='';
-      els.statusFilter.value='';
-      els.readinessFilter.value='';
-      els.complexityFilter.value='';
-      els.riskFilter.value='';
+    [els.searchInput, els.sortSelect, els.statusFilter, els.readinessFilter, els.complexityFilter, els.riskFilter, els.confirmedFilter].filter(Boolean).forEach(el=>el.addEventListener('input', renderAccordion));
+    [els.sortSelect].filter(Boolean).forEach(el=>el.addEventListener('change', renderAccordion));
+    els.resetFiltersBtn?.addEventListener('click', ()=>{
+      if(els.searchInput) els.searchInput.value='';
+      if(els.statusFilter) els.statusFilter.value='';
+      if(els.readinessFilter) els.readinessFilter.value='';
+      if(els.complexityFilter) els.complexityFilter.value='';
+      if(els.riskFilter) els.riskFilter.value='';
       if(els.confirmedFilter) els.confirmedFilter.value='';
-      renderExplorer();
+      state.activeTypeFilter = 'all';
+      renderAccordion();
     });
     if(els.addOwnerRowBtn){
       els.addOwnerRowBtn.addEventListener('click', ()=>{ syncOwnerMapFromUi(); state.ownerMap.rows.push(emptyOwnerRow()); renderOwnerMapTable(); });
@@ -1653,7 +1843,8 @@ function renderExplorer(){
       [els.ownerUtilityLabel, els.ownerUtilityUrl].forEach(el=> el && el.addEventListener('input', ()=>{ syncOwnerMapFromUi(); renderOwnerMapTable(); }));
       window.deleteOwnerMapRow = (idx)=>{ syncOwnerMapFromUi(); state.ownerMap.rows.splice(idx,1); renderOwnerMapTable(); };
     }
-    els.poBody?.addEventListener('click', (event)=>{
+    // Image preview delegation — works from any PO row inside the accordion
+    (els.accordionList || els.page)?.addEventListener('click', (event)=>{
       const btn = event.target.closest('[data-po-image]');
       if(!btn) return;
       event.preventDefault();
@@ -1663,7 +1854,21 @@ function renderExplorer(){
     document.getElementById('sordImageOverlay')?.addEventListener('click', (event)=>{
       if(event.target && event.target.id === 'sordImageOverlay') closeImagePreview();
     });
-    window.selectSordRecord = (key)=>{ state.selectedKey = key; renderExplorer(); };
+    // Type pill delegation (works for both static HTML pills and any dynamically added ones)
+    els.page?.addEventListener('click', (event)=>{
+      const pill = event.target.closest('[data-type-filter]');
+      if(!pill) return;
+      state.activeTypeFilter = pill.getAttribute('data-type-filter') || 'all';
+      renderAccordion();
+    });
+    window.selectSordRecord = (key)=>{
+      state.expandedKey = key;
+      renderAccordion();
+      requestAnimationFrame(()=>{
+        const el = document.getElementById('sord-acc-' + key);
+        if(el) el.scrollIntoView({ behavior:'smooth', block:'nearest' });
+      });
+    };
   }
 
   async function initialize(){
@@ -1691,7 +1896,7 @@ function renderExplorer(){
     const filterBtn = event.target.closest('[data-po-filter]');
     if (!filterBtn) return;
     state.poCategoryFilter = filterBtn.getAttribute('data-po-filter') || 'all';
-    renderExplorer();
+    renderAccordion();
   });
 
 

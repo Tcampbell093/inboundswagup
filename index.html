@@ -2132,127 +2132,74 @@
         </div>
       </div>
 
-      <div class="sord-layout">
-        <div class="card sord-explorer-card">
-          <div class="sord-card-head sord-card-head-search">
-            <div>
-              <div class="eyebrow">Explorer</div>
-              <h3>SORD list</h3>
-            </div>
-            <div class="sord-card-head-tools">
-              <div class="field sord-search-field">
-                <label for="sordSearchInput">Search</label>
-                <input id="sordSearchInput" placeholder="SORD, account, owner, supplier, pack builder..." />
-              </div>
-              <div id="sordExplorerCount" class="sord-meta-pill">0 results</div>
-            </div>
+      <!-- ── Accordion filter bar ─────────────────────────────────────── -->
+      <div class="sord-accordion-bar">
+        <div class="sord-accordion-tools">
+          <div class="sord-search-wrap">
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6.5" stroke="#9ca3af" stroke-width="1.8"/><path d="M14.5 14.5l3.5 3.5" stroke="#9ca3af" stroke-width="1.8" stroke-linecap="round"/></svg>
+            <input id="sordSearchInput" class="sord-search-input" placeholder="SORD, account, owner, supplier, pack builder…" />
           </div>
-          <div class="table-wrap sord-explorer-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th class="pb-select-col" title="Add to Priority Builder">★</th>
-                  <th>SORD</th>
-                  <th>Account Owner</th>
-                  <th>Status</th>
-                  <th>Revenue</th>
-                  <th>PBs</th>
-                  <th>Suppliers</th>
-                  <th>Readiness</th>
-                  <th>Complexity</th>
-                  <th>Flags</th>
-                </tr>
-              </thead>
-              <tbody id="sordExplorerBody"></tbody>
-            </table>
+          <select id="sordSortSelect" class="sord-sort-select">
+            <option value="ihd">IHD ↑</option>
+            <option value="rev-desc">Revenue ↓</option>
+            <option value="readiness-asc">Readiness</option>
+            <option value="flags-desc">Flags ↓</option>
+            <option value="account">Account A–Z</option>
+          </select>
+          <div id="sordExplorerCount" class="sord-meta-pill">0 results</div>
+        </div>
+        <div class="sord-type-pills">
+          <button class="sord-type-pill sord-type-pill-active" type="button" data-type-filter="all">
+            <span class="sord-type-dot" style="background:#64748b"></span>All&nbsp;<span class="sord-type-count" id="sordTypeCntAll">0</span>
+          </button>
+          <button class="sord-type-pill" type="button" data-type-filter="pb">
+            <span class="sord-type-dot" style="background:#185fa5"></span>PB&nbsp;<span class="sord-type-count" id="sordTypeCntPb">0</span>
+          </button>
+          <button class="sord-type-pill" type="button" data-type-filter="bulk">
+            <span class="sord-type-dot" style="background:#059669"></span>Bulk&nbsp;<span class="sord-type-count" id="sordTypeCntBulk">0</span>
+          </button>
+          <button class="sord-type-pill" type="button" data-type-filter="mix">
+            <span class="sord-type-dot" style="background:#7c3aed"></span>PB+Bulk&nbsp;<span class="sord-type-count" id="sordTypeCntMix">0</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ── Accordion list ─────────────────────────────────────────────── -->
+      <div id="sordAccordionList"></div>
+
+      <!-- ── Owner mapping (reference card) ───────────────────────────── -->
+      <div class="card" style="margin-top:20px">
+        <div class="sord-card-head">
+          <div><div class="eyebrow">Reference</div><h3>Owner mapping</h3></div>
+          <div class="toolbar right" style="margin:0">
+            <a id="sordOwnerUtilityLink" class="btn secondary" href="#" target="_blank" rel="noopener" style="display:none">Open link</a>
+            <button class="btn secondary" id="sordAddOwnerRowBtn" type="button">Add Row</button>
+            <button class="btn" id="sordSaveOwnerMapBtn" type="button">Save Mapping</button>
           </div>
         </div>
-
-        <div class="sord-dossier-column">
-          <div class="card">
-            <div class="sord-card-head">
-              <div>
-                <div class="eyebrow">Dossier</div>
-                <h3 id="sordDossierTitle">Select a SORD</h3>
-              </div>
-              <div id="sordDossierBadges" class="sord-badges"></div>
-            </div>
-            <div id="sordSummaryGrid" class="sord-summary-grid"></div>
+        <div class="sord-owner-toolbar">
+          <div class="field">
+            <label for="sordOwnerUtilityLabel">Utility Link Label</label>
+            <input id="sordOwnerUtilityLabel" placeholder="Open team directory" />
           </div>
-
-          <div class="card">
-            <div class="sord-card-head"><div><div class="eyebrow">Risk & blockers</div><h3>Flags</h3></div></div>
-            <div id="sordFlagsWrap" class="sord-flags-wrap"></div>
+          <div class="field">
+            <label for="sordOwnerUtilityUrl">Utility Link URL</label>
+            <input id="sordOwnerUtilityUrl" placeholder="https://…" />
           </div>
-
-          <div class="card">
-            <div class="sord-card-head"><div><div class="eyebrow">Pack builders</div><h3>Assembly / queue view</h3></div></div>
-            <div class="table-wrap"><table><thead><tr><th>Pack Builder</th><th>PB ID</th><th>Source</th><th>Qty</th><th>Products</th><th>Units</th><th>Status</th><th>IHD</th><th>Stage</th><th>Open</th></tr></thead><tbody id="sordPackBuilderBody"></tbody></table></div>
-          </div>
-
-          <div class="grid-2">
-            <div class="card">
-              <div class="sord-card-head"><div><div class="eyebrow">Financials</div><h3>Revenue panel</h3></div></div>
-              <div id="sordRevenuePanel" class="sord-mini-grid"></div>
-            </div>
-            <div class="card">
-              <div class="sord-card-head"><div><div class="eyebrow">Timeline</div><h3>Lifecycle markers</h3></div></div>
-              <div id="sordTimelinePanel" class="sord-timeline"></div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="sord-card-head">
-              <div><div class="eyebrow">POs & suppliers</div><h3>Purchasing detail</h3></div>
-              <div id="sordPoCategoryChips" class="po-category-filters">
-                <button class="po-chip active" type="button" data-po-filter="all">All (0)</button>
-                <button class="po-chip" type="button" data-po-filter="pack">Pack Items (0)</button>
-                <button class="po-chip" type="button" data-po-filter="bulk">Bulk Products (0)</button>
-                <button class="po-chip" type="button" data-po-filter="mix">Mix (0)</button>
-              </div>
-            </div>
-            <div id="sordPoCategorySummary" class="sord-po-filter-summary">Showing all purchase orders.</div>
-            <div class="table-wrap"><table><thead><tr><th>PO</th><th>Status</th><th>Category</th><th>PO Owner</th><th>Supplier</th><th>Estimated Ship</th><th>Item Cost</th><th>Line Price</th><th>Account Product</th><th>Image</th></tr></thead><tbody id="sordPoBody"></tbody></table></div>
-          </div>
-
-          <div class="card">
-            <div class="sord-card-head"><div><div class="eyebrow">Account products</div><h3>Item layer</h3></div></div>
-            <div class="table-wrap"><table><thead><tr><th>Account Product</th><th>External ID</th><th>PO Count</th><th>Supplier Count</th><th>Qty</th><th>Item Cost</th></tr></thead><tbody id="sordAccountProductBody"></tbody></table></div>
-          </div>
-          <div class="card">
-            <div class="sord-card-head">
-              <div><div class="eyebrow">Reference</div><h3>Owner mapping</h3></div>
-              <div class="toolbar right" style="margin:0">
-                <a id="sordOwnerUtilityLink" class="btn secondary" href="#" target="_blank" rel="noopener" style="display:none">Open link</a>
-                <button class="btn secondary" id="sordAddOwnerRowBtn" type="button">Add Row</button>
-                <button class="btn" id="sordSaveOwnerMapBtn" type="button">Save Mapping</button>
-              </div>
-            </div>
-            <div class="sord-owner-toolbar">
-              <div class="field">
-                <label for="sordOwnerUtilityLabel">Utility Link Label</label>
-                <input id="sordOwnerUtilityLabel" placeholder="Open team directory" />
-              </div>
-              <div class="field">
-                <label for="sordOwnerUtilityUrl">Utility Link URL</label>
-                <input id="sordOwnerUtilityUrl" placeholder="https://..." />
-              </div>
-            </div>
-            <div class="table-wrap">
-              <table class="sord-owner-table">
-                <thead>
-                  <tr>
-                    <th>Name in SF</th>
-                    <th>Account Manager</th>
-                    <th>Project Manager</th>
-                    <th>PSA</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody id="sordOwnerMapBody"></tbody>
-              </table>
-            </div>
-          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="sord-owner-table">
+            <thead>
+              <tr>
+                <th>Name in SF</th>
+                <th>Account Manager</th>
+                <th>Project Manager</th>
+                <th>PSA</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="sordOwnerMapBody"></tbody>
+          </table>
         </div>
       </div>
     </section>
