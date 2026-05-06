@@ -194,4 +194,17 @@
   els.clear?.addEventListener('click', clearImports);
   bindPageJumps();
   renderImportStatus();
+
+  // Re-render when cross-device sync delivers new import metadata
+  window.addEventListener('importHubMetaSynced', renderImportStatus);
+  // Also catch updates that arrive via the browser's storage event (other tabs)
+  window.addEventListener('storage', (e) => {
+    if (!e || !e.key) return;
+    if (e.key === 'ops_hub_queue_import_meta_v1' ||
+        e.key === 'ops_hub_revenue_import_meta_v1' ||
+        e.key === 'ops_hub_sord_imports_v1' ||
+        e.key === 'ops_hub_rev_tracker_v1') {
+      renderImportStatus();
+    }
+  });
 })();

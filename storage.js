@@ -19,13 +19,19 @@ async function assemblyApiRequest(method='GET',body){
   return data;
 }
 function buildAssemblySyncPayload(){
+  let queueImportMeta = null;
+  let revenueImportMeta = null;
+  try { queueImportMeta   = JSON.parse(localStorage.getItem('ops_hub_queue_import_meta_v1')   || 'null'); } catch(_) {}
+  try { revenueImportMeta = JSON.parse(localStorage.getItem('ops_hub_revenue_import_meta_v1') || 'null'); } catch(_) {}
   return {
     board:assemblyBoardRows,
     available:availableQueueRows,
     scheduled:scheduledQueueRows,
     incomplete:incompleteQueueRows,
     held: typeof window.getIssueHoldQueueRows === 'function' ? window.getIssueHoldQueueRows() : [],
-    revenue:revenueReferenceRows
+    revenue:revenueReferenceRows,
+    queueImportMeta,
+    revenueImportMeta
   };
 }
 function applyAssemblySyncPayload(payload={}){
@@ -48,6 +54,16 @@ function applyAssemblySyncPayload(payload={}){
   if(Array.isArray(payload.revenue)){
     revenueReferenceRows=normalizeRevenueReferenceRows(payload.revenue);
     localStorage.setItem(revenueReferenceStorageKey,JSON.stringify(revenueReferenceRows));
+  }
+  let metaUpdated=false;
+  if(payload.queueImportMeta && typeof payload.queueImportMeta === 'object'){
+    try { localStorage.setItem('ops_hub_queue_import_meta_v1', JSON.stringify(payload.queueImportMeta)); metaUpdated=true; } catch(_){}
+  }
+  if(payload.revenueImportMeta && typeof payload.revenueImportMeta === 'object'){
+    try { localStorage.setItem('ops_hub_revenue_import_meta_v1', JSON.stringify(payload.revenueImportMeta)); metaUpdated=true; } catch(_){}
+  }
+  if(metaUpdated){
+    try { window.dispatchEvent(new CustomEvent('importHubMetaSynced')); } catch(_){}
   }
 }
 async function loadAssemblyFromBackend(){

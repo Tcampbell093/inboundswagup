@@ -499,7 +499,7 @@ async function importRevenueReferenceFromFile(file,{silent=false}={}){
         const message=`<a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BE2jMAG/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Revenue reference</a> imported: ${revenueReferenceRows.length} rows stored.`;
         setRevenueImportStatus(message);
         if(!silent) alert(message);
-        try { localStorage.setItem(revenueImportMetaKey, JSON.stringify({ fileName: file.name, importedAt: new Date().toISOString(), rows: revenueReferenceRows.length })); } catch(_){}
+        try { saveJson(revenueImportMetaKey, { fileName: file.name, importedAt: new Date().toISOString(), rows: revenueReferenceRows.length }); } catch(_){}
         resolve({rows:revenueReferenceRows.length,message});
       } catch(error){
         console.error(error);
@@ -675,7 +675,7 @@ async function importQueueReportFromFile(file,{silent=false}={}){
         const successMsg=`Import complete: ${addedCount} new pack builders added, ${updatedCount} existing pack builders updated, from ${queueRawRowCount} raw rows.`;
         setQueueImportStatus(successMsg);
         if(!silent) alert(successMsg);
-        try { localStorage.setItem(queueImportMetaKey, JSON.stringify({ fileName: file.name, importedAt: new Date().toISOString(), rows: queueRawRowCount })); } catch(_){}
+        try { saveJson(queueImportMetaKey, { fileName: file.name, importedAt: new Date().toISOString(), rows: queueRawRowCount }); } catch(_){}
         resolve({rows: queueRawRowCount, addedCount, updatedCount, message: successMsg});
       } catch(error){
         console.error(error);
