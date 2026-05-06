@@ -198,14 +198,24 @@
     }
   }
 
+  function stripHeavyFields(rows){
+    if(!Array.isArray(rows)) return [];
+    return rows.map(r => {
+      if(!r || typeof r !== 'object') return r;
+      if(!('productsReceived' in r)) return r;
+      const { productsReceived, ...rest } = r;
+      return rest;
+    });
+  }
+
   async function pushImportsToServer(imports){
     try {
       const payload = {
         importedAt:  imports.importedAt,
         fileNames:   imports.fileNames,
-        queueRows:   imports.queueRows,
-        revenueRows: imports.revenueRows,
-        eomRows:     imports.eomRows,
+        queueRows:   stripHeavyFields(imports.queueRows),
+        revenueRows: stripHeavyFields(imports.revenueRows),
+        eomRows:     stripHeavyFields(imports.eomRows),
       };
       const res = await fetch(SYNC_ENDPOINT, {
         method: 'POST',
@@ -596,7 +606,6 @@ window.__sordState = state;
         quantity,
         quantityReceived,
         itemReceivedAtWarehouseDate: safeText(r.item_received_at_warehouse_date || r.received_at_warehouse_date || r.item_received_date),
-        productsReceived: safeText(r.products_received || r.products_received_description || r.received_products),
         floorValue: quantityReceived > 0 && unitPrice > 0 ? quantityReceived * unitPrice : 0,
         image: safeText(r.image || r.image_url || r.thumbnail || r.po_image)
       };
