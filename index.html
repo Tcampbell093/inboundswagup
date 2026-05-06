@@ -337,138 +337,145 @@
     </section>
 
     <section id="homePage" class="page active">
-      <div class="mc-shell">
-        <div class="mc-hero">
-          <div>
-            <div class="eyebrow">Mission Control</div>
-            <h2>Warehouse mission control</h2>
-            <p class="subtitle">Whole-warehouse operational view across people, inbound, assembly, exceptions, timelines, and system freshness.</p>
-          </div>
-          <div class="toolbar right">
-            <button class="btn secondary" id="exportSnapshotBtn" type="button">Export Snapshot</button>
-            <button class="btn secondary" id="printSnapshotBtn" type="button">Print Snapshot</button>
-          </div>
-        </div>
+      <div class="brief-shell">
 
-        <div id="homeAlertBanner" class="home-alert-banner" hidden></div>
-
-        <section class="mc-panel" id="revTrackerPanel">
-          <div class="mc-panel-head">
-            <div>
-              <div class="eyebrow">Monthly Revenue Tracker</div>
-              <h3>Month-to-date revenue vs goal</h3>
-            </div>
-            <div class="rev-goal-form">
-              <input id="revGoalInput" type="text" placeholder="Set monthly goal e.g. 2500000" class="rev-goal-input" />
-              <button id="revSaveGoalBtn" class="btn secondary" type="button">Set Goal</button>
+        <!-- Masthead -->
+        <header class="brief-masthead">
+          <div class="brief-masthead-meta">
+            <span class="brief-eyebrow">Mission Control</span>
+            <span class="brief-masthead-dot">·</span>
+            <span class="brief-masthead-date" id="briefMastheadDate">—</span>
+          </div>
+          <h1 class="brief-masthead-title">Houston Control</h1>
+          <div class="brief-masthead-row">
+            <p class="brief-masthead-sub">The daily warehouse brief — people, inbound, assembly, exceptions, and system freshness.</p>
+            <div class="brief-toolbar">
+              <button class="btn secondary" id="exportSnapshotBtn" type="button">Export</button>
+              <button class="btn secondary" id="printSnapshotBtn" type="button">Print</button>
             </div>
           </div>
+        </header>
 
-          <div class="rev-total-row">
-            <span class="rev-grand-total" id="revGrandTotal">$0.00</span>
-            <span class="rev-goal-display">Goal: <strong id="revGoalDisplay">No goal set</strong></span>
-            <span class="rev-pct-badge" id="revPctDisplay">—</span>
-            <span class="rev-remaining" id="revRemainingDisplay">—</span>
-          </div>
+        <!-- Alert banner ribbon -->
+        <div id="homeAlertBanner" class="home-alert-banner brief-alert-banner" hidden></div>
 
-          <div class="rev-progress-bar" id="revProgressBar">
-            <div class="rev-progress-fill" id="revProgressFill" style="width:0%"></div>
-          </div>
+        <!-- ── TOP STORY: Revenue (always default; CSS-overridable for critical alerts) ── -->
+        <section class="brief-top-story" id="revTrackerPanel">
+          <div class="brief-top-story-grid">
 
-          <div class="rev-breakdown">
-            <div class="rev-line" id="revImportedLine">No monthly revenue report imported yet.</div>
-            <div class="rev-line rev-line-asm" id="revAssemblyLine">+ $0.00 from 0 assembly-completed SORDs</div>
-          </div>
+            <!-- Lede: revenue narrative -->
+            <article class="brief-lede">
+              <div class="brief-eyebrow brief-eyebrow-warning">Top story · Pacing</div>
+              <h2 class="brief-headline">Month-to-date revenue against goal</h2>
 
-          <div class="rev-import-meta" id="revImportMeta">Import a monthly revenue estimate report via the Import Hub below.</div>
-
-          <div class="rev-asm-section">
-            <div class="rev-asm-header">Assembly-completed SORDs not yet in report</div>
-            <div id="revAssemblyDetail"><p class="rev-empty">No assembly-completed SORDs to add yet.</p></div>
-          </div>
-        </section>
-
-        <section class="mc-health-strip">
-          <article class="mc-health-card mc-clickable-card" id="mcAttendanceHealthCard" data-home-jump="attendancePage" role="button" tabindex="0"><span class="mc-label">Attendance Health</span><strong id="mcAttendanceHealth">—</strong><p id="mcAttendanceHealthSub">No data</p></article>
-          <article class="mc-health-card mc-clickable-card" id="mcInboundHealthCard" data-home-jump="workflowInboundPage" role="button" tabindex="0"><span class="mc-label">Inbound Health</span><strong id="mcInboundHealth">—</strong><p id="mcInboundHealthSub">No data</p></article>
-          <article class="mc-health-card mc-clickable-card" id="mcAssemblyHealthCard" data-home-jump="assemblyPage" role="button" tabindex="0"><span class="mc-label">Assembly Health</span><strong id="mcAssemblyHealth">—</strong><p id="mcAssemblyHealthSub">No data</p></article>
-          <article class="mc-health-card mc-clickable-card" id="mcIssueHealthCard" data-home-jump="errorsPage" role="button" tabindex="0"><span class="mc-label">Issue Health</span><strong id="mcIssueHealth">—</strong><p id="mcIssueHealthSub">No data</p></article>
-          <article class="mc-health-card mc-clickable-card" id="mcDataFreshnessCard" data-home-jump="importHubPage" role="button" tabindex="0"><span class="mc-label">Data Freshness</span><strong id="mcDataFreshness">—</strong><p id="mcDataFreshnessSub">No data</p></article>
-          <article class="mc-health-card mc-clickable-card" id="mcTodayOutputCard" data-home-jump="homePage" role="button" tabindex="0"><span class="mc-label">Today's Output</span><strong id="mcTodayOutput">—</strong><p id="mcTodayOutputSub">No data</p></article>
-          <article class="mc-health-card mc-clickable-card" id="mcMonthRevenueCard" role="button" tabindex="0" onclick="document.getElementById('revTrackerPanel').scrollIntoView({behavior:'smooth'})"><span class="mc-label">Month Revenue</span><strong id="mcMonthRevenue">—</strong><p id="mcMonthRevenueSub">No goal set</p></article>
-        </section>
-
-        <section class="mc-panel">
-          <div class="mc-panel-head">
-            <div>
-              <div class="eyebrow">Department Radar</div>
-              <h3>Live warehouse status</h3>
-            </div>
-          </div>
-          <div class="mc-radar-grid" id="mcDeptRadar"></div>
-        </section>
-
-        <section class="mc-split-grid">
-          <div class="mc-panel">
-            <div class="mc-panel-head">
-              <div>
-                <div class="eyebrow">Priority Radar</div>
-                <h3>What needs attention now</h3>
+              <div class="rev-total-row brief-rev-row">
+                <span class="rev-grand-total" id="revGrandTotal">$0.00</span>
+                <span class="rev-pct-badge" id="revPctDisplay">—</span>
               </div>
-            </div>
-            <div class="mc-list" id="mcPriorityRadar"></div>
-          </div>
-          <div class="mc-panel">
-            <div class="mc-panel-head">
-              <div>
-                <div class="eyebrow">Exception Center</div>
-                <h3>Pressure points</h3>
+              <div class="brief-rev-meta">
+                <span class="rev-goal-display">Goal: <strong id="revGoalDisplay">No goal set</strong></span>
+                <span class="rev-remaining" id="revRemainingDisplay">—</span>
               </div>
-            </div>
-            <div class="mc-exception-grid" id="mcExceptionCenter"></div>
+
+              <div class="rev-progress-bar brief-rev-bar" id="revProgressBar">
+                <div class="rev-progress-fill" id="revProgressFill" style="width:0%"></div>
+              </div>
+
+              <div class="rev-breakdown brief-rev-breakdown">
+                <div class="rev-line" id="revImportedLine">No monthly revenue report imported yet.</div>
+                <div class="rev-line rev-line-asm" id="revAssemblyLine">+ $0.00 from 0 assembly-completed SORDs</div>
+              </div>
+
+              <div class="rev-import-meta brief-rev-import-meta" id="revImportMeta">Import a monthly revenue estimate report via the Import Hub.</div>
+
+              <details class="brief-rev-details">
+                <summary>Assembly-completed SORDs not yet in report</summary>
+                <div id="revAssemblyDetail"><p class="rev-empty">No assembly-completed SORDs to add yet.</p></div>
+              </details>
+
+              <div class="brief-goal-form">
+                <input id="revGoalInput" type="text" placeholder="Set monthly goal e.g. 2500000" class="rev-goal-input" />
+                <button id="revSaveGoalBtn" class="btn secondary" type="button">Set Goal</button>
+              </div>
+            </article>
+
+            <!-- At a glance: 7 health cards as editorial table -->
+            <aside class="brief-glance">
+              <div class="brief-eyebrow">At a glance</div>
+              <div class="brief-glance-list">
+                <article class="mc-health-card mc-clickable-card brief-glance-row" id="mcAttendanceHealthCard" data-home-jump="attendancePage" role="button" tabindex="0"><span class="mc-label">Attendance</span><strong id="mcAttendanceHealth">—</strong><p id="mcAttendanceHealthSub">No data</p></article>
+                <article class="mc-health-card mc-clickable-card brief-glance-row" id="mcInboundHealthCard" data-home-jump="workflowInboundPage" role="button" tabindex="0"><span class="mc-label">Inbound</span><strong id="mcInboundHealth">—</strong><p id="mcInboundHealthSub">No data</p></article>
+                <article class="mc-health-card mc-clickable-card brief-glance-row" id="mcAssemblyHealthCard" data-home-jump="assemblyPage" role="button" tabindex="0"><span class="mc-label">Assembly</span><strong id="mcAssemblyHealth">—</strong><p id="mcAssemblyHealthSub">No data</p></article>
+                <article class="mc-health-card mc-clickable-card brief-glance-row" id="mcIssueHealthCard" data-home-jump="errorsPage" role="button" tabindex="0"><span class="mc-label">Issues</span><strong id="mcIssueHealth">—</strong><p id="mcIssueHealthSub">No data</p></article>
+                <article class="mc-health-card mc-clickable-card brief-glance-row" id="mcDataFreshnessCard" data-home-jump="importHubPage" role="button" tabindex="0"><span class="mc-label">Data freshness</span><strong id="mcDataFreshness">—</strong><p id="mcDataFreshnessSub">No data</p></article>
+                <article class="mc-health-card mc-clickable-card brief-glance-row" id="mcTodayOutputCard" data-home-jump="homePage" role="button" tabindex="0"><span class="mc-label">Today's output</span><strong id="mcTodayOutput">—</strong><p id="mcTodayOutputSub">No data</p></article>
+                <article class="mc-health-card mc-clickable-card brief-glance-row" id="mcMonthRevenueCard" role="button" tabindex="0" onclick="document.getElementById('revTrackerPanel').scrollIntoView({behavior:'smooth'})"><span class="mc-label">Month revenue</span><strong id="mcMonthRevenue">—</strong><p id="mcMonthRevenueSub">No goal set</p></article>
+              </div>
+            </aside>
+
           </div>
         </section>
 
-        <section class="mc-panel">
-          <div class="mc-panel-head">
-            <div>
-              <div class="eyebrow">Timeline Pulse</div>
-              <h3>PO traceability and edit activity</h3>
-            </div>
+        <!-- ── NEEDS ATTENTION: Priority radar as editorial story columns ── -->
+        <section class="brief-section">
+          <div class="brief-section-head">
+            <div class="brief-eyebrow brief-eyebrow-danger">Needs attention</div>
+            <h2 class="brief-section-title">Priority radar</h2>
           </div>
-          <div class="mc-timeline-list" id="mcTimelinePulse"></div>
+          <div class="mc-list brief-priority" id="mcPriorityRadar"></div>
         </section>
 
-        <section class="mc-split-grid mc-bottom-grid">
-          <div class="mc-panel">
-            <div class="mc-panel-head">
-              <div>
-                <div class="eyebrow">Calendar + Urgency</div>
-                <h3>Time-sensitive pressure</h3>
-              </div>
+        <!-- ── DEPARTMENT REPORT + CALENDAR PRESSURE ── -->
+        <section class="brief-section brief-two-col">
+          <div class="brief-col">
+            <div class="brief-section-head">
+              <div class="brief-eyebrow">Department report</div>
+              <h2 class="brief-section-title">Floor-wide status</h2>
             </div>
-            <div class="mc-list" id="mcUrgencyRail"></div>
+            <div class="mc-radar-grid brief-dept-list" id="mcDeptRadar"></div>
           </div>
-          <div class="mc-panel">
-            <div class="mc-panel-head">
-              <div>
-                <div class="eyebrow">Recent Changes</div>
-                <h3>Policies, imports, and system updates</h3>
-              </div>
+          <div class="brief-col brief-col-divided">
+            <div class="brief-section-head">
+              <div class="brief-eyebrow">Calendar · the day ahead</div>
+              <h2 class="brief-section-title">Time-sensitive pressure</h2>
             </div>
-            <div class="mc-list" id="mcRecentChanges"></div>
+            <div class="mc-list brief-calendar" id="mcUrgencyRail"></div>
           </div>
         </section>
 
-
-        <section class="mc-panel">
-          <div class="mc-panel-head">
-            <div>
-              <div class="eyebrow">Quick Actions</div>
-              <h3>Jump where you need to work</h3>
+        <!-- ── EXCEPTIONS + TIMELINE ── -->
+        <section class="brief-section brief-two-col">
+          <div class="brief-col">
+            <div class="brief-section-head">
+              <div class="brief-eyebrow">Exception center</div>
+              <h2 class="brief-section-title">Pressure points</h2>
             </div>
+            <div class="mc-exception-grid brief-exceptions" id="mcExceptionCenter"></div>
           </div>
-          <div class="mc-actions" id="mcQuickActions">
+          <div class="brief-col brief-col-divided">
+            <div class="brief-section-head">
+              <div class="brief-eyebrow">Timeline · PO traceability</div>
+              <h2 class="brief-section-title">Edit and trace activity</h2>
+            </div>
+            <div class="mc-timeline-list brief-timeline" id="mcTimelinePulse"></div>
+          </div>
+        </section>
+
+        <!-- ── RECENT CHANGES ── -->
+        <section class="brief-section">
+          <div class="brief-section-head">
+            <div class="brief-eyebrow">Recent changes</div>
+            <h2 class="brief-section-title">Policies, imports, and system updates</h2>
+          </div>
+          <div class="mc-list brief-recent" id="mcRecentChanges"></div>
+        </section>
+
+        <!-- ── JUMP TO ── -->
+        <section class="brief-section brief-jump">
+          <div class="brief-section-head">
+            <div class="brief-eyebrow">Jump to</div>
+          </div>
+          <div class="mc-actions brief-actions" id="mcQuickActions">
             <button class="btn" data-home-jump="importHubPage" type="button">Import Reports</button>
             <button class="btn secondary" data-home-jump="attendancePage" type="button">Open Attendance</button>
             <button class="btn secondary" data-home-jump="workflowInboundPage" type="button">Open Inbound</button>
@@ -479,8 +486,53 @@
             <button class="btn secondary" data-home-jump="calendarPage" type="button">Open Calendar</button>
           </div>
         </section>
+
       </div>
     </section>
+    <script>
+      (function(){
+        try{
+          var el=document.getElementById('briefMastheadDate');
+          if(!el) return;
+          var d=new Date();
+          var opts={weekday:'long',year:'numeric',month:'long',day:'numeric'};
+          el.textContent=d.toLocaleDateString(undefined,opts);
+        }catch(e){}
+      })();
+
+      // Top story eyebrow: stays "Pacing" by default; swaps to a critical
+      // label when the home alert banner contains overdue / stale / coverage
+      // signals. Mirrors the same triggers script.js uses for the banner.
+      (function(){
+        try{
+          var banner=document.getElementById('homeAlertBanner');
+          var lede=document.querySelector('#homePage .brief-lede');
+          if(!banner||!lede) return;
+          var eyebrow=lede.querySelector('.brief-eyebrow');
+          var headline=lede.querySelector('.brief-headline');
+          if(!eyebrow||!headline) return;
+          var defaults={eyebrowText:eyebrow.textContent,eyebrowClass:'brief-eyebrow-warning',headlineText:headline.textContent};
+          var sync=function(){
+            var html=(banner.innerHTML||'').toLowerCase();
+            // Critical = overdue, attendance gap, or stale data
+            var critical=html.indexOf('overdue')>-1||html.indexOf('attendance gaps')>-1||html.indexOf('stale')>-1;
+            eyebrow.classList.remove('brief-eyebrow-warning','brief-eyebrow-danger');
+            if(critical){
+              eyebrow.classList.add('brief-eyebrow-danger');
+              eyebrow.textContent='Top story · Critical alert';
+              headline.textContent='Critical operational signal — review banner above';
+            }else{
+              eyebrow.classList.add('brief-eyebrow-warning');
+              eyebrow.textContent=defaults.eyebrowText;
+              headline.textContent=defaults.headlineText;
+            }
+          };
+          sync();
+          var mo=new MutationObserver(sync);
+          mo.observe(banner,{childList:true,subtree:true,characterData:true});
+        }catch(e){}
+      })();
+    </script>
 
 
     

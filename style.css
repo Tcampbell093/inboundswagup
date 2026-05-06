@@ -4958,3 +4958,488 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   font-weight:700;
 }
 .queue-financial-line strong{font-size:18px;}
+
+
+/* ============================================================
+   Mission Control — Morning Brief layout (Option B)
+   Restyles only #homePage. Existing mc-* and rev-* classes are
+   reused and kept intact; CSS scopes their look inside .brief-*
+   wrappers so script.js / revenue-tracker.js stay untouched.
+   ============================================================ */
+
+/* Serif headlines via system stack (Georgia / iOS-safe) */
+:root{
+  --brief-serif: Georgia, 'Iowan Old Style', 'Apple Garamond', 'Times New Roman', Times, serif;
+  --brief-ink: #0f1f33;
+  --brief-ink-soft: #4a627d;
+  --brief-rule: #d6dee8;
+  --brief-rule-soft: #e6ecf3;
+  --brief-bg: #ffffff;
+  --brief-bg-tint: #fbfcfe;
+  --brief-good: #1e7a34;
+  --brief-watch: #9a6a00;
+  --brief-risk: #b42318;
+  --brief-info: #1a4f86;
+}
+
+/* Outer shell — generous breathing room, max readable width */
+#homePage .brief-shell{
+  max-width:1280px;
+  margin:0 auto;
+  padding:24px 28px 64px;
+  display:block;
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  color:var(--brief-ink);
+}
+
+/* ── Masthead ──────────────────────────────────── */
+#homePage .brief-masthead{
+  border-bottom:2px solid var(--brief-ink);
+  padding-bottom:14px;
+  margin-bottom:20px;
+}
+#homePage .brief-masthead-meta{
+  display:flex;align-items:center;gap:8px;
+  font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--brief-ink-soft);font-weight:700;
+}
+#homePage .brief-masthead-dot{opacity:.5;}
+#homePage .brief-masthead-title{
+  font-family:var(--brief-serif);
+  font-size:42px;font-weight:700;letter-spacing:-0.01em;line-height:1.05;
+  color:var(--brief-ink);
+  margin:6px 0 0;
+}
+#homePage .brief-masthead-row{
+  display:flex;justify-content:space-between;align-items:flex-end;
+  gap:16px;margin-top:10px;
+}
+#homePage .brief-masthead-sub{
+  font-family:var(--brief-serif);
+  font-style:italic;
+  color:var(--brief-ink-soft);
+  font-size:15px;line-height:1.5;
+  margin:0;max-width:680px;
+}
+#homePage .brief-toolbar{display:flex;gap:8px;flex-shrink:0;}
+#homePage .brief-toolbar .btn{font-size:12px;border-radius:8px;padding:8px 14px;}
+
+/* Eyebrow */
+#homePage .brief-eyebrow{
+  font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--brief-ink-soft);font-weight:700;
+  display:inline-block;
+}
+#homePage .brief-eyebrow-warning{color:var(--brief-watch);}
+#homePage .brief-eyebrow-danger{color:var(--brief-risk);}
+
+/* Alert banner — slim ribbon under masthead */
+#homePage .brief-alert-banner:not([hidden]){
+  background:none;
+  border:none;
+  border-bottom:1px solid var(--brief-rule-soft);
+  padding:10px 0 12px;
+  margin-bottom:20px;
+  display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+}
+
+/* ── Top story (revenue lede + glance sidebar) ────── */
+#homePage .brief-top-story{
+  border-bottom:1px solid var(--brief-rule-soft);
+  padding-bottom:24px;margin-bottom:24px;
+}
+#homePage .brief-top-story-grid{
+  display:grid;
+  grid-template-columns:1.7fr 1fr;
+  gap:32px;
+  align-items:start;
+}
+#homePage .brief-lede{display:flex;flex-direction:column;gap:8px;}
+#homePage .brief-headline{
+  font-family:var(--brief-serif);
+  font-size:30px;font-weight:600;letter-spacing:-0.005em;line-height:1.18;
+  color:var(--brief-ink);
+  margin:4px 0 8px;
+  max-width:640px;
+}
+
+/* Revenue row reskin inside the lede */
+#homePage .brief-rev-row{
+  display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+  margin:0 0 4px;
+}
+#homePage .brief-lede .rev-grand-total{
+  font-family:var(--brief-serif);
+  font-size:38px;font-weight:700;letter-spacing:-0.01em;color:var(--brief-ink);
+}
+#homePage .brief-lede .rev-pct-badge{
+  font-size:16px;font-weight:600;
+  color:var(--brief-good);
+  background:none;padding:0;border:none;
+}
+#homePage .brief-rev-meta{
+  display:flex;gap:18px;flex-wrap:wrap;
+  font-size:13px;color:var(--brief-ink-soft);
+  margin-bottom:12px;
+}
+#homePage .brief-lede .rev-goal-display{font-size:13px;color:var(--brief-ink-soft);}
+#homePage .brief-lede .rev-goal-display strong{color:var(--brief-ink);font-weight:600;}
+#homePage .brief-lede .rev-remaining{font-size:13px;color:var(--brief-ink-soft);}
+#homePage .brief-lede .rev-remaining.rev-over{color:var(--brief-good);font-weight:600;}
+
+#homePage .brief-rev-bar{
+  height:6px;background:var(--brief-rule-soft);border-radius:999px;
+  margin:6px 0 14px;overflow:hidden;
+}
+#homePage .brief-rev-bar .rev-progress-fill{
+  height:100%;background:var(--brief-info);border-radius:999px;
+}
+
+#homePage .brief-rev-breakdown{display:flex;flex-direction:column;gap:4px;margin-bottom:8px;}
+#homePage .brief-lede .rev-line{font-size:13px;color:var(--brief-ink-soft);}
+#homePage .brief-lede .rev-line-asm{color:var(--brief-info);font-weight:600;}
+#homePage .brief-rev-import-meta{font-size:12px;color:var(--brief-ink-soft);font-style:italic;margin-bottom:14px;}
+
+/* Collapsible assembly detail */
+#homePage .brief-rev-details{
+  border-top:1px solid var(--brief-rule-soft);
+  padding-top:12px;margin-top:4px;
+}
+#homePage .brief-rev-details summary{
+  font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--brief-ink-soft);font-weight:700;cursor:pointer;
+  list-style:none;padding:2px 0;
+}
+#homePage .brief-rev-details summary::-webkit-details-marker{display:none;}
+#homePage .brief-rev-details summary::before{content:'▸ ';font-size:10px;color:var(--brief-ink-soft);}
+#homePage .brief-rev-details[open] summary::before{content:'▾ ';}
+#homePage .brief-rev-details .rev-asm-row{
+  background:var(--brief-bg-tint);
+  border:1px solid var(--brief-rule-soft);
+  border-radius:8px;
+  margin-top:8px;
+}
+
+/* Goal input row */
+#homePage .brief-goal-form{
+  display:flex;gap:8px;margin-top:16px;
+  padding-top:14px;border-top:1px dashed var(--brief-rule-soft);
+}
+#homePage .brief-goal-form .rev-goal-input{
+  flex:1;padding:8px 12px;border:1px solid var(--brief-rule);border-radius:8px;
+  font-size:13px;font-family:inherit;
+}
+#homePage .brief-goal-form .btn{font-size:12px;padding:8px 14px;}
+
+/* At-a-glance sidebar */
+#homePage .brief-glance{
+  border-left:1px solid var(--brief-rule-soft);
+  padding-left:24px;
+  display:flex;flex-direction:column;gap:10px;
+}
+#homePage .brief-glance-list{
+  display:flex;flex-direction:column;
+  border-top:1px solid var(--brief-rule-soft);
+  margin-top:6px;
+}
+#homePage .brief-glance .brief-glance-row{
+  display:grid;
+  grid-template-columns:1fr auto;
+  grid-template-rows:auto auto;
+  align-items:baseline;
+  gap:2px 12px;
+  padding:10px 0;
+  border:none;
+  border-bottom:1px solid var(--brief-rule-soft);
+  border-radius:0;
+  background:none;
+  box-shadow:none;
+  min-height:auto;
+  cursor:pointer;
+}
+#homePage .brief-glance .brief-glance-row:last-child{border-bottom:none;}
+#homePage .brief-glance .brief-glance-row .mc-label{
+  grid-column:1;grid-row:1;
+  font-size:13px;color:var(--brief-ink-soft);font-weight:500;
+  letter-spacing:0;text-transform:none;
+}
+#homePage .brief-glance .brief-glance-row strong{
+  grid-column:2;grid-row:1;
+  font-size:18px;font-weight:600;color:var(--brief-ink);
+  font-family:var(--brief-serif);text-align:right;
+}
+#homePage .brief-glance .brief-glance-row p{
+  grid-column:1 / -1;grid-row:2;
+  font-size:11px;color:var(--brief-ink-soft);margin:0;line-height:1.3;
+}
+#homePage .brief-glance .brief-glance-row.is-good strong{color:var(--brief-good);}
+#homePage .brief-glance .brief-glance-row.is-watch strong{color:var(--brief-watch);}
+#homePage .brief-glance .brief-glance-row.is-risk strong{color:var(--brief-risk);}
+#homePage .brief-glance .brief-glance-row:hover{background:var(--brief-bg-tint);transform:none;box-shadow:none;}
+
+/* ── Section heads ─────────────────────────────── */
+#homePage .brief-section{
+  border-bottom:1px solid var(--brief-rule-soft);
+  padding-bottom:24px;
+  margin-bottom:24px;
+}
+#homePage .brief-section:last-of-type{border-bottom:none;}
+#homePage .brief-section-head{margin-bottom:14px;}
+#homePage .brief-section-title{
+  font-family:var(--brief-serif);
+  font-size:22px;font-weight:600;letter-spacing:-0.005em;line-height:1.2;
+  color:var(--brief-ink);
+  margin:4px 0 0;
+}
+
+/* Two-column section layout */
+#homePage .brief-two-col{
+  display:grid;grid-template-columns:1fr 1fr;gap:32px;
+  border-bottom:1px solid var(--brief-rule-soft);
+  padding-bottom:24px;margin-bottom:24px;
+}
+#homePage .brief-two-col .brief-section{
+  border-bottom:none;padding-bottom:0;margin-bottom:0;
+}
+#homePage .brief-col{display:flex;flex-direction:column;}
+#homePage .brief-col-divided{
+  border-left:1px solid var(--brief-rule-soft);
+  padding-left:32px;
+}
+
+/* ── Priority Radar — three serif story columns ─ */
+#homePage .brief-priority{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:0;
+}
+#homePage .brief-priority .mc-priority-item{
+  background:none;border:none;border-radius:0;
+  padding:4px 24px 4px 0;
+  display:flex;flex-direction:column;gap:8px;
+  border-right:1px solid var(--brief-rule-soft);
+}
+#homePage .brief-priority .mc-priority-item:nth-child(3n){border-right:none;padding-right:0;}
+#homePage .brief-priority .mc-priority-item:nth-child(n+4){
+  border-top:1px solid var(--brief-rule-soft);
+  padding-top:18px;margin-top:18px;
+}
+#homePage .brief-priority .mc-priority-top{
+  display:flex;flex-direction:column-reverse;gap:6px;align-items:flex-start;
+}
+#homePage .brief-priority .mc-priority-title{
+  font-family:var(--brief-serif);
+  font-size:17px;font-weight:600;line-height:1.25;color:var(--brief-ink);
+  letter-spacing:-0.003em;
+}
+#homePage .brief-priority .mc-priority-copy{
+  font-size:13px;color:var(--brief-ink-soft);line-height:1.5;
+}
+#homePage .brief-priority .mc-priority-copy strong{color:var(--brief-ink);font-weight:600;}
+#homePage .brief-priority .mc-priority-badge{
+  background:none;border:none;padding:0;
+  font-size:10px;letter-spacing:.18em;text-transform:uppercase;font-weight:700;
+}
+#homePage .brief-priority .mc-priority-high{color:var(--brief-risk);}
+#homePage .brief-priority .mc-priority-med{color:var(--brief-watch);}
+#homePage .brief-priority .mc-priority-low{color:var(--brief-info);}
+#homePage .brief-priority .mc-priority-item .btn{
+  background:none;border:none;padding:0;color:var(--brief-info);
+  font-size:12px;font-weight:600;cursor:pointer;
+  text-align:left;justify-self:flex-start;
+}
+#homePage .brief-priority .mc-priority-item .btn::after{content:' →';}
+#homePage .brief-priority .mc-priority-item .btn:hover{color:var(--brief-ink);}
+
+/* ── Department list — newspaper table ────────── */
+#homePage .brief-dept-list{
+  display:flex;flex-direction:column;gap:0;
+  border-top:1px solid var(--brief-rule-soft);
+}
+#homePage .brief-dept-list .mc-dept-card{
+  background:none;border:none;border-radius:0;
+  border-bottom:1px solid var(--brief-rule-soft);
+  padding:12px 0;
+  display:grid;
+  grid-template-columns:1fr auto auto;
+  grid-template-rows:auto auto;
+  gap:2px 14px;
+  align-items:center;
+}
+#homePage .brief-dept-list .mc-dept-card .mc-dept-top{
+  grid-column:1;grid-row:1;
+  display:flex;justify-content:flex-start;align-items:center;
+}
+#homePage .brief-dept-list .mc-dept-card .eyebrow{
+  font-size:14px;color:var(--brief-ink);font-weight:600;
+  letter-spacing:0;text-transform:none;
+  font-family:inherit;
+}
+#homePage .brief-dept-list .mc-dept-card .mc-status-chip{
+  grid-column:3;grid-row:1;
+  background:none;padding:0;border-radius:0;
+  font-size:10px;letter-spacing:.18em;text-transform:uppercase;font-weight:700;
+  text-align:right;min-width:50px;
+}
+#homePage .brief-dept-list .mc-status-good{color:var(--brief-good);background:none;}
+#homePage .brief-dept-list .mc-status-watch{color:var(--brief-watch);background:none;}
+#homePage .brief-dept-list .mc-status-risk{color:var(--brief-risk);background:none;}
+#homePage .brief-dept-list .mc-dept-metric{
+  grid-column:2;grid-row:1;
+  font-family:var(--brief-serif);
+  font-size:18px;font-weight:600;color:var(--brief-ink);
+  text-align:right;min-width:90px;
+}
+#homePage .brief-dept-list .mc-dept-sub{
+  grid-column:1 / -1;grid-row:2;
+  font-size:12px;color:var(--brief-ink-soft);
+}
+#homePage .brief-dept-list .mc-dept-copy{display:none;}
+#homePage .brief-dept-list .mc-mini-list{display:none;}
+#homePage .brief-dept-list .mc-dept-card .btn{display:none;}
+
+/* ── Calendar / urgency — date-block list ─────── */
+#homePage .brief-calendar{
+  display:flex;flex-direction:column;gap:0;
+  border-top:1px solid var(--brief-rule-soft);
+}
+#homePage .brief-calendar .mc-urgency-item{
+  background:none;border:none;border-radius:0;
+  border-bottom:1px solid var(--brief-rule-soft);
+  padding:12px 0;
+  display:flex;flex-direction:column;gap:4px;
+}
+#homePage .brief-calendar .mc-urgency-item .mc-priority-title{
+  font-family:var(--brief-serif);
+  font-size:16px;font-weight:600;color:var(--brief-ink);line-height:1.25;
+}
+#homePage .brief-calendar .mc-urgency-copy{
+  font-size:13px;color:var(--brief-ink-soft);line-height:1.5;
+}
+#homePage .brief-calendar .mc-urgency-item .btn{
+  background:none;border:none;padding:0;color:var(--brief-info);
+  font-size:12px;font-weight:600;cursor:pointer;
+  align-self:flex-start;margin-top:2px;
+}
+#homePage .brief-calendar .mc-urgency-item .btn::after{content:' →';}
+
+/* ── Exception center — number stat row ──────── */
+#homePage .brief-exceptions{
+  display:grid;grid-template-columns:1fr 1fr;gap:0;
+  border-top:1px solid var(--brief-rule-soft);
+}
+#homePage .brief-exceptions .mc-exception-card{
+  background:none;border:none;border-radius:0;
+  border-bottom:1px solid var(--brief-rule-soft);
+  border-right:1px solid var(--brief-rule-soft);
+  padding:14px 16px 14px 0;
+  display:flex;flex-direction:column;gap:4px;
+}
+#homePage .brief-exceptions .mc-exception-card:nth-child(2n){
+  border-right:none;padding-right:0;padding-left:16px;
+}
+#homePage .brief-exceptions .mc-exception-title{
+  font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--brief-ink-soft);font-weight:700;
+}
+#homePage .brief-exceptions .mc-exception-card strong{
+  font-family:var(--brief-serif);
+  font-size:30px;font-weight:700;color:var(--brief-ink);line-height:1;
+}
+#homePage .brief-exceptions .mc-priority-copy{
+  font-size:12px;color:var(--brief-ink-soft);line-height:1.4;
+}
+
+/* ── Timeline — timestamped lines ─────────────── */
+#homePage .brief-timeline{
+  display:flex;flex-direction:column;gap:0;
+  border-top:1px solid var(--brief-rule-soft);
+}
+#homePage .brief-timeline .mc-timeline-item{
+  background:none;border:none;border-radius:0;
+  border-bottom:1px solid var(--brief-rule-soft);
+  padding:10px 0;
+  display:flex;flex-direction:column;gap:2px;
+}
+#homePage .brief-timeline .mc-timeline-top{
+  display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+}
+#homePage .brief-timeline .mc-timeline-title{
+  font-family:var(--brief-serif);
+  font-size:15px;font-weight:600;color:var(--brief-ink);
+  font-variant-numeric:tabular-nums;
+}
+#homePage .brief-timeline .mc-mini-pill{
+  background:none;border:none;padding:0;
+  font-size:11px;color:var(--brief-ink-soft);font-weight:500;
+  letter-spacing:0;text-transform:none;
+}
+#homePage .brief-timeline .mc-timeline-copy{
+  font-size:12px;color:var(--brief-ink-soft);line-height:1.5;
+}
+#homePage .brief-timeline .mc-timeline-copy strong{color:var(--brief-ink);font-weight:600;}
+#homePage .brief-timeline .mc-empty{
+  background:none;border:none;border-radius:0;
+  padding:14px 0;color:var(--brief-ink-soft);font-style:italic;font-size:13px;
+}
+
+/* ── Recent changes — compact log list ─────────── */
+#homePage .brief-recent{
+  display:grid;grid-template-columns:repeat(2,1fr);gap:0;
+  border-top:1px solid var(--brief-rule-soft);
+}
+#homePage .brief-recent .mc-update-item{
+  background:none;border:none;border-radius:0;
+  border-bottom:1px solid var(--brief-rule-soft);
+  padding:12px 24px 12px 0;
+  display:flex;flex-direction:column;gap:4px;
+}
+#homePage .brief-recent .mc-update-item:nth-child(2n){
+  padding-right:0;padding-left:24px;
+  border-left:1px solid var(--brief-rule-soft);
+}
+#homePage .brief-recent .mc-update-item .mc-priority-title{
+  font-family:var(--brief-serif);
+  font-size:15px;font-weight:600;color:var(--brief-ink);line-height:1.3;
+}
+#homePage .brief-recent .mc-update-copy{
+  font-size:12px;color:var(--brief-ink-soft);line-height:1.4;
+}
+#homePage .brief-recent .mc-update-item .btn{
+  background:none;border:none;padding:0;color:var(--brief-info);
+  font-size:12px;font-weight:600;cursor:pointer;
+  align-self:flex-start;margin-top:2px;
+}
+#homePage .brief-recent .mc-update-item .btn::after{content:' →';}
+
+/* ── Jump-to row ──────────────────────────────── */
+#homePage .brief-jump{border-bottom:none;padding-bottom:0;}
+#homePage .brief-actions{display:flex;flex-wrap:wrap;gap:8px;}
+#homePage .brief-actions .btn{font-size:12px;padding:8px 14px;border-radius:8px;}
+
+/* ── Responsive ───────────────────────────────── */
+@media (max-width: 1100px){
+  #homePage .brief-top-story-grid{grid-template-columns:1fr;gap:24px;}
+  #homePage .brief-glance{border-left:none;padding-left:0;border-top:1px solid var(--brief-rule-soft);padding-top:18px;}
+  #homePage .brief-priority{grid-template-columns:repeat(2,1fr);}
+  #homePage .brief-priority .mc-priority-item:nth-child(3n){border-right:1px solid var(--brief-rule-soft);padding-right:24px;}
+  #homePage .brief-priority .mc-priority-item:nth-child(2n){border-right:none;padding-right:0;}
+  #homePage .brief-priority .mc-priority-item:nth-child(n+3){border-top:1px solid var(--brief-rule-soft);padding-top:18px;margin-top:18px;}
+}
+@media (max-width: 760px){
+  #homePage .brief-shell{padding:16px 16px 48px;}
+  #homePage .brief-masthead-title{font-size:30px;}
+  #homePage .brief-masthead-row{flex-direction:column;align-items:flex-start;}
+  #homePage .brief-headline{font-size:22px;}
+  #homePage .brief-section-title{font-size:18px;}
+  #homePage .brief-priority{grid-template-columns:1fr;}
+  #homePage .brief-priority .mc-priority-item{border-right:none !important;padding-right:0 !important;}
+  #homePage .brief-priority .mc-priority-item:nth-child(n+2){border-top:1px solid var(--brief-rule-soft);padding-top:18px;margin-top:18px;}
+  #homePage .brief-two-col{grid-template-columns:1fr;gap:24px;}
+  #homePage .brief-col-divided{border-left:none;padding-left:0;border-top:1px solid var(--brief-rule-soft);padding-top:24px;}
+  #homePage .brief-recent{grid-template-columns:1fr;}
+  #homePage .brief-recent .mc-update-item{border-left:none !important;padding-left:0 !important;padding-right:0 !important;}
+  #homePage .brief-exceptions{grid-template-columns:1fr;}
+  #homePage .brief-exceptions .mc-exception-card{border-right:none !important;padding-left:0 !important;padding-right:0 !important;}
+  #homePage .brief-lede .rev-grand-total{font-size:30px;}
+}
