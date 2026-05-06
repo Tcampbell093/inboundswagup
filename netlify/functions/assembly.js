@@ -61,6 +61,8 @@ exports.handler = async function handler(event) {
         incomplete: Array.isArray(state.incomplete) ? state.incomplete : [],
         held: Array.isArray(state.held) ? state.held : [],
         revenue: Array.isArray(state.revenue) ? state.revenue : [],
+        queueImportMeta:   state.queueImportMeta   && typeof state.queueImportMeta   === 'object' ? state.queueImportMeta   : null,
+        revenueImportMeta: state.revenueImportMeta && typeof state.revenueImportMeta === 'object' ? state.revenueImportMeta : null,
       };
       const result = await pool.query(
         `INSERT INTO assembly_sync_state (state_key, state_json, updated_at)
