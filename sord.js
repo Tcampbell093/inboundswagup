@@ -344,6 +344,31 @@ window.__sordState = state;
     return Number.isNaN(d.getTime()) ? s : d.toISOString().slice(0,10);
   }
   function minDate(values){ return unique(values.map(dateToIso).filter(Boolean)).sort()[0] || ''; }
+  // Returns full epoch ms (preserves time-of-day) for sort. Returns 0 on failure.
+  function safeDateTime(v){
+    const s = safeText(v);
+    if (!s) return 0;
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+  }
+  function minTime(values){
+    const arr = (values||[]).map(safeDateTime).filter(t=>t>0);
+    return arr.length ? Math.min.apply(null, arr) : 0;
+  }
+  function maxTime(values){
+    const arr = (values||[]).map(safeDateTime).filter(t=>t>0);
+    return arr.length ? Math.max.apply(null, arr) : 0;
+  }
+  // For display: 5/7/2026 9:33 AM -style formatting
+  function fmtDateTime(v){
+    const t = (typeof v === 'number') ? v : safeDateTime(v);
+    if (!t) return '—';
+    const d = new Date(t);
+    return d.toLocaleString('en-US', {
+      year:'numeric', month:'numeric', day:'numeric',
+      hour:'numeric', minute:'2-digit'
+    });
+  }
   function salesOrderUrl(id){
     const clean = safeText(id);
     return clean ? `${SALESFORCE_BASE}/lightning/r/SalesOrder__c/${encodeURIComponent(clean)}/view` : '';
@@ -581,6 +606,11 @@ window.__sordState = state;
         sord: safeText(r.opportunity_quote_sales_order_sales_order_name || r.sales_order_name || r.sales_order || r.sord),
         salesOrderId: safeText(r.sales_order_id),
         salesOrderCreatedDate: safeText(r.sales_order_created_date),
+        // Raw timestamp strings preserved for true chronological sorting (date + time)
+        salesOrderCreatedAtRaw: safeText(r.sales_order_created_date),
+        lastModifiedDate: safeText(r.last_modified_date),
+        lastModifiedAtRaw: safeText(r.last_modified_date),
+        lastModifiedBy: safeText(r.last_modified_by_full_name || r.last_modified_by),
         purchaseOrderName: safeText(r.purchase_order_purchase_order_name || r.purchase_order_name || r.purchase_order),
         purchaseOrderId: safeText(r.purchase_order_id || r.purchase_order_purchase_order_id || r.purchase_order_id_1),
         poOwner: safeText(r.po_owner || r.purchase_order_owner || r.owner),
@@ -752,6 +782,10 @@ window.__sordState = state;
     (source.dueDates || []).forEach(v => target.dueDates.push(v));
     (source.createdDates || []).forEach(v => target.createdDates.push(v));
     (source.salesOrderCreatedDates || []).forEach(v => target.salesOrderCreatedDates.push(v));
+    (source.salesOrderCreatedAtRaws || []).forEach(v => (target.salesOrderCreatedAtRaws = target.salesOrderCreatedAtRaws || []).push(v));
+    (source.lastModifiedDates || []).forEach(v => (target.lastModifiedDates = target.lastModifiedDates || []).push(v));
+    (source.lastModifiedAtRaws || []).forEach(v => (target.lastModifiedAtRaws = target.lastModifiedAtRaws || []).push(v));
+    (source.lastModifiedBys || new Set()).forEach(v => (target.lastModifiedBys = target.lastModifiedBys || new Set()).add(v));
     (source.flags || []).forEach(v => target.flags.push(v));
     return target;
   }
@@ -807,6 +841,11 @@ function buildDataset(){
           dueDates: [],
           createdDates: [],
           salesOrderCreatedDates: [],
+          // New: preserve full date+time strings for accurate chronological sort
+          salesOrderCreatedAtRaws: [],
+          lastModifiedDates: [],
+          lastModifiedAtRaws: [],
+          lastModifiedBys: new Set(),
           flags: []
         });
       }
@@ -873,6 +912,10 @@ function buildDataset(){
       if(row.ihd) obj.ihdDates.push(row.ihd);
       if(row.createdDate) obj.createdDates.push(row.createdDate);
       if(row.salesOrderCreatedDate) obj.salesOrderCreatedDates.push(row.salesOrderCreatedDate);
+      if(row.salesOrderCreatedAtRaw) obj.salesOrderCreatedAtRaws.push(row.salesOrderCreatedAtRaw);
+      if(row.lastModifiedDate) obj.lastModifiedDates.push(row.lastModifiedDate);
+      if(row.lastModifiedAtRaw) obj.lastModifiedAtRaws.push(row.lastModifiedAtRaw);
+      if(row.lastModifiedBy) obj.lastModifiedBys.add(row.lastModifiedBy);
       const poKey = row.purchaseOrderId || row.purchaseOrderName || `${obj.key}-${obj.poMap.size+1}`;
       if(!obj.poMap.has(poKey)){
         obj.poMap.set(poKey, {
@@ -983,6 +1026,15 @@ function finalizeOrder(order){
     const dueDate = minDate(order.dueDates);
     const createdDate = minDate(order.createdDates);
     const salesOrderCreatedDate = minDate(order.salesOrderCreatedDates) || createdDate;
+    // Full-precision timestamps for sorting (preserves time-of-day)
+    const salesOrderCreatedAt = minTime(order.salesOrderCreatedAtRaws || []);
+    const lastModifiedAt = maxTime(order.lastModifiedAtRaws || []);
+    // Display string for last modified — pick most recent ISO date
+    const lastModifiedDate = (function(){
+      const arr = unique((order.lastModifiedDates || []).map(dateToIso).filter(Boolean)).sort();
+      return arr[arr.length-1] || '';
+    })();
+    const lastModifiedBy = [...(order.lastModifiedBys || new Set())][0] || '';
     const notes = [...order.notesSet];
     const relatedSords = [...order.relatedSords];
     const poOwners = [...order.poOwners].sort();
@@ -1026,6 +1078,10 @@ function finalizeOrder(order){
       dueDate,
       createdDate,
       salesOrderCreatedDate,
+      salesOrderCreatedAt,
+      lastModifiedDate,
+      lastModifiedAt,
+      lastModifiedBy,
       notes,
       relatedSords,
       readiness,
@@ -1157,6 +1213,12 @@ function finalizeOrder(order){
     if(scheduledDates[0]) rows.push({label:'Scheduled in app', value: scheduledDates[0]});
     const assemblyDates = unique(order.liveRows.filter(r=>r.source==='Assembly Board').map(r=>r.date).filter(Boolean)).sort();
     if(assemblyDates[0]) rows.push({label:'Seen on assembly board', value: assemblyDates[0]});
+    // Last modified from SORD Summary import (most recent ISO date across rows)
+    const lastModIso = (function(){
+      const arr = unique((order.lastModifiedDates || []).map(dateToIso).filter(Boolean)).sort();
+      return arr[arr.length-1] || '';
+    })();
+    if(lastModIso) rows.push({label:'Last modified', value: lastModIso});
     return rows;
   }
 
@@ -1193,6 +1255,39 @@ function finalizeOrder(order){
       if(sortVal === 'readiness-asc') { const order = {'Blocked':0,'Needs Review':1,'Partially Ready':2,'Ready':3}; return (order[a.readiness]??1) - (order[b.readiness]??1); }
       if(sortVal === 'flags-desc') return num(b.flagCount) - num(a.flagCount);
       if(sortVal === 'account') return safeText(a.account).localeCompare(safeText(b.account));
+      // New: chronological sorts using full timestamps. 0 always sinks to the end.
+      if(sortVal === 'modified-desc') {
+        const at = num(a.lastModifiedAt) || safeDateTime(a.lastModifiedDate);
+        const bt = num(b.lastModifiedAt) || safeDateTime(b.lastModifiedDate);
+        if (!at && !bt) return 0;
+        if (!at) return 1;
+        if (!bt) return -1;
+        return bt - at;
+      }
+      if(sortVal === 'modified-asc') {
+        const at = num(a.lastModifiedAt) || safeDateTime(a.lastModifiedDate);
+        const bt = num(b.lastModifiedAt) || safeDateTime(b.lastModifiedDate);
+        if (!at && !bt) return 0;
+        if (!at) return 1;
+        if (!bt) return -1;
+        return at - bt;
+      }
+      if(sortVal === 'created-desc') {
+        const at = num(a.salesOrderCreatedAt) || safeDateTime(a.salesOrderCreatedDate);
+        const bt = num(b.salesOrderCreatedAt) || safeDateTime(b.salesOrderCreatedDate);
+        if (!at && !bt) return 0;
+        if (!at) return 1;
+        if (!bt) return -1;
+        return bt - at;
+      }
+      if(sortVal === 'created-asc') {
+        const at = num(a.salesOrderCreatedAt) || safeDateTime(a.salesOrderCreatedDate);
+        const bt = num(b.salesOrderCreatedAt) || safeDateTime(b.salesOrderCreatedDate);
+        if (!at && !bt) return 0;
+        if (!at) return 1;
+        if (!bt) return -1;
+        return at - bt;
+      }
       // default: IHD ascending
       const aDate = a.earliestIhd || a.dueDate || '9999';
       const bDate = b.earliestIhd || b.dueDate || '9999';
@@ -1318,9 +1413,16 @@ function finalizeOrder(order){
 
     const visible = list.slice(0, SEARCH_LIMIT_DEFAULT);
 
+    // When user has explicitly chosen a chronological sort, respect it visually:
+    // skip the "Needs Attention / Active" partition so the top of the list is
+    // truly the newest / oldest item, not the most-flagged one.
+    const sortVal = safeText(els.sortSelect?.value);
+    const isChronoSort = sortVal === 'modified-desc' || sortVal === 'modified-asc'
+                       || sortVal === 'created-desc'  || sortVal === 'created-asc';
+
     // Group: flagged/blocked float to top when showing all
     let html = '';
-    if(state.activeTypeFilter === 'all' && !safeText(els.searchInput?.value)){
+    if(state.activeTypeFilter === 'all' && !safeText(els.searchInput?.value) && !isChronoSort){
       const urgent = visible.filter(x => x.flagCount > 0 || /block|exception/.test((x.readiness||'').toLowerCase()));
       const rest   = visible.filter(x => !urgent.includes(x));
       if(urgent.length){
@@ -1373,6 +1475,7 @@ function finalizeOrder(order){
               <span class="sord-acc-account">${escape(item.account||'—')}</span>
               <span class="sord-acc-owner">AO: ${escape(ownerLabel)}</span>
               <span class="sord-acc-status-chip ${acStatusColor(item.status||item.poStatus)}">${escape(item.status||item.poStatus||'—')}</span>
+              ${item.lastModifiedDate?`<span class="sord-acc-modified" title="Last modified${item.lastModifiedBy?' by '+item.lastModifiedBy:''}">Modified ${escape(fmtDate(item.lastModifiedDate))}</span>`:''}
             </div>
           </div>
           <div class="sord-acc-right">
@@ -1441,6 +1544,8 @@ function finalizeOrder(order){
           ${item.productionTypes?.length?`<div class="ac-kv-row"><span class="ac-kv-key">Production Types</span><span class="ac-kv-val">${escape(item.productionTypes.join(', '))}</span></div>`:''}
           ${item.supplierCount?`<div class="ac-kv-row"><span class="ac-kv-key">Suppliers</span><span class="ac-kv-val">${escape([...item.raw.suppliers||[]].slice(0,5).join(', ')||'—')}</span></div>`:''}
           ${item.poOwners?.length?`<div class="ac-kv-row"><span class="ac-kv-key">PO Owner(s)</span><span class="ac-kv-val">${escape(item.poOwners.join(', '))}</span></div>`:''}
+          ${item.salesOrderCreatedAt?`<div class="ac-kv-row"><span class="ac-kv-key">Order Created</span><span class="ac-kv-val">${escape(fmtDateTime(item.salesOrderCreatedAt))}</span></div>`:(item.salesOrderCreatedDate?`<div class="ac-kv-row"><span class="ac-kv-key">Order Created</span><span class="ac-kv-val">${escape(fmtDate(item.salesOrderCreatedDate))}</span></div>`:'')}
+          ${item.lastModifiedDate?`<div class="ac-kv-row"><span class="ac-kv-key">Last Modified</span><span class="ac-kv-val">${escape(fmtDate(item.lastModifiedDate))}${item.lastModifiedBy?` <span style="color:#67839d">· by ${escape(item.lastModifiedBy)}</span>`:''}</span></div>`:''}
           ${item.relatedSords?.length?`<div class="ac-kv-row"><span class="ac-kv-key">Related SORDs</span><span class="ac-kv-val">${item.relatedSords.map(r=>`<span class="ac-related-chip">${escape(r)}</span>`).join(' ')}</span></div>`:''}
         </div>
       </div>
