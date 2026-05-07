@@ -33,6 +33,10 @@
     typeCntPb:   document.getElementById('sordTypeCntPb'),
     typeCntBulk: document.getElementById('sordTypeCntBulk'),
     typeCntMix:  document.getElementById('sordTypeCntMix'),
+    weightFilterRoot: document.getElementById('sordWeightFilter'),
+    weightSlider: document.getElementById('sordWeightSlider'),
+    weightInput: document.getElementById('sordWeightInput'),
+    weightSummary: document.getElementById('sordWeightSummary'),
     ownerMapBody: document.getElementById('sordOwnerMapBody'),
     ownerUtilityLabel: document.getElementById('sordOwnerUtilityLabel'),
     ownerUtilityUrl: document.getElementById('sordOwnerUtilityUrl'),
@@ -299,6 +303,25 @@
   }
 
   const PRIORITY_KEY = 'ops_hub_sord_priority_v1';
+  const WEIGHT_FILTER_KEY = 'ops_hub_sord_weight_filter_v1';
+  // Slider config — covers the realistic range of per-unit product weights in the warehouse.
+  const WEIGHT_FILTER_MIN = 0.1;
+  const WEIGHT_FILTER_MAX = 50;
+  const WEIGHT_FILTER_STEP = 0.1;
+  const WEIGHT_FILTER_DEFAULT = 5;
+
+  function loadWeightFilter(){
+    try {
+      const raw = JSON.parse(localStorage.getItem(WEIGHT_FILTER_KEY) || 'null');
+      if (raw && typeof raw === 'object') {
+        return {
+          mode: raw.mode === 'full' || raw.mode === 'partial' ? raw.mode : 'off',
+          threshold: Number.isFinite(+raw.threshold) ? +raw.threshold : WEIGHT_FILTER_DEFAULT
+        };
+      }
+    } catch {}
+    return { mode: 'off', threshold: WEIGHT_FILTER_DEFAULT };
+  }
 
   const state = {
     poCategoryFilter: 'all',
@@ -308,12 +331,16 @@
     expandedKey: '',
     expandedTabMap: {},
     activeTypeFilter: 'all',
+    weightFilter: loadWeightFilter(),
     ownerMap: loadJson(OWNER_MAP_KEY, DEFAULT_OWNER_MAP),
     prioritySords: new Set(JSON.parse(localStorage.getItem(PRIORITY_KEY) || '[]'))
   };
 
   function savePriority() {
     try { localStorage.setItem(PRIORITY_KEY, JSON.stringify([...state.prioritySords])); } catch {}
+  }
+  function saveWeightFilter() {
+    try { localStorage.setItem(WEIGHT_FILTER_KEY, JSON.stringify(state.weightFilter)); } catch {}
   }
 window.__sordState = state;
 
@@ -635,6 +662,9 @@ window.__sordState = state;
         externalId: safeText(r.external_id),
         quantity,
         quantityReceived,
+        // Per-unit weight in pounds, parsed from the SORD Summary 'Total Weight(lb)' column.
+        // Negative values (e.g. canceled corrections) and non-numeric inputs collapse to 0.
+        unitWeight: Math.max(0, num(r.total_weightlb || r.total_weight_lb || r.weight || r.unit_weight)),
         itemReceivedAtWarehouseDate: safeText(r.item_received_at_warehouse_date || r.received_at_warehouse_date || r.item_received_date),
         floorValue: quantityReceived > 0 && unitPrice > 0 ? quantityReceived * unitPrice : 0,
         image: safeText(r.image || r.image_url || r.thumbnail || r.po_image)
@@ -757,6 +787,8 @@ window.__sordState = state;
       a.accountProductName = a.accountProductName || b.accountProductName;
       a.accountProductExternalId = a.accountProductExternalId || b.accountProductExternalId;
       a.quantity = Math.max(a.quantity || 0, b.quantity || 0);
+      a.totalWeight = Math.max(a.totalWeight || 0, b.totalWeight || 0);
+      a.unitWeight = Math.max(a.unitWeight || 0, b.unitWeight || 0);
       a.status = a.status || b.status;
       a.image = a.image || b.image;
     });
@@ -917,6 +949,8 @@ function buildDataset(){
       if(row.lastModifiedAtRaw) obj.lastModifiedAtRaws.push(row.lastModifiedAtRaw);
       if(row.lastModifiedBy) obj.lastModifiedBys.add(row.lastModifiedBy);
       const poKey = row.purchaseOrderId || row.purchaseOrderName || `${obj.key}-${obj.poMap.size+1}`;
+      // Weight contribution from this row: per-unit lbs × quantity on this line
+      const rowWeightLb = (row.unitWeight || 0) * (row.quantity || 0);
       if(!obj.poMap.has(poKey)){
         obj.poMap.set(poKey, {
           purchaseOrderName: row.purchaseOrderName,
@@ -932,6 +966,8 @@ function buildDataset(){
           accountProductName: row.accountProductName,
           accountProductExternalId: row.accountProductExternalId,
           quantity: row.quantity,
+          unitWeight: row.unitWeight || 0,
+          totalWeight: rowWeightLb,
           status: row.status,
           image: row.image
         });
@@ -940,6 +976,9 @@ function buildDataset(){
         po.itemTotalCost += row.itemTotalCost || 0;
         po.lineItemPrice += row.lineItemPrice || 0;
         po.quantity += row.quantity || 0;
+        po.totalWeight = (po.totalWeight || 0) + rowWeightLb;
+        // Keep the heaviest per-unit weight seen (most rows for one PO share a unit weight; this is conservative)
+        po.unitWeight = Math.max(po.unitWeight || 0, row.unitWeight || 0);
         po.accountProductName = po.accountProductName || row.accountProductName;
         po.accountProductExternalId = po.accountProductExternalId || row.accountProductExternalId;
         po.status = po.status || row.status;
@@ -1225,6 +1264,44 @@ function finalizeOrder(order){
   function itemHasPb(item)   { return item.pbCount > 0 || item.totalPackItems > 0; }
   function itemHasBulk(item) { return item.totalBulkProducts > 0; }
 
+  // A PO is considered "in the warehouse" when its status is one of the three
+  // statuses that mean physical goods are on-site (per Yordani's spec).
+  const IN_WAREHOUSE_STATUSES = new Set([
+    'item partially received at warehouse',
+    'item fully received at warehouse',
+    'qa approved'
+  ]);
+  function isInWarehouseStatus(status){
+    return IN_WAREHOUSE_STATUSES.has(safeText(status).toLowerCase());
+  }
+
+  // Given an order and a per-unit weight threshold (lb), figure out:
+  //  - how many of its POs are at-or-under that threshold (eligible)
+  //  - of those, how many are physically in the warehouse
+  //  - the coverage percentage (in-WH / eligible)
+  // Returns null when the order has no eligible POs at this threshold (so the
+  // filter knows to exclude it from "Full" / "Partial" results).
+  function computeWeightCoverage(item, thresholdLb){
+    const thr = Math.max(0, num(thresholdLb));
+    const eligible = (item.poRows || []).filter(po => {
+      const w = num(po.unitWeight);
+      // Weight must be known (>0) AND at or under the threshold to be eligible.
+      // POs with no weight on file are excluded from the calculation entirely.
+      return w > 0 && w <= thr;
+    });
+    if (!eligible.length) return null;
+    const inWh = eligible.filter(po => isInWarehouseStatus(po.status));
+    const pct = (inWh.length / eligible.length) * 100;
+    return {
+      eligibleCount: eligible.length,
+      inWarehouseCount: inWh.length,
+      percent: pct,
+      bucket: pct >= 100 ? 'full' : pct >= 75 ? 'partial' : 'below',
+      eligible,
+      inWh
+    };
+  }
+
   function getFilteredDataset(){
     const q = norm(els.searchInput?.value || '');
     const statusFilter = safeText(els.statusFilter?.value);
@@ -1248,6 +1325,19 @@ function finalizeOrder(order){
       if(state.activeTypeFilter === 'pb'   && !(itemHasPb(item) && !itemHasBulk(item))) return false;
       if(state.activeTypeFilter === 'bulk' && !(!itemHasPb(item) && itemHasBulk(item)))  return false;
       if(state.activeTypeFilter === 'mix'  && !(itemHasPb(item) && itemHasBulk(item)))   return false;
+      // Weight-coverage filter: show only SORDs whose POs at-or-below the threshold
+      // are sufficiently in the warehouse. Mode: 'off' | 'full' | 'partial'.
+      const wf = state.weightFilter;
+      if (wf && (wf.mode === 'full' || wf.mode === 'partial')) {
+        const cov = computeWeightCoverage(item, wf.threshold);
+        // Stash on the item so the renderer can show the badge without recomputing
+        item._weightCov = cov;
+        if (!cov) return false;
+        if (wf.mode === 'full'    && cov.bucket !== 'full')    return false;
+        if (wf.mode === 'partial' && cov.bucket !== 'partial') return false;
+      } else {
+        item._weightCov = null;
+      }
       return true;
     });
     list.sort((a,b)=>{
@@ -1476,6 +1566,7 @@ function finalizeOrder(order){
               <span class="sord-acc-owner">AO: ${escape(ownerLabel)}</span>
               <span class="sord-acc-status-chip ${acStatusColor(item.status||item.poStatus)}">${escape(item.status||item.poStatus||'—')}</span>
               ${item.lastModifiedDate?`<span class="sord-acc-modified" title="Last modified${item.lastModifiedBy?' by '+item.lastModifiedBy:''}">Modified ${escape(fmtDate(item.lastModifiedDate))}</span>`:''}
+              ${item._weightCov ? `<span class="sord-acc-wcov sord-acc-wcov-${item._weightCov.bucket}" title="POs at-or-under ${state.weightFilter.threshold} lb that are in the warehouse">⚖ ${item._weightCov.inWarehouseCount}/${item._weightCov.eligibleCount} in WH · ${Math.round(item._weightCov.percent)}%</span>` : ''}
             </div>
           </div>
           <div class="sord-acc-right">
@@ -1622,6 +1713,7 @@ function finalizeOrder(order){
                 ${po.estimatedShipDate?`<span>Est. Ship: <strong>${escape(fmtDate(po.estimatedShipDate))}</strong></span>`:''}
                 ${po.ihd?`<span>IHD: <strong>${escape(fmtDate(po.ihd))}</strong></span>`:''}
                 ${po.itemTotalCost?`<span>Item Cost: <strong>${fmtMoney(po.itemTotalCost)}</strong></span>`:''}
+                ${po.unitWeight?`<span>Unit Wt: <strong>${(+po.unitWeight).toFixed(2)} lb</strong>${po.totalWeight?` <span style="color:#67839d">· total ${(+po.totalWeight).toFixed(1)} lb</span>`:''}</span>`:''}
                 ${po.accountProductName?`<span>${escape(po.accountProductName)}</span>`:''}
                 ${imageUrl?`<span><button class="btn secondary btn-sm po-image-link" type="button" data-po-image="${escape(imageUrl)}" data-po-title="${escape(po.purchaseOrderName||'')} image">View image</button></span>`:''}
               </div>
@@ -2016,6 +2108,67 @@ function finalizeOrder(order){
     renderAccordion();
   };
 
+  function clampWeight(v){
+    const n = +v;
+    if (!Number.isFinite(n)) return WEIGHT_FILTER_DEFAULT;
+    return Math.min(WEIGHT_FILTER_MAX, Math.max(WEIGHT_FILTER_MIN, Math.round(n*10)/10));
+  }
+
+  function syncWeightFilterUi(){
+    const wf = state.weightFilter;
+    if (els.weightSlider) els.weightSlider.value = String(wf.threshold);
+    if (els.weightInput)  els.weightInput.value  = String(wf.threshold);
+    document.querySelectorAll('#sordWeightFilter .sord-weight-mode').forEach(b=>{
+      b.classList.toggle('is-active', b.getAttribute('data-wmode') === wf.mode);
+    });
+    if (els.weightSummary){
+      if (wf.mode === 'off') {
+        els.weightSummary.textContent = 'Off — showing all SORDs';
+        els.weightSummary.classList.remove('is-active');
+      } else {
+        const label = wf.mode === 'full' ? 'Full coverage (100%)' : 'Partial coverage (75–99%)';
+        els.weightSummary.textContent = `${label} · POs at-or-under ${wf.threshold} lb`;
+        els.weightSummary.classList.add('is-active');
+      }
+    }
+    if (els.weightFilterRoot) els.weightFilterRoot.classList.toggle('is-active', wf.mode !== 'off');
+  }
+
+  function bindWeightFilter(){
+    if (!els.weightFilterRoot) return;
+    // Mode pills
+    els.weightFilterRoot.addEventListener('click', (e)=>{
+      const btn = e.target.closest('.sord-weight-mode');
+      if (!btn) return;
+      const mode = btn.getAttribute('data-wmode');
+      if (mode !== 'off' && mode !== 'full' && mode !== 'partial') return;
+      state.weightFilter.mode = mode;
+      saveWeightFilter();
+      syncWeightFilterUi();
+      renderAccordion();
+    });
+    // Slider drag — keep numeric input in sync, re-filter live
+    els.weightSlider?.addEventListener('input', ()=>{
+      const v = clampWeight(els.weightSlider.value);
+      state.weightFilter.threshold = v;
+      if (els.weightInput) els.weightInput.value = String(v);
+      saveWeightFilter();
+      syncWeightFilterUi();
+      // Only re-render the list when an active mode is on; otherwise just update the summary
+      if (state.weightFilter.mode !== 'off') renderAccordion();
+    });
+    // Number input — same path, plus snap slider to entered value on commit
+    els.weightInput?.addEventListener('input', ()=>{
+      const v = clampWeight(els.weightInput.value);
+      state.weightFilter.threshold = v;
+      if (els.weightSlider) els.weightSlider.value = String(v);
+      saveWeightFilter();
+      syncWeightFilterUi();
+      if (state.weightFilter.mode !== 'off') renderAccordion();
+    });
+    syncWeightFilterUi();
+  }
+
   function bind(){
     els.importBtn.addEventListener('click', importFiles);
     bindPriorityBuilder();
@@ -2031,8 +2184,12 @@ function finalizeOrder(order){
       if(els.riskFilter) els.riskFilter.value='';
       if(els.confirmedFilter) els.confirmedFilter.value='';
       state.activeTypeFilter = 'all';
+      state.weightFilter = { mode: 'off', threshold: WEIGHT_FILTER_DEFAULT };
+      saveWeightFilter();
+      syncWeightFilterUi();
       renderAccordion();
     });
+    bindWeightFilter();
     if(els.addOwnerRowBtn){
       els.addOwnerRowBtn.addEventListener('click', ()=>{ syncOwnerMapFromUi(); state.ownerMap.rows.push(emptyOwnerRow()); renderOwnerMapTable(); });
       els.saveOwnerMapBtn.addEventListener('click', ()=>{ syncOwnerMapFromUi(); saveOwnerMap(); renderOwnerMapTable(); rebuildAndRender(); setStatus('Owner mapping saved.'); });

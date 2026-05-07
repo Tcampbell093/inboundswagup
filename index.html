@@ -2155,6 +2155,31 @@
             <button class="btn secondary" id="sordResetFiltersBtn" type="button">Reset Filters</button>
           </div>
         </div>
+
+        <!-- Weight-coverage filter: which SORDs have their light-weight POs already in the warehouse -->
+        <div class="sord-weight-filter" id="sordWeightFilter">
+          <div class="sord-weight-filter-head">
+            <div>
+              <div class="eyebrow">In-Warehouse by Weight</div>
+              <p class="sord-weight-filter-sub">Of each SORD's POs at-or-under the chosen per-unit weight, how many are physically in the warehouse (Partially Received, Fully Received, or QA Approved)?</p>
+            </div>
+            <div class="sord-weight-filter-modes" role="radiogroup" aria-label="Weight coverage mode">
+              <button type="button" class="sord-weight-mode is-active" data-wmode="off">Off</button>
+              <button type="button" class="sord-weight-mode" data-wmode="full" title="100% of eligible POs are in the warehouse">Full · 100%</button>
+              <button type="button" class="sord-weight-mode" data-wmode="partial" title="Between 75% and 99% of eligible POs are in the warehouse">Partial · 75–99%</button>
+            </div>
+          </div>
+          <div class="sord-weight-filter-row">
+            <span class="sord-weight-bound">0.1 lb</span>
+            <input id="sordWeightSlider" class="sord-weight-slider" type="range" min="0.1" max="50" step="0.1" value="5" />
+            <span class="sord-weight-bound">50 lb</span>
+            <div class="sord-weight-readout">
+              <label for="sordWeightInput" class="sord-weight-readout-lbl">Threshold</label>
+              <input id="sordWeightInput" class="sord-weight-input" type="number" min="0.1" max="50" step="0.1" value="5" /> <span>lb</span>
+            </div>
+            <div id="sordWeightSummary" class="sord-weight-summary">Off — showing all SORDs</div>
+          </div>
+        </div>
       </div>
 
       <!-- ══ Priority Builder Panel ══ -->
