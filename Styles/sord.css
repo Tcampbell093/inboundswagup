@@ -597,6 +597,15 @@
   padding: 2px 7px;
   border-radius: 4px;
 }
+.sord-acc-modified {
+  font-size: 10px;
+  font-weight: 500;
+  color: #6b7280;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #f3f4f6;
+  white-space: nowrap;
+}
 
 .sord-acc-right {
   display: flex;
