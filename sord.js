@@ -323,6 +323,19 @@
     return { mode: 'off', threshold: WEIGHT_FILTER_DEFAULT };
   }
 
+  // ── Pre-Kit Assignments ──────────────────────────────────────────────────
+  // Map keyed by pbId (Salesforce id, stable across imports). When a PB has
+  // no pbId we fall back to a composite key of "pb|so". Each value is
+  // { assignee, assignedAt }. ISO timestamp stored locally so display picks
+  // up the user's locale.
+  const PREKIT_KEY = 'ops_hub_sord_prekit_v1';
+  function loadPrekit(){
+    try {
+      const raw = JSON.parse(localStorage.getItem(PREKIT_KEY) || '{}');
+      return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    } catch { return {}; }
+  }
+
   const state = {
     poCategoryFilter: 'all',
     imports: emptyImports(),
@@ -332,6 +345,7 @@
     expandedTabMap: {},
     activeTypeFilter: 'all',
     weightFilter: loadWeightFilter(),
+    prekit: loadPrekit(),
     ownerMap: loadJson(OWNER_MAP_KEY, DEFAULT_OWNER_MAP),
     prioritySords: new Set(JSON.parse(localStorage.getItem(PRIORITY_KEY) || '[]'))
   };
@@ -341,6 +355,164 @@
   }
   function saveWeightFilter() {
     try { localStorage.setItem(WEIGHT_FILTER_KEY, JSON.stringify(state.weightFilter)); } catch {}
+  }
+  function savePrekit(){
+    try { localStorage.setItem(PREKIT_KEY, JSON.stringify(state.prekit || {})); } catch {}
+  }
+
+  // Stable key for a PB across imports: prefer the SF id, fall back to pb+so.
+  function prekitKeyForPb(pb){
+    if (!pb) return '';
+    const id = String(pb.pbId || '').trim();
+    if (id) return 'id:' + id;
+    const name = String(pb.pb || '').trim();
+    const so = String(pb.so || '').trim();
+    if (!name && !so) return '';
+    return 'ns:' + name + '|' + so;
+  }
+  function getPrekitAssignment(pb){
+    const key = prekitKeyForPb(pb);
+    if (!key) return null;
+    return (state.prekit && state.prekit[key]) || null;
+  }
+  function setPrekitAssignment(pb, assignee){
+    const key = prekitKeyForPb(pb);
+    if (!key) return;
+    if (!state.prekit) state.prekit = {};
+    if (!assignee) {
+      delete state.prekit[key];
+    } else {
+      state.prekit[key] = {
+        assignee: String(assignee).trim(),
+        assignedAt: new Date().toISOString()
+      };
+    }
+    savePrekit();
+  }
+  // Pull active employee names from the existing employees store. Sorted A→Z.
+  function getActiveEmployeeNames(){
+    try {
+      const raw = JSON.parse(localStorage.getItem('ops_hub_employees_v1') || '[]');
+      if (!Array.isArray(raw)) return [];
+      return [...new Set(
+        raw
+          .filter(e => e && e.active !== false)
+          .map(e => typeof e === 'string' ? e.trim() : String(e.name || '').trim())
+          .filter(Boolean)
+      )].sort((a, b) => a.localeCompare(b));
+    } catch {
+      return [];
+    }
+  }
+  // Compute pre-kit progress for a SORD: { assigned, total }.
+  function prekitProgressForItem(item){
+    const pbs = (item && item.packBuilders) || [];
+    if (!pbs.length) return { assigned: 0, total: 0 };
+    let assigned = 0;
+    for (const pb of pbs) if (getPrekitAssignment(pb)) assigned += 1;
+    return { assigned, total: pbs.length };
+  }
+  // Reverse-lookup: given a stable prekit key, find the PB object inside the
+  // currently-loaded dataset. We also track which dossier key it belongs to
+  // so we can do an in-place tab refresh after a change.
+  function findPbByPrekitKey(key){
+    if (!key) return null;
+    for (const item of (state.dataset || [])) {
+      const pbs = item.packBuilders || [];
+      for (const pb of pbs) {
+        if (prekitKeyForPb(pb) === key) {
+          // Stash the back-ref so getItemKeyForPb is O(1)
+          pb._sordItemKey = item.key;
+          return pb;
+        }
+      }
+    }
+    return null;
+  }
+  function getItemKeyForPb(pb){
+    return pb && pb._sordItemKey ? pb._sordItemKey : null;
+  }
+  // After a prekit change, re-render the affected dossier (header + tabs)
+  // without disturbing the rest of the list.
+  function refreshDossierForKey(itemKey){
+    if (!itemKey) { renderAccordion(); return; }
+    // Simplest reliable approach: re-render the whole accordion. The expand
+    // state and active-tab state are already preserved in state.expandedKey
+    // and state.expandedTabMap, so the user's view is unchanged.
+    renderAccordion();
+  }
+
+  // ── Inline assignee picker ─────────────────────────────────────────────
+  // Floating dropdown attached to the clicked Assign button. Lists active
+  // employees; allows free-text fallback if no employees are loaded yet.
+  let _prekitPickerEl = null;
+  function closePrekitPicker(){
+    if (_prekitPickerEl && _prekitPickerEl.parentNode) {
+      _prekitPickerEl.parentNode.removeChild(_prekitPickerEl);
+    }
+    _prekitPickerEl = null;
+  }
+  function openPrekitPicker(anchorBtn){
+    closePrekitPicker();
+    const key = anchorBtn.getAttribute('data-prekit-assign');
+    if (!key) return;
+    const names = getActiveEmployeeNames();
+    const picker = document.createElement('div');
+    picker.className = 'prekit-picker';
+    picker.setAttribute('role', 'listbox');
+    const options = names.length
+      ? names.map(n => `<button type="button" class="prekit-pick-opt" data-prekit-row-key="${escape(key)}" data-prekit-pick="${escape(n)}">${escape(n)}</button>`).join('')
+      : `<div class="prekit-picker-empty">No active employees yet. Add people in <strong>Settings → Employees</strong>.</div>`;
+    picker.innerHTML = `
+      <div class="prekit-picker-head">
+        <input type="text" class="prekit-picker-search" placeholder="Search…" autofocus />
+        <button type="button" class="prekit-picker-close" aria-label="Close">×</button>
+      </div>
+      <div class="prekit-picker-list">${options}</div>
+      <div class="prekit-picker-foot">
+        <input type="text" class="prekit-picker-custom" placeholder="Or type a name…" />
+        <button type="button" class="prekit-picker-custom-go" data-prekit-row-key="${escape(key)}">Assign</button>
+      </div>
+    `;
+    document.body.appendChild(picker);
+    // Position below the button
+    const r = anchorBtn.getBoundingClientRect();
+    const top = r.bottom + window.scrollY + 4;
+    let left = r.left + window.scrollX;
+    // Clamp to viewport
+    const maxLeft = window.scrollX + (window.innerWidth - 280);
+    if (left > maxLeft) left = maxLeft;
+    picker.style.top = top + 'px';
+    picker.style.left = left + 'px';
+    _prekitPickerEl = picker;
+
+    // Wire close + search + custom name
+    picker.querySelector('.prekit-picker-close')?.addEventListener('click', closePrekitPicker);
+    const searchEl = picker.querySelector('.prekit-picker-search');
+    searchEl?.addEventListener('input', () => {
+      const q = String(searchEl.value || '').trim().toLowerCase();
+      picker.querySelectorAll('.prekit-pick-opt').forEach(opt => {
+        const name = (opt.getAttribute('data-prekit-pick') || '').toLowerCase();
+        opt.style.display = !q || name.includes(q) ? '' : 'none';
+      });
+    });
+    setTimeout(() => searchEl?.focus(), 0);
+    const customEl = picker.querySelector('.prekit-picker-custom');
+    const goBtn = picker.querySelector('.prekit-picker-custom-go');
+    const submitCustom = () => {
+      const name = String(customEl?.value || '').trim();
+      if (!name) return;
+      closePrekitPicker();
+      const pb = findPbByPrekitKey(key);
+      if (pb) {
+        setPrekitAssignment(pb, name);
+        refreshDossierForKey(getItemKeyForPb(pb));
+      }
+    };
+    goBtn?.addEventListener('click', submitCustom);
+    customEl?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); submitCustom(); }
+    });
   }
 window.__sordState = state;
 
@@ -1567,6 +1739,14 @@ function finalizeOrder(order){
               <span class="sord-acc-status-chip ${acStatusColor(item.status||item.poStatus)}">${escape(item.status||item.poStatus||'—')}</span>
               ${item.lastModifiedDate?`<span class="sord-acc-modified" title="Last modified${item.lastModifiedBy?' by '+item.lastModifiedBy:''}">Modified ${escape(fmtDate(item.lastModifiedDate))}</span>`:''}
               ${item._weightCov ? `<span class="sord-acc-wcov sord-acc-wcov-${item._weightCov.bucket}" title="POs at-or-under ${state.weightFilter.threshold} lb that are in the warehouse">⚖ ${item._weightCov.inWarehouseCount}/${item._weightCov.eligibleCount} in WH · ${Math.round(item._weightCov.percent)}%</span>` : ''}
+              ${(function(){
+                const p = prekitProgressForItem(item);
+                if (!p.total) return '';
+                const cls = p.assigned === 0 ? 'sord-acc-prekit-none'
+                          : p.assigned === p.total ? 'sord-acc-prekit-full'
+                          : 'sord-acc-prekit-partial';
+                return `<span class="sord-acc-prekit ${cls}" title="Pre-kit assignments">👤 Pre-kit ${p.assigned}/${p.total}</span>`;
+              })()}
             </div>
           </div>
           <div class="sord-acc-right">
@@ -1679,12 +1859,26 @@ function finalizeOrder(order){
                 ? `<a class="ac-pb-sfid pb-link" href="${escape(pbUrl)}" target="_blank" rel="noopener noreferrer" title="Open Pack Builder in Salesforce">${escape(pb.pbId)}</a>`
                 : `<span class="ac-pb-sfid">${escape(pb.pbId)}</span>`)
             : '';
-          return `<div class="ac-pb-row">
+          // Pre-kit assignment chip / button. Stable key for click handlers.
+          const pkKey = prekitKeyForPb(pb);
+          const pk = getPrekitAssignment(pb);
+          const prekitHtml = pk
+            ? `<span class="ac-pb-prekit ac-pb-prekit-assigned" title="Assigned ${escape(fmtDate(pk.assignedAt) || '')}">
+                  <span class="ac-pb-prekit-icon" aria-hidden="true">👤</span>
+                  <span class="ac-pb-prekit-name">${escape(pk.assignee)}</span>
+                  <button type="button" class="ac-pb-prekit-clear" title="Clear assignment" data-prekit-clear="${escape(pkKey)}">✕</button>
+                </span>`
+            : `<button type="button" class="ac-pb-prekit ac-pb-prekit-empty" data-prekit-assign="${escape(pkKey)}" title="Assign for pre-kitting">
+                  <span class="ac-pb-prekit-icon" aria-hidden="true">+</span>
+                  <span>Assign pre-kit</span>
+                </button>`;
+          return `<div class="ac-pb-row" data-prekit-row="${escape(pkKey)}">
             <div class="ac-pb-top">
               ${pbNameHtml}
               ${pbIdHtml}
               <span class="ac-pb-stage ${stCls}">${escape(pb.stage||pb.status||'—')}</span>
               ${pb.link?`<a class="ac-pb-link" href="${escape(pb.link)}" target="_blank">📄 PDF</a>`:'<span class="ac-pb-nopdf">No PDF</span>'}
+              ${prekitHtml}
             </div>
             <div class="ac-pb-meta">
               <span>${fmtInt(pb.qty)} kits</span>
@@ -1761,10 +1955,83 @@ function finalizeOrder(order){
         <div class="ac-fin-card"><div class="ac-fin-lbl">Bulk Products</div><div class="ac-fin-val">${fmtInt(item.totalBulkProducts)}</div></div>
       </div>`;
 
+    // ── Pre-Kit tab ───────────────────────────────────────────────────────────
+    // Per-SORD pre-kit assignment summary. Groups PBs by assignee, with an
+    // "Unassigned" group for what's still pending. Per-row "assign" / "clear"
+    // controls share the same delegated handlers as the Pack Builders tab.
+    const _pkProgress = prekitProgressForItem(item);
+    const _pkPbs = item.packBuilders || [];
+    const _pkGroups = new Map(); // assignee -> [{pb, assignedAt}]
+    const _pkUnassigned = [];
+    _pkPbs.forEach(pb => {
+      const a = getPrekitAssignment(pb);
+      if (a && a.assignee) {
+        if (!_pkGroups.has(a.assignee)) _pkGroups.set(a.assignee, []);
+        _pkGroups.get(a.assignee).push({ pb, assignedAt: a.assignedAt });
+      } else {
+        _pkUnassigned.push(pb);
+      }
+    });
+    const _pkSortedAssignees = [..._pkGroups.keys()].sort((a, b) => a.localeCompare(b));
+    const _pkRow = (pb, assignedAt) => {
+      const pkKey = prekitKeyForPb(pb);
+      const pbUrl = (typeof window.buildSalesforcePbLink === 'function')
+        ? window.buildSalesforcePbLink(pb.pbId, pb.link && pb.link.endsWith && pb.link.endsWith('.pdf') ? '' : pb.link)
+        : '';
+      const nameHtml = pbUrl
+        ? `<a class="pb-link" href="${escape(pbUrl)}" target="_blank" rel="noopener noreferrer">${escape(pb.pb||'—')}</a>`
+        : `<span>${escape(pb.pb||'—')}</span>`;
+      const stamp = assignedAt ? `<span class="ac-pk-when">${escape(fmtDate(assignedAt))}</span>` : '';
+      const action = assignedAt
+        ? `<button type="button" class="ac-pk-mini-clear" data-prekit-clear="${escape(pkKey)}" title="Clear assignment">Clear</button>`
+        : `<button type="button" class="ac-pk-mini-assign" data-prekit-assign="${escape(pkKey)}" title="Assign for pre-kitting">Assign</button>`;
+      return `<div class="ac-pk-row" data-prekit-row="${escape(pkKey)}">
+        <div class="ac-pk-row-name">${nameHtml}</div>
+        <div class="ac-pk-row-meta">
+          <span>${fmtInt(pb.qty)} kits · ${fmtInt(pb.units)} units</span>
+          ${pb.scheduledFor?`<span>Sched: <strong>${escape(pb.scheduledFor)}</strong></span>`:''}
+          ${stamp}
+        </div>
+        <div class="ac-pk-row-action">${action}</div>
+      </div>`;
+    };
+    const prekitHTML = !_pkPbs.length
+      ? '<div class="ac-empty">No pack builders to pre-kit on this SORD.</div>'
+      : `
+        <div class="ac-pk-summary">
+          <div class="ac-pk-summary-bar">
+            <div class="ac-pk-summary-fill" style="width:${_pkProgress.total ? Math.round((_pkProgress.assigned/_pkProgress.total)*100) : 0}%"></div>
+          </div>
+          <div class="ac-pk-summary-text">
+            <strong>${_pkProgress.assigned}</strong> of <strong>${_pkProgress.total}</strong> PBs assigned
+            ${_pkSortedAssignees.length ? ` · ${_pkSortedAssignees.length} ${_pkSortedAssignees.length===1?'person':'people'}` : ''}
+          </div>
+        </div>
+        ${_pkSortedAssignees.map(name => `
+          <div class="ac-pk-group">
+            <div class="ac-pk-group-head">
+              <span class="ac-pk-group-icon" aria-hidden="true">👤</span>
+              <span class="ac-pk-group-name">${escape(name)}</span>
+              <span class="ac-pk-group-count">${_pkGroups.get(name).length} PB${_pkGroups.get(name).length===1?'':'s'}</span>
+            </div>
+            ${_pkGroups.get(name).map(({pb, assignedAt}) => _pkRow(pb, assignedAt)).join('')}
+          </div>`).join('')}
+        ${_pkUnassigned.length ? `
+          <div class="ac-pk-group ac-pk-group-unassigned">
+            <div class="ac-pk-group-head">
+              <span class="ac-pk-group-icon" aria-hidden="true">○</span>
+              <span class="ac-pk-group-name">Unassigned</span>
+              <span class="ac-pk-group-count">${_pkUnassigned.length} PB${_pkUnassigned.length===1?'':'s'}</span>
+            </div>
+            ${_pkUnassigned.map(pb => _pkRow(pb, null)).join('')}
+          </div>` : ''}
+      `;
+
     const tabs = [
       {id:'ov',  label:'Overview'},
       {id:'tl',  label:'Timeline'},
       {id:'pbs', label:`Pack Builders${item.pbCount?` (${item.pbCount})`:''}`, hidden: !hasPb},
+      {id:'pk',  label:`Pre-Kit (${prekitProgressForItem(item).assigned}/${prekitProgressForItem(item).total})`, hidden: !hasPb},
       {id:'pos', label:`POs (${item.poCount})`},
       {id:'ap',  label:`Products (${item.accountProducts?.length||0})`, hidden: !item.accountProducts?.length},
       {id:'fin', label:'Financials'},
@@ -1776,7 +2043,7 @@ function finalizeOrder(order){
       <div class="ac-dossier-tabs">${tabs.map(t=>`<div class="ac-dtab${activeDossierTab===t.id?' active':''}" data-key="${escJs(item.key)}" data-dtab="${t.id}" onclick="window.sordSwitchTab('${escJs(item.key)}','${t.id}')">${escape(t.label)}</div>`).join('')}</div>
       <div class="ac-dossier-body">
         ${tabs.map(t=>{
-          const body = t.id==='ov'?overviewHTML : t.id==='tl'?timelineHTML : t.id==='pbs'?pbHTML : t.id==='pos'?poHTML : t.id==='ap'?apHTML : finHTML;
+          const body = t.id==='ov'?overviewHTML : t.id==='tl'?timelineHTML : t.id==='pbs'?pbHTML : t.id==='pk'?prekitHTML : t.id==='pos'?poHTML : t.id==='ap'?apHTML : finHTML;
           return `<div class="ac-dtab-pane${activeDossierTab===t.id?' active':''}" id="ac-pane-${escJs(item.key)}-${t.id}">${body}</div>`;
         }).join('')}
       </div>
@@ -2217,6 +2484,49 @@ function finalizeOrder(order){
     document.getElementById('sordImageCloseBtn')?.addEventListener('click', closeImagePreview);
     document.getElementById('sordImageOverlay')?.addEventListener('click', (event)=>{
       if(event.target && event.target.id === 'sordImageOverlay') closeImagePreview();
+    });
+
+    // Pre-kit delegation: assign / clear / picker dismiss
+    (els.accordionList || els.page)?.addEventListener('click', (event)=>{
+      const clearBtn  = event.target.closest('[data-prekit-clear]');
+      const assignBtn = event.target.closest('[data-prekit-assign]');
+      // Picker option click is handled below via data-prekit-pick
+      const pickBtn   = event.target.closest('[data-prekit-pick]');
+      if (clearBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        const key = clearBtn.getAttribute('data-prekit-clear');
+        const pb = findPbByPrekitKey(key);
+        if (pb) {
+          setPrekitAssignment(pb, '');
+          refreshDossierForKey(getItemKeyForPb(pb));
+        }
+        return;
+      }
+      if (pickBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        const key = pickBtn.getAttribute('data-prekit-row-key');
+        const name = pickBtn.getAttribute('data-prekit-pick');
+        closePrekitPicker();
+        const pb = findPbByPrekitKey(key);
+        if (pb) {
+          setPrekitAssignment(pb, name);
+          refreshDossierForKey(getItemKeyForPb(pb));
+        }
+        return;
+      }
+      if (assignBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        openPrekitPicker(assignBtn);
+        return;
+      }
+      // Click outside any picker → dismiss
+      if (!event.target.closest('.prekit-picker')) closePrekitPicker();
+    });
+    document.addEventListener('keydown', (event)=>{
+      if (event.key === 'Escape') closePrekitPicker();
     });
     // Type pill delegation (works for both static HTML pills and any dynamically added ones)
     els.page?.addEventListener('click', (event)=>{
