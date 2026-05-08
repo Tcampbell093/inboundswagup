@@ -432,7 +432,17 @@ function unscheduleQueueRow(id){
   scheduledQueueRows=scheduledQueueRows.filter(item=>String(item.id)!==String(id));
   assemblyBoardRows=assemblyBoardRows.filter(item=>String(item.id)!==String(id));
 
-  const targetBucket=(scheduledMatch.sourceQueue==='incomplete'||classifyQueueStatus(scheduledMatch.sourceStatus)==='incomplete')?incompleteQueueRows:availableQueueRows;
+  // Pick the queue bucket: trust the explicit sourceQueue captured at scheduling
+  // time. Only fall back to status classification when it's missing, to avoid
+  // empty-status rows being misrouted to "incomplete".
+  let targetBucket;
+  if(scheduledMatch.sourceQueue==='incomplete' || scheduledMatch.sourceQueue==='ready'){
+    targetBucket = scheduledMatch.sourceQueue==='incomplete' ? incompleteQueueRows : availableQueueRows;
+  } else {
+    targetBucket = classifyQueueStatus(scheduledMatch.sourceStatus||scheduledMatch.status||'')==='incomplete'
+      ? incompleteQueueRows
+      : availableQueueRows;
+  }
   mergeReturnedQueueRow(targetBucket,{
     priority:scheduledMatch.priority,
     pb:scheduledMatch.pb,

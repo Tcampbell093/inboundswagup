@@ -5443,3 +5443,180 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   #homePage .brief-exceptions .mc-exception-card{border-right:none !important;padding-left:0 !important;padding-right:0 !important;}
   #homePage .brief-lede .rev-grand-total{font-size:30px;}
 }
+
+
+/* ── Assembly bulk-action bar + checkbox column ────────────────────── */
+.asm-bulk-cell {
+  width: 32px;
+  text-align: center;
+  padding: 6px 4px;
+}
+.asm-bulk-cb,
+#asmBulkSelectAll {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+.asm-bulk-bar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #1d496f;
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 6px 14px rgba(29, 73, 111, 0.16);
+  flex-wrap: wrap;
+}
+.asm-bulk-bar[hidden] { display: none; }
+.asm-bulk-bar-count {
+  font-size: 13px;
+  font-weight: 500;
+}
+.asm-bulk-bar-count strong {
+  font-size: 16px;
+  font-weight: 700;
+  margin-right: 4px;
+}
+.asm-bulk-bar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.asm-bulk-bar-actions .btn {
+  font-size: 12px;
+  padding: 6px 12px;
+}
+
+
+/* ── Daily Brief: View POs button + PO list modal ────────────────── */
+.huddle-floor-action {
+  display: inline-block;
+  margin-top: 8px;
+  background: none;
+  border: 0;
+  color: #1d496f;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: .02em;
+}
+.huddle-floor-action:hover { text-decoration: underline; }
+
+.huddle-floor-po-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.huddle-floor-po-modal[hidden] { display: none; }
+.huddle-floor-po-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 31, 51, 0.45);
+  backdrop-filter: blur(2px);
+}
+.huddle-floor-po-dialog {
+  position: relative;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(15, 31, 51, 0.32);
+  max-width: 1080px;
+  width: 100%;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+}
+.huddle-floor-po-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid #e6ecf3;
+  gap: 16px;
+}
+.huddle-floor-po-head .eyebrow {
+  font-size: 10px;
+  letter-spacing: .14em;
+  color: #4a627d;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.huddle-floor-po-head h3 {
+  font-family: Georgia, 'Iowan Old Style', serif;
+  font-size: 22px;
+  font-weight: 600;
+  margin: 4px 0 0;
+  color: #0f1f33;
+}
+.huddle-floor-po-sub {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #4a627d;
+}
+.huddle-floor-po-close {
+  background: none;
+  border: 0;
+  font-size: 28px;
+  line-height: 1;
+  color: #4a627d;
+  cursor: pointer;
+  padding: 4px 10px;
+}
+.huddle-floor-po-close:hover { color: #0f1f33; }
+.huddle-floor-po-body {
+  overflow: auto;
+  padding: 0 6px 16px;
+}
+.huddle-floor-po-table-wrap {
+  padding: 8px 16px 0;
+}
+.huddle-floor-po-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.huddle-floor-po-table th,
+.huddle-floor-po-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #eef2f7;
+  text-align: left;
+}
+.huddle-floor-po-table th {
+  background: #f7faff;
+  font-weight: 700;
+  color: #1f3654;
+  font-size: 12px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  position: sticky;
+  top: 0;
+}
+.huddle-floor-po-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.huddle-floor-po-table tfoot td {
+  background: #f7faff;
+  border-top: 2px solid #e6ecf3;
+  font-weight: 600;
+}
+.huddle-floor-po-table tbody tr:hover {
+  background: #fafcfe;
+}
+@media (max-width: 700px) {
+  .huddle-floor-po-modal { padding: 0; }
+  .huddle-floor-po-dialog { border-radius: 0; max-height: 100vh; height: 100vh; max-width: 100vw; }
+  .huddle-floor-po-table th,
+  .huddle-floor-po-table td { padding: 6px 8px; font-size: 12px; }
+}

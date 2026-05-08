@@ -158,12 +158,12 @@ function renderAssembly(){
 
   if(assemblyBoardHead){
     assemblyBoardHead.innerHTML = assemblyShowDetails
-      ? '<tr><th>Work Type</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Packs</th><th>Total Products</th><th>Units / Packs</th><th>Status</th><th>IHD</th><th>Open</th><th>Subtotal</th><th>Current Stage</th><th>Reschedule Note</th><th>Comments</th><th>Action</th></tr>'
-      : '<tr><th>Pack Builder</th><th>Account</th><th>Units / Packs</th><th>IHD</th><th>Revenue</th><th>Stage</th><th>Status</th><th>Comments</th><th>Action</th></tr>';
+      ? '<tr><th class="asm-bulk-cell"><input type="checkbox" id="asmBulkSelectAll" aria-label="Select all" /></th><th>Work Type</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Packs</th><th>Total Products</th><th>Units / Packs</th><th>Status</th><th>IHD</th><th>Open</th><th>Subtotal</th><th>Current Stage</th><th>Reschedule Note</th><th>Comments</th><th>Action</th></tr>'
+      : '<tr><th class="asm-bulk-cell"><input type="checkbox" id="asmBulkSelectAll" aria-label="Select all" /></th><th>Pack Builder</th><th>Account</th><th>Units / Packs</th><th>IHD</th><th>Revenue</th><th>Stage</th><th>Status</th><th>Comments</th><th>Action</th></tr>';
   }
 
   if(!filteredRows.length){
-    assemblyBoardBody.innerHTML=`<tr><td colspan="${assemblyShowDetails?15:9}" class="empty">No assembly board rows for the selected day.</td></tr>`;
+    assemblyBoardBody.innerHTML=`<tr><td colspan="${assemblyShowDetails?16:10}" class="empty">No assembly board rows for the selected day.</td></tr>`;
     return;
   }
 
@@ -200,11 +200,11 @@ function renderAssembly(){
 
     if(!assemblyShowDetails){
       const cbKey = row.pbId||row.so||'';
-      return `<tr class="${rowClass}"><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${formatUnitsQtyHtml(units,getAssemblyQty(row))}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td><select onchange="setAssemblyStage(${row.id},this.value)"><option value="aa" ${row.stage==='aa'?'selected':''}>A.A.</option><option value="print" ${row.stage==='print'?'selected':''}>Print</option><option value="picked" ${row.stage==='picked'?'selected':''}>Picked</option><option value="line" ${row.stage==='line'?'selected':''}>Line</option><option value="dpmo" ${row.stage==='dpmo'?'selected':''}>DPMO</option><option value="done" ${row.stage==='done'?'selected':''}>Done</option></select></td><td>${escapeHtml(row.status||'—')}${priorityBadge}</td><td class="cb-cell" data-cbkey="${cbKey}"><span class="cb-badge cb-loading">…</span></td><td><div class="row-actions">${openLink?`<a class="btn secondary" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:''}<button class="btn secondary" onclick="editAssemblyBoardRow(${row.id})">Edit</button>${isPackBuilderWorkType(row.workType)?`<button class="btn warn" onclick="openIssueHoldModal(${row.id},'assembly')">Hold</button>`:''}<button class="btn warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button></div></td></tr>`;
+      return `<tr class="${rowClass}" data-asm-id="${row.id}"><td class="asm-bulk-cell">${isPackBuilderWorkType(row.workType)?`<input type="checkbox" class="asm-bulk-cb" data-asm-id="${row.id}" aria-label="Select row" />`:''}</td><td>${escapeHtml(row.pb||'—')}</td><td>${escapeHtml(row.account||'—')}</td><td>${formatUnitsQtyHtml(units,getAssemblyQty(row))}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td><select onchange="setAssemblyStage(${row.id},this.value)"><option value="aa" ${row.stage==='aa'?'selected':''}>A.A.</option><option value="print" ${row.stage==='print'?'selected':''}>Print</option><option value="picked" ${row.stage==='picked'?'selected':''}>Picked</option><option value="line" ${row.stage==='line'?'selected':''}>Line</option><option value="dpmo" ${row.stage==='dpmo'?'selected':''}>DPMO</option><option value="done" ${row.stage==='done'?'selected':''}>Done</option></select></td><td>${escapeHtml(row.status||'—')}${priorityBadge}</td><td class="cb-cell" data-cbkey="${cbKey}"><span class="cb-badge cb-loading">…</span></td><td><div class="row-actions">${openLink?`<a class="btn secondary" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:''}<button class="btn secondary" onclick="editAssemblyBoardRow(${row.id})">Edit</button>${isPackBuilderWorkType(row.workType)?`<button class="btn warn" onclick="openIssueHoldModal(${row.id},'assembly')">Hold</button>`:''}${isPackBuilderWorkType(row.workType)?`<button class="btn secondary" onclick="rescheduleAssemblyBoardRow(${row.id})">Reschedule</button>`:''}<button class="btn warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button></div></td></tr>`;
     }
 
     const cbKey2 = row.pbId||row.so||'';
-    return `<tr class="${rowClass}"><td>${escapeHtml(getAssemblyWorkTypeLabel(row.workType)+(row.isPartial?' • Partial':''))}</td><td>${escapeHtml(row.pb)}</td><td>${escapeHtml(row.so)}</td><td>${escapeHtml(row.account)}</td><td>${formatAssemblyQty(row)}</td><td>${row.products}</td><td>${formatUnitsQtyHtml(units,getAssemblyQty(row))}</td><td>${escapeHtml(row.status||'—')}${priorityBadge}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${openLink?`<a class="queue-link" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td>$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td><select onchange="setAssemblyStage(${row.id},this.value)"><option value="aa" ${row.stage==='aa'?'selected':''}>A.A.</option><option value="print" ${row.stage==='print'?'selected':''}>Print</option><option value="picked" ${row.stage==='picked'?'selected':''}>Picked</option><option value="line" ${row.stage==='line'?'selected':''}>Line</option><option value="dpmo" ${row.stage==='dpmo'?'selected':''}>DPMO</option><option value="done" ${row.stage==='done'?'selected':''}>Done</option></select></td><td>${escapeHtml(row.rescheduleNote||'—')}</td><td class="cb-cell" data-cbkey="${cbKey2}"><span class="cb-badge cb-loading">…</span></td><td><div class="row-actions"><button class="btn secondary" onclick="editAssemblyBoardRow(${row.id})">Edit</button>${isPackBuilderWorkType(row.workType)?`<button class="btn warn" onclick="openIssueHoldModal(${row.id},'assembly')">Hold</button>`:''}<button class="btn secondary" onclick="rescheduleAssemblyBoardRow(${row.id})">Reschedule</button><button class="btn warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button></div></td></tr>`;
+    return `<tr class="${rowClass}" data-asm-id="${row.id}"><td class="asm-bulk-cell">${isPackBuilderWorkType(row.workType)?`<input type="checkbox" class="asm-bulk-cb" data-asm-id="${row.id}" aria-label="Select row" />`:''}</td><td>${escapeHtml(getAssemblyWorkTypeLabel(row.workType)+(row.isPartial?' • Partial':''))}</td><td>${escapeHtml(row.pb)}</td><td>${escapeHtml(row.so)}</td><td>${escapeHtml(row.account)}</td><td>${formatAssemblyQty(row)}</td><td>${row.products}</td><td>${formatUnitsQtyHtml(units,getAssemblyQty(row))}</td><td>${escapeHtml(row.status||'—')}${priorityBadge}</td><td>${escapeHtml(getEffectiveIhdForRow(row)||'—')}</td><td>${openLink?`<a class="queue-link" href="${escapeHtml(openLink)}" target="_blank" rel="noopener noreferrer">Open</a>`:'—'}</td><td>$${Number(getEffectiveSubtotalForRow(row)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td><select onchange="setAssemblyStage(${row.id},this.value)"><option value="aa" ${row.stage==='aa'?'selected':''}>A.A.</option><option value="print" ${row.stage==='print'?'selected':''}>Print</option><option value="picked" ${row.stage==='picked'?'selected':''}>Picked</option><option value="line" ${row.stage==='line'?'selected':''}>Line</option><option value="dpmo" ${row.stage==='dpmo'?'selected':''}>DPMO</option><option value="done" ${row.stage==='done'?'selected':''}>Done</option></select></td><td>${escapeHtml(row.rescheduleNote||'—')}</td><td class="cb-cell" data-cbkey="${cbKey2}"><span class="cb-badge cb-loading">…</span></td><td><div class="row-actions"><button class="btn secondary" onclick="editAssemblyBoardRow(${row.id})">Edit</button>${isPackBuilderWorkType(row.workType)?`<button class="btn warn" onclick="openIssueHoldModal(${row.id},'assembly')">Hold</button>`:''}<button class="btn secondary" onclick="rescheduleAssemblyBoardRow(${row.id})">Reschedule</button><button class="btn warn" onclick="removeAssemblyBoardRow(${row.id})">${actionLabel}</button></div></td></tr>`;
   }).join('');
 
   // ── Concept C additions ──────────────────────────────────
@@ -441,10 +441,19 @@ function removeAssemblyBoardRow(id){
   }
 
   const sourceRow=scheduledMatch||row;
-  const targetBucket=(
-    sourceRow.sourceQueue==='incomplete' ||
-    classifyQueueStatus(sourceRow.sourceStatus)==='incomplete'
-  ) ? incompleteQueueRows : availableQueueRows;
+  // Pick which queue bucket the PB belongs back in. Prefer the explicit
+  // sourceQueue captured at scheduling time (it's authoritative). Only fall
+  // back to classifying by status when sourceQueue isn't set on the row —
+  // for example for legacy rows or rows added directly to Assembly without
+  // ever being in the queue.
+  let targetBucket;
+  if(sourceRow.sourceQueue==='incomplete' || sourceRow.sourceQueue==='ready'){
+    targetBucket = sourceRow.sourceQueue==='incomplete' ? incompleteQueueRows : availableQueueRows;
+  } else {
+    targetBucket = classifyQueueStatus(sourceRow.sourceStatus||sourceRow.status||'')==='incomplete'
+      ? incompleteQueueRows
+      : availableQueueRows;
+  }
 
   mergeReturnedQueueRow(targetBucket,{
     priority:!!sourceRow.priority,
@@ -726,3 +735,163 @@ if (_origRenderAssembly) {
 }
 window.renderAssemblyCommentBadges = renderAssemblyCommentBadges;
 
+
+// ── Bulk select / bulk actions on the assembly board ─────────────────────
+// Selection lives in DOM (checkbox state), mirrored to a Set for fast access.
+// Bar shows when any checkbox is checked. Survives within a render pass.
+(function(){
+  const asmBulkBar         = document.getElementById('asmBulkBar');
+  const asmBulkBarCount    = document.getElementById('asmBulkBarCount');
+  const asmBulkRescheduleBtn = document.getElementById('asmBulkRescheduleBtn');
+  const asmBulkUnscheduleBtn = document.getElementById('asmBulkUnscheduleBtn');
+  const asmBulkClearBtn      = document.getElementById('asmBulkClearBtn');
+  if(!asmBulkBar || !asmBulkRescheduleBtn || !asmBulkUnscheduleBtn) return;
+
+  // Persist selection ids across renders. Re-applied after each render via observer.
+  const asmBulkSelected = new Set();
+
+  function refreshBulkBar(){
+    // Reflect selection size
+    const n = asmBulkSelected.size;
+    asmBulkBarCount.textContent = String(n);
+    asmBulkBar.hidden = n === 0;
+    // Sync select-all header checkbox to current visible state
+    const head = document.getElementById('asmBulkSelectAll');
+    const visible = Array.from(document.querySelectorAll('.asm-bulk-cb'));
+    if(head){
+      const allChecked = visible.length > 0 && visible.every(cb => cb.checked);
+      const anyChecked = visible.some(cb => cb.checked);
+      head.checked = allChecked;
+      head.indeterminate = !allChecked && anyChecked;
+    }
+  }
+
+  // After every renderAssembly() body update, re-apply checked state for ids
+  // that are still selected.
+  function reapplySelectionToDom(){
+    document.querySelectorAll('.asm-bulk-cb').forEach(cb=>{
+      const id = cb.getAttribute('data-asm-id');
+      cb.checked = asmBulkSelected.has(id);
+    });
+    refreshBulkBar();
+  }
+
+  // Wrap renderAssembly so we re-apply after each render
+  const _origRender = typeof renderAssembly === 'function' ? renderAssembly : null;
+  if (_origRender) {
+    window.renderAssembly = function(...args){
+      const r = _origRender.apply(this, args);
+      reapplySelectionToDom();
+      return r;
+    };
+    // Some places call window.renderAssembly directly; keep direct identifier for them
+    try { renderAssembly = window.renderAssembly; } catch(_) {}
+  }
+
+  // Delegated change handler on the assembly board body for individual checkboxes
+  document.addEventListener('change', (e)=>{
+    const cb = e.target;
+    if(!cb || !cb.classList) return;
+    if(cb.classList.contains('asm-bulk-cb')){
+      const id = cb.getAttribute('data-asm-id');
+      if(!id) return;
+      if(cb.checked) asmBulkSelected.add(id);
+      else asmBulkSelected.delete(id);
+      refreshBulkBar();
+    } else if (cb.id === 'asmBulkSelectAll'){
+      const checked = !!cb.checked;
+      document.querySelectorAll('.asm-bulk-cb').forEach(box=>{
+        box.checked = checked;
+        const id = box.getAttribute('data-asm-id');
+        if(!id) return;
+        if(checked) asmBulkSelected.add(id);
+        else asmBulkSelected.delete(id);
+      });
+      refreshBulkBar();
+    }
+  });
+
+  function clearSelection(){
+    asmBulkSelected.clear();
+    document.querySelectorAll('.asm-bulk-cb').forEach(cb => cb.checked = false);
+    const head = document.getElementById('asmBulkSelectAll');
+    if(head){ head.checked = false; head.indeterminate = false; }
+    refreshBulkBar();
+  }
+
+  asmBulkClearBtn?.addEventListener('click', clearSelection);
+
+  asmBulkUnscheduleBtn.addEventListener('click', ()=>{
+    if(asmBulkSelected.size === 0) return;
+    const ids = Array.from(asmBulkSelected);
+    if(!confirm(`Unschedule ${ids.length} pack builder${ids.length===1?'':'s'} and return them to the queue?`)) return;
+    // Snapshot ids before mutation; removeAssemblyBoardRow mutates global arrays
+    ids.forEach(id => {
+      try { removeAssemblyBoardRow(id); } catch (err) { console.warn('Bulk unschedule failed for', id, err); }
+    });
+    clearSelection();
+  });
+
+  asmBulkRescheduleBtn.addEventListener('click', ()=>{
+    if(asmBulkSelected.size === 0) return;
+    const ids = Array.from(asmBulkSelected);
+    const today = new Date().toISOString().slice(0,10);
+    const dateStr = prompt(`Reschedule ${ids.length} pack builder${ids.length===1?'':'s'} to which date? (YYYY-MM-DD)`, today);
+    if(dateStr === null) return; // cancelled
+    const trimmed = String(dateStr).trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)){
+      alert('Please use the YYYY-MM-DD format.');
+      return;
+    }
+    const note = prompt('Optional note for all selected rows (or leave blank):', '') || '';
+    const trimmedNote = String(note).trim();
+    let updated = 0;
+    ids.forEach(id => {
+      const row = assemblyBoardRows.find(r => String(r.id) === String(id));
+      if(!row) return;
+      row.date = trimmed;
+      if(trimmedNote) row.rescheduleNote = trimmedNote;
+      // Mirror the change to scheduledQueueRows (matches singular reschedule path)
+      const scheduledMatch = scheduledQueueRows.find(item => String(item.id) === String(id));
+      if(scheduledMatch){
+        scheduledMatch.scheduledFor = trimmed;
+        if(trimmedNote) scheduledMatch.scheduleNote = trimmedNote;
+      }
+      if(typeof logHistory === 'function'){
+        try {
+          logHistory({
+            entity_type:'pack_builder',
+            entity_id: row.pb || String(row.id),
+            salesforce_id: row.pbId || null,
+            action: 'rescheduled_bulk',
+            after_data: { scheduledFor: trimmed, note: trimmedNote },
+            related_type: row.so ? 'sales_order' : null,
+            related_id: row.so || null,
+            note: trimmedNote || null
+          });
+        } catch(_) {}
+      }
+      updated += 1;
+    });
+    if(typeof saveJson === 'function'){ try { saveJson(assemblyBoardStorageKey, assemblyBoardRows); } catch(_) {} }
+    if(typeof saveScheduledQueue === 'function'){ try { saveScheduledQueue(); } catch(_) {} }
+    // Optional: jump the planner date to the new date so user sees the result
+    if(assemblyDateInput){
+      assemblyDateInput.value = trimmed;
+      if(typeof setAssemblyDateAndNavigate === 'function'){
+        try { setAssemblyDateAndNavigate(trimmed, false); } catch(_) { renderAssembly(); }
+      } else {
+        renderAssembly();
+      }
+    } else {
+      renderAssembly();
+    }
+    if(typeof renderHome === 'function'){ try { renderHome(); } catch(_) {} }
+    if(typeof renderQueue === 'function'){ try { renderQueue(); } catch(_) {} }
+    clearSelection();
+    if(updated){
+      // Brief on-page note via existing status mechanism if available
+      try { console.info(`[Assembly] Rescheduled ${updated} row(s) to ${trimmed}.`); } catch(_) {}
+    }
+  });
+})();

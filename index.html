@@ -1867,6 +1867,16 @@
       <!-- ── Focus list ───────────────────────────────────────── -->
       <div id="assemblyFocusList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;"></div>
 
+      <!-- ── Bulk action bar (visible when rows selected) ──────── -->
+      <div id="asmBulkBar" class="asm-bulk-bar" hidden>
+        <span class="asm-bulk-bar-count"><strong id="asmBulkBarCount">0</strong> selected</span>
+        <div class="asm-bulk-bar-actions">
+          <button class="btn secondary" type="button" id="asmBulkRescheduleBtn">Reschedule selected</button>
+          <button class="btn warn" type="button" id="asmBulkUnscheduleBtn">Unschedule selected</button>
+          <button class="btn secondary" type="button" id="asmBulkClearBtn" style="margin-left:8px;">Clear</button>
+        </div>
+      </div>
+
       <!-- ── Detail table ─────────────────────────────────────── -->
       <div class="table-wrap assembly-table-desktop" id="assemblyDetailTableWrap" style="display:none;">
         <table>

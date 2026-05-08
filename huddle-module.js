@@ -80,6 +80,9 @@
       let receivingValue = 0;
       let prepValue = 0;
       let newestReceivedAt = '';
+      // Per-PO aggregations so the modal can show one row per PO with totals.
+      const receivingByPo = new Map();
+      const prepByPo = new Map();
 
       detailRows.forEach(row => {
         const statuses = [row.status, row.poStatus].filter(Boolean).join(' ').toLowerCase();
@@ -96,6 +99,23 @@
           receivingReceivedUnits += qtyReceived;
           receivingUnits += potentialQty;
           receivingValue += moneyFromRow(row, potentialQty);
+          if (poKey) {
+            const agg = receivingByPo.get(poKey) || {
+              poKey,
+              poName: row.purchaseOrderName || poKey,
+              sord: row.sord || '',
+              salesOrderId: row.salesOrderId || '',
+              account: row.account || row.clientName || '',
+              status: row.poStatus || row.status || '',
+              productName: row.accountProductName || '',
+              ordered: 0, received: 0, workable: 0, value: 0,
+            };
+            agg.ordered += orderedQty;
+            agg.received += qtyReceived;
+            agg.workable += potentialQty;
+            agg.value += moneyFromRow(row, potentialQty);
+            receivingByPo.set(poKey, agg);
+          }
         }
         if (statuses.includes('fully received')) {
           if (poKey) prepKeys.add(poKey);
@@ -103,8 +123,28 @@
           prepReceivedUnits += qtyReceived;
           prepUnits += potentialQty;
           prepValue += moneyFromRow(row, potentialQty);
+          if (poKey) {
+            const agg = prepByPo.get(poKey) || {
+              poKey,
+              poName: row.purchaseOrderName || poKey,
+              sord: row.sord || '',
+              salesOrderId: row.salesOrderId || '',
+              account: row.account || row.clientName || '',
+              status: row.poStatus || row.status || '',
+              productName: row.accountProductName || '',
+              ordered: 0, received: 0, workable: 0, value: 0,
+            };
+            agg.ordered += orderedQty;
+            agg.received += qtyReceived;
+            agg.workable += potentialQty;
+            agg.value += moneyFromRow(row, potentialQty);
+            prepByPo.set(poKey, agg);
+          }
         }
       });
+
+      // Sort by workable units desc so most-workable POs are most visible
+      const sortByWorkable = (a, b) => safeNum(b.workable) - safeNum(a.workable);
 
       return {
         receivingPOs: receivingKeys.size,
@@ -112,11 +152,13 @@
         receivingOrderedUnits,
         receivingReceivedUnits,
         receivingValue,
+        receivingPoList: Array.from(receivingByPo.values()).sort(sortByWorkable),
         prepPOs: prepKeys.size,
         prepUnits,
         prepOrderedUnits,
         prepReceivedUnits,
         prepValue,
+        prepPoList: Array.from(prepByPo.values()).sort(sortByWorkable),
         newestReceivedAt,
         source: 'detail'
       };
@@ -136,17 +178,34 @@
     const receivingValue = qaReceiving.reduce((s, i) => s + safeNum(i.subtotal || i.invoiceTotal || i.originalSubtotal), 0);
     const prepValue = qaPrep.reduce((s, i) => s + safeNum(i.subtotal || i.invoiceTotal || i.originalSubtotal), 0);
 
+    // Summary-only fallback: surface SORD-level entries so the modal still has rows
+    const toSummaryEntry = (item) => ({
+      poKey: item.salesOrderId || item.sord || '',
+      poName: item.sord || item.salesOrderId || '—',
+      sord: item.sord || '',
+      salesOrderId: item.salesOrderId || '',
+      account: item.account || '',
+      status: item.poStatus || item.status || '',
+      productName: '',
+      ordered: safeNum(item.totalQty),
+      received: 0,
+      workable: safeNum(item.totalQty),
+      value: safeNum(item.subtotal || item.invoiceTotal || item.originalSubtotal),
+    });
+
     return {
       receivingPOs: qaReceiving.length,
       receivingUnits,
       receivingOrderedUnits: receivingUnits,
       receivingReceivedUnits: 0,
       receivingValue,
+      receivingPoList: qaReceiving.map(toSummaryEntry),
       prepPOs: qaPrep.length,
       prepUnits,
       prepOrderedUnits: prepUnits,
       prepReceivedUnits: 0,
       prepValue,
+      prepPoList: qaPrep.map(toSummaryEntry),
       newestReceivedAt: '',
       source: 'summary'
     };
@@ -190,11 +249,36 @@
     const boardRows = (typeof assemblyBoardRows !== 'undefined' && Array.isArray(assemblyBoardRows))
       ? assemblyBoardRows : [];
     const todayRows = boardRows.filter(r => String(r.date || '') === today);
+    // Only "real" pack builders count toward the PB tally — exclude jira/placeholder rows.
+    // A pack-builder row is identified as workType==='pack_builder', or (legacy rows
+    // without workType) any row with a pbId or a pb name set.
+    const isPbRow = (r) => {
+      if (r && r.workType === 'pack_builder') return true;
+      if (r && !r.workType && (r.pbId || r.pb)) return true;
+      return false;
+    };
+    const todayPbRows = todayRows.filter(isPbRow);
+    // Count DISTINCT PBs (a PB split into partials shares pbId / pb+so and counts once).
+    const distinctPbKeys = new Set();
+    todayPbRows.forEach(r => {
+      const key = r.pbId ? `id:${r.pbId}` : `ps:${r.pb || ''}|${r.so || ''}`;
+      distinctPbKeys.add(key);
+    });
     const totalUnits = todayRows.reduce((s, r) => s + safeNum(r.qty) * safeNum(r.products), 0);
     const totalPacks = todayRows.reduce((s, r) => s + safeNum(r.qty), 0);
     const doneUnits = todayRows.filter(r => r.stage === 'done').reduce((s, r) => s + safeNum(r.qty) * safeNum(r.products), 0);
     const donePacks = todayRows.filter(r => r.stage === 'done').reduce((s, r) => s + safeNum(r.qty), 0);
-    const doneRows = todayRows.filter(r => r.stage === 'done').length;
+    // Done PBs = distinct pack-builder PBs whose ALL rows for today are at stage 'done'.
+    const donePbKeys = new Set();
+    const pbRowsByKey = new Map();
+    todayPbRows.forEach(r => {
+      const key = r.pbId ? `id:${r.pbId}` : `ps:${r.pb || ''}|${r.so || ''}`;
+      if(!pbRowsByKey.has(key)) pbRowsByKey.set(key, []);
+      pbRowsByKey.get(key).push(r);
+    });
+    pbRowsByKey.forEach((rows, key) => {
+      if(rows.length > 0 && rows.every(r => r.stage === 'done')) donePbKeys.add(key);
+    });
 
     // Available (unscheduled ready-to-pack backup)
     const availRows = (typeof availableQueueRows !== 'undefined' && Array.isArray(availableQueueRows))
@@ -203,12 +287,13 @@
     const backupPacks = availRows.reduce((s, r) => s + safeNum(r.qty), 0);
 
     return {
-      scheduledPBs: todayRows.length,
+      scheduledPBs: distinctPbKeys.size,
+      scheduledRows: todayRows.length,        // raw row count (incl. placeholders + splits)
       totalUnits,
       totalPacks,
       doneUnits,
       donePacks,
-      doneRows,
+      doneRows: donePbKeys.size,              // now: distinct done PBs (matches scheduledPBs unit)
       backupPBs: availRows.length,
       backupUnits,
       backupPacks,
@@ -345,9 +430,12 @@
     return `<span class="mc-status-chip ${cls}">${label || status}</span>`;
   }
 
-  function floorCard(title, metric, sub, pills, status) {
+  function floorCard(title, metric, sub, pills, status, action) {
     const cls = status === 'good' ? 'mc-status-good' : status === 'risk' ? 'mc-status-risk' : 'mc-status-watch';
     const statusLabel = status === 'good' ? 'Ready' : status === 'risk' ? 'Empty' : 'Pending';
+    const actionHtml = action && action.label
+      ? `<button type="button" class="huddle-floor-action" data-floor-action="${esc(action.key)}">${esc(action.label)} →</button>`
+      : '';
     return `<article class="mc-dept-card huddle-floor-card">
       <div class="mc-dept-top">
         <div class="eyebrow">${esc(title)}</div>
@@ -356,6 +444,7 @@
       <div class="mc-dept-metric">${metric}</div>
       <div class="mc-dept-sub">${sub}</div>
       <div class="mc-mini-list">${pills.map(p => `<span class="mc-mini-pill">${p}</span>`).join('')}</div>
+      ${actionHtml}
     </article>`;
   }
 
@@ -408,7 +497,8 @@
                 `Workable: ${fmtInt(rcvWorkable)}`
               ]
             : [`Items Partially Received`],
-          floor.receivingPOs > 0 ? 'good' : 'risk'
+          floor.receivingPOs > 0 ? 'good' : 'risk',
+          floor.receivingPOs > 0 ? { key: 'receiving', label: 'View POs' } : null
         ),
         floorCard(
           'QA Prep',
@@ -423,7 +513,8 @@
                 `Workable: ${fmtInt(prepWorkable)}`
               ]
             : [`Items Fully Received`],
-          floor.prepPOs > 0 ? 'good' : 'risk'
+          floor.prepPOs > 0 ? 'good' : 'risk',
+          floor.prepPOs > 0 ? { key: 'prep', label: 'View POs' } : null
         ),
         floorCard(
           'Assembly Today',
@@ -719,6 +810,122 @@
   };
 
   // ── Init ──────────────────────────────────────────────────────────────────
+  // ── PO list modal for "View POs" links on floor cards ──────────────────
+  function ensureFloorPoModal() {
+    let modal = document.getElementById('huddleFloorPoModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'huddleFloorPoModal';
+    modal.className = 'huddle-floor-po-modal';
+    modal.hidden = true;
+    modal.innerHTML = `
+      <div class="huddle-floor-po-backdrop" data-floor-modal-close="1"></div>
+      <div class="huddle-floor-po-dialog" role="dialog" aria-modal="true" aria-labelledby="huddleFloorPoTitle">
+        <div class="huddle-floor-po-head">
+          <div>
+            <div class="eyebrow" id="huddleFloorPoEyebrow">Floor POs</div>
+            <h3 id="huddleFloorPoTitle">POs</h3>
+            <p class="huddle-floor-po-sub" id="huddleFloorPoSub"></p>
+          </div>
+          <button type="button" class="huddle-floor-po-close" data-floor-modal-close="1" aria-label="Close">×</button>
+        </div>
+        <div class="huddle-floor-po-body" id="huddleFloorPoBody"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => {
+      if (e.target && e.target.getAttribute && e.target.getAttribute('data-floor-modal-close') === '1') {
+        closeFloorPoModal();
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !modal.hidden) closeFloorPoModal();
+    });
+    return modal;
+  }
+  function closeFloorPoModal() {
+    const modal = document.getElementById('huddleFloorPoModal');
+    if (modal) modal.hidden = true;
+  }
+  function openFloorPoModal(kind) {
+    const floor = getFloorStats();
+    const isReceiving = kind === 'receiving';
+    const list = isReceiving ? (floor.receivingPoList || []) : (floor.prepPoList || []);
+    const title = isReceiving ? 'QA Receiving — Workable POs' : 'QA Prep — Workable POs';
+    const eyebrow = isReceiving ? 'Items Partially Received' : 'Items Fully Received';
+    const totalOrdered  = list.reduce((s, p) => s + safeNum(p.ordered), 0);
+    const totalReceived = list.reduce((s, p) => s + safeNum(p.received), 0);
+    const totalWorkable = list.reduce((s, p) => s + safeNum(p.workable), 0);
+    const totalValue    = list.reduce((s, p) => s + safeNum(p.value), 0);
+    const fmtMoney = (n) => '$' + Number(n||0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+    const modal = ensureFloorPoModal();
+    document.getElementById('huddleFloorPoEyebrow').textContent = eyebrow;
+    document.getElementById('huddleFloorPoTitle').textContent = title;
+    document.getElementById('huddleFloorPoSub').textContent =
+      `${list.length} PO${list.length === 1 ? '' : 's'} · ${fmtInt(totalWorkable)} workable units · ${fmtMoney(totalValue)} potential value`;
+
+    const body = document.getElementById('huddleFloorPoBody');
+    if (!list.length) {
+      body.innerHTML = `<div class="mc-empty">No POs in this bucket right now.</div>`;
+    } else {
+      body.innerHTML = `
+        <div class="huddle-floor-po-table-wrap">
+          <table class="huddle-floor-po-table">
+            <thead>
+              <tr>
+                <th>PO</th>
+                <th>SORD</th>
+                <th>Account</th>
+                <th>Product</th>
+                <th>Status</th>
+                <th class="num">Ordered</th>
+                <th class="num">Received</th>
+                <th class="num">Workable</th>
+                <th class="num">Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${list.map(p => `
+                <tr>
+                  <td>${esc(p.poName || '—')}</td>
+                  <td>${esc(p.sord || p.salesOrderId || '—')}</td>
+                  <td>${esc(p.account || '—')}</td>
+                  <td>${esc(p.productName || '—')}</td>
+                  <td>${esc(p.status || '—')}</td>
+                  <td class="num">${fmtInt(p.ordered)}</td>
+                  <td class="num">${fmtInt(p.received)}</td>
+                  <td class="num"><strong>${fmtInt(p.workable)}</strong></td>
+                  <td class="num">${fmtMoney(p.value)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="5" style="text-align:right;font-weight:600;">Totals</td>
+                <td class="num">${fmtInt(totalOrdered)}</td>
+                <td class="num">${fmtInt(totalReceived)}</td>
+                <td class="num"><strong>${fmtInt(totalWorkable)}</strong></td>
+                <td class="num">${fmtMoney(totalValue)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      `;
+    }
+    modal.hidden = false;
+  }
+
+  // Delegated handler for View POs links inside floor cards
+  document.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest && e.target.closest('[data-floor-action]');
+    if (!btn) return;
+    const kind = btn.getAttribute('data-floor-action');
+    if (kind === 'receiving' || kind === 'prep') {
+      openFloorPoModal(kind);
+    }
+  });
+
   async function init() {
     const root = document.getElementById('huddlePage');
     if (!root) return;
