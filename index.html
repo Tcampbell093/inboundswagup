@@ -1059,9 +1059,19 @@
       <div class="calendar-grid">
         <div class="card">
           <div class="calendar-controls">
-            <button class="btn secondary" id="calendarPrevBtn">Previous</button>
             <div class="calendar-month-title" id="calendarMonthTitle">Month</div>
-            <button class="btn secondary" id="calendarNextBtn">Next</button>
+            <div class="cal-tools">
+              <div class="cal-navg">
+                <button id="calendarPrevBtn" type="button" title="Previous month">‹</button>
+                <button class="today" id="calendarTodayBtn" type="button">Today</button>
+                <button id="calendarNextBtn" type="button" title="Next month">›</button>
+              </div>
+            </div>
+          </div>
+          <div class="calendar-filters" id="calendarFilters">
+            <span class="fp on" data-filter="assembly"><i></i>Assembly</span>
+            <span class="fp plum on" data-filter="custom"><i></i>Events</span>
+            <span class="fp warn on" data-filter="birthday"><i></i>Birthdays</span>
           </div>
           <div class="calendar-days" id="calendarHeaderRow"></div>
           <div class="calendar-days" id="calendarGrid"></div>
@@ -1073,7 +1083,7 @@
               <div class="eyebrow">Selected Day</div>
               <h3 id="calendarSelectedDateLabel">Today</h3>
             </div>
-            <button class="btn secondary" id="calendarTodayBtn" type="button">Today</button>
+            <button class="btn primary" id="calendarOpenAssemblyBtn" type="button" hidden>Open Assembly →</button>
           </div>
 
           <div class="calendar-section">
