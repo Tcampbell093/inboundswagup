@@ -227,7 +227,11 @@ function hydrateRow(row, revLookup){
     status:   bm.status || row.status || row.sourceStatus || '',
     ihd:      row.ihd   || bm.ihd     || rm.ihd || '',
     revenue:  Number(bm.subtotal || rm.originalSubtotal || row.subtotal || 0),
-    rowLink:  String(bm.externalLink||'').trim() || (row.pdfUrl&&row.pdfUrl!=='-'?row.pdfUrl:''),
+    rowLink:  String(bm.externalLink||'').trim()
+              || (row.pdfUrl && row.pdfUrl!=='-' ? row.pdfUrl : '')
+              || (typeof window !== 'undefined' && typeof window.buildSalesforcePbLink === 'function'
+                    ? window.buildSalesforcePbLink(row.pbId, '')
+                    : ''),
   };
 }
 

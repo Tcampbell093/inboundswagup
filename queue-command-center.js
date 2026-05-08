@@ -215,7 +215,7 @@
           }
           html += '<div class="qcc-av">' + esc(initials) + '</div>';
           html += '<div style="flex:1;min-width:0;">';
-          html += '<div class="qcc-pb">' + esc(r.pb || r.so || '—') + (r.priority ? ' &#11088;' : '') + '</div>';
+          html += '<div class="qcc-pb">' + (typeof window.renderPbLink === 'function' ? window.renderPbLink(r.pb || r.so || '—', r.pbId, r.pdfUrl) : esc(r.pb || r.so || '—')) + (r.priority ? ' &#11088;' : '') + '</div>';
           html += '<div class="qcc-info">' + esc(r.account || '—') + (r.units ? ' &nbsp;·&nbsp; ' + Number(r.units).toLocaleString() + 'u' : '') + (r.so ? ' &nbsp;·&nbsp; ' + esc(r.so) : '') + (issue ? ' &nbsp;·&nbsp; <span style="color:#A32D2D">' + esc(issue) + '</span>' : '') + (r.scheduledFor ? ' &nbsp;·&nbsp; <span style="color:#0C447C">Sched: ' + esc(r.scheduledFor) + '</span>' : '') + '</div>';
           html += '</div>';
           html += '<div style="min-width:60px;text-align:right;font-size:11px;">' + fmtIhd(r) + '</div>';

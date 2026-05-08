@@ -1668,10 +1668,21 @@ function finalizeOrder(order){
       ? '<div class="ac-empty">No pack builder detail found for this SORD.</div>'
       : `<div class="ac-pb-list">${item.packBuilders.map(pb=>{
           const stCls = acPbStageColor(pb.stage||pb.status||'');
+          const pbUrl = (typeof window.buildSalesforcePbLink === 'function')
+            ? window.buildSalesforcePbLink(pb.pbId, pb.link && pb.link.endsWith && pb.link.endsWith('.pdf') ? '' : pb.link)
+            : '';
+          const pbNameHtml = pbUrl
+            ? `<a class="ac-pb-id pb-link" href="${escape(pbUrl)}" target="_blank" rel="noopener noreferrer" title="Open Pack Builder in Salesforce">${escape(pb.pb||'—')}</a>`
+            : `<span class="ac-pb-id">${escape(pb.pb||'—')}</span>`;
+          const pbIdHtml = pb.pbId
+            ? (pbUrl
+                ? `<a class="ac-pb-sfid pb-link" href="${escape(pbUrl)}" target="_blank" rel="noopener noreferrer" title="Open Pack Builder in Salesforce">${escape(pb.pbId)}</a>`
+                : `<span class="ac-pb-sfid">${escape(pb.pbId)}</span>`)
+            : '';
           return `<div class="ac-pb-row">
             <div class="ac-pb-top">
-              <span class="ac-pb-id">${escape(pb.pb||'—')}</span>
-              ${pb.pbId?`<span class="ac-pb-sfid">${escape(pb.pbId)}</span>`:''}
+              ${pbNameHtml}
+              ${pbIdHtml}
               <span class="ac-pb-stage ${stCls}">${escape(pb.stage||pb.status||'—')}</span>
               ${pb.link?`<a class="ac-pb-link" href="${escape(pb.link)}" target="_blank">📄 PDF</a>`:'<span class="ac-pb-nopdf">No PDF</span>'}
             </div>

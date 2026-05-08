@@ -651,7 +651,31 @@ function saveRevenueReference(){saveJson(revenueReferenceStorageKey,revenueRefer
 function saveQueue(){saveJson(queueStorageKey,availableQueueRows)}
 function saveScheduledQueue(){saveJson(scheduledQueueStorageKey,scheduledQueueRows)}
 function saveIncompleteQueue(){saveJson(incompleteQueueStorageKey,incompleteQueueRows)}
-function buildSalesforcePbLink(pbId,pdfUrl){if(pdfUrl&&pdfUrl!=='-') return pdfUrl; if(!pbId) return ''; return `https://swagup.lightning.force.com/lightning/r/Pack_Builder__c/${pbId}/view`;}
+function buildSalesforcePbLink(pbId,pdfUrl){
+  if(pdfUrl && pdfUrl!=='-') return pdfUrl;
+  if(!pbId) return '';
+  // Salesforce IDs come in 15- and 18-character forms. The Visualforce
+  // SwagUpPackBuilderPage accepts either, but we trim defensively in case
+  // imports include a trailing whitespace character.
+  const id = String(pbId).trim();
+  if(!id) return '';
+  return `https://swagup--c.vf.force.com/apex/SwagUpPackBuilderPage?Id=${encodeURIComponent(id)}`;
+}
+// Render a Pack Builder name as a clickable link to Salesforce when a pbId
+// (or pdfUrl) is available. Falls back to escaped plain text otherwise.
+// Intentionally uses the same `pb-link` class everywhere so styling is
+// consistent across the app. Keeps escaping centralised.
+function renderPbLink(name, pbId, pdfUrl, opts){
+  const safeName = (typeof escapeHtml === 'function')
+    ? escapeHtml(name == null || name === '' ? '—' : String(name))
+    : String(name == null ? '—' : name).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const url = buildSalesforcePbLink(pbId, pdfUrl);
+  if(!url) return safeName;
+  const o = opts || {};
+  const cls = o.cls || 'pb-link';
+  const escUrl = (typeof escapeHtml === 'function') ? escapeHtml(url) : url.replace(/"/g, '&quot;');
+  return `<a class="${cls}" href="${escUrl}" target="_blank" rel="noopener noreferrer" title="Open Pack Builder in Salesforce">${safeName}</a>`;
+}
 function getAssemblyOpenLink(row){return String(row.externalLink||'').trim()||buildSalesforcePbLink(row.pbId,row.pdfUrl)||''}
 function getAssemblyWorkTypeLabel(value){const map={pack_builder:'Pack Builder',jira:'Jira',placeholder:'Placeholder'};return map[value]||'Pack Builder'}
 function isPackBuilderWorkType(value){const normalized=String(value||'').trim().toLowerCase().replace(/\s+/g,'_');return normalized==='pack_builder'||normalized==='packbuilder'||normalized==='pack-builder'||normalized==='pack builder';}
@@ -1953,6 +1977,8 @@ function updateAllData() {
 window.updateAssemblyData = updateAssemblyData;
 window.updateQueueData = updateQueueData;
 window.updateAllData = updateAllData;
+window.buildSalesforcePbLink = buildSalesforcePbLink;
+window.renderPbLink = renderPbLink;
 
 
 async function bootstrapWarehouseHub(){
