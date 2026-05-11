@@ -619,8 +619,7 @@ function getCalendarEventsForMonth(year,month){
 }
 function getBirthdayEventsForMonth(year,month){return getActiveEmployees().filter(emp=>emp.birthday).map(emp=>{const source=new Date(emp.birthday+'T00:00:00'); return {name:emp.name, month:source.getMonth(), day:source.getDate()};}).filter(item=>item.month===month);}
 function getDemeritForMark(mark){return Number(markDemerits[mark]??0)}
-function escapeHtml(v){return String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\"/g,'&quot;').replace(/'/g,'&#039;')}
-function escapeJs(v){return String(v??"").replace(/\\/g,'\\\\').replace(/'/g,"\\'")}
+// escapeHtml, escapeJs are defined in helpers.js.
 function toBadgeClass(v){return String(v||"").toLowerCase().replace(/\s+/g,'')}
 
 function normalizeAttendanceRecords(list){return(list||[]).map(item=>({id:item.id||Date.now()+Math.random(),employeeName:String(item.employeeName||"").trim(),department:String(item.department||"Receiving").trim(),date:item.date||new Date().toISOString().slice(0,10),mark:item.mark||"Present",demerits:typeof item.demerits==='number'?item.demerits:getDemeritForMark(item.mark||"Present")}))}
@@ -640,31 +639,7 @@ function normalizeErrorRecords(list){return(list||[]).map(item=>{const expectedQ
 // normalizeAssemblyBoardRows, normalizeQueueRows, normalizeScheduledQueueRows,
 // normalizeRevenueReferenceRows, inferLegacyStage, saveQueue, saveScheduledQueue,
 // saveIncompleteQueue, saveRevenueReference are defined in state.js.
-function buildSalesforcePbLink(pbId,pdfUrl){
-  if(pdfUrl && pdfUrl!=='-') return pdfUrl;
-  if(!pbId) return '';
-  // Salesforce IDs come in 15- and 18-character forms. The Visualforce
-  // SwagUpPackBuilderPage accepts either, but we trim defensively in case
-  // imports include a trailing whitespace character.
-  const id = String(pbId).trim();
-  if(!id) return '';
-  return `https://swagup--c.vf.force.com/apex/SwagUpPackBuilderPage?Id=${encodeURIComponent(id)}`;
-}
-// Render a Pack Builder name as a clickable link to Salesforce when a pbId
-// (or pdfUrl) is available. Falls back to escaped plain text otherwise.
-// Intentionally uses the same `pb-link` class everywhere so styling is
-// consistent across the app. Keeps escaping centralised.
-function renderPbLink(name, pbId, pdfUrl, opts){
-  const safeName = (typeof escapeHtml === 'function')
-    ? escapeHtml(name == null || name === '' ? '—' : String(name))
-    : String(name == null ? '—' : name).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-  const url = buildSalesforcePbLink(pbId, pdfUrl);
-  if(!url) return safeName;
-  const o = opts || {};
-  const cls = o.cls || 'pb-link';
-  const escUrl = (typeof escapeHtml === 'function') ? escapeHtml(url) : url.replace(/"/g, '&quot;');
-  return `<a class="${cls}" href="${escUrl}" target="_blank" rel="noopener noreferrer" title="Open Pack Builder in Salesforce">${safeName}</a>`;
-}
+// buildSalesforcePbLink and renderPbLink are defined in helpers.js.
 function getAssemblyOpenLink(row){return String(row.externalLink||'').trim()||buildSalesforcePbLink(row.pbId,row.pdfUrl)||''}
 function getAssemblyWorkTypeLabel(value){const map={pack_builder:'Pack Builder',jira:'Jira',placeholder:'Placeholder'};return map[value]||'Pack Builder'}
 function isPackBuilderWorkType(value){const normalized=String(value||'').trim().toLowerCase().replace(/\s+/g,'_');return normalized==='pack_builder'||normalized==='packbuilder'||normalized==='pack-builder'||normalized==='pack builder';}
