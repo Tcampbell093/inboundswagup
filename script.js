@@ -129,11 +129,9 @@ const employeesStorageKey="ops_hub_employees_v1";
 const attendanceBackupKey="ops_hub_attendance_backup_v2";
 const attendanceMovesStorageKey="ops_hub_attendance_moves_v1";
 const errorsStorageKey="ops_hub_errors_records_v2";
-const assemblyBoardStorageKey="ops_hub_assembly_board_v2";
-const queueStorageKey="ops_hub_available_queue_v1";
-const scheduledQueueStorageKey="ops_hub_scheduled_queue_v1";
-const incompleteQueueStorageKey="ops_hub_incomplete_queue_v1";
-const revenueReferenceStorageKey="ops_hub_revenue_reference_v1";
+// Queue + assembly storage keys (assemblyBoardStorageKey, queueStorageKey,
+// scheduledQueueStorageKey, incompleteQueueStorageKey, revenueReferenceStorageKey)
+// are declared in state.js, which loads before this file.
 const calendarEventsStorageKey="ops_hub_calendar_events_v1";
 const attendanceApiBase='/.netlify/functions/attendance';
 const employeesApiBase='/.netlify/functions/employees';
@@ -189,12 +187,9 @@ let activeAttendanceDepartment="Receiving";
 let selectedProfileName="";
 let attendanceRosterSelection=new Set();
 let errorRecords=normalizeErrorRecords(loadJson(errorsStorageKey,[]));
-let assemblyBoardRows=normalizeAssemblyBoardRows(loadJson(assemblyBoardStorageKey,[]));
-let availableQueueRows=normalizeQueueRows(loadJson(queueStorageKey,[]));
-let scheduledQueueRows=normalizeScheduledQueueRows(loadJson(scheduledQueueStorageKey,[]));
-let incompleteQueueRows=normalizeQueueRows(loadJson(incompleteQueueStorageKey,[]));
-let queueRawRowCount=0;
-let revenueReferenceRows=normalizeRevenueReferenceRows(loadJson(revenueReferenceStorageKey,[]));
+// Queue + assembly row state (assemblyBoardRows, availableQueueRows,
+// scheduledQueueRows, incompleteQueueRows, queueRawRowCount, revenueReferenceRows)
+// is owned by state.js, which loads before this file. Mutate via the set* helpers.
 let calendarEvents=normalizeCalendarEvents(loadJson(calendarEventsStorageKey,[]));
 
 
@@ -642,15 +637,9 @@ function normalizeAttendanceMoveRecords(list){
   })).filter(item=>item.employeeName);
 }
 function normalizeErrorRecords(list){return(list||[]).map(item=>{const expectedQty=Number(item.expectedQty||0);const receivedQty=Number(item.receivedQty||0);const absoluteAmount=Math.abs(expectedQty-receivedQty);const errorRate=expectedQty>0?(absoluteAmount/expectedQty)*100:0;return{id:item.id||Date.now()+Math.random(),date:item.date||new Date().toISOString().slice(0,10),department:item.department||"Prepping",associate:item.associate||"",proofed:item.proofed||"Yes",poNumber:item.poNumber||"",linkedId:item.linkedId||"",category:item.category||"",palletLocation:item.palletLocation||"",expectedQty,receivedQty,errorType:item.errorType||"Other",absoluteAmount,errorRate,notes:item.notes||""}})}
-function normalizeAssemblyBoardRows(list){return(list||[]).map(item=>({id:item.id||Date.now()+Math.random(),date:item.date||new Date().toISOString().slice(0,10),pb:String(item.pb||'').trim(),so:String(item.so||'').trim(),account:String(item.account||'').trim(),qty:Number(item.qty||0),products:Number(item.products||0),status:String(item.status||'').trim(),ihd:item.ihd||'',subtotal:Number(item.subtotal||0),stage:String(item.stage||inferLegacyStage(item)||'aa').trim(),rescheduleNote:String(item.rescheduleNote||'').trim(),pbId:String(item.pbId||'').trim(),pdfUrl:String(item.pdfUrl||'').trim(),workType:String(item.workType||'pack_builder').trim(),externalLink:String(item.externalLink||'').trim(),isPartial:!!item.isPartial,fullQty:Number(item.fullQty||item.qty||0),accountOwner:String(item.accountOwner||'').trim(),sourceQueue:String(item.sourceQueue||'').trim(),sourceStatus:String(item.sourceStatus||item.status||'').trim()}))}
-function inferLegacyStage(item){if(item.done) return 'done'; if(item.dpmo) return 'dpmo'; if(item.line) return 'line'; if(item.picked) return 'picked'; if(item.print) return 'print'; return 'aa';}
-function normalizeQueueRows(list){return(list||[]).map(item=>({id:item.id||Date.now()+Math.random(),priority:!!item.priority,pb:String(item.pb||'').trim(),pbId:String(item.pbId||'').trim(),so:String(item.so||'').trim(),account:String(item.account||'').trim(),qty:Number(item.qty||0),products:Number(item.products||0),units:Number(item.units||0),ihd:String(item.ihd||'').trim(),accountOwner:String(item.accountOwner||'').trim(),pdfUrl:String(item.pdfUrl||'').trim(),status:String(item.status||'').trim(),subtotal:Number(item.subtotal||item.revenue||0),revenue:Number(item.revenue||item.subtotal||0)}))}
-function normalizeScheduledQueueRows(list){return(list||[]).map(item=>({id:item.id||Date.now()+Math.random(),priority:!!item.priority,pb:String(item.pb||'').trim(),pbId:String(item.pbId||'').trim(),so:String(item.so||'').trim(),account:String(item.account||'').trim(),qty:Number(item.qty||0),products:Number(item.products||0),units:Number(item.units||0),ihd:String(item.ihd||'').trim(),accountOwner:String(item.accountOwner||'').trim(),pdfUrl:String(item.pdfUrl||'').trim(),scheduledFor:String(item.scheduledFor||'').trim(),scheduledAt:String(item.scheduledAt||'').trim(),scheduleNote:String(item.scheduleNote||'').trim(),status:String(item.status||'').trim(),subtotal:Number(item.subtotal||item.revenue||0),revenue:Number(item.revenue||item.subtotal||0),sourceQueue:String(item.sourceQueue||'ready').trim(),sourceStatus:String(item.sourceStatus||item.status||'').trim()}))}
-function normalizeRevenueReferenceRows(list){return(list||[]).map(item=>({id:item.id||Date.now()+Math.random(),salesOrder:String(item.salesOrder||'').trim(),originalSubtotal:Number(item.originalSubtotal||0),ihd:String(item.ihd||'').trim(),account:String(item.account||'').trim()})).filter(item=>item.salesOrder)}
-function saveRevenueReference(){saveJson(revenueReferenceStorageKey,revenueReferenceRows)}
-function saveQueue(){saveJson(queueStorageKey,availableQueueRows)}
-function saveScheduledQueue(){saveJson(scheduledQueueStorageKey,scheduledQueueRows)}
-function saveIncompleteQueue(){saveJson(incompleteQueueStorageKey,incompleteQueueRows)}
+// normalizeAssemblyBoardRows, normalizeQueueRows, normalizeScheduledQueueRows,
+// normalizeRevenueReferenceRows, inferLegacyStage, saveQueue, saveScheduledQueue,
+// saveIncompleteQueue, saveRevenueReference are defined in state.js.
 function buildSalesforcePbLink(pbId,pdfUrl){
   if(pdfUrl && pdfUrl!=='-') return pdfUrl;
   if(!pbId) return '';
@@ -2236,11 +2225,11 @@ if(exportStakeholderDashboardBtn){
 
 window.addEventListener('storage',(event)=>{
   if(!assemblySyncKeys.has(event.key)) return;
-  if(event.key===assemblyBoardStorageKey) assemblyBoardRows=normalizeAssemblyBoardRows(loadJson(assemblyBoardStorageKey,[]));
-  if(event.key===queueStorageKey) availableQueueRows=normalizeQueueRows(loadJson(queueStorageKey,[]));
-  if(event.key===scheduledQueueStorageKey) scheduledQueueRows=normalizeScheduledQueueRows(loadJson(scheduledQueueStorageKey,[]));
-  if(event.key===incompleteQueueStorageKey) incompleteQueueRows=normalizeQueueRows(loadJson(incompleteQueueStorageKey,[]));
-  if(event.key===revenueReferenceStorageKey) revenueReferenceRows=normalizeRevenueReferenceRows(loadJson(revenueReferenceStorageKey,[]));
+  if(event.key===assemblyBoardStorageKey) setAssemblyBoardRows(normalizeAssemblyBoardRows(loadJson(assemblyBoardStorageKey,[])));
+  if(event.key===queueStorageKey) setAvailableQueueRows(normalizeQueueRows(loadJson(queueStorageKey,[])));
+  if(event.key===scheduledQueueStorageKey) setScheduledQueueRows(normalizeScheduledQueueRows(loadJson(scheduledQueueStorageKey,[])));
+  if(event.key===incompleteQueueStorageKey) setIncompleteQueueRows(normalizeQueueRows(loadJson(incompleteQueueStorageKey,[])));
+  if(event.key===revenueReferenceStorageKey) setRevenueReferenceRows(normalizeRevenueReferenceRows(loadJson(revenueReferenceStorageKey,[])));
   if(event.key===calendarEventsStorageKey) calendarEvents=normalizeCalendarEvents(loadJson(calendarEventsStorageKey,[]));
   renderAssembly();
   renderQueue();

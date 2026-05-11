@@ -297,7 +297,7 @@ function confirmIssueHold(){
 
   if(pendingIssueHoldSource==='scheduled'){
     sourceRows.splice(idx,1);
-    assemblyBoardRows=assemblyBoardRows.filter(item=>String(item.id)!==String(row.id));
+    setAssemblyBoardRows(assemblyBoardRows.filter(item=>String(item.id)!==String(row.id)));
     saveScheduledQueue();
     saveJson(assemblyBoardStorageKey,assemblyBoardRows);
     renderAssembly();
@@ -305,7 +305,7 @@ function confirmIssueHold(){
     renderCalendar();
   }else if(pendingIssueHoldSource==='assembly'){
     sourceRows.splice(idx,1);
-    scheduledQueueRows=scheduledQueueRows.filter(item=>String(item.id)!==String(row.id));
+    setScheduledQueueRows(scheduledQueueRows.filter(item=>String(item.id)!==String(row.id)));
     saveScheduledQueue();
     saveJson(assemblyBoardStorageKey,assemblyBoardRows);
     renderAssembly();
@@ -371,8 +371,8 @@ function releaseIssueHoldRow(id){
       sourceQueue:'scheduled',
       sourceStatus:row.sourceStatus||'Scheduled'
     };
-    assemblyBoardRows=assemblyBoardRows.filter(item=>String(item.id)!==String(restoredAssembly.id));
-    scheduledQueueRows=scheduledQueueRows.filter(item=>String(item.id)!==String(restoredScheduled.id));
+    setAssemblyBoardRows(assemblyBoardRows.filter(item=>String(item.id)!==String(restoredAssembly.id)));
+    setScheduledQueueRows(scheduledQueueRows.filter(item=>String(item.id)!==String(restoredScheduled.id)));
     assemblyBoardRows.unshift(restoredAssembly);
     scheduledQueueRows.unshift(restoredScheduled);
     saveJson(assemblyBoardStorageKey,assemblyBoardRows);
@@ -429,8 +429,8 @@ function unscheduleQueueRow(id){
   const scheduledMatch=scheduledQueueRows.find(item=>String(item.id)===String(id));
   if(!scheduledMatch) return;
 
-  scheduledQueueRows=scheduledQueueRows.filter(item=>String(item.id)!==String(id));
-  assemblyBoardRows=assemblyBoardRows.filter(item=>String(item.id)!==String(id));
+  setScheduledQueueRows(scheduledQueueRows.filter(item=>String(item.id)!==String(id)));
+  setAssemblyBoardRows(assemblyBoardRows.filter(item=>String(item.id)!==String(id)));
 
   // Pick the queue bucket: trust the explicit sourceQueue captured at scheduling
   // time. Only fall back to status classification when it's missing, to avoid
@@ -503,7 +503,7 @@ async function importRevenueReferenceFromFile(file,{silent=false}={}){
           const account=String(raw['Account']||raw['Account Name']||raw['Account: Account Name']||'').trim();
           mapped.push({id:Date.now()+Math.random(),salesOrder,originalSubtotal,ihd,account});
         });
-        revenueReferenceRows=normalizeRevenueReferenceRows(mapped);
+        setRevenueReferenceRows(normalizeRevenueReferenceRows(mapped));
         saveRevenueReference();
         renderRevenueReferenceStats();
         const message=`<a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BE2jMAG/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Revenue reference</a> imported: ${revenueReferenceRows.length} rows stored.`;
@@ -529,7 +529,7 @@ async function importRevenueReference(){
 function clearRevenueReference(){
   const confirmed=confirm('Clear the stored revenue reference data?');
   if(!confirmed) return;
-  revenueReferenceRows=[];
+  setRevenueReferenceRows([]);
   saveRevenueReference();
   renderRevenueReferenceStats();
   setRevenueImportStatus('<a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BE2jMAG/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Revenue reference</a> cleared.');
@@ -626,7 +626,7 @@ async function importQueueReportFromFile(file,{silent=false}={}){
         if(!firstSheetName) throw new Error('No worksheet was found in the file.');
         const sheet=workbook.Sheets[firstSheetName];
         const rows=XLSX.utils.sheet_to_json(sheet,{defval:''});
-        queueRawRowCount=rows.length;
+        setQueueRawRowCount(rows.length);
         setQueueImportStatus(`Worksheet loaded: ${rows.length} raw rows found.`);
         const grouped=new Map();
         rows.forEach(raw=>{
@@ -678,9 +678,9 @@ async function importQueueReportFromFile(file,{silent=false}={}){
           if(existing) updatedCount+=1; else addedCount+=1;
           if(bucket==='ready') nextReady.push(record); else nextIncomplete.push(record);
         });
-        availableQueueRows=nextReady;
-        incompleteQueueRows=nextIncomplete;
-        scheduledQueueRows=scheduledQueueRows.filter(item=>importedKeys.has(String(item.pbId||item.pb||'').trim())||String(item.scheduledFor||'').trim());
+        setAvailableQueueRows(nextReady);
+        setIncompleteQueueRows(nextIncomplete);
+        setScheduledQueueRows(scheduledQueueRows.filter(item=>importedKeys.has(String(item.pbId||item.pb||'').trim())||String(item.scheduledFor||'').trim()));
         saveQueue(); saveIncompleteQueue(); saveScheduledQueue(); renderQueue();
         const successMsg=`Import complete: ${addedCount} new pack builders added, ${updatedCount} existing pack builders updated, from ${queueRawRowCount} raw rows.`;
         setQueueImportStatus(successMsg);
@@ -702,7 +702,7 @@ async function importQueueReport(){
   const file=queueFileInput?.files?.[0];
   try{ await importQueueReportFromFile(file,{silent:false}); } catch(_error){}
 }
-function clearQueue(){const confirmed=confirm('Clear the ready and incomplete pack builder queues?');if(!confirmed) return;availableQueueRows=[];incompleteQueueRows=[];queueRawRowCount=0;saveQueue();saveIncompleteQueue();renderQueue()}
+function clearQueue(){const confirmed=confirm('Clear the ready and incomplete pack builder queues?');if(!confirmed) return;setAvailableQueueRows([]);setIncompleteQueueRows([]);setQueueRawRowCount(0);saveQueue();saveIncompleteQueue();renderQueue()}
 function toggleQueuePriority(id,source='ready'){const sourceRows=source==='incomplete'?incompleteQueueRows:availableQueueRows;const row=sourceRows.find(item=>String(item.id)===String(id));if(!row) return;row.priority=!row.priority;if(source==='incomplete')saveIncompleteQueue();else saveQueue();renderQueue()}
 function updateScheduleFinancialImpact(){
   if(!scheduleFinancialImpact) return;
@@ -947,10 +947,10 @@ function confirmSchedule(){
     if(sourceQueue==='incomplete') saveIncompleteQueue(); else saveQueue();
   } else {
     if(sourceQueue==='incomplete'){
-      incompleteQueueRows=incompleteQueueRows.filter(item=>String(item.id)!==String(row.id));
+      setIncompleteQueueRows(incompleteQueueRows.filter(item=>String(item.id)!==String(row.id)));
       saveIncompleteQueue();
     } else {
-      availableQueueRows=availableQueueRows.filter(item=>String(item.id)!==String(row.id));
+      setAvailableQueueRows(availableQueueRows.filter(item=>String(item.id)!==String(row.id)));
       saveQueue();
     }
   }
@@ -1139,9 +1139,9 @@ window.confirmBulkSchedule = function() {
 
     // Remove from source queue
     if (item.source === 'incomplete') {
-      incompleteQueueRows = incompleteQueueRows.filter(function(x){ return String(x.id) !== String(item.id); });
+      setIncompleteQueueRows(incompleteQueueRows.filter(function(x){ return String(x.id) !== String(item.id); }));
     } else {
-      availableQueueRows = availableQueueRows.filter(function(x){ return String(x.id) !== String(item.id); });
+      setAvailableQueueRows(availableQueueRows.filter(function(x){ return String(x.id) !== String(item.id); }));
     }
   });
 
@@ -1170,11 +1170,11 @@ if(issueHoldStartDateInput && !issueHoldStartDateInput.value) issueHoldStartDate
 window.importQueueReportFromFile = importQueueReportFromFile;
 window.importRevenueReferenceFromFile = importRevenueReferenceFromFile;
 window.clearQueueSilent = function(){
-  availableQueueRows=[];incompleteQueueRows=[];queueRawRowCount=0;
+  setAvailableQueueRows([]);setIncompleteQueueRows([]);setQueueRawRowCount(0);
   saveQueue();saveIncompleteQueue();renderQueue();
 };
 window.clearRevenueReferenceSilent = function(){
-  revenueReferenceRows=[];
+  setRevenueReferenceRows([]);
   saveRevenueReference();
   renderRevenueReferenceStats();
   setRevenueImportStatus('Revenue reference cleared.');
