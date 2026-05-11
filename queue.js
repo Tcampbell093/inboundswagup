@@ -373,8 +373,8 @@ function releaseIssueHoldRow(id){
     };
     setAssemblyBoardRows(assemblyBoardRows.filter(item=>String(item.id)!==String(restoredAssembly.id)));
     setScheduledQueueRows(scheduledQueueRows.filter(item=>String(item.id)!==String(restoredScheduled.id)));
-    assemblyBoardRows.unshift(restoredAssembly);
-    scheduledQueueRows.unshift(restoredScheduled);
+    prependAssemblyBoardRow(restoredAssembly);
+    prependScheduledQueueRow(restoredScheduled);
     saveJson(assemblyBoardStorageKey,assemblyBoardRows);
     saveScheduledQueue();
     renderAssembly();
@@ -415,11 +415,10 @@ function deleteQueueRow(id,source='ready'){
 }
 
 function deleteScheduledQueueRow(id){
-  const idx = scheduledQueueRows.findIndex(r=>String(r.id)===String(id));
-  if(idx<0) return;
-  const row = scheduledQueueRows[idx];
+  const row = scheduledQueueRows.find(r=>String(r.id)===String(id));
+  if(!row) return;
   if(!confirm(`Delete ${row.pb||'this row'} from scheduled list?`)) return;
-  scheduledQueueRows.splice(idx,1);
+  setScheduledQueueRows(scheduledQueueRows.filter(r=>String(r.id)!==String(id)));
   saveScheduledQueue();
   renderQueue();
   renderHome();
@@ -862,11 +861,11 @@ function confirmSchedule(){
     sourceQueue:sourceQueue,
     sourceStatus:sourceStatus
   };
-  assemblyBoardRows.unshift(mainRow);
+  prependAssemblyBoardRow(mainRow);
   if(typeof logHistory==='function') logHistory({entity_type:'pack_builder',entity_id:mainRow.pb||String(mainRow.id),salesforce_id:mainRow.pbId||null,action:'scheduled',after_data:{scheduledFor:mainRow.date,stage:mainRow.stage,qty:mainRow.qty,sourceQueue:sourceQueue},related_type:mainRow.so?'sales_order':null,related_id:mainRow.so||null,note:mainRow.rescheduleNote||null});
 
   const scheduledAtText=new Date().toLocaleString();
-  scheduledQueueRows.unshift({
+  prependScheduledQueueRow({
     id:mainRow.id,
     priority:sourcePriority,
     pb:mainRow.pb,
@@ -913,8 +912,8 @@ function confirmSchedule(){
       sourceQueue:sourceQueue,
       sourceStatus:sourceStatus
     };
-    assemblyBoardRows.unshift(remainderRow);
-    scheduledQueueRows.unshift({
+    prependAssemblyBoardRow(remainderRow);
+    prependScheduledQueueRow({
       id:remainderRow.id,
       priority:sourcePriority,
       pb:remainderRow.pb,
@@ -1119,7 +1118,7 @@ window.confirmBulkSchedule = function() {
       sourceStatus: r.status || '',
       revenue: matchedSubtotal,
     };
-    assemblyBoardRows.unshift(newRow);
+    prependAssemblyBoardRow(newRow);
 
     // Also add to scheduledQueueRows
     const scheduledEntry = Object.assign({}, r, {
@@ -1135,7 +1134,7 @@ window.confirmBulkSchedule = function() {
       sourceQueue: item.source,
       sourceStatus: r.status || '',
     });
-    scheduledQueueRows.unshift(scheduledEntry);
+    prependScheduledQueueRow(scheduledEntry);
 
     // Remove from source queue
     if (item.source === 'incomplete') {

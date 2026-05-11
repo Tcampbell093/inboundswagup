@@ -386,7 +386,7 @@ function addAssemblyBoardRow(){
     assemblyPbInput.focus();
     return;
   }
-  assemblyBoardRows.unshift({
+  prependAssemblyBoardRow({
     id:Date.now(),
     date:assemblyDateInput.value||new Date().toISOString().slice(0,10),
     pb,

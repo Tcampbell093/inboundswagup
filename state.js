@@ -28,6 +28,9 @@ function setIncompleteQueueRows(next){incompleteQueueRows=next;}
 function setQueueRawRowCount(next){queueRawRowCount=next;}
 function setRevenueReferenceRows(next){revenueReferenceRows=next;}
 
+function prependAssemblyBoardRow(row){assemblyBoardRows.unshift(row);}
+function prependScheduledQueueRow(row){scheduledQueueRows.unshift(row);}
+
 function saveRevenueReference(){saveJson(revenueReferenceStorageKey,revenueReferenceRows)}
 function saveQueue(){saveJson(queueStorageKey,availableQueueRows)}
 function saveScheduledQueue(){saveJson(scheduledQueueStorageKey,scheduledQueueRows)}
