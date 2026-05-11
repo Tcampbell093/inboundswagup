@@ -164,6 +164,7 @@ function renderAssembly(){
 
   if(!filteredRows.length){
     assemblyBoardBody.innerHTML=`<tr><td colspan="${assemblyShowDetails?16:10}" class="empty">No assembly board rows for the selected day.</td></tr>`;
+    renderAssemblyFocusList([]);
     return;
   }
 
