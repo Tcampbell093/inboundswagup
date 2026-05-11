@@ -344,11 +344,57 @@
     }
   }
 
+  // ── Build info display ────────────────────────────────────
+  function renderBuildInfo() {
+    const info = window.__BUILD_INFO || {};
+    const shaEl = el('appInfoBuildSha');
+    const branchEl = el('appInfoBuildBranch');
+    const timeEl = el('appInfoBuildTime');
+    if (shaEl) shaEl.textContent = info.sha ? String(info.sha).slice(0, 7) : 'unknown';
+    if (branchEl) branchEl.textContent = info.branch || 'unknown';
+    if (timeEl) {
+      timeEl.textContent = info.builtAt
+        ? new Date(info.builtAt).toLocaleString()
+        : 'unknown';
+    }
+  }
+
+  // ── Export all locally-stored Ops Hub data ────────────────
+  function exportAllData() {
+    const snapshot = { exportedAt: new Date().toISOString(), version: window.__BUILD_INFO || null, data: {} };
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith('ops_hub_')) continue;
+      const raw = localStorage.getItem(key);
+      try {
+        snapshot.data[key] = JSON.parse(raw);
+      } catch (_) {
+        snapshot.data[key] = raw;
+      }
+    }
+    const keyCount = Object.keys(snapshot.data).length;
+    if (!keyCount) {
+      alert('No Ops Hub data found in this browser to export.');
+      return;
+    }
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ops-hub-backup-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   // ── Auto-load when Settings page becomes active ───────────
   function watchForSettingsPage() {
     const observer = new MutationObserver(function() {
       const page = document.getElementById('settingsPage');
       if (page && page.classList.contains('active')) {
+        renderBuildInfo();
         const user = window.hcCurrentUser;
         if (user && ['admin', 'manager'].includes(user.role)) {
           loadUsers();
@@ -367,6 +413,7 @@
     saveUser,
     openInviteModal,
     sendInvite,
+    exportAllData,
   };
 
   // ── Init ──────────────────────────────────────────────────
