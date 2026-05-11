@@ -415,7 +415,7 @@ function addAssemblyBoardRow(){
 function deleteAssemblyBoardRow(id){
   const _del=assemblyBoardRows.find(row=>row.id===id);
   if(typeof logHistory==='function'&&_del) logHistory({entity_type:'pack_builder',entity_id:_del.pb||String(_del.id),salesforce_id:_del.pbId||null,action:'deleted',before_data:{pb:_del.pb,so:_del.so,account:_del.account,qty:_del.qty,stage:_del.stage,ihd:_del.ihd},related_type:_del.so?'sales_order':null,related_id:_del.so||null});
-  assemblyBoardRows=assemblyBoardRows.filter(row=>row.id!==id);
+  setAssemblyBoardRows(assemblyBoardRows.filter(row=>row.id!==id));
   if(assemblyInlineEditId===id) assemblyInlineEditId=null;
   saveJson(assemblyBoardStorageKey,assemblyBoardRows);
   renderAssembly();
@@ -428,7 +428,7 @@ function removeAssemblyBoardRow(id){
   if(!row) return;
 
   if(!isPackBuilderWorkType(row.workType)){
-    assemblyBoardRows=assemblyBoardRows.filter(item=>String(item.id)!==targetId);
+    setAssemblyBoardRows(assemblyBoardRows.filter(item=>String(item.id)!==targetId));
     if(assemblyInlineEditId===row.id) assemblyInlineEditId=null;
     updateAssemblyData();
     return;
@@ -472,17 +472,17 @@ function removeAssemblyBoardRow(id){
     status:sourceRow.sourceStatus||sourceRow.status||''
   });
 
-  scheduledQueueRows=scheduledQueueRows.filter(item=>String(item.id)!==targetId);
+  setScheduledQueueRows(scheduledQueueRows.filter(item=>String(item.id)!==targetId));
   if(scheduledMatch){
-    scheduledQueueRows=scheduledQueueRows.filter(item=>!(
+    setScheduledQueueRows(scheduledQueueRows.filter(item=>!(
       String(item.scheduledFor||'')===String(scheduledMatch.scheduledFor||'') &&
       String(item.pb||'')===String(scheduledMatch.pb||'') &&
       String(item.so||'')===String(scheduledMatch.so||'')
-    ));
+    )));
   }
 
   if(typeof logHistory==='function') logHistory({entity_type:'pack_builder',entity_id:row.pb||String(row.id),salesforce_id:row.pbId||null,action:'unscheduled',before_data:{stage:row.stage,scheduledFor:row.date,qty:row.qty},related_type:row.so?'sales_order':null,related_id:row.so||null});
-  assemblyBoardRows=assemblyBoardRows.filter(item=>String(item.id)!==targetId);
+  setAssemblyBoardRows(assemblyBoardRows.filter(item=>String(item.id)!==targetId));
   if(assemblyInlineEditId===row.id) assemblyInlineEditId=null;
   updateAllData();
 }
