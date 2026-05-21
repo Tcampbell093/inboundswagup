@@ -341,6 +341,7 @@
   const PREKIT_KEY = 'ops_hub_sord_prekit_v1';
   const PREKIT_STAGES = [
     { id:'not_ready',    label:'Not Ready',     short:'Not Ready',    icon:'○',  tone:'neutral' },
+    { id:'ineligible',   label:'Ineligible',    short:'Ineligible',   icon:'⊘',  tone:'muted'   },
     { id:'ready',        label:'Ready',         short:'Ready',        icon:'◐',  tone:'info'    },
     { id:'assigned',     label:'Assigned',      short:'Assigned',     icon:'👤', tone:'primary' },
     { id:'complication', label:'Complication',  short:'Complication', icon:'⚠',  tone:'warn'    },
@@ -479,7 +480,7 @@
   // Compute pre-kit progress for a SORD: { assigned, total, byStage }.
   function prekitProgressForItem(item){
     const pbs = (item && item.packBuilders) || [];
-    const byStage = { not_ready:0, ready:0, assigned:0, complication:0, completed:0 };
+    const byStage = { not_ready:0, ineligible:0, ready:0, assigned:0, complication:0, completed:0 };
     if (!pbs.length) return { assigned: 0, total: 0, byStage };
     let assigned = 0;
     for (const pb of pbs) {
@@ -1908,7 +1909,7 @@ function finalizeOrder(order){
     const board = state.prekitBoard;
     const rows = collectAllPbsForBoard();
     // Stage counts across the entire dataset
-    const counts = { not_ready:0, ready:0, assigned:0, complication:0, completed:0 };
+    const counts = { not_ready:0, ineligible:0, ready:0, assigned:0, complication:0, completed:0 };
     rows.forEach(r => { counts[r.stage] = (counts[r.stage] || 0) + 1; });
     const total = rows.length;
     const active = counts.ready + counts.assigned + counts.complication;
@@ -1975,7 +1976,7 @@ function finalizeOrder(order){
     }
 
     // Sort: complications first, then by IHD ascending, then by stage order
-    const stageRank = { complication:0, ready:1, assigned:2, completed:3, not_ready:4 };
+    const stageRank = { complication:0, ready:1, assigned:2, completed:3, not_ready:4, ineligible:5 };
     filtered.sort((a, b) => {
       const sa = stageRank[a.stage] ?? 9;
       const sb = stageRank[b.stage] ?? 9;
@@ -2133,17 +2134,22 @@ function finalizeOrder(order){
                 if (!p.total) return '';
                 const bs = p.byStage;
                 const done = bs.completed;
-                const cls = done === p.total ? 'sord-acc-prekit-full'
+                // Eligible PBs exclude "ineligible" so a SORD with everything
+                // either Completed or Ineligible reads as fully done.
+                const eligibleTotal = p.total - bs.ineligible;
+                const cls = (eligibleTotal > 0 && done === eligibleTotal) ? 'sord-acc-prekit-full'
                           : (bs.assigned + done) === 0 ? 'sord-acc-prekit-none'
                           : 'sord-acc-prekit-partial';
                 const segs = [
                   bs.ready ? `<span class="sord-acc-prekit-seg prekit-stage-bg-ready"   title="Ready">${bs.ready}</span>` : '',
                   bs.assigned ? `<span class="sord-acc-prekit-seg prekit-stage-bg-assigned" title="Assigned">${bs.assigned}</span>` : '',
                   bs.complication ? `<span class="sord-acc-prekit-seg prekit-stage-bg-complication" title="Complications">⚠ ${bs.complication}</span>` : '',
-                  bs.completed ? `<span class="sord-acc-prekit-seg prekit-stage-bg-completed"   title="Completed">✓ ${bs.completed}</span>` : ''
+                  bs.completed ? `<span class="sord-acc-prekit-seg prekit-stage-bg-completed"   title="Completed">✓ ${bs.completed}</span>` : '',
+                  bs.ineligible ? `<span class="sord-acc-prekit-seg prekit-stage-bg-ineligible" title="Ineligible">⊘ ${bs.ineligible}</span>` : ''
                 ].filter(Boolean).join('');
-                const title = `Pre-Kit · Ready ${bs.ready} · Assigned ${bs.assigned} · Complication ${bs.complication} · Completed ${bs.completed} · Not Ready ${bs.not_ready}`;
-                return `<span class="sord-acc-prekit ${cls}" title="${escape(title)}"><span class="sord-acc-prekit-ico" aria-hidden="true">👤</span><span>Pre-kit ${done}/${p.total}</span>${segs}</span>`;
+                const denom = eligibleTotal > 0 ? eligibleTotal : p.total;
+                const title = `Pre-Kit · Ready ${bs.ready} · Assigned ${bs.assigned} · Complication ${bs.complication} · Completed ${bs.completed} · Not Ready ${bs.not_ready} · Ineligible ${bs.ineligible}`;
+                return `<span class="sord-acc-prekit ${cls}" title="${escape(title)}"><span class="sord-acc-prekit-ico" aria-hidden="true">👤</span><span>Pre-kit ${done}/${denom}</span>${segs}</span>`;
               })()}
             </div>
           </div>
@@ -2351,12 +2357,12 @@ function finalizeOrder(order){
     // multi-segment breakdown across the five stages.
     const _pkProgress = prekitProgressForItem(item);
     const _pkPbs = item.packBuilders || [];
-    const _pkByStage = { not_ready:[], ready:[], assigned:[], complication:[], completed:[] };
+    const _pkByStage = { not_ready:[], ineligible:[], ready:[], assigned:[], complication:[], completed:[] };
     _pkPbs.forEach(pb => {
       const stage = getPrekitStage(pb);
       (_pkByStage[stage] || _pkByStage.not_ready).push(pb);
     });
-    const _pkStageOrder = ['ready','assigned','complication','completed','not_ready'];
+    const _pkStageOrder = ['ready','assigned','complication','completed','not_ready','ineligible'];
     const _pkRow = (pb) => {
       const pkKey = prekitKeyForPb(pb);
       const rec = getPrekitAssignment(pb);

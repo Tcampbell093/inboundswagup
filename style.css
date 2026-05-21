@@ -5962,6 +5962,11 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   --pk-not-ready-bd:    #e2e8f0;
   --pk-not-ready-strong:#94a3b8;
 
+  --pk-ineligible-bg:   repeating-linear-gradient(135deg, #f1f3f6 0px, #f1f3f6 6px, #e7eaef 6px, #e7eaef 12px);
+  --pk-ineligible-fg:   #475569;
+  --pk-ineligible-bd:   #cbd5e1;
+  --pk-ineligible-strong:#334155;
+
   --pk-ready-bg:        linear-gradient(135deg, #eaf3ff 0%, #dbe9ff 100%);
   --pk-ready-fg:        #1e4d8a;
   --pk-ready-bd:        #b6d2f6;
@@ -5985,12 +5990,14 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 
 /* Solid-color backgrounds used for stripes, dots, bar segments */
 .prekit-stage-bg-not_ready    { background: #cbd5e1; color:#475569; }
+.prekit-stage-bg-ineligible   { background: linear-gradient(135deg, #64748b 0%, #334155 100%); color:#fff; }
 .prekit-stage-bg-ready        { background: linear-gradient(135deg, #4f8fef 0%, #2563eb 100%); color:#fff; }
 .prekit-stage-bg-assigned     { background: linear-gradient(135deg, #9b87f5 0%, #7c3aed 100%); color:#fff; }
 .prekit-stage-bg-complication { background: linear-gradient(135deg, #f87171 0%, #dc2626 100%); color:#fff; }
 .prekit-stage-bg-completed    { background: linear-gradient(135deg, #34d399 0%, #059669 100%); color:#fff; }
 
 .prekit-stage-dot-not_ready    { background:#e2e8f0; color:#64748b; }
+.prekit-stage-dot-ineligible   { background:linear-gradient(135deg, #64748b 0%, #334155 100%); color:#fff; }
 .prekit-stage-dot-ready        { background:linear-gradient(135deg, #4f8fef 0%, #2563eb 100%); color:#fff; }
 .prekit-stage-dot-assigned     { background:linear-gradient(135deg, #9b87f5 0%, #7c3aed 100%); color:#fff; }
 .prekit-stage-dot-complication { background:linear-gradient(135deg, #f87171 0%, #dc2626 100%); color:#fff; }
@@ -6034,6 +6041,8 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 
 /* Stage-specific chip skins */
 .prekit-chip-not_ready    { background: var(--pk-not-ready-bg);    color: var(--pk-not-ready-fg);    border-color: var(--pk-not-ready-bd); }
+.prekit-chip-ineligible   { background: var(--pk-ineligible-bg);   color: var(--pk-ineligible-fg);   border-color: var(--pk-ineligible-bd); }
+.prekit-chip-ineligible .prekit-chip-label { text-decoration: line-through; text-decoration-thickness: 1px; text-underline-offset: 2px; opacity: 0.85; }
 .prekit-chip-ready        { background: var(--pk-ready-bg);        color: var(--pk-ready-fg);        border-color: var(--pk-ready-bd); }
 .prekit-chip-assigned     { background: var(--pk-assigned-bg);     color: var(--pk-assigned-fg);     border-color: var(--pk-assigned-bd); }
 .prekit-chip-complication { background: var(--pk-complication-bg); color: var(--pk-complication-fg); border-color: var(--pk-complication-bd); }
@@ -6507,6 +6516,8 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 .ac-pk-group-complication .ac-pk-group-head { border-left: 3px solid #dc2626; padding-left: 9px; }
 .ac-pk-group-completed    .ac-pk-group-head { border-left: 3px solid #059669; padding-left: 9px; }
 .ac-pk-group-not_ready    .ac-pk-group-head { border-left: 3px solid #cbd5e1; padding-left: 9px; }
+.ac-pk-group-ineligible   .ac-pk-group-head { border-left: 3px solid #475569; padding-left: 9px; }
+.ac-pk-group-ineligible .ac-pk-row { opacity: 0.78; }
 
 .ac-pk-group-dot {
   width: 22px; height: 22px;
