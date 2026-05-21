@@ -2240,6 +2240,31 @@
         </div>
       </div>
 
+      <!-- ══ Pre-Kit Command Board ══ -->
+      <div class="card prekit-board" id="prekitBoardPanel">
+        <div class="prekit-board-head">
+          <div>
+            <div class="eyebrow">Pre-Kit Command Board</div>
+            <h3>Bundle now. Ship faster.</h3>
+            <p class="prekit-board-sub">Move pack builders through the pre-kit lifecycle — mark what's ready, assign associates, log complications, and confirm completion. Every chip syncs back to its SORD.</p>
+          </div>
+          <div class="prekit-board-actions">
+            <div class="prekit-board-search-wrap">
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6.5" stroke="#9ca3af" stroke-width="1.8"/><path d="M14.5 14.5l3.5 3.5" stroke="#9ca3af" stroke-width="1.8" stroke-linecap="round"/></svg>
+              <input id="prekitBoardSearch" class="prekit-board-search" placeholder="PB, SORD, account, associate…" />
+            </div>
+            <select id="prekitBoardAssignee" class="prekit-board-assignee"><option value="">All associates</option></select>
+            <button class="btn secondary" id="prekitBoardToggle" type="button" aria-expanded="true">Collapse</button>
+          </div>
+        </div>
+
+        <div class="prekit-board-body" id="prekitBoardBody">
+          <div class="prekit-board-stats" id="prekitBoardStats"></div>
+          <div class="prekit-board-filters" id="prekitBoardFilters"></div>
+          <div class="prekit-board-list" id="prekitBoardList"></div>
+        </div>
+      </div>
+
       <!-- ── Accordion filter bar ─────────────────────────────────────── -->
       <div class="sord-accordion-bar">
         <div class="sord-accordion-tools">
