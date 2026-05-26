@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inbound PO Flight Tracker</title>
+  <!-- Reuse the assembly flight tracker stylesheet for visual consistency -->
+  <link rel="stylesheet" href="assembly-flight-tracker.css" />
+  <link rel="stylesheet" href="inbound-flight-tracker.css" />
+</head>
+<body>
+  <div class="board-shell">
+    <header class="board-header">
+      <div>
+        <div class="eyebrow">External visibility</div>
+        <h1>Inbound PO Flight Tracker</h1>
+        <p class="subtitle">Live stage visibility for the POs you are accountable for — Dock, Receiving, Prep, Routed, and Complete.</p>
+      </div>
+      <div class="header-meta">
+        <div class="meta-pill">
+          <span class="meta-label">Last updated</span>
+          <strong id="lastUpdated">—</strong>
+        </div>
+        <button class="secondary-btn" id="refreshBtn" type="button">Refresh</button>
+      </div>
+    </header>
+
+    <section class="board-stats" id="boardStats">
+      <article class="stat-chip">
+        <span class="stat-label">Total POs</span>
+        <strong class="stat-value" id="statTotalPos">0</strong>
+      </article>
+      <article class="stat-chip">
+        <span class="stat-label">At Dock</span>
+        <strong class="stat-value" id="statDock">0</strong>
+      </article>
+      <article class="stat-chip">
+        <span class="stat-label">In Receiving</span>
+        <strong class="stat-value" id="statReceiving">0</strong>
+      </article>
+      <article class="stat-chip">
+        <span class="stat-label">In Prep</span>
+        <strong class="stat-value" id="statPrep">0</strong>
+      </article>
+      <article class="stat-chip stat-chip-done">
+        <span class="stat-label">Complete</span>
+        <strong class="stat-value" id="statDone">0</strong>
+      </article>
+      <article class="stat-chip stat-chip-risk">
+        <span class="stat-label">Discrepancies</span>
+        <strong class="stat-value" id="statIssues">0</strong>
+      </article>
+    </section>
+
+    <div class="filters-card">
+      <div class="filters-row">
+        <label class="field">
+          <span>Search</span>
+          <input id="searchInput" type="text" placeholder="PO #, category, pallet…" />
+        </label>
+        <label class="field">
+          <span>View by</span>
+          <select id="groupBySelect">
+            <option value="stage">Stage</option>
+            <option value="day">Receiving Day</option>
+            <option value="pallet">Pallet</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Stage</span>
+          <select id="stageFilter"><option value="">All stages</option></select>
+        </label>
+        <label class="field">
+          <span>Category</span>
+          <select id="categoryFilter"><option value="">All categories</option></select>
+        </label>
+        <label class="field">
+          <span>Day</span>
+          <select id="dayFilter"><option value="">All days</option></select>
+        </label>
+        <label class="field" style="flex-direction:row;align-items:center;gap:6px;padding-top:14px;">
+          <input id="onlyIssues" type="checkbox" style="margin:0;">
+          <span style="font-weight:600;color:var(--text);">Only show discrepancies</span>
+        </label>
+      </div>
+    </div>
+
+    <main id="boardContent" class="board-content">
+      <section class="empty-state">
+        <h2>Loading inbound POs…</h2>
+        <p>The board will populate once pallet data is available.</p>
+      </section>
+    </main>
+  </div>
+
+  <script src="inbound-flight-tracker.js"></script>
+</body>
+</html>

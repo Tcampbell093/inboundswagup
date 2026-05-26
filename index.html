@@ -121,6 +121,10 @@
             <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><rect x="3" y="8" width="14" height="9" rx="1.5" stroke="currentColor" stroke-width="1.6"/><path d="M7 8V6a3 3 0 016 0v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
             <span class="nav-label">QA Inbound</span>
           </button>
+          <button class="nav-btn" data-page="inboundFlightTrackerPage" title="Inbound PO Flight Tracker">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M3 10h14M11 4l6 6-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="3" y="6" width="4" height="8" rx="1" stroke="currentColor" stroke-width="1.6"/></svg>
+            <span class="nav-label">Inbound Flight Tracker</span>
+          </button>
           <button class="nav-btn" data-page="fulfillmentScanPage" title="Fulfillment Scan-Out">
             <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M4 6.5h12v8a2 2 0 01-2 2H6a2 2 0 01-2-2v-8z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M7 10h6M8 13h4M6 6.5l1.5-3h5L14 6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span class="nav-label">Fulfillment Scan-Out</span>
@@ -2357,6 +2361,22 @@
       </div>
     </section>
 
+<section id="inboundFlightTrackerPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Inbound Visibility</div>
+          <h2>Embedded inbound PO flight tracker</h2>
+          <p class="subtitle">Live stage-by-stage visibility for inbound POs — Dock, Receiving, Prep, Routed, Complete. Built for account owners and outside stakeholders who need to track the POs they are accountable for.</p>
+        </div>
+        <div class="toolbar right">
+          <a class="btn secondary" href="inbound-flight-tracker.html" target="_blank" rel="noopener">Open Standalone</a>
+        </div>
+      </div>
+      <div class="card" style="padding:12px">
+        <iframe id="inboundFlightTrackerIframe" src="inbound-flight-tracker.html" loading="lazy" title="Inbound PO Flight Tracker" style="width:100%;min-height:1200px;border:none;border-radius:18px;background:#fff;"></iframe>
+      </div>
+    </section>
+
 <section id="workflowInboundPage" class="page">
       <div class="hero">
         <div>
@@ -2783,6 +2803,24 @@
   if (_ftIframe) _ftIframe.addEventListener('load', function(){ setTimeout(sendRoleToIframe, 300); });
   document.addEventListener('click', function(e) {
     if (e.target.closest('[data-page="assemblyFlightTrackerPage"]')) setTimeout(sendRoleToIframe, 400);
+  });
+})();
+
+// ── Role bridge: pass user role into INBOUND flight tracker iframe ──
+(function() {
+  function sendRoleToInboundIframe() {
+    const user = window.hcCurrentUser;
+    if (!user) return;
+    const iframe = document.getElementById('inboundFlightTrackerIframe');
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage({ type: 'HC_ROLE', role: user.role || 'l1' }, '*');
+    }
+  }
+  setTimeout(sendRoleToInboundIframe, 800);
+  const _iptIframe = document.getElementById('inboundFlightTrackerIframe');
+  if (_iptIframe) _iptIframe.addEventListener('load', function(){ setTimeout(sendRoleToInboundIframe, 300); });
+  document.addEventListener('click', function(e) {
+    if (e.target.closest('[data-page="inboundFlightTrackerPage"]')) setTimeout(sendRoleToInboundIframe, 400);
   });
 })();
 

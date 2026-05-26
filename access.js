@@ -19,6 +19,7 @@
       'attendancePage', 'workflowInboundPage', 'fulfillmentScanPage',
       'returnsPage', 'cycleCountPage', 'errorsPage',
       'assemblyPage', 'queuePage', 'assemblyFlightTrackerPage',
+      'inboundFlightTrackerPage',
       'sordPage', 'calendarPage', 'productivityPage', 'policyPage',
       'helpPage', 'importHubPage', 'historyPage'
     ],
@@ -27,6 +28,7 @@
       'workflowInboundPage', 'fulfillmentScanPage',
       'returnsPage', 'cycleCountPage',
       'assemblyPage', 'assemblyFlightTrackerPage',
+      'inboundFlightTrackerPage',
       'calendarPage', 'policyPage', 'helpPage'
     ],
     l1: [
@@ -34,10 +36,12 @@
       'workflowInboundPage', 'fulfillmentScanPage',
       'returnsPage', 'cycleCountPage',
       'assemblyPage', 'assemblyFlightTrackerPage',
+      'inboundFlightTrackerPage',
       'calendarPage', 'policyPage', 'helpPage'
     ],
     external: [
-      'assemblyFlightTrackerPage'
+      'assemblyFlightTrackerPage',
+      'inboundFlightTrackerPage'
     ],
   };
 
