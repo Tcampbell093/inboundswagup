@@ -21,6 +21,7 @@
           <span class="meta-label">Last updated</span>
           <strong id="lastUpdated">—</strong>
         </div>
+        <button class="secondary-btn" id="markPriorityBtn" type="button">★ Mark PO as Priority</button>
         <button class="secondary-btn" id="refreshBtn" type="button">Refresh</button>
       </div>
     </header>
@@ -45,6 +46,10 @@
       <article class="stat-chip stat-chip-done">
         <span class="stat-label">Complete</span>
         <strong class="stat-value" id="statDone">0</strong>
+      </article>
+      <article class="stat-chip stat-chip-priority">
+        <span class="stat-label">Priority</span>
+        <strong class="stat-value" id="statPriority">0</strong>
       </article>
       <article class="stat-chip stat-chip-risk">
         <span class="stat-label">Discrepancies</span>
@@ -80,7 +85,15 @@
         </label>
         <label class="field" style="flex-direction:row;align-items:center;gap:6px;padding-top:14px;">
           <input id="onlyIssues" type="checkbox" style="margin:0;">
-          <span style="font-weight:600;color:var(--text);">Only show discrepancies</span>
+          <span style="font-weight:600;color:var(--text);">Only discrepancies</span>
+        </label>
+        <label class="field" style="flex-direction:row;align-items:center;gap:6px;padding-top:14px;">
+          <input id="onlyWatchlist" type="checkbox" style="margin:0;">
+          <span style="font-weight:600;color:var(--text);">Watchlist only</span>
+        </label>
+        <label class="field" style="flex-direction:row;align-items:center;gap:6px;padding-top:14px;">
+          <input id="onlyPriority" type="checkbox" style="margin:0;">
+          <span style="font-weight:600;color:var(--text);">Priority only</span>
         </label>
       </div>
     </div>
@@ -91,6 +104,40 @@
         <p>The board will populate once pallet data is available.</p>
       </section>
     </main>
+  </div>
+
+  <!-- Priority mark/unmark modal -->
+  <div id="priorityModal" class="ipt-modal-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="priorityModalTitle">
+    <div class="ipt-modal-dialog">
+      <div class="ipt-modal-header">
+        <div>
+          <div class="eyebrow">Priority flag</div>
+          <h2 class="ipt-modal-title" id="priorityModalTitle">Mark PO as Priority</h2>
+          <p class="ipt-modal-sub" id="priorityModalSub">Priority POs are flagged for everyone and pinned to the top of the board.</p>
+        </div>
+        <button class="ipt-modal-close" id="priorityModalClose" type="button" aria-label="Close">&#x2715;</button>
+      </div>
+      <div class="ipt-modal-body">
+        <label class="ipt-modal-field">
+          <span>PO number</span>
+          <input id="priorityPoInput" type="text" maxlength="60" placeholder="e.g. PO-12345" autocomplete="off" />
+        </label>
+        <label class="ipt-modal-field">
+          <span>Your name (optional)</span>
+          <input id="priorityByInput" type="text" maxlength="80" placeholder="e.g. Jane Smith" autocomplete="name" />
+        </label>
+        <label class="ipt-modal-field">
+          <span>Note (optional)</span>
+          <textarea id="priorityNoteInput" rows="3" maxlength="500" placeholder="Why is this PO priority? (visible to warehouse)"></textarea>
+        </label>
+        <p class="ipt-modal-hint">You can flag a PO before it arrives at the warehouse — it will show as <em>Pending arrival</em> until the first pallet picks it up.</p>
+        <p class="ipt-modal-error" id="priorityModalError" hidden></p>
+      </div>
+      <div class="ipt-modal-footer">
+        <button class="ipt-modal-secondary" id="priorityUnmarkBtn" type="button" hidden>Remove priority</button>
+        <button class="ipt-modal-primary" id="priorityMarkBtn" type="button">Mark as priority</button>
+      </div>
+    </div>
   </div>
 
   <script src="inbound-flight-tracker.js"></script>

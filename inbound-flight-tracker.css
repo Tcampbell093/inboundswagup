@@ -65,6 +65,90 @@
 .ipt-detail-line{ font-size:11px; color:var(--muted); margin-top:4px; }
 .ipt-detail-line .ipt-detail-label{ font-weight:600; }
 
+/* ── Priority stat chip ── */
+.stat-chip-priority .stat-value{ color:#7a4d00; }
+.stat-chip-priority{ background:linear-gradient(180deg, #FFF8E1 0%, #FFFFFF 100%); }
+
+/* ── Card priority/watch styling ── */
+.ipt-card.is-priority{ border-left:3px solid #E5A627;
+  background:linear-gradient(90deg, #FFF8E1 0%, #FFFFFF 60%); }
+.ipt-card.is-priority.has-issue{ border-left:3px solid var(--red); }
+.ipt-card.pending-arrival{ border-left:3px solid #B894E0;
+  background:linear-gradient(90deg, #F4EEFC 0%, #FFFFFF 60%); }
+.ipt-card.pending-arrival.is-priority{ border-left:3px solid #E5A627; }
+
+/* Star + priority action buttons on the card */
+.ipt-action-btn{ padding:4px 9px; border-radius:6px;
+  border:1px solid var(--line); background:var(--surface); cursor:pointer;
+  font-size:12px; color:var(--muted); line-height:1;
+  display:inline-flex; align-items:center; gap:3px; }
+.ipt-action-btn:hover{ background:var(--bg); color:var(--text); }
+.ipt-watch-btn.is-on{ background:#FFF8E1; color:#7a4d00; border-color:#E5A627; }
+.ipt-pri-btn.is-on{ background:#FFE8A8; color:#7a4d00; border-color:#E5A627; font-weight:700; }
+
+/* Priority chip inside top row */
+.ipt-priority-chip{ font-size:10px; font-weight:700; padding:2px 9px; border-radius:999px;
+  background:#FFE8A8; color:#7a4d00; display:inline-flex; align-items:center; gap:3px; }
+.ipt-pending-chip{ font-size:10px; font-weight:700; padding:2px 9px; border-radius:999px;
+  background:#EEDFFA; color:#4A2A78; }
+
+/* Priority note line on card */
+.ipt-priority-note{ font-size:11px; color:#7a4d00; margin-top:6px;
+  background:#FFF8E1; padding:4px 8px; border-radius:6px;
+  border-left:2px solid #E5A627; }
+
+/* ── Age-since-QA-pending badge ── */
+.ipt-age-badge{ font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px;
+  display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+.ipt-age-fresh  { background:var(--bg);      color:var(--muted);  border:1px solid var(--line); }
+.ipt-age-tier1  { background:#FFF4D6;        color:#7a4d00; }   /* 24-48h amber */
+.ipt-age-tier2  { background:#FFE3B8;        color:#7a3400; }   /* 48-72h orange */
+.ipt-age-tier3  { background:var(--red-s);   color:#791F1F; }   /* 72h+ red */
+
+/* Pulsing dot for >72h */
+.ipt-age-tier3::before{
+  content:''; width:6px; height:6px; border-radius:50%;
+  background:var(--red); display:inline-block;
+  animation:iptPulse 1.8s ease-in-out infinite;
+}
+@keyframes iptPulse {
+  0%,100%{ opacity:1; transform:scale(1); }
+  50%    { opacity:.4; transform:scale(.7); }
+}
+
+/* ── Modal ── */
+.ipt-modal-overlay{ position:fixed; inset:0; background:rgba(15,28,46,.45);
+  display:none; align-items:center; justify-content:center; z-index:1000; padding:16px; }
+.ipt-modal-overlay:not([hidden]){ display:flex; }
+.ipt-modal-dialog{ background:#fff; border-radius:16px; width:100%; max-width:520px;
+  max-height:90vh; overflow-y:auto; }
+.ipt-modal-header{ display:flex; justify-content:space-between; align-items:flex-start;
+  gap:12px; padding:24px 24px 12px; }
+.ipt-modal-title{ font-size:20px; font-weight:500; margin:4px 0; }
+.ipt-modal-sub{ font-size:13px; color:var(--muted); margin:0; }
+.ipt-modal-close{ border:none; background:none; font-size:20px; cursor:pointer;
+  color:var(--muted); padding:4px 8px; border-radius:6px; line-height:1;
+  min-width:32px; min-height:32px; }
+.ipt-modal-close:hover{ background:var(--bg); color:var(--text); }
+.ipt-modal-body{ padding:8px 24px 12px; display:flex; flex-direction:column; gap:12px; }
+.ipt-modal-field{ display:flex; flex-direction:column; gap:4px; font-size:12px;
+  font-weight:700; color:var(--muted); }
+.ipt-modal-field input, .ipt-modal-field textarea{
+  padding:9px 12px; border:1px solid var(--line); border-radius:8px;
+  font-size:13px; color:var(--text); background:var(--bg);
+  font-family:inherit; resize:vertical; font-weight:400; }
+.ipt-modal-hint{ font-size:12px; color:var(--muted); margin:4px 0 0;
+  background:var(--bg); padding:8px 10px; border-radius:7px; }
+.ipt-modal-error{ color:#b42318; font-size:12px; margin:0; }
+.ipt-modal-footer{ display:flex; justify-content:flex-end; gap:8px;
+  padding:12px 24px 24px; border-top:1px solid var(--line); margin-top:8px; padding-top:14px; }
+.ipt-modal-primary{ background:#E5A627; color:#3D2A00; border:none;
+  padding:9px 18px; border-radius:8px; font-weight:700; cursor:pointer; font-size:13px; }
+.ipt-modal-primary:hover{ background:#D4961A; }
+.ipt-modal-secondary{ background:var(--surface); color:var(--text); border:1px solid var(--line);
+  padding:9px 18px; border-radius:8px; font-weight:700; cursor:pointer; font-size:13px; }
+.ipt-modal-secondary:hover{ background:var(--bg); }
+
 @media(max-width:700px){
   .ipt-journey .ft-j-label{ display:none; }
   .ipt-bottom{ gap:10px; font-size:10px; }
