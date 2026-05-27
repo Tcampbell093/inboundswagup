@@ -27,6 +27,8 @@ const state = {
 };
 
 let ftUserRole = 'external';
+let ftUserName = '';
+let ftUserEmail = '';
 
 function normRole(role) { return String(role || '').trim().toLowerCase(); }
 function resolveFtRole() {
@@ -42,18 +44,39 @@ function resolveFtRole() {
   } catch (_) { /* non-fatal */ }
   return 'external';
 }
+function resolveFtIdentity() {
+  // Best-effort: try the live window first, then localStorage.
+  // Parent will overwrite these via postMessage as soon as it can.
+  try {
+    if (window.hcCurrentUser) {
+      ftUserName  = window.hcCurrentUser.name  || ftUserName;
+      ftUserEmail = window.hcCurrentUser.email || ftUserEmail;
+    }
+    const raw = localStorage.getItem('hcAuthUser');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed) {
+        ftUserName  = parsed.name  || ftUserName;
+        ftUserEmail = parsed.email || ftUserEmail;
+      }
+    }
+  } catch(_){}
+}
 ftUserRole = resolveFtRole();
+resolveFtIdentity();
+
 window.addEventListener('message', function (e) {
   if (!e.data) return;
   if (e.data.type === 'HC_ROLE') {
-    ftUserRole = normRole(e.data.role) || 'external';
+    ftUserRole  = normRole(e.data.role) || 'external';
+    if (e.data.name)  ftUserName  = e.data.name;
+    if (e.data.email) ftUserEmail = e.data.email;
+    // Refresh any open compose surfaces so the "Posting as" line is current
+    if (typeof applyIdentityToModals === 'function') applyIdentityToModals();
     return;
   }
   // Parent app saved new workflow data — refresh the board now so the user
   // sees changes from the inbound module without waiting for the 60s poll.
-  // We defer slightly because the parent's debounced sync-to-backend runs
-  // ~250ms after the local save, and our fetch needs the backend to be
-  // current. 400ms below + parent's 600ms postMessage delay = ~1s total.
   if (e.data.type === 'HC_INBOUND_DATA_CHANGED') {
     if (typeof loadBoard === 'function') {
       setTimeout(loadBoard, 400);
@@ -142,14 +165,49 @@ async function clearPriorityRemote(poNum){
 //   on every board refresh to build a per-PO count + unread + priority-flag
 //   map, which the cards use to render their comment button.
 function readerIdentity(){
-  // Used as the reader key for unread tracking. Falls back to localStorage
-  // author name. We deliberately keep this loose because the tracker is
-  // external-facing and not everyone has an account.
+  // Used as the reader key for unread tracking. Prefer the authenticated
+  // email when we have one (most stable identifier), then the verified name,
+  // then a locally-cached author key as a final fallback.
+  if (ftUserEmail) return String(ftUserEmail).toLowerCase();
+  if (ftUserName)  return String(ftUserName).toLowerCase();
   try {
     const saved = (localStorage.getItem(AUTHOR_KEY) || '').trim();
     if (saved) return saved.toLowerCase();
   } catch(_){}
   return '';
+}
+
+// Push the current authenticated identity into any compose surfaces that
+// are currently rendered or about to open. Called when an HC_ROLE message
+// arrives and when modals open.
+function applyIdentityToModals(){
+  // Comment modal — set hidden author + "Posting as" line
+  if (cmEls && cmEls.author) {
+    cmEls.author.value = ftUserName || '';
+  }
+  const asLine = document.getElementById('cmAsLine');
+  const asName = document.getElementById('cmAsName');
+  if (asLine && asName) {
+    if (ftUserName) {
+      asName.textContent = ftUserName;
+      asLine.hidden = false;
+    } else {
+      asLine.hidden = true;
+    }
+  }
+  // Priority modal — set hidden by-input + hint
+  const priBy   = document.getElementById('priorityByInput');
+  const priHint = document.getElementById('priorityModalAsHint');
+  const priAs   = document.getElementById('priorityAsName');
+  if (priBy)   priBy.value = ftUserName || '';
+  if (priHint && priAs) {
+    if (ftUserName) {
+      priAs.textContent = ftUserName;
+      priHint.hidden = false;
+    } else {
+      priHint.hidden = true;
+    }
+  }
 }
 async function loadCommentCounts(){
   try {
@@ -1024,13 +1082,8 @@ function cmOpenModal(poNum, context){
   if (cmEls.error) cmEls.error.hidden = true;
   cmEls.overlay.hidden  = false;
   document.body.style.overflow = 'hidden';
-  // Pre-fill author from localStorage
-  if (!cmEls.author.value) {
-    try {
-      const saved = localStorage.getItem(AUTHOR_KEY) || '';
-      if (saved) cmEls.author.value = saved;
-    } catch(_){}
-  }
+  // Apply the verified user identity to the hidden author field + posting-as line
+  applyIdentityToModals();
   // Update character counter for any pre-existing text
   if (cmEls.body && cmEls.charCount) {
     cmEls.charCount.textContent = (cmEls.body.value.length || 0) + ' / 2000';
@@ -1051,7 +1104,9 @@ function cmCloseModal(){
 
 async function cmSubmit(){
   if (!cmState.poNum) return;
-  const author   = (cmEls.author.value || '').trim();
+  // Identity comes from the parent app via postMessage. Fall back to the
+  // hidden author field (which applyIdentityToModals keeps in sync).
+  const author   = (ftUserName || (cmEls.author && cmEls.author.value) || '').trim();
   const category = cmEls.category.value || 'general';
   const body     = (cmEls.body.value || '').trim();
   cmEls.error.hidden = true;
@@ -1061,7 +1116,7 @@ async function cmSubmit(){
     return;
   }
   if (!author) {
-    cmEls.error.textContent = 'Please enter your name so the inbound team knows who is asking.';
+    cmEls.error.textContent = 'Your account does not have a display name. Click your name in the top-right corner to set one.';
     cmEls.error.hidden = false;
     return;
   }
@@ -1079,7 +1134,6 @@ async function cmSubmit(){
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || ('Send failed (' + res.status + ')'));
-    try { localStorage.setItem(AUTHOR_KEY, author); } catch(_){}
     cmEls.body.value = '';
     cmEls.charCount.textContent = '0 / 2000';
     // Reload thread + refresh counts in background
@@ -1145,16 +1199,14 @@ function openPriorityModal(prefillPo, opts) {
   els.priorityModalError.textContent = '';
   els.priorityPoInput.value   = prefillPo || '';
   els.priorityNoteInput.value = '';
-  // Pre-fill name from local memory so repeat-use is easy
-  let storedName = '';
-  try { storedName = localStorage.getItem('ipt_priority_setby') || ''; } catch(_){}
-  els.priorityByInput.value   = storedName;
+  // Identity now comes from the parent app. applyIdentityToModals will fill
+  // the hidden by-input and the "Posting as" hint.
+  applyIdentityToModals();
   // If this PO is already priority, show its current note + reveal the remove button
   if (prefillPo) {
     const info = priorityInfo(prefillPo);
     if (info) {
       els.priorityNoteInput.value   = info.note   || '';
-      if (info.set_by) els.priorityByInput.value = info.set_by;
       els.priorityModalSub.textContent = 'This PO is already flagged. Update the note or remove the flag.';
       els.priorityUnmarkBtn.hidden = false;
       els.priorityMarkBtn.textContent = 'Update priority';
@@ -1181,7 +1233,8 @@ function closePriorityModal() {
 async function submitPriorityMark() {
   const poNum = els.priorityPoInput.value.trim();
   const note  = els.priorityNoteInput.value.trim();
-  const setBy = els.priorityByInput.value.trim();
+  // Identity from parent — fall back to hidden field for older sessions
+  const setBy = (ftUserName || (els.priorityByInput && els.priorityByInput.value) || '').trim();
   if (!poNum) {
     els.priorityModalError.textContent = 'PO number is required.';
     els.priorityModalError.hidden = false;
@@ -1190,7 +1243,6 @@ async function submitPriorityMark() {
   els.priorityMarkBtn.disabled = true;
   try {
     await setPriorityRemote(poNum, note, setBy);
-    try { if (setBy) localStorage.setItem('ipt_priority_setby', setBy); } catch(_){}
     closePriorityModal();
     await loadBoard();
   } catch (err) {

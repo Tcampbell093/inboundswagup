@@ -141,14 +141,12 @@
           <span>PO number</span>
           <input id="priorityPoInput" type="text" maxlength="60" placeholder="e.g. PO-12345" autocomplete="off" />
         </label>
-        <label class="ipt-modal-field">
-          <span>Your name (optional)</span>
-          <input id="priorityByInput" type="text" maxlength="80" placeholder="e.g. Jane Smith" autocomplete="name" />
-        </label>
+        <input id="priorityByInput" type="hidden" />
         <label class="ipt-modal-field">
           <span>Note (optional)</span>
           <textarea id="priorityNoteInput" rows="3" maxlength="500" placeholder="Why is this PO priority? (visible to warehouse)"></textarea>
         </label>
+        <p class="ipt-modal-hint" id="priorityModalAsHint" hidden>Posting as <strong id="priorityAsName"></strong>.</p>
         <p class="ipt-modal-hint">You can flag a PO before it arrives at the warehouse — it will show as <em>Pending arrival</em> until the first pallet picks it up.</p>
         <p class="ipt-modal-error" id="priorityModalError" hidden></p>
       </div>
@@ -174,11 +172,8 @@
         <p class="cm-loading">Loading comments…</p>
       </div>
       <div class="cm-compose">
+        <p class="cm-as-line" id="cmAsLine" hidden>Posting as <strong id="cmAsName"></strong></p>
         <div class="cm-compose-row">
-          <label class="cm-field">
-            <span>Your name</span>
-            <input id="cmAuthor" type="text" maxlength="80" placeholder="e.g. Jane Smith" autocomplete="name" />
-          </label>
           <label class="cm-field cm-field-cat">
             <span>Type</span>
             <select id="cmCategory">
@@ -191,6 +186,7 @@
             </select>
           </label>
         </div>
+        <input id="cmAuthor" type="hidden" />
         <label class="cm-field">
           <span>Message</span>
           <textarea id="cmBody" rows="3" maxlength="2000" placeholder="Ask a question, share an update, or flag an issue for the inbound team…"></textarea>

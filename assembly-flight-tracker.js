@@ -30,6 +30,8 @@ const STORAGE_KEYS = {
 const PHOTOS_API_EARLY = '/.netlify/functions/flight-tracker-photos';
 const photoCountCache = {};
 let ftUserRole = 'external';
+let ftUserName = '';
+let ftUserEmail = '';
 
 function normRole(role) {
   return String(role || '').trim().toLowerCase();
@@ -52,11 +54,32 @@ function resolveFtRole() {
 
   return 'external';
 }
+function resolveFtIdentity() {
+  try {
+    if (window.hcCurrentUser) {
+      ftUserName  = window.hcCurrentUser.name  || ftUserName;
+      ftUserEmail = window.hcCurrentUser.email || ftUserEmail;
+    }
+    const raw = localStorage.getItem('hcAuthUser');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed) {
+        ftUserName  = parsed.name  || ftUserName;
+        ftUserEmail = parsed.email || ftUserEmail;
+      }
+    }
+  } catch(_){}
+}
 
 ftUserRole = resolveFtRole();
+resolveFtIdentity();
 window.addEventListener('message', function(e) {
-  if (e.data && e.data.type === 'HC_ROLE') {
+  if (!e.data) return;
+  if (e.data.type === 'HC_ROLE') {
     ftUserRole = normRole(e.data.role) || 'external';
+    if (e.data.name)  ftUserName  = e.data.name;
+    if (e.data.email) ftUserEmail = e.data.email;
+    if (typeof applyIdentityToCmModal === 'function') applyIdentityToCmModal();
   }
 });
 function canTakePhotos() {
@@ -852,6 +875,24 @@ async function cmLoadComments(){
     cmEls.thread.innerHTML = `<p class="cm-empty cm-err-text">Could not load comments: ${esc(err.message)}</p>`;
   }
 }
+// Apply the authenticated identity (passed in via postMessage) to the
+// compose surface — sets the hidden author field and renders a small
+// "Posting as" line. Identity is read-only here; users edit their name
+// from the profile popover in the main app.
+function applyIdentityToCmModal() {
+  if (cmEls && cmEls.author) cmEls.author.value = ftUserName || '';
+  const asLine = document.getElementById('cmAsLine');
+  const asName = document.getElementById('cmAsName');
+  if (asLine && asName) {
+    if (ftUserName) {
+      asName.textContent = ftUserName;
+      asLine.hidden = false;
+    } else {
+      asLine.hidden = true;
+    }
+  }
+}
+
 function cmOpenModal(pbId, pbName, so, account){
   cmState.pbId    = pbId;
   cmState.pbName  = pbName;
@@ -862,14 +903,10 @@ function cmOpenModal(pbId, pbName, so, account){
   cmEls.error.hidden    = true;
   cmEls.overlay.hidden  = false;
   document.body.style.overflow = 'hidden';
-  // Pre-fill author from localStorage if previously saved
-  if (!cmEls.author.value) {
-    const saved = localStorage.getItem('ft_author_name') || '';
-    if (saved) cmEls.author.value = saved;
-  }
+  applyIdentityToCmModal();
   cmLoadComments();
   // Mark thread as read in background for this reader
-  const reader = cmEls.author.value.trim();
+  const reader = (ftUserEmail || ftUserName || cmEls.author.value || '').trim();
   if (reader) _ftMarkRead(pbId||'', so||'', reader);
 }
 
@@ -892,7 +929,8 @@ function cmCloseModal(){
 }
 async function cmSubmitComment(){
   const body    = cmEls.body.value.trim();
-  const author  = cmEls.author.value.trim()||'Stakeholder';
+  // Identity comes from the parent app; hidden author field stays in sync.
+  const author  = (ftUserName || cmEls.author.value || '').trim() || 'Stakeholder';
   const category = cmEls.category.value;
   cmEls.error.hidden = true;
   if(!body){ cmEls.error.textContent='Please write a message before sending.'; cmEls.error.hidden=false; return; }
@@ -907,8 +945,6 @@ async function cmSubmitComment(){
     });
     const data = await res.json();
     if(!res.ok) throw new Error(data.error||`Submit failed (${res.status})`);
-    // Persist author name for next visit
-    if(author) localStorage.setItem('ft_author_name', author);
     cmEls.body.value         = '';
     cmEls.charCount.textContent = '0 / 2000';
     await cmLoadComments();

@@ -65,7 +65,21 @@
 .ipt-detail-line{ font-size:11px; color:var(--muted); margin-top:4px; }
 .ipt-detail-line .ipt-detail-label{ font-weight:600; }
 
+/* ── Posting-as line in comment modal ───────────────────────────────
+   Shown when the iframe has a verified user identity. The user can't edit
+   it — their name comes from their account profile. */
+.cm-as-line{
+  margin:0 0 4px; padding:8px 12px; border-radius:8px;
+  background:var(--blue-s,#E7F0FA); color:var(--text);
+  font-size:12px;
+}
+.cm-as-line strong{ color:#0C447C; }
+.cm-as-line[hidden]{ display:none; }
+
 /* ── Quick-filter chips row ──────────────────────────────────────────────
+   Replaces the old loose checkbox row. Each chip toggles its underlying
+   checkbox (kept hidden for state continuity with the existing JS). Inactive
+   chips are a thin outline; active chips fill with a topic-tinted color. */
    Replaces the old loose checkbox row. Each chip toggles its underlying
    checkbox (kept hidden for state continuity with the existing JS). Inactive
    chips are a thin outline; active chips fill with a topic-tinted color. */

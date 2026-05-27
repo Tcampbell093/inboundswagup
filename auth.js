@@ -88,11 +88,11 @@
           })
           .then(function(user) {
             // Fetch role from our Neon DB
-            const name = (user.user_metadata && (user.user_metadata.full_name || user.user_metadata.name)) || user.email;
+            const identityName = (user.user_metadata && (user.user_metadata.full_name || user.user_metadata.name)) || user.email;
             return fetch('/.netlify/functions/users?action=upsert', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: user.id, email: user.email, name: name })
+              body: JSON.stringify({ id: user.id, email: user.email, name: identityName })
             })
             .then(function(r) { return r.json(); })
             .then(function(dbUser) {
@@ -102,10 +102,14 @@
                 window.location.href = 'login.html?reason=unauthorized';
                 return;
               }
+              // Prefer the name the user set in their profile (stored in
+              // hc_users) over the Identity-provided one. If the DB name
+              // is empty, fall back to Identity.
+              const displayName = (dbUser.name && dbUser.name.trim()) || identityName;
               const refreshed = {
                 id:        user.id,
                 email:     user.email,
-                name:      name,
+                name:      displayName,
                 role:      dbUser.role || 'l1',
                 overrides: dbUser.overrides || {},
                 tempAdmin: dbUser.tempAdmin || false,
@@ -128,6 +132,100 @@
 
     // No valid session — go to login
     showLogin();
+  }
+
+  // ── Profile popover: edit display name without admin tools ──────────
+  function initProfilePopover() {
+    const chip     = document.getElementById('hcUserDisplay');
+    const pop      = document.getElementById('hcProfilePopover');
+    const emailEl  = document.getElementById('hcProfileEmail');
+    const nameIn   = document.getElementById('hcProfileName');
+    const statusEl = document.getElementById('hcProfileStatus');
+    const saveBtn  = document.getElementById('hcProfileSave');
+    const soBtn    = document.getElementById('hcProfileSignOut');
+    if (!chip || !pop) return;
+
+    function setStatus(msg, kind) {
+      statusEl.textContent = msg || '';
+      statusEl.classList.toggle('is-ok',  kind === 'ok');
+      statusEl.classList.toggle('is-err', kind === 'err');
+    }
+    function open() {
+      const user = window.hcCurrentUser; if (!user) return;
+      emailEl.textContent = user.email || '';
+      nameIn.value        = user.name || '';
+      setStatus('');
+      pop.hidden = false;
+      chip.setAttribute('aria-expanded','true');
+      setTimeout(() => { try { nameIn.focus(); nameIn.select(); } catch(_){} }, 20);
+    }
+    function close() {
+      pop.hidden = true;
+      chip.setAttribute('aria-expanded','false');
+    }
+    chip.addEventListener('click', function() {
+      pop.hidden ? open() : close();
+    });
+    chip.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pop.hidden ? open() : close(); }
+    });
+    document.addEventListener('click', function(e) {
+      if (pop.hidden) return;
+      if (pop.contains(e.target) || chip.contains(e.target)) return;
+      close();
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && !pop.hidden) close();
+    });
+
+    saveBtn.addEventListener('click', async function() {
+      const user = window.hcCurrentUser;
+      if (!user || !user.token) { setStatus('Not signed in', 'err'); return; }
+      const newName = (nameIn.value || '').trim();
+      if (!newName) { setStatus('Name cannot be empty', 'err'); return; }
+      if (newName === user.name) { setStatus('Already saved', 'ok'); return; }
+      saveBtn.disabled = true;
+      setStatus('Saving…');
+      try {
+        const res = await fetch('/.netlify/functions/users?action=update-profile', {
+          method: 'POST',
+          headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + user.token },
+          body: JSON.stringify({ name: newName }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Save failed');
+        // Update in-memory user
+        window.hcCurrentUser.name = data.name || newName;
+        // Update local storage
+        try {
+          const saved = JSON.parse(localStorage.getItem('hcAuthUser') || '{}');
+          saved.name = data.name || newName;
+          localStorage.setItem('hcAuthUser', JSON.stringify(saved));
+        } catch(_){}
+        // Update the chip label
+        const label = { admin:'Admin', manager:'Manager', l2:'Associate L2', l1:'Associate L1', external:'Stakeholder' }[user.role] || 'Associate';
+        chip.textContent = (data.name || newName) + ' · ' + label;
+        // Broadcast so iframes pick up the new name immediately
+        window.dispatchEvent(new CustomEvent('hc-profile-updated', { detail: { name: data.name || newName } }));
+        setStatus('Saved ✓', 'ok');
+      } catch (err) {
+        setStatus(err.message || 'Could not save', 'err');
+      } finally {
+        saveBtn.disabled = false;
+      }
+    });
+
+    if (soBtn) {
+      soBtn.addEventListener('click', function() {
+        document.getElementById('hcLogoutBtn')?.click();
+      });
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initProfilePopover);
+  } else {
+    initProfilePopover();
   }
 
   if (document.readyState === 'loading') {

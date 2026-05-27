@@ -46,7 +46,22 @@
 </div>
 
 <!-- ── User display chip (shown when logged in) ─────────────── -->
-<div id="hcUserDisplay" class="hc-user-chip" hidden></div>
+<div id="hcUserDisplay" class="hc-user-chip" hidden role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="false"></div>
+
+<!-- ── Profile popover (opened by clicking the chip) ────────── -->
+<div id="hcProfilePopover" hidden role="dialog" aria-modal="false" aria-labelledby="hcProfileTitle">
+  <p class="profile-eyebrow" id="hcProfileTitle">Your profile</p>
+  <p class="profile-email" id="hcProfileEmail"></p>
+  <div class="profile-field">
+    <label for="hcProfileName">Display name</label>
+    <input id="hcProfileName" type="text" maxlength="80" placeholder="e.g. Yordani Hernandez" autocomplete="name" />
+  </div>
+  <p class="profile-status" id="hcProfileStatus"></p>
+  <div class="profile-row-btns">
+    <button class="profile-signout-btn" id="hcProfileSignOut" type="button">Sign out</button>
+    <button class="profile-save-btn" id="hcProfileSave" type="button">Save</button>
+  </div>
+</div>
 
 <!-- ── Admin Notification Banner ─────────────────────────── -->
 <div id="hcNotifBanner" hidden style="position:fixed;top:0;left:0;right:0;z-index:9998;background:linear-gradient(90deg,#f5a623,#e8960f);color:#fff;padding:12px 20px;display:flex;align-items:center;gap:12px;font-size:14px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.18);">
@@ -2791,7 +2806,12 @@
     if (!user) return;
     const iframe = document.getElementById('assemblyFlightTrackerIframe');
     if (iframe && iframe.contentWindow) {
-      iframe.contentWindow.postMessage({ type: 'HC_ROLE', role: user.role || 'l1' }, '*');
+      iframe.contentWindow.postMessage({
+        type: 'HC_ROLE',
+        role: user.role || 'l1',
+        name: user.name || '',
+        email: user.email || ''
+      }, '*');
     }
     if (user.role === 'external') {
       const nav = document.querySelector('[data-page="assemblyFlightTrackerPage"]');
@@ -2804,23 +2824,35 @@
   document.addEventListener('click', function(e) {
     if (e.target.closest('[data-page="assemblyFlightTrackerPage"]')) setTimeout(sendRoleToIframe, 400);
   });
+  window.addEventListener('hc-profile-updated', function() {
+    setTimeout(sendRoleToIframe, 100);
+  });
 })();
 
 // ── Role bridge: pass user role into INBOUND flight tracker iframe ──
 (function() {
-  function sendRoleToInboundIframe() {
+  function sendIdentityToInboundIframe() {
     const user = window.hcCurrentUser;
     if (!user) return;
     const iframe = document.getElementById('inboundFlightTrackerIframe');
     if (iframe && iframe.contentWindow) {
-      iframe.contentWindow.postMessage({ type: 'HC_ROLE', role: user.role || 'l1' }, '*');
+      iframe.contentWindow.postMessage({
+        type: 'HC_ROLE',
+        role: user.role || 'l1',
+        name: user.name || '',
+        email: user.email || ''
+      }, '*');
     }
   }
-  setTimeout(sendRoleToInboundIframe, 800);
+  setTimeout(sendIdentityToInboundIframe, 800);
   const _iptIframe = document.getElementById('inboundFlightTrackerIframe');
-  if (_iptIframe) _iptIframe.addEventListener('load', function(){ setTimeout(sendRoleToInboundIframe, 300); });
+  if (_iptIframe) _iptIframe.addEventListener('load', function(){ setTimeout(sendIdentityToInboundIframe, 300); });
   document.addEventListener('click', function(e) {
-    if (e.target.closest('[data-page="inboundFlightTrackerPage"]')) setTimeout(sendRoleToInboundIframe, 400);
+    if (e.target.closest('[data-page="inboundFlightTrackerPage"]')) setTimeout(sendIdentityToInboundIframe, 400);
+  });
+  // Re-broadcast when the user updates their profile name
+  window.addEventListener('hc-profile-updated', function() {
+    setTimeout(sendIdentityToInboundIframe, 100);
   });
 })();
 

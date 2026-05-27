@@ -4824,8 +4824,71 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   color:#fff;border-radius:999px;
   padding:6px 14px;font-size:12px;font-weight:700;
   backdrop-filter:blur(8px);
-  pointer-events:none;
+  cursor:pointer;
+  transition:background .15s,border-color .15s;
 }
+.hc-user-chip:hover{ background:rgba(255,255,255,.18); border-color:rgba(255,255,255,.28); }
+.hc-user-chip[aria-expanded="true"]{ background:rgba(255,255,255,.22); }
+
+/* Profile popover anchored under the chip */
+#hcProfilePopover{
+  position:fixed; top:48px; right:16px; z-index:9001;
+  width:300px; background:#fff;
+  border:1px solid var(--line,#e5e7eb);
+  border-radius:14px;
+  box-shadow:0 14px 40px rgba(15,28,46,.18);
+  padding:18px;
+  display:flex; flex-direction:column; gap:12px;
+  color:#0f1c2e;
+}
+#hcProfilePopover[hidden]{ display:none; }
+#hcProfilePopover .profile-eyebrow{
+  font-size:11px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.06em; color:#71839c; margin:0;
+}
+#hcProfilePopover .profile-email{
+  font-size:12px; color:#71839c; margin:0;
+  word-break:break-all;
+}
+#hcProfilePopover .profile-field{
+  display:flex; flex-direction:column; gap:4px;
+}
+#hcProfilePopover .profile-field label{
+  font-size:11px; font-weight:700; color:#71839c;
+}
+#hcProfilePopover .profile-field input{
+  padding:9px 12px; border:1px solid #e5e7eb;
+  border-radius:8px; font-size:13px; color:#0f1c2e;
+  background:#fff; font-family:inherit;
+}
+#hcProfilePopover .profile-field input:focus{
+  outline:2px solid #185FA5; outline-offset:0;
+  border-color:#185FA5;
+}
+#hcProfilePopover .profile-row-btns{
+  display:flex; gap:6px; align-items:center; justify-content:space-between;
+  border-top:1px solid #f0f2f5; padding-top:10px;
+}
+#hcProfilePopover .profile-save-btn{
+  background:#185FA5; color:#fff; border:none;
+  padding:8px 16px; border-radius:8px;
+  font-size:12px; font-weight:700; cursor:pointer;
+}
+#hcProfilePopover .profile-save-btn:hover{ background:#134680; }
+#hcProfilePopover .profile-save-btn:disabled{
+  background:#a3b0c0; cursor:default;
+}
+#hcProfilePopover .profile-signout-btn{
+  background:transparent; color:#a32d2d; border:1px solid #f0c4c4;
+  padding:7px 12px; border-radius:8px;
+  font-size:12px; font-weight:600; cursor:pointer;
+}
+#hcProfilePopover .profile-signout-btn:hover{ background:#fdf2f2; }
+#hcProfilePopover .profile-status{
+  font-size:11px; min-height:14px;
+}
+#hcProfilePopover .profile-status.is-ok{ color:#1D9E75; }
+#hcProfilePopover .profile-status.is-err{ color:#a32d2d; }
 .hc-logout-btn{
   width:100%;margin-top:8px;
   background:transparent;
