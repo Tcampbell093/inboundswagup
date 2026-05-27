@@ -264,6 +264,13 @@ function plt_addPo(palletId,data) {
     // overstockQty is COMPUTED as receivedQty - orderedQty (not stored)
     receivingDone:false,
     prepVerified:false,
+    // Single shared case slot. Open when set, null when none.
+    // Shape: { openedAt, openedBy, openedAtStage, link, ref, note,
+    //          status:'open', closedAt, closedBy }
+    case: null,
+    // Audit history of closed cases (or replaced ones). New cases get pushed
+    // here when closed so we keep a record without inflating the card.
+    caseHistory: [],
     sizeBreakdown: data.sizeBreakdown || null,
     createdAt:plt_now()
   };
@@ -294,6 +301,15 @@ function plt_updatePo(palletId,poId,fields) {
     plt_log(p,'po_recv_qty',`PO# ${po.po} receiving count → ${fields.receivedQty}`,po.po);
   else if('prepReceivedQty' in fields && fields.prepReceivedQty!==before.prepReceivedQty)
     plt_log(p,'po_prep_qty',`PO# ${po.po} prep count → ${fields.prepReceivedQty}`,po.po);
+  else if('case' in fields && fields.case && !before.case) {
+    const stg = fields.case.openedAtStage || '?';
+    const ref = fields.case.ref ? ` (${fields.case.ref})` : '';
+    plt_log(p,'po_case_opened',`PO# ${po.po} — case opened at ${stg}${ref}`,po.po);
+  }
+  else if('case' in fields && !fields.case && before.case)
+    plt_log(p,'po_case_closed',`PO# ${po.po} — case closed`,po.po);
+  else if('case' in fields && fields.case && before.case && fields.case.ref !== before.case.ref)
+    plt_log(p,'po_case_updated',`PO# ${po.po} — case updated`,po.po);
   else plt_log(p,'po_edited',`PO# ${po.po}`,po.po);
   plt_save();
 }
@@ -1553,6 +1569,21 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
           </button>
         </div>
       </div>
+      <!-- Case Created toggle row — flag is visible, link/note hidden behind Details -->
+      <div class="plt-case-row" data-po-id="${po.id}" data-stage="receiving"
+        style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:6px 10px;border-radius:8px;background:${po.case?'#FFF4D6':'transparent'};border:1px solid ${po.case?'#E5A627':'transparent'};">
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;cursor:pointer;color:${po.case?'#7a3400':'var(--text-secondary,#666)'};">
+          <input type="checkbox" class="plt-case-toggle" data-po-id="${po.id}" data-stage="receiving" ${po.case?'checked':''}
+            style="width:14px;height:14px;cursor:pointer;accent-color:#E5A627;" />
+          📁 ${po.case ? plt_t('Case open','Caso abierto') : plt_t('Case Created','Crear caso')}
+        </label>
+        ${po.case ? `
+          <span style="font-size:11px;color:#7a3400;">${plt_t('opened at','abierto en')} ${plt_esc(po.case.openedAtStage||'?')}</span>
+          <button type="button" class="plt-case-details-link" data-po-id="${po.id}"
+            style="margin-left:auto;background:none;border:none;font-size:11px;font-weight:600;color:#7a3400;cursor:pointer;text-decoration:underline;padding:0;">
+            ${plt_t('Details ›','Detalles ›')}
+          </button>` : ''}
+      </div>
       <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
         <button class="pallet-btn-ghost plt-tiny plt-po-edit">${plt_t('Notes','Notas')}</button>
         <button type="button" class="plt-reveal-toggle plt-recv-reveal-btn pallet-btn-ghost plt-tiny" data-target="${recvRevealId}">
@@ -1653,6 +1684,22 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
           <button type="button" class="pallet-btn-primary prep-os-btn plt-overstock-assign-btn plt-tiny" data-po-id="${po.id}">${plt_t('Add to box','Agregar a caja')}</button>
         </div>
       </div>` : ''}
+
+      <!-- Case Created toggle row (Prep) — same UX as Receiving -->
+      <div class="plt-case-row" data-po-id="${po.id}" data-stage="prep"
+        style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:6px 10px;border-radius:8px;background:${po.case?'#FFF4D6':'transparent'};border:1px solid ${po.case?'#E5A627':'transparent'};">
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;cursor:pointer;color:${po.case?'#7a3400':'var(--text-secondary,#666)'};">
+          <input type="checkbox" class="plt-case-toggle" data-po-id="${po.id}" data-stage="prep" ${po.case?'checked':''}
+            style="width:14px;height:14px;cursor:pointer;accent-color:#E5A627;" />
+          📁 ${po.case ? plt_t('Case open','Caso abierto') : plt_t('Case Created','Crear caso')}
+        </label>
+        ${po.case ? `
+          <span style="font-size:11px;color:#7a3400;">${plt_t('opened at','abierto en')} ${plt_esc(po.case.openedAtStage||'?')}</span>
+          <button type="button" class="plt-case-details-link" data-po-id="${po.id}"
+            style="margin-left:auto;background:none;border:none;font-size:11px;font-weight:600;color:#7a3400;cursor:pointer;text-decoration:underline;padding:0;">
+            ${plt_t('Details ›','Detalles ›')}
+          </button>` : ''}
+      </div>
 
       <!-- Utility row: notes, transfer, delete, show previous -->
       <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
@@ -1918,16 +1965,41 @@ function plt_bindPoCardEvents(container, pallet, dept){
       }
     });
     card.querySelector('.plt-po-transfer')?.addEventListener('click',()=>plt_openTransferModal(pallet.id,poId,dept));
-    // ── Recv Done button ─────────────────────────────────────────────────────
+
+    // ── Case toggle (inline checkbox in stage card) ──────────────────────────
+    card.querySelector('.plt-case-toggle')?.addEventListener('change', function() {
+      const stage = this.dataset.stage;
+      if (this.checked) {
+        plt_openCaseQuick(pallet.id, poId, stage);
+      } else {
+        // Un-check fully clears (with audit if there was metadata)
+        plt_clearCaseQuick(pallet.id, poId);
+      }
+      plt_renderAllPanels();
+    });
+    // ── Case details link (opens the link/ref/note sub-modal) ────────────────
+    card.querySelector('.plt-case-details-link')?.addEventListener('click', function() {
+      plt_openCaseDetailsModal(pallet.id, poId);
+    });
+
+    // ── Recv Done button — fires close-case prompt if a case is open ─────────
     card.querySelector('.plt-recv-done-btn')?.addEventListener('click', function() {
       const btn = card.querySelector('.plt-recv-done-btn');
       if (btn?.dataset.done === '1') return;
-      if (btn) btn.dataset.done = '1';
-      plt_updatePo(pallet.id, poId, { receivingDone: true });
-      const updatedPallet = plt_get(pallet.id);
-      const poObj = (updatedPallet?.pos || []).find(function(p){ return p.id === poId; });
-      collapseToStrip(card, poObj, pallet.id, poId, dept);
-      plt_renderAllPanels();
+      const proceed = () => {
+        if (btn) btn.dataset.done = '1';
+        plt_updatePo(pallet.id, poId, { receivingDone: true });
+        const updatedPallet = plt_get(pallet.id);
+        const poObj = (updatedPallet?.pos || []).find(function(p){ return p.id === poId; });
+        collapseToStrip(card, poObj, pallet.id, poId, dept);
+        plt_renderAllPanels();
+      };
+      const cur = (plt_get(pallet.id)?.pos || []).find(p => p.id === poId);
+      if (cur && cur.case) {
+        plt_openCloseCasePrompt(pallet.id, poId, 'receiving', proceed);
+      } else {
+        proceed();
+      }
     });
 
     // ── Dock Done button ─────────────────────────────────────────────────────
@@ -1962,42 +2034,51 @@ function plt_bindPoCardEvents(container, pallet, dept){
       });
     });
 
-    // ── Prep Done button — collapses card to slim strip ──────────────────────
+    // ── Prep Done button — fires close-case prompt if a case is open ─────────
         card.querySelector('.plt-prep-done-btn')?.addEventListener('click', function(e) {
       const btn = e.currentTarget;
       if (btn.dataset.done === '1') return;
-      btn.dataset.done = '1';
 
-      plt_updatePo(pallet.id, poId, { prepVerified: true });
+      const proceed = () => {
+        btn.dataset.done = '1';
+        plt_updatePo(pallet.id, poId, { prepVerified: true });
 
-      const updatedPallet = plt_get(pallet.id);
-      const poObj = (updatedPallet?.pos || []).find(function(p){ return p.id === poId; });
-      const poNum = poObj ? (poObj.poNum || poObj.po || poObj.id || '') : poId;
-      const cat   = poObj ? (poObj.category || '') : '';
+        const updatedPallet = plt_get(pallet.id);
+        const poObj = (updatedPallet?.pos || []).find(function(p){ return p.id === poId; });
+        const poNum = poObj ? (poObj.poNum || poObj.po || poObj.id || '') : poId;
+        const cat   = poObj ? (poObj.category || '') : '';
 
-      card.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;">'
-        + '<div style="width:18px;height:18px;border-radius:50%;background:#1D9E75;display:flex;align-items:center;justify-content:center;flex-shrink:0;">'
-        + '<svg width="10" height="7" viewBox="0 0 10 7" fill="none"><path d="M1 3.5L3.8 6 9 1" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-        + '</div>'
-        + '<span style="font-size:13px;font-weight:500;color:var(--text-primary,#111);">' + plt_esc(poNum) + '</span>'
-        + (cat ? '<span style="font-size:12px;color:var(--text-secondary,#888);">' + plt_esc(cat) + '</span>' : '')
-        + '<span style="margin-left:auto;font-size:11px;font-weight:500;color:#1D9E75;">' + plt_t('Done','Listo') + '</span>'
-        + '<span style="font-size:11px;color:var(--text-secondary,#888);">↩ ' + plt_t('reopen','reabrir') + '</span>'
-        + '</div>';
-      card.style.background = 'var(--surface-secondary,#f9fafb)';
-      card.style.border = '0.5px solid var(--border,#e5e7eb)';
-      card.style.opacity = '0.7';
+        card.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;">'
+          + '<div style="width:18px;height:18px;border-radius:50%;background:#1D9E75;display:flex;align-items:center;justify-content:center;flex-shrink:0;">'
+          + '<svg width="10" height="7" viewBox="0 0 10 7" fill="none"><path d="M1 3.5L3.8 6 9 1" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+          + '</div>'
+          + '<span style="font-size:13px;font-weight:500;color:var(--text-primary,#111);">' + plt_esc(poNum) + '</span>'
+          + (cat ? '<span style="font-size:12px;color:var(--text-secondary,#888);">' + plt_esc(cat) + '</span>' : '')
+          + '<span style="margin-left:auto;font-size:11px;font-weight:500;color:#1D9E75;">' + plt_t('Done','Listo') + '</span>'
+          + '<span style="font-size:11px;color:var(--text-secondary,#888);">↩ ' + plt_t('reopen','reabrir') + '</span>'
+          + '</div>';
+        card.style.background = 'var(--surface-secondary,#f9fafb)';
+        card.style.border = '0.5px solid var(--border,#e5e7eb)';
+        card.style.opacity = '0.7';
 
-      if (updatedPallet) {
-        const total = updatedPallet.pos.length;
-        const done  = updatedPallet.pos.filter(function(p){ return p.prepVerified; }).length;
-        const frac = document.getElementById('plt_prepFrac');
-        const bar  = document.getElementById('plt_prepProgBar');
-        if (frac) frac.textContent = done + '/' + total;
-        if (bar)  bar.style.width  = total ? Math.round(done / total * 100) + '%' : '0%';
+        if (updatedPallet) {
+          const total = updatedPallet.pos.length;
+          const done  = updatedPallet.pos.filter(function(p){ return p.prepVerified; }).length;
+          const frac = document.getElementById('plt_prepFrac');
+          const bar  = document.getElementById('plt_prepProgBar');
+          if (frac) frac.textContent = done + '/' + total;
+          if (bar)  bar.style.width  = total ? Math.round(done / total * 100) + '%' : '0%';
+        }
+
+        plt_renderAllPanels();
+      };
+
+      const cur = (plt_get(pallet.id)?.pos || []).find(p => p.id === poId);
+      if (cur && cur.case) {
+        plt_openCloseCasePrompt(pallet.id, poId, 'prep', proceed);
+      } else {
+        proceed();
       }
-
-      plt_renderAllPanels();
     });
 
     // ── STS/LTS qty inputs (Concept C) — save on blur ────────────────────────
@@ -2496,6 +2577,203 @@ function plt_openPoEditModal(palletId,poId,dept){
 /* ------------------------------------------------------------------
    TRANSFER PO MODAL
    ------------------------------------------------------------------ */
+/* ===== CASE LIFECYCLE ===============================================
+   A "case" is the single shared flag on a PO. It opens when receiving
+   or prep flips the inline checkbox. Optional link/ref/note are entered
+   in a separate Details modal (so the count-entry flow stays clean).
+   Cases close via the close prompt that fires when "Done" is clicked
+   on a PO with an open case (typically once replacement units arrive).
+   ===================================================================== */
+
+/* Open a fresh case immediately when the inline checkbox is toggled on.
+   No prompt — just flip the flag and let the associate keep counting. */
+function plt_openCaseQuick(palletId, poId, stage){
+  const pallet = plt_get(palletId); if(!pallet) return;
+  const po = (pallet.pos||[]).find(r=>r.id===poId); if(!po) return;
+  if (po.case) return; // already open — do nothing
+  plt_updatePo(palletId, poId, {
+    case: {
+      openedAt:      plt_now(),
+      openedBy:      '',
+      openedAtStage: stage,
+      link:          '',
+      ref:           '',
+      note:          '',
+      status:        'open',
+    }
+  });
+}
+
+/* Cancel/remove an open case without going through the close prompt.
+   Used when the associate un-checks the inline checkbox right after
+   flipping it on — the original mistake correction case. We push the
+   removed entry into caseHistory only if it had real metadata, so a
+   straight on/off toggle doesn't bloat the audit trail. */
+function plt_clearCaseQuick(palletId, poId){
+  const pallet = plt_get(palletId); if(!pallet) return;
+  const po = (pallet.pos||[]).find(r=>r.id===poId); if(!po) return;
+  if (!po.case) return;
+  const hadMeta = !!(po.case.link || po.case.ref || po.case.note);
+  if (hadMeta) {
+    const hist = Array.isArray(po.caseHistory) ? po.caseHistory.slice() : [];
+    hist.push({ ...po.case, status:'cleared', closedAt: plt_now() });
+    plt_updatePo(palletId, poId, { case: null, caseHistory: hist });
+  } else {
+    plt_updatePo(palletId, poId, { case: null });
+  }
+}
+
+/* The Details modal — entered from the inline "Details ›" link.
+   This is where the internal-only link, ref, and note live. */
+function plt_openCaseDetailsModal(palletId, poId){
+  const pallet = plt_get(palletId); if(!pallet) return;
+  const po = (pallet.pos||[]).find(r=>r.id===poId); if(!po) return;
+  if (!po.case) return;
+  const existing = po.case;
+  plt_closeAll();
+  const overlay = plt_overlay('palletCaseDetailsOverlay');
+  overlay.innerHTML = `
+    <div class="pallet-modal" style="max-width:460px;" role="dialog" aria-modal="true">
+      <div class="pallet-modal-header">
+        <div>
+          <h3>📁 ${plt_t('Case details','Detalles del caso')} — PO# ${plt_esc(po.po)}</h3>
+          <p class="pallet-modal-sub">${plt_esc(pallet.label)} · ${plt_t('opened at','abierto en')} ${plt_esc(existing.openedAtStage||'?')}</p>
+        </div>
+        <button class="pallet-modal-close">✕</button>
+      </div>
+      <div class="pallet-modal-body">
+        <div class="pallet-form-row">
+          <div class="pallet-form-field" style="flex:1;min-width:100%;">
+            <label>${plt_t('Case link (internal only)','Enlace del caso (solo interno)')}</label>
+            <input id="plt_caseLink" type="url" maxlength="500"
+              value="${plt_esc(existing.link || '')}"
+              placeholder="${plt_t('https:// or paste a ticket URL','https:// o pegar URL del ticket')}"/>
+          </div>
+        </div>
+        <div class="pallet-form-row">
+          <div class="pallet-form-field" style="flex:1;min-width:100%;">
+            <label>${plt_t('Case reference (optional)','Referencia del caso (opcional)')}</label>
+            <input id="plt_caseRef" type="text" maxlength="120"
+              value="${plt_esc(existing.ref || '')}"
+              placeholder="${plt_t('e.g. Zendesk #12345 or vendor-claim-2026-001','p.ej. Zendesk #12345')}"/>
+          </div>
+        </div>
+        <div class="pallet-form-row">
+          <div class="pallet-form-field" style="flex:1;min-width:100%;">
+            <label>${plt_t('Reason / note','Motivo / nota')}</label>
+            <textarea id="plt_caseNote" rows="3" maxlength="500"
+              placeholder="${plt_t('Brief note about what triggered the case','Breve nota sobre el motivo del caso')}">${plt_esc(existing.note || '')}</textarea>
+          </div>
+        </div>
+        <div class="pallet-form-row">
+          <div class="pallet-form-field" style="flex:1;min-width:100%;">
+            <label>${plt_t('Opened by (optional)','Abierto por (opcional)')}</label>
+            <input id="plt_caseBy" type="text" maxlength="80"
+              value="${plt_esc(existing.openedBy || '')}"
+              placeholder="${plt_t('Your name','Tu nombre')}"/>
+          </div>
+        </div>
+        <p style="font-size:11px;color:var(--text-secondary,#888);margin:0;">
+          ${plt_t('Originally opened','Abierto originalmente')}: ${plt_esc(new Date(existing.openedAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}
+        </p>
+      </div>
+      <div class="pallet-modal-footer" style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+        <button class="pallet-btn-secondary" id="plt_caseCancel">${plt_t('Cancel','Cancelar')}</button>
+        <button class="pallet-btn-primary"   id="plt_caseSave">${plt_t('Save details','Guardar detalles')}</button>
+      </div>
+    </div>`;
+  plt_push(overlay);
+
+  const close = () => plt_closeAll();
+  overlay.querySelector('.pallet-modal-close').addEventListener('click', close);
+  overlay.querySelector('#plt_caseCancel').addEventListener('click', close);
+  overlay.addEventListener('click', e => { if(e.target === overlay) close(); });
+
+  overlay.querySelector('#plt_caseSave').addEventListener('click', () => {
+    const link = (overlay.querySelector('#plt_caseLink').value || '').trim();
+    const ref  = (overlay.querySelector('#plt_caseRef').value  || '').trim();
+    const note = (overlay.querySelector('#plt_caseNote').value || '').trim();
+    const by   = (overlay.querySelector('#plt_caseBy').value   || '').trim();
+    plt_updatePo(palletId, poId, {
+      case: { ...existing, link, ref, note, openedBy: by || existing.openedBy }
+    });
+    close();
+    plt_renderAllPanels();
+  });
+
+  setTimeout(() => { try { overlay.querySelector('#plt_caseLink').focus(); } catch(_){} }, 30);
+}
+
+/* The Close Prompt — required to confirm before the Done click goes through
+   when a PO has an open case. Three outcomes:
+     - Close case + proceed: clears the case (archives to history) and runs onProceed()
+     - Keep case open + proceed: leaves the case as-is and runs onProceed()
+     - Cancel: aborts, nothing changes.
+   onProceed() is the normal Done-button behavior (set receivingDone / prepVerified). */
+function plt_openCloseCasePrompt(palletId, poId, stage, onProceed){
+  const pallet = plt_get(palletId); if(!pallet) return onProceed();
+  const po = (pallet.pos||[]).find(r=>r.id===poId); if(!po) return onProceed();
+  if (!po.case) return onProceed();  // no case to close — just proceed
+  const c = po.case;
+  plt_closeAll();
+  const stageLbl = stage === 'prep' ? plt_t('Prep','Prep') : plt_t('Receiving','Recepción');
+  const overlay = plt_overlay('palletCloseCaseOverlay');
+  overlay.innerHTML = `
+    <div class="pallet-modal" style="max-width:480px;" role="dialog" aria-modal="true">
+      <div class="pallet-modal-header">
+        <div>
+          <h3>📁 ${plt_t('Open case on this PO','Caso abierto en esta OC')}</h3>
+          <p class="pallet-modal-sub">${plt_esc(pallet.label)} · PO# ${plt_esc(po.po)} · ${plt_t('finishing','terminando')} ${plt_esc(stageLbl)}</p>
+        </div>
+        <button class="pallet-modal-close">✕</button>
+      </div>
+      <div class="pallet-modal-body">
+        <div style="background:#FFF4D6;border:1px solid #E5A627;border-radius:8px;padding:10px 12px;">
+          <div style="font-size:12px;font-weight:700;color:#7a3400;margin-bottom:4px;">
+            ${plt_t('This PO has a case opened during','Esta OC tiene un caso abierto en')} ${plt_esc(c.openedAtStage||'?')}
+            ${c.openedBy ? ' ' + plt_t('by','por') + ' ' + plt_esc(c.openedBy) : ''}
+          </div>
+          ${c.ref  ? `<div style="font-size:12px;color:#7a3400;">${plt_t('Ref','Ref')}: <strong>${plt_esc(c.ref)}</strong></div>` : ''}
+          ${c.note ? `<div style="font-size:12px;color:#7a3400;margin-top:4px;">${plt_esc(c.note)}</div>` : ''}
+        </div>
+        <p style="font-size:13px;color:var(--text-primary,#111);margin:14px 0 0;">
+          ${plt_t('Did the missing/replacement units come in for this PO?','¿Llegaron las unidades faltantes/reemplazo para esta OC?')}
+        </p>
+        <p style="font-size:12px;color:var(--text-secondary,#666);margin:6px 0 0;">
+          ${plt_t("If yes, close the case so the flight tracker reflects resolution. If you're still missing items, keep it open.","Si sí, cierra el caso para que el tracker refleje la resolución. Si aún falta, déjalo abierto.")}
+        </p>
+      </div>
+      <div class="pallet-modal-footer" style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+        <button class="pallet-btn-secondary" id="plt_cc_cancel">${plt_t('Cancel','Cancelar')}</button>
+        <button class="pallet-btn-ghost"     id="plt_cc_keep">${plt_t('Keep open & save','Mantener abierto y guardar')}</button>
+        <button class="pallet-btn-primary"   id="plt_cc_close">${plt_t('Close case & save','Cerrar caso y guardar')}</button>
+      </div>
+    </div>`;
+  plt_push(overlay);
+
+  const close = () => plt_closeAll();
+  overlay.querySelector('.pallet-modal-close').addEventListener('click', close);
+  overlay.querySelector('#plt_cc_cancel').addEventListener('click', close);
+  overlay.addEventListener('click', e => { if(e.target === overlay) close(); });
+
+  overlay.querySelector('#plt_cc_keep').addEventListener('click', () => {
+    close();
+    onProceed();
+  });
+
+  overlay.querySelector('#plt_cc_close').addEventListener('click', () => {
+    // Archive the case into history, then clear the active case slot.
+    const pal = plt_get(palletId); if(!pal) { close(); return onProceed(); }
+    const cur = (pal.pos||[]).find(r=>r.id===poId);
+    if (!cur || !cur.case) { close(); return onProceed(); }
+    const hist = Array.isArray(cur.caseHistory) ? cur.caseHistory.slice() : [];
+    hist.push({ ...cur.case, status:'closed', closedAt: plt_now(), closedAtStage: stage });
+    plt_updatePo(palletId, poId, { case: null, caseHistory: hist });
+    close();
+    onProceed();
+  });
+}
+
 function plt_openTransferModal(fromPalletId,poId,dept){
   const from=plt_get(fromPalletId); if(!from)return;
   const po=(from.pos||[]).find(r=>r.id===poId); if(!po)return;

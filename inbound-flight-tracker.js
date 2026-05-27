@@ -274,6 +274,9 @@ function flattenOccurrences(pallets) {
         palletStatus:    p.status || '',
         palletCreatedAt: p.createdAt || 0,
         stage:           derivePoStage(po, p),
+        // Active case (single shared slot) — null if no active case.
+        // Shape: { openedAt, openedBy, openedAtStage, link, ref, note, status }
+        case:            po.case || null,
       });
     });
   });
@@ -360,6 +363,12 @@ function aggregateByPo(occurrences) {
     if (!anyRecv) r.receivedQty = null;
     if (!anyPrep) r.prepReceivedQty = null;
 
+    // Active case — first non-null wins. Same PO across two pallets should
+    // share one case anyway (one PO = one case at a time).
+    r.case = null;
+    r.occurrences.forEach(o => { if (!r.case && o.case) r.case = o.case; });
+    r.hasCase = !!r.case;
+
     // Flags
     r.isPartial         = r.occurrences.length > 1;
     r.recvVsOrdered     = (r.receivedQty != null && r.orderedQty != null) ? r.receivedQty - r.orderedQty : null;
@@ -367,8 +376,8 @@ function aggregateByPo(occurrences) {
     r.hasOverstock      = r.recvVsOrdered != null && r.recvVsOrdered > 0;
     r.hasShortage       = r.recvVsOrdered != null && r.recvVsOrdered < 0 && r.stage === 'done';
     r.hasCountMismatch  = r.prepVsRecv != null && r.prepVsRecv !== 0;
-    r.hasIssue          = r.hasShortage || r.hasCountMismatch ||
-                          (r.stage === 'done' && r.hasOverstock); // overstock only flagged after done
+    r.hasIssue          = r.hasShortage || r.hasCountMismatch || r.hasCase ||
+                          (r.stage === 'done' && r.hasOverstock);
     rows.push(r);
   });
   return rows;
@@ -427,6 +436,7 @@ const els = {
   onlyIssues:     document.getElementById('onlyIssues'),
   onlyWatchlist:  document.getElementById('onlyWatchlist'),
   onlyPriority:   document.getElementById('onlyPriority'),
+  onlyCases:      document.getElementById('onlyCases'),
   boardContent:   document.getElementById('boardContent'),
   statTotalPos:   document.getElementById('statTotalPos'),
   statDock:       document.getElementById('statDock'),
@@ -434,6 +444,7 @@ const els = {
   statPrep:       document.getElementById('statPrep'),
   statDone:       document.getElementById('statDone'),
   statPriority:   document.getElementById('statPriority'),
+  statCases:      document.getElementById('statCases'),
   statUnreadComments: document.getElementById('statUnreadComments'),
   statIssues:     document.getElementById('statIssues'),
   // Priority modal
@@ -447,6 +458,13 @@ const els = {
   priorityModalError:document.getElementById('priorityModalError'),
   priorityMarkBtn:   document.getElementById('priorityMarkBtn'),
   priorityUnmarkBtn: document.getElementById('priorityUnmarkBtn'),
+  // Case details modal
+  caseDetailsModal:   document.getElementById('caseDetailsModal'),
+  caseDetailsTitle:   document.getElementById('caseDetailsTitle'),
+  caseDetailsSub:     document.getElementById('caseDetailsSub'),
+  caseDetailsBody:    document.getElementById('caseDetailsBody'),
+  caseDetailsClose:   document.getElementById('caseDetailsClose'),
+  caseDetailsDismiss: document.getElementById('caseDetailsDismiss'),
 };
 
 // ── Filters ────────────────────────────────────────────────────────────────
@@ -480,6 +498,7 @@ function applyFilters() {
   const onlyIssues    = !!els.onlyIssues.checked;
   const onlyWatchlist = !!(els.onlyWatchlist && els.onlyWatchlist.checked);
   const onlyPriority  = !!(els.onlyPriority  && els.onlyPriority.checked);
+  const onlyCases     = !!(els.onlyCases     && els.onlyCases.checked);
   state.groupBy       = els.groupBySelect.value;
 
   state.filtered = state.rows.filter(r => {
@@ -491,8 +510,9 @@ function applyFilters() {
     const matchIssue    = !onlyIssues    || r.hasIssue;
     const matchWatch    = !onlyWatchlist || r.watched;
     const matchPri      = !onlyPriority  || r.priority;
+    const matchCase     = !onlyCases     || r.hasCase;
     return matchSearch && matchStage && matchCategory && matchDay
-        && matchIssue && matchWatch && matchPri;
+        && matchIssue && matchWatch && matchPri && matchCase;
   });
 
   renderStats(state.filtered);
@@ -509,6 +529,14 @@ function renderStats(rows) {
 
   const priCount = rows.filter(r => r.priority).length;
   if (els.statPriority) els.statPriority.textContent = fmtN(priCount);
+
+  // Open cases = POs with at least one case flag set (receiving or prep)
+  const caseCount = rows.filter(r => r.hasCase).length;
+  if (els.statCases) {
+    els.statCases.textContent = fmtN(caseCount);
+    const chip = els.statCases.closest('.stat-chip');
+    if (chip) chip.classList.toggle('has-cases', caseCount > 0);
+  }
 
   // Sum unread comments across the visible rows
   let unreadTotal = 0;
@@ -539,6 +567,11 @@ function poJourneyCard(row) {
 
   // Journey dots — reuse .ft-j-* classes from assembly-flight-tracker.css.
   // For pending-arrival rows we render all dots as inactive (clock hasn't started).
+  // Case markers ride the connector line between stages:
+  //   • receiving-case marker → between Receiving (idx 1) and Prep (idx 2)
+  //     → rendered inside the Prep step block (i=2)
+  //   • prep-case marker → between Prep (idx 2) and Routed (idx 3)
+  //     → rendered inside the Routed step block (i=3)
   let stepsHtml = '';
   STAGES.forEach(function (s, i) {
     const stepDone   = !row.pendingArrival && curOrder >  s.order;
@@ -554,9 +587,28 @@ function poJourneyCard(row) {
                  : 'ft-j-label';
     const lineCls = stepDone ? 'ft-j-line done' : 'ft-j-line';
     const dotContent = stepDone ? '✓' : stepActive ? '→' : '';
+
+    // Pick the relevant case marker (if any) for this connector.
+    // The single shared case lives in row.case; we read openedAtStage to
+    // decide which connector the marker sits on:
+    //   receiving → marker between Receiving (1) and Prep (2)        → step i=2
+    //   prep      → marker between Prep (2) and Routed (3)           → step i=3
+    let caseMarker = '';
+    if (row.case) {
+      const targetIdx = row.case.openedAtStage === 'prep' ? 3 : 2;
+      if (i === targetIdx) {
+        const tip = (row.case.ref ? row.case.ref + ' · ' : '') +
+                    'Case opened during ' + (row.case.openedAtStage || '?') +
+                    (row.case.note ? ' — ' + row.case.note : '');
+        caseMarker = '<div class="ipt-case-marker" data-case-po="' + esc(row.poNum) +
+          '" title="' + esc(tip) + '">📁</div>';
+      }
+    }
+
     stepsHtml +=
       '<div class="ft-j-step">' +
         (!isLast ? '<div class="' + lineCls + '"></div>' : '') +
+        caseMarker +
         '<div class="' + dotCls + '">' + dotContent + '</div>' +
         '<div class="' + lblCls + '">' + s.label + '</div>' +
       '</div>';
@@ -568,6 +620,11 @@ function poJourneyCard(row) {
   if (row.hasOverstock)     badges.push('<span class="ipt-overstock-chip">Overstock received</span>');
   if (row.hasShortage)      badges.push('<span class="ipt-issue-chip">Short receipt</span>');
   if (row.hasCountMismatch) badges.push('<span class="ipt-issue-chip">Receiving / Prep count mismatch</span>');
+  if (row.case) {
+    const stg = row.case.openedAtStage || '?';
+    const stgLbl = stg === 'prep' ? 'Prep' : 'Receiving';
+    badges.push('<span class="ipt-case-chip">📁 Case open · ' + esc(stgLbl) + '</span>');
+  }
 
   // Age signal (24h tiers)
   const age = ageInfo(row);
@@ -618,6 +675,26 @@ function poJourneyCard(row) {
     priNote = '<div class="ipt-priority-note">★ Flagged before warehouse arrival — visible to everyone</div>';
   }
 
+  // Case context line — content depends on viewer role:
+  //   externals see only that a case is open (the chip already says that).
+  //   internal users get a thin row with "View details" that opens the link/ref/note modal.
+  let caseNotes = '';
+  if (row.case) {
+    const isInternal = ftUserRole && ftUserRole !== 'external';
+    if (isInternal) {
+      const by = row.case.openedBy ? ' by ' + esc(row.case.openedBy) : '';
+      const openedTs = row.case.openedAt
+        ? new Date(row.case.openedAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})
+        : '';
+      caseNotes = '<div class="ipt-case-note">' +
+        '📁 Case opened during ' + esc(row.case.openedAtStage || '?') + by +
+        (openedTs ? ' · ' + esc(openedTs) : '') +
+        ' <button type="button" class="ipt-case-details-btn" data-case-po="' + esc(row.poNum) + '">View details ›</button>' +
+        '</div>';
+    }
+    // external users: no caseNotes line — the chip is the whole signal.
+  }
+
   // Top-row chips
   const chips = [];
   if (row.category)       chips.push('<span class="ipt-cat-chip">' + esc(row.category) + '</span>');
@@ -647,6 +724,7 @@ function poJourneyCard(row) {
             '<span style="margin-left:auto;display:inline-flex;gap:6px;">' + cmtBtn + watchBtn + priBtn + '</span>' +
           '</div>'
         : '') +
+      caseNotes +
       priNote +
     '</div>' +
   '</div>';
@@ -991,6 +1069,50 @@ async function cmSubmit(){
   }
 }
 
+// ── Case details modal (internal-only viewer) ─────────────────────────────
+function openCaseDetailsModal(poNum) {
+  if (!els.caseDetailsModal) return;
+  const row = state.rows.find(r => poKey(r.poNum) === poKey(poNum));
+  if (!row || !row.case) return;
+  const c = row.case;
+  els.caseDetailsTitle.textContent = 'PO# ' + row.poNum + ' — Case open';
+  const subBits = [];
+  if (c.openedAtStage) subBits.push('Opened during ' + (c.openedAtStage === 'prep' ? 'Prep' : 'Receiving'));
+  if (c.openedBy)      subBits.push('by ' + c.openedBy);
+  if (c.openedAt)      subBits.push(new Date(c.openedAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}));
+  els.caseDetailsSub.textContent = subBits.join(' · ');
+
+  // Body content
+  const bodyParts = [];
+  if (c.ref) {
+    bodyParts.push('<div class="ipt-modal-field"><span>Case reference</span>' +
+      '<div style="padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-size:13px;color:var(--text);font-weight:400;">' +
+      esc(c.ref) + '</div></div>');
+  }
+  if (c.link) {
+    const safeLink = esc(c.link);
+    bodyParts.push('<div class="ipt-modal-field"><span>Case link</span>' +
+      '<div style="padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-size:13px;font-weight:400;">' +
+      '<a href="' + safeLink + '" target="_blank" rel="noopener" style="color:#0C447C;text-decoration:underline;word-break:break-all;">' + safeLink + '</a>' +
+      '</div></div>');
+  }
+  if (c.note) {
+    bodyParts.push('<div class="ipt-modal-field"><span>Note</span>' +
+      '<div style="padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-size:13px;color:var(--text);font-weight:400;white-space:pre-wrap;">' +
+      esc(c.note) + '</div></div>');
+  }
+  if (!bodyParts.length) {
+    bodyParts.push('<p class="ipt-modal-hint">No link, reference, or note was added when this case was opened. The warehouse team can add details from the QA Inbound module.</p>');
+  } else {
+    bodyParts.push('<p class="ipt-modal-hint">Cases auto-close from the QA Inbound module when replacement units are received and verified.</p>');
+  }
+  els.caseDetailsBody.innerHTML = bodyParts.join('');
+  els.caseDetailsModal.hidden = false;
+}
+function closeCaseDetailsModal() {
+  if (els.caseDetailsModal) els.caseDetailsModal.hidden = true;
+}
+
 // ── Priority modal helpers ─────────────────────────────────────────────────
 function openPriorityModal(prefillPo, opts) {
   opts = opts || {};
@@ -1103,6 +1225,20 @@ function handleBoardClick(e) {
     cmOpenModal(po, bits.join(' · '));
     return;
   }
+  // Case details — internal-only link inside the card
+  const caseBtn = e.target.closest('.ipt-case-details-btn');
+  if (caseBtn) {
+    const po = caseBtn.getAttribute('data-case-po');
+    openCaseDetailsModal(po);
+    return;
+  }
+  // The journey marker (📁 diamond) also opens details for internal viewers
+  const caseMarker = e.target.closest('.ipt-case-marker');
+  if (caseMarker && ftUserRole && ftUserRole !== 'external') {
+    const po = caseMarker.getAttribute('data-case-po');
+    if (po) openCaseDetailsModal(po);
+    return;
+  }
 }
 
 // ── Wire up ────────────────────────────────────────────────────────────────
@@ -1119,6 +1255,7 @@ function init() {
   els.onlyIssues.addEventListener('change', applyFilters);
   if (els.onlyWatchlist) els.onlyWatchlist.addEventListener('change', applyFilters);
   if (els.onlyPriority)  els.onlyPriority.addEventListener('change', applyFilters);
+  if (els.onlyCases)     els.onlyCases.addEventListener('change', applyFilters);
 
   // Board card buttons (watch + priority)
   els.boardContent.addEventListener('click', handleBoardClick);
@@ -1150,11 +1287,21 @@ function init() {
     });
   }
 
-  // Esc closes modal (priority or comment)
+  // Case details modal
+  if (els.caseDetailsClose)   els.caseDetailsClose.addEventListener('click', closeCaseDetailsModal);
+  if (els.caseDetailsDismiss) els.caseDetailsDismiss.addEventListener('click', closeCaseDetailsModal);
+  if (els.caseDetailsModal) {
+    els.caseDetailsModal.addEventListener('click', (e) => {
+      if (e.target === els.caseDetailsModal) closeCaseDetailsModal();
+    });
+  }
+
+  // Esc closes any open modal
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     if (els.priorityModal && !els.priorityModal.hidden) closePriorityModal();
     else if (cmEls.overlay && !cmEls.overlay.hidden) cmCloseModal();
+    else if (els.caseDetailsModal && !els.caseDetailsModal.hidden) closeCaseDetailsModal();
   });
 
   loadBoard();
