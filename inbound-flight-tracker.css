@@ -69,6 +69,10 @@
 .stat-chip-priority .stat-value{ color:#7a4d00; }
 .stat-chip-priority{ background:linear-gradient(180deg, #FFF8E1 0%, #FFFFFF 100%); }
 
+/* ── Unread comments stat chip ── */
+.stat-chip-comments .stat-value{ color:#0C447C; }
+.stat-chip-comments.has-unread{ background:linear-gradient(180deg, var(--blue-s) 0%, #FFFFFF 100%); }
+
 /* ── Card priority/watch styling ── */
 .ipt-card.is-priority{ border-left:3px solid #E5A627;
   background:linear-gradient(90deg, #FFF8E1 0%, #FFFFFF 60%); }
@@ -85,6 +89,16 @@
 .ipt-action-btn:hover{ background:var(--bg); color:var(--text); }
 .ipt-watch-btn.is-on{ background:#FFF8E1; color:#7a4d00; border-color:#E5A627; }
 .ipt-pri-btn.is-on{ background:#FFE8A8; color:#7a4d00; border-color:#E5A627; font-weight:700; }
+
+/* Comment button — has count badge + unread dot */
+.ipt-comment-btn{ position:relative; }
+.ipt-comment-btn.has-thread{ background:var(--blue-s); color:#0C447C; border-color:#9EC0DD; }
+.ipt-comment-count{ font-weight:700; margin-left:2px; }
+.ipt-comment-btn .ipt-unread-dot{
+  position:absolute; top:-3px; right:-3px;
+  width:8px; height:8px; border-radius:50%;
+  background:var(--red); border:1.5px solid #fff;
+}
 
 /* Priority chip inside top row */
 .ipt-priority-chip{ font-size:10px; font-weight:700; padding:2px 9px; border-radius:999px;

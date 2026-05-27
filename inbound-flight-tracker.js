@@ -9,18 +9,21 @@
 
 const workflowApiBase = '/.netlify/functions/workflow-sync';
 const priorityApiBase = '/.netlify/functions/inbound-po-priorities';
+const commentsApiBase = '/.netlify/functions/inbound-po-comments';
 const REFRESH_MS      = 60000;
 const WATCHLIST_KEY   = 'ipt_watchlist_v1';
+const AUTHOR_KEY      = 'ipt_author_name';
 
 // ── State ──────────────────────────────────────────────────────────────────
 const state = {
-  pallets:    [],      // raw pallets from backend
-  rows:       [],      // flattened+aggregated PO rows (one per PO#) + pending-arrival rows
-  filtered:   [],
-  updatedAt:  null,
-  groupBy:    'stage', // 'stage' | 'day' | 'pallet'
-  priorities: {},      // poNum (lowercased) -> { note, set_by, set_at }
-  watchlist:  new Set(), // poNum lowercased
+  pallets:       [],      // raw pallets from backend
+  rows:          [],      // flattened+aggregated PO rows (one per PO#) + pending-arrival rows
+  filtered:      [],
+  updatedAt:     null,
+  groupBy:       'stage', // 'stage' | 'day' | 'pallet'
+  priorities:    {},      // poNum (lowercased) -> { note, set_by, set_at }
+  watchlist:     new Set(), // poNum lowercased
+  commentCounts: {},      // poNum (lowercased) -> { total, unread, hasPriority, latestAt }
 };
 
 let ftUserRole = 'external';
@@ -120,6 +123,66 @@ async function clearPriorityRemote(poNum){
   const res = await fetch(priorityApiBase + '?po=' + encodeURIComponent(poNum), { method:'DELETE' });
   if (!res.ok) throw new Error('Failed to clear priority');
   delete state.priorities[poKey(poNum)];
+}
+
+// ── Comments (per-PO threads) ──────────────────────────────────────────────
+//   Persisted in backend table inbound_po_comments. We fetch the last 500
+//   on every board refresh to build a per-PO count + unread + priority-flag
+//   map, which the cards use to render their comment button.
+function readerIdentity(){
+  // Used as the reader key for unread tracking. Falls back to localStorage
+  // author name. We deliberately keep this loose because the tracker is
+  // external-facing and not everyone has an account.
+  try {
+    const saved = (localStorage.getItem(AUTHOR_KEY) || '').trim();
+    if (saved) return saved.toLowerCase();
+  } catch(_){}
+  return '';
+}
+async function loadCommentCounts(){
+  try {
+    const res = await fetch(commentsApiBase + '?latest=500', { headers:{Accept:'application/json'} });
+    if (!res.ok) return;
+    const data = await res.json();
+    const reader = readerIdentity();
+    const map = {};
+    (data.comments || []).forEach(c => {
+      if (!c || !c.po_num) return;
+      const k = poKey(c.po_num);
+      if (!map[k]) map[k] = { total:0, unread:0, hasPriority:false, latestAt:0 };
+      map[k].total++;
+      if (c.category === 'priority' || c.category === 'damage_report' || c.category === 'vendor_issue') {
+        map[k].hasPriority = true;
+      }
+      const ts = c.created_at ? new Date(c.created_at).getTime() : 0;
+      if (ts > map[k].latestAt) map[k].latestAt = ts;
+      if (reader && Array.isArray(c.read_by) && !c.read_by.includes(reader)) {
+        map[k].unread++;
+      } else if (!reader) {
+        // No reader identity yet — treat everything as unread so the
+        // user sees the dot until they enter a name.
+        map[k].unread++;
+      }
+    });
+    state.commentCounts = map;
+  } catch(_) { /* non-fatal */ }
+}
+function getCommentInfo(poNum){
+  return state.commentCounts[poKey(poNum)] || { total:0, unread:0, hasPriority:false, latestAt:0 };
+}
+async function markCommentsRead(poNum){
+  const reader = readerIdentity();
+  if (!reader) return;
+  try {
+    await fetch(commentsApiBase, {
+      method:'PATCH',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ reader, po_num: poNum })
+    });
+    // Optimistic — zero out unread for this PO
+    const info = state.commentCounts[poKey(poNum)];
+    if (info) info.unread = 0;
+  } catch(_) { /* non-fatal */ }
 }
 
 // ── Age tier (how long has the PO been pending QA?) ────────────────────────
@@ -371,6 +434,7 @@ const els = {
   statPrep:       document.getElementById('statPrep'),
   statDone:       document.getElementById('statDone'),
   statPriority:   document.getElementById('statPriority'),
+  statUnreadComments: document.getElementById('statUnreadComments'),
   statIssues:     document.getElementById('statIssues'),
   // Priority modal
   markPriorityBtn:   document.getElementById('markPriorityBtn'),
@@ -446,6 +510,15 @@ function renderStats(rows) {
   const priCount = rows.filter(r => r.priority).length;
   if (els.statPriority) els.statPriority.textContent = fmtN(priCount);
 
+  // Sum unread comments across the visible rows
+  let unreadTotal = 0;
+  rows.forEach(r => { unreadTotal += getCommentInfo(r.poNum).unread; });
+  if (els.statUnreadComments) {
+    els.statUnreadComments.textContent = fmtN(unreadTotal);
+    const chip = els.statUnreadComments.closest('.stat-chip');
+    if (chip) chip.classList.toggle('has-unread', unreadTotal > 0);
+  }
+
   const issues = rows.filter(r => r.hasIssue).length;
   els.statIssues.textContent    = fmtN(issues);
   const issueChip = els.statIssues.closest('.stat-chip');
@@ -519,6 +592,23 @@ function poJourneyCard(row) {
     ' title="' + (row.priority ? 'Edit or remove priority' : 'Mark as priority for everyone') + '">' +
     (row.priority ? '🔥 Priority' : 'Mark priority') + '</button>';
 
+  // Comment button — always shown so external users can ask a question even
+  // when there are no comments yet. Shows count + unread dot when applicable.
+  const cInfo = getCommentInfo(row.poNum);
+  const cmtCls = 'ipt-action-btn ipt-comment-btn' + (cInfo.total ? ' has-thread' : '');
+  const cmtLabel = cInfo.total
+    ? '💬 <span class="ipt-comment-count">' + cInfo.total + '</span>'
+    : '💬 Ask / comment';
+  const cmtTitle = cInfo.total
+    ? (cInfo.total + ' comment' + (cInfo.total!==1?'s':'') + ' on this PO' + (cInfo.unread ? ' · ' + cInfo.unread + ' new' : ''))
+    : 'Start a conversation about this PO with the inbound team';
+  const cmtBtn = '<button class="' + cmtCls + '" type="button"' +
+    ' data-comment="' + esc(row.poNum) + '"' +
+    ' title="' + cmtTitle + '">' +
+    cmtLabel +
+    (cInfo.unread ? '<span class="ipt-unread-dot" aria-label="' + cInfo.unread + ' unread"></span>' : '') +
+    '</button>';
+
   // Optional priority note
   let priNote = '';
   if (row.priority && row.priorityInfo && row.priorityInfo.note) {
@@ -534,6 +624,7 @@ function poJourneyCard(row) {
   if (row.palletLabel)    chips.push('<span class="ipt-pallet-chip">' + esc(row.palletLabel) + '</span>');
   if (row.pendingArrival) chips.push('<span class="ipt-pending-chip">Pending arrival</span>');
   if (row.priority)       chips.push('<span class="ipt-priority-chip">★ Priority</span>');
+  if (cInfo.hasPriority)  chips.push('<span class="ipt-issue-chip" title="A priority, vendor, or damage comment is on this PO">💬 Flagged in comments</span>');
 
   // Bottom row — context, no quantities
   const bottomBits = [];
@@ -553,7 +644,7 @@ function poJourneyCard(row) {
         ? '<div class="ipt-bottom">' +
             bottomBits.map(b => '<span>' + b + '</span>').join('') +
             badges.join('') +
-            '<span style="margin-left:auto;display:inline-flex;gap:6px;">' + watchBtn + priBtn + '</span>' +
+            '<span style="margin-left:auto;display:inline-flex;gap:6px;">' + cmtBtn + watchBtn + priBtn + '</span>' +
           '</div>'
         : '') +
       priNote +
@@ -678,10 +769,11 @@ function renderBoard(rows) {
 // ── Load + refresh ─────────────────────────────────────────────────────────
 async function loadBoard() {
   try {
-    // Kick off pallet + priority fetches in parallel
+    // Kick off pallet + priority + comment-count fetches in parallel
     const [data] = await Promise.all([
       getInboundState(),
-      loadPriorities(),  // updates state.priorities side-effect
+      loadPriorities(),     // updates state.priorities side-effect
+      loadCommentCounts(),  // updates state.commentCounts side-effect
     ]);
     state.pallets   = data.pallets || [];
     state.updatedAt = data.updated_at;
@@ -749,6 +841,153 @@ async function loadBoard() {
     console.error('Inbound flight tracker load failed:', err);
     els.boardContent.innerHTML =
       '<section class="empty-state"><h2>Unable to load board</h2><p>' + esc(err.message || 'Unknown error') + '</p></section>';
+  }
+}
+
+// ── Comment modal ──────────────────────────────────────────────────────────
+const cmState = { poNum: '', category: 'general' };
+const cmEls = {
+  overlay:   document.getElementById('commentModal'),
+  title:     document.getElementById('cmTitle'),
+  subtitle:  document.getElementById('cmSubtitle'),
+  thread:    document.getElementById('cmThread'),
+  close:     document.getElementById('cmClose'),
+  author:    document.getElementById('cmAuthor'),
+  category:  document.getElementById('cmCategory'),
+  body:      document.getElementById('cmBody'),
+  charCount: document.getElementById('cmCharCount'),
+  submit:    document.getElementById('cmSubmit'),
+  error:     document.getElementById('cmError'),
+};
+
+const CM_CAT_LABELS = {
+  general:       '💬 General Note',
+  question:      '❓ Question',
+  instructions:  '📋 Special Instructions',
+  priority:      '🔴 Priority Request',
+  vendor_issue:  '🏭 Vendor Issue',
+  damage_report: '⚠️ Damage Report',
+};
+
+function cmFmtTime(iso){
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+}
+
+function cmRenderThread(comments){
+  if (!cmEls.thread) return;
+  if (!comments.length) {
+    cmEls.thread.innerHTML = '<p class="cm-empty">No comments yet. Start a conversation with the inbound team.</p>';
+    return;
+  }
+  cmEls.thread.innerHTML = comments.map(c => {
+    const name = String(c.author_name||'').trim() || 'Stakeholder';
+    const isInternal = /\(internal\)|\[team\]|warehouse|inbound team/i.test(name);
+    const displayName = name.replace(/\s*\(internal\)/i,'').replace(/\s*\[team\]/i,'').trim();
+    const catLbl = CM_CAT_LABELS[c.category] || c.category;
+    return '<div class="cm-comment cm-cat-' + esc(c.category) + (isInternal ? ' cm-internal' : '') + '">' +
+      '<div class="cm-comment-meta">' +
+        '<span class="cm-cat-badge">' + esc(catLbl) + '</span>' +
+        '<span class="cm-comment-author">' + esc(displayName) + '</span>' +
+        '<span class="cm-comment-time">' + esc(cmFmtTime(c.created_at)) + '</span>' +
+      '</div>' +
+      '<p class="cm-comment-body">' + esc(c.body) + '</p>' +
+    '</div>';
+  }).join('');
+  cmEls.thread.scrollTop = cmEls.thread.scrollHeight;
+}
+
+async function cmLoadComments(){
+  if (!cmEls.thread) return;
+  cmEls.thread.innerHTML = '<p class="cm-loading">Loading comments…</p>';
+  try {
+    const res  = await fetch(commentsApiBase + '?po_num=' + encodeURIComponent(cmState.poNum), {
+      headers:{Accept:'application/json'}
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('Load failed (' + res.status + ')'));
+    cmRenderThread(data.comments || []);
+  } catch (err) {
+    cmEls.thread.innerHTML = '<p class="cm-empty cm-err-text">Could not load comments: ' + esc(err.message) + '</p>';
+  }
+}
+
+function cmOpenModal(poNum, context){
+  if (!cmEls.overlay) return;
+  cmState.poNum = poNum;
+  cmEls.title.textContent    = 'PO# ' + poNum;
+  cmEls.subtitle.textContent = context || '';
+  if (cmEls.error) cmEls.error.hidden = true;
+  cmEls.overlay.hidden  = false;
+  document.body.style.overflow = 'hidden';
+  // Pre-fill author from localStorage
+  if (!cmEls.author.value) {
+    try {
+      const saved = localStorage.getItem(AUTHOR_KEY) || '';
+      if (saved) cmEls.author.value = saved;
+    } catch(_){}
+  }
+  // Update character counter for any pre-existing text
+  if (cmEls.body && cmEls.charCount) {
+    cmEls.charCount.textContent = (cmEls.body.value.length || 0) + ' / 2000';
+  }
+  cmLoadComments();
+  // Mark thread as read in the background
+  markCommentsRead(poNum).then(() => {
+    // Refresh stats so the unread dot in the header goes away
+    if (state.filtered && state.filtered.length) renderStats(state.filtered);
+  });
+}
+
+function cmCloseModal(){
+  if (!cmEls.overlay) return;
+  cmEls.overlay.hidden = true;
+  document.body.style.overflow = '';
+}
+
+async function cmSubmit(){
+  if (!cmState.poNum) return;
+  const author   = (cmEls.author.value || '').trim();
+  const category = cmEls.category.value || 'general';
+  const body     = (cmEls.body.value || '').trim();
+  cmEls.error.hidden = true;
+  if (!body) {
+    cmEls.error.textContent = 'Please enter a message before sending.';
+    cmEls.error.hidden = false;
+    return;
+  }
+  if (!author) {
+    cmEls.error.textContent = 'Please enter your name so the inbound team knows who is asking.';
+    cmEls.error.hidden = false;
+    return;
+  }
+  cmEls.submit.disabled = true;
+  try {
+    const res = await fetch(commentsApiBase, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        po_num:      cmState.poNum,
+        author_name: author,
+        category:    category,
+        body:        body,
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('Send failed (' + res.status + ')'));
+    try { localStorage.setItem(AUTHOR_KEY, author); } catch(_){}
+    cmEls.body.value = '';
+    cmEls.charCount.textContent = '0 / 2000';
+    // Reload thread + refresh counts in background
+    await cmLoadComments();
+    await loadCommentCounts();
+    applyFilters();
+  } catch (err) {
+    cmEls.error.textContent = err.message || 'Could not send.';
+    cmEls.error.hidden = false;
+  } finally {
+    cmEls.submit.disabled = false;
   }
 }
 
@@ -832,7 +1071,7 @@ async function submitPriorityUnmark() {
   }
 }
 
-// ── Board click delegation (watch + priority buttons on each card) ─────────
+// ── Board click delegation (watch + priority + comment buttons) ────────────
 function handleBoardClick(e) {
   const watchBtn = e.target.closest('[data-watch]');
   if (watchBtn) {
@@ -847,6 +1086,21 @@ function handleBoardClick(e) {
   if (priBtn) {
     const po = priBtn.getAttribute('data-priority');
     openPriorityModal(po, { lockPo: true });
+    return;
+  }
+  const cmtBtn = e.target.closest('[data-comment]');
+  if (cmtBtn) {
+    const po = cmtBtn.getAttribute('data-comment');
+    // Build a small context line from the row state
+    const row = state.rows.find(r => poKey(r.poNum) === poKey(po));
+    const bits = [];
+    if (row) {
+      bits.push(stageLabel(row.stage));
+      if (row.category)    bits.push(row.category);
+      if (row.palletLabel) bits.push(row.palletLabel);
+      if (row.priority)    bits.push('★ Priority');
+    }
+    cmOpenModal(po, bits.join(' · '));
     return;
   }
 }
@@ -882,9 +1136,25 @@ function init() {
   if (els.priorityMarkBtn)   els.priorityMarkBtn.addEventListener('click', submitPriorityMark);
   if (els.priorityUnmarkBtn) els.priorityUnmarkBtn.addEventListener('click', submitPriorityUnmark);
 
-  // Esc closes modal
+  // Comment modal
+  if (cmEls.close)  cmEls.close.addEventListener('click', cmCloseModal);
+  if (cmEls.submit) cmEls.submit.addEventListener('click', cmSubmit);
+  if (cmEls.body && cmEls.charCount) {
+    cmEls.body.addEventListener('input', () => {
+      cmEls.charCount.textContent = (cmEls.body.value.length || 0) + ' / 2000';
+    });
+  }
+  if (cmEls.overlay) {
+    cmEls.overlay.addEventListener('click', (e) => {
+      if (e.target === cmEls.overlay) cmCloseModal();
+    });
+  }
+
+  // Esc closes modal (priority or comment)
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && els.priorityModal && !els.priorityModal.hidden) closePriorityModal();
+    if (e.key !== 'Escape') return;
+    if (els.priorityModal && !els.priorityModal.hidden) closePriorityModal();
+    else if (cmEls.overlay && !cmEls.overlay.hidden) cmCloseModal();
   });
 
   loadBoard();
