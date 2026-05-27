@@ -44,8 +44,20 @@ function resolveFtRole() {
 }
 ftUserRole = resolveFtRole();
 window.addEventListener('message', function (e) {
-  if (e.data && e.data.type === 'HC_ROLE') {
+  if (!e.data) return;
+  if (e.data.type === 'HC_ROLE') {
     ftUserRole = normRole(e.data.role) || 'external';
+    return;
+  }
+  // Parent app saved new workflow data — refresh the board now so the user
+  // sees changes from the inbound module without waiting for the 60s poll.
+  // We defer slightly because the parent's debounced sync-to-backend runs
+  // ~250ms after the local save, and our fetch needs the backend to be
+  // current. 400ms below + parent's 600ms postMessage delay = ~1s total.
+  if (e.data.type === 'HC_INBOUND_DATA_CHANGED') {
+    if (typeof loadBoard === 'function') {
+      setTimeout(loadBoard, 400);
+    }
   }
 });
 
@@ -229,19 +241,32 @@ const STAGE_ORDER = { dock:1, receiving:2, prep:3, routed:4, done:5 };
 function stageLabel(k){ const s = STAGES.find(x=>x.key===k); return s ? s.label : (k||'—'); }
 
 // ── Derive a stage from a single PO entry on a single pallet ───────────────
+//   The pallet's status is the authoritative signal — it tells us which
+//   physical panel the pallet currently sits in. We layer per-PO flags
+//   on top only to distinguish "routed vs prep" within the Prep stage.
+//
+//     pallet.status='draft'      → 'dock'         (POs sitting on the dock)
+//     pallet.status='receiving'  → 'receiving'    (QA Receiving in progress)
+//     pallet.status='prep'       → 'prep'         (default in Prep panel)
+//                                → 'routed'       (if this PO is prepVerified AND assigned)
+//     pallet.status='done'       → 'done'
+//
+//   We deliberately ignore per-PO receivingDone here — that flag just means
+//   "the associate finished QA'ing this one PO". The pallet stays in the
+//   Receiving panel until the whole pallet advances, and that's what
+//   external owners care about.
 function derivePoStage(po, pallet) {
-  // If the pallet itself is "done", the PO has completed all stages
   const pStatus = String(pallet && pallet.status || '').toLowerCase();
-  if (pStatus === 'done') return 'done';
-
-  // Routed = Prep verified AND has destination/stsQty/ltsQty assigned
-  const hasRouting = !!(po.destination) ||
-                     Number(po.stsQty||0) > 0 ||
-                     Number(po.ltsQty||0) > 0;
-  if (po.prepVerified && hasRouting)        return 'routed';
-  if (po.prepVerified)                       return 'prep';      // verified but not routed yet
-  if (po.receivingDone)                      return 'receiving'; // received, awaiting prep
-  return 'dock';
+  if (pStatus === 'done')      return 'done';
+  if (pStatus === 'prep') {
+    const hasRouting = !!(po.destination) ||
+                       Number(po.stsQty||0) > 0 ||
+                       Number(po.ltsQty||0) > 0;
+    if (po.prepVerified && hasRouting) return 'routed';
+    return 'prep';
+  }
+  if (pStatus === 'receiving') return 'receiving';
+  return 'dock'; // draft or unknown
 }
 
 // ── Flatten pallets into per-PO occurrences ────────────────────────────────
