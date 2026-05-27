@@ -2824,6 +2824,25 @@
   });
 })();
 
+// ── Data-changed bridge: notify the inbound tracker iframe whenever the ──
+// ── inbound workflow data is saved, so it can refresh without waiting    ──
+// ── for its 60s poll. Debounced lightly to avoid spamming during typing. ──
+(function() {
+  let _dcTimer = null;
+  function notifyInboundIframe() {
+    const iframe = document.getElementById('inboundFlightTrackerIframe');
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage({ type: 'HC_INBOUND_DATA_CHANGED' }, '*');
+    }
+  }
+  window.addEventListener('qa-workflow-data-changed', function() {
+    if (_dcTimer) clearTimeout(_dcTimer);
+    // Wait briefly so the workflow-sync POST has time to reach the backend.
+    // The tracker then re-fetches and sees the new state.
+    _dcTimer = setTimeout(notifyInboundIframe, 600);
+  });
+})();
+
 // ── Flight Tracker nav badge ─────────────────────────────────
 (function() {
   const COMMENTS_API = '/.netlify/functions/flight-tracker-comments';
