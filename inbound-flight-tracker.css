@@ -65,7 +65,61 @@
 .ipt-detail-line{ font-size:11px; color:var(--muted); margin-top:4px; }
 .ipt-detail-line .ipt-detail-label{ font-weight:600; }
 
-/* ── Priority stat chip ── */
+/* ── Quick-filter chips row ──────────────────────────────────────────────
+   Replaces the old loose checkbox row. Each chip toggles its underlying
+   checkbox (kept hidden for state continuity with the existing JS). Inactive
+   chips are a thin outline; active chips fill with a topic-tinted color. */
+.filter-chips-row{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  margin-top:14px; padding-top:14px;
+  border-top:1px solid var(--line);
+}
+.filter-chips-label{
+  font-size:11px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.06em; color:var(--muted);
+  margin-right:4px;
+}
+.filter-chip{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:6px 12px; border-radius:999px;
+  border:1.5px solid var(--line); background:var(--surface);
+  font-size:12px; font-weight:600; color:var(--muted);
+  cursor:pointer; user-select:none;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.filter-chip:hover{ background:var(--bg); color:var(--text); }
+.filter-chip input{
+  /* keep checkbox accessible but visually hidden */
+  position:absolute; opacity:0; pointer-events:none; width:0; height:0;
+}
+.filter-chip-icon{ font-size:13px; line-height:1; }
+
+/* Active states — chip fills with a topic-tinted background */
+.filter-chip:has(input:checked){ color:#000; }
+
+/* Discrepancies — red tint */
+.filter-chip[data-chip="issues"]:has(input:checked){
+  background:var(--red-s); border-color:var(--red); color:#791F1F; }
+/* Watchlist — soft gold */
+.filter-chip[data-chip="watchlist"]:has(input:checked){
+  background:#FFF8E1; border-color:#E5A627; color:#7a4d00; }
+/* Priority — bolder gold/orange */
+.filter-chip[data-chip="priority"]:has(input:checked){
+  background:#FFE8A8; border-color:#E5A627; color:#7a4d00; }
+/* Open cases — case-orange */
+.filter-chip[data-chip="cases"]:has(input:checked){
+  background:#FFE3B8; border-color:#E5A627; color:#7a3400; }
+
+/* Keyboard focus ring on the chip */
+.filter-chip:focus-within{
+  outline:2px solid var(--blue); outline-offset:2px;
+}
+
+@media (max-width:560px){
+  .filter-chips-row{ gap:6px; }
+  .filter-chip{ padding:5px 10px; font-size:11px; }
+  .filter-chips-label{ flex-basis:100%; margin-bottom:2px; }
+}
 .stat-chip-priority .stat-value{ color:#7a4d00; }
 .stat-chip-priority{ background:linear-gradient(180deg, #FFF8E1 0%, #FFFFFF 100%); }
 

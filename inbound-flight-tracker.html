@@ -91,21 +91,28 @@
           <span>Day</span>
           <select id="dayFilter"><option value="">All days</option></select>
         </label>
-        <label class="field" style="flex-direction:row;align-items:center;gap:6px;padding-top:14px;">
-          <input id="onlyIssues" type="checkbox" style="margin:0;">
-          <span style="font-weight:600;color:var(--text);">Only discrepancies</span>
+      </div>
+      <div class="filter-chips-row" role="group" aria-label="Quick filters">
+        <span class="filter-chips-label">Quick filters</span>
+        <label class="filter-chip" data-chip="issues">
+          <input id="onlyIssues" type="checkbox">
+          <span class="filter-chip-icon">⚠️</span>
+          <span>Discrepancies</span>
         </label>
-        <label class="field" style="flex-direction:row;align-items:center;gap:6px;padding-top:14px;">
-          <input id="onlyWatchlist" type="checkbox" style="margin:0;">
-          <span style="font-weight:600;color:var(--text);">Watchlist only</span>
+        <label class="filter-chip" data-chip="watchlist">
+          <input id="onlyWatchlist" type="checkbox">
+          <span class="filter-chip-icon">★</span>
+          <span>Watchlist</span>
         </label>
-        <label class="field" style="flex-direction:row;align-items:center;gap:6px;padding-top:14px;">
-          <input id="onlyPriority" type="checkbox" style="margin:0;">
-          <span style="font-weight:600;color:var(--text);">Priority only</span>
+        <label class="filter-chip" data-chip="priority">
+          <input id="onlyPriority" type="checkbox">
+          <span class="filter-chip-icon">🔥</span>
+          <span>Priority</span>
         </label>
-        <label class="field" style="flex-direction:row;align-items:center;gap:6px;padding-top:14px;">
-          <input id="onlyCases" type="checkbox" style="margin:0;">
-          <span style="font-weight:600;color:var(--text);">With open case</span>
+        <label class="filter-chip" data-chip="cases">
+          <input id="onlyCases" type="checkbox">
+          <span class="filter-chip-icon">📁</span>
+          <span>Open cases</span>
         </label>
       </div>
     </div>
