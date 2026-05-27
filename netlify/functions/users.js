@@ -250,13 +250,57 @@ exports.handler = async function(event) {
       [email, name || '']
     );
 
+    // Re-fetch the (possibly updated) name so the client reflects the
+    // user's chosen display name, not whatever Identity sent.
+    const after = await pool.query('SELECT name FROM hc_users WHERE email=$1', [email]);
+    const dbName = (after.rows[0] && after.rows[0].name) || '';
+
     return json(200, {
+      name:            dbName,
       role:            u.role,
       overrides:       u.overrides || {},
       tempAdmin:       u.temp_admin  || false,
       tempAdminExpiry: u.temp_admin_expiry || null,
       suspended:       u.suspended   || false,
     });
+  }
+
+  // ── POST /users?action=update-profile ─────────────────────
+  //   Any authenticated user can update THEIR OWN display name.
+  //   Verifies the Identity token and writes only to that user's row.
+  if (method === 'POST' && action === 'update-profile') {
+    const auth = event.headers['authorization'] || event.headers['Authorization'] || '';
+    const token = auth.replace('Bearer ', '').trim();
+    if (!token) return json(401, { error: 'Unauthorized' });
+
+    // Verify the caller via Identity
+    let identityUser;
+    try {
+      const res = await fetch(
+        `https://inboundswagup.netlify.app/.netlify/identity/user`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!res.ok) return json(401, { error: 'Token verification failed' });
+      identityUser = await res.json();
+    } catch (err) {
+      return json(401, { error: 'Token verification error' });
+    }
+
+    let body;
+    try { body = JSON.parse(event.body || '{}'); } catch { return json(400, { error: 'Invalid JSON' }); }
+    const newName = String(body.name || '').trim().slice(0, 80);
+    if (!newName) return json(400, { error: 'Name is required' });
+
+    // Only update the caller's own row, keyed on Identity-verified email
+    const result = await pool.query(
+      `UPDATE hc_users SET name=$2, updated_at=now()
+        WHERE email=$1
+        RETURNING name`,
+      [identityUser.email, newName]
+    );
+    if (!result.rows.length) return json(404, { error: 'User row not found' });
+
+    return json(200, { name: result.rows[0].name });
   }
 
   // ── GET /users?action=audit ────────────────────────────────
