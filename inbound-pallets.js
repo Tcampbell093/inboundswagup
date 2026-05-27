@@ -1970,12 +1970,18 @@ function plt_bindPoCardEvents(container, pallet, dept){
     card.querySelector('.plt-case-toggle')?.addEventListener('change', function() {
       const stage = this.dataset.stage;
       if (this.checked) {
+        // Open the case immediately so the flag is set even if the associate
+        // dismisses the details modal without entering anything.
         plt_openCaseQuick(pallet.id, poId, stage);
+        // Immediately surface the details modal so a link/ref/note can be
+        // entered if desired. The modal is fully optional — Cancel or Esc
+        // keeps the case open with no metadata, which is fine.
+        plt_openCaseDetailsModal(pallet.id, poId);
       } else {
         // Un-check fully clears (with audit if there was metadata)
         plt_clearCaseQuick(pallet.id, poId);
+        plt_renderAllPanels();
       }
-      plt_renderAllPanels();
     });
     // ── Case details link (opens the link/ref/note sub-modal) ────────────────
     card.querySelector('.plt-case-details-link')?.addEventListener('click', function() {
@@ -2684,7 +2690,10 @@ function plt_openCaseDetailsModal(palletId, poId){
     </div>`;
   plt_push(overlay);
 
-  const close = () => plt_closeAll();
+  // Any path that closes the modal needs to refresh panels so the inline
+  // case row reflects the latest state (even if the user just dismissed
+  // without saving — the case itself is already open).
+  const close = () => { plt_closeAll(); plt_renderAllPanels(); };
   overlay.querySelector('.pallet-modal-close').addEventListener('click', close);
   overlay.querySelector('#plt_caseCancel').addEventListener('click', close);
   overlay.addEventListener('click', e => { if(e.target === overlay) close(); });
@@ -2698,7 +2707,6 @@ function plt_openCaseDetailsModal(palletId, poId){
       case: { ...existing, link, ref, note, openedBy: by || existing.openedBy }
     });
     close();
-    plt_renderAllPanels();
   });
 
   setTimeout(() => { try { overlay.querySelector('#plt_caseLink').focus(); } catch(_){} }, 30);
