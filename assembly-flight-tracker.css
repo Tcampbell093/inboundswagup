@@ -221,6 +221,76 @@ h1{ margin:0; font-size:clamp(24px,3.5vw,36px); font-weight:500; line-height:1.1
 .cm-text{ font-size:13px; line-height:1.5; }
 .cm-cat-badge{ font-size:10px; font-weight:700; padding:1px 7px; border-radius:999px;
   background:var(--blue-s); color:var(--blue); margin-top:4px; display:inline-block; }
+
+/* ── Threaded comment bubble (used by the inbound tracker, reusable here) ──
+   .cm-comment is the bubble. The meta row sits at the top with the
+   category badge, author name, and timestamp separated and visually distinct.
+   The body sits below with normal reading line-height. */
+.cm-comment{
+  background:var(--bg);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:10px 14px;
+}
+.cm-comment-meta{
+  display:flex; align-items:center; flex-wrap:wrap;
+  gap:8px;
+  margin-bottom:6px;
+  font-size:12px;
+}
+.cm-comment-meta .cm-cat-badge{ margin-top:0; }
+.cm-comment-author{
+  font-weight:700;
+  color:var(--text);
+}
+.cm-comment-time{
+  color:var(--muted);
+  font-size:11px;
+  margin-left:auto;          /* push timestamp to the right edge */
+  white-space:nowrap;
+}
+.cm-comment-body{
+  margin:0;
+  font-size:13px;
+  line-height:1.5;
+  color:var(--text);
+  white-space:pre-wrap;       /* preserve line breaks the user typed */
+  word-break:break-word;
+}
+
+/* Category-specific accents — left border tinted to the type */
+.cm-comment.cm-cat-priority      { border-left:3px solid var(--red);   }
+.cm-comment.cm-cat-damage_report { border-left:3px solid var(--red);   }
+.cm-comment.cm-cat-vendor_issue  { border-left:3px solid var(--amber); }
+.cm-comment.cm-cat-question      { border-left:3px solid var(--blue);  }
+.cm-comment.cm-cat-instructions  { border-left:3px solid var(--blue);  }
+
+/* Internal team comments — subtle warehouse-team tint */
+.cm-comment.cm-internal{
+  background:#F4F8FB;
+  border-color:#D9E5F0;
+}
+.cm-comment.cm-internal .cm-comment-author::after{
+  content:' · warehouse team';
+  font-weight:500;
+  color:var(--muted);
+  font-size:11px;
+}
+
+/* Empty-state message inside the thread */
+.cm-empty{
+  font-size:13px; color:var(--muted);
+  background:var(--bg); border:1px dashed var(--line);
+  padding:14px; border-radius:10px;
+  text-align:center; margin:0;
+}
+.cm-err-text{ color:#a32d2d; border-color:#f0c4c4; background:#fdf2f2; }
+
+@media (max-width:560px){
+  .cm-comment{ padding:9px 11px; }
+  .cm-comment-time{ margin-left:0; }
+}
+
 .cm-compose{ border-top:1px solid var(--line); padding-top:14px; }
 .cm-as-line{
   margin:0 0 10px; padding:8px 12px; border-radius:8px;
