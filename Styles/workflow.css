@@ -3168,14 +3168,22 @@ font-weight:800
    INBOUND HEADER — Option B: branded band + attached tab bar
    ════════════════════════════════════════════════════════════════════ */
 .workflow-page .hero.inbound-hero-rebuilt{
-  background:none;border:none;box-shadow:none;padding:0;margin:0 0 4px;
-  border-radius:0;
-  display:block;            /* override base .hero flex row */
-  overflow:visible;         /* allow PO results overlay to escape */
-  backdrop-filter:none;
+  background:none !important;border:none !important;box-shadow:none !important;
+  padding:0 !important;margin:0 0 4px !important;
+  border-radius:0 !important;
+  display:block !important;        /* override every stray .hero flex rule */
+  overflow:visible !important;     /* allow PO results overlay to escape */
+  backdrop-filter:none !important;
+  width:100% !important;
 }
-.workflow-page .hero.inbound-hero-rebuilt::after{display:none;}  /* kill glow */
-.workflow-page .hero.inbound-hero-rebuilt > *{width:100%;}
+.workflow-page .hero.inbound-hero-rebuilt::after{display:none !important;}  /* kill glow */
+.workflow-page .hero.inbound-hero-rebuilt > .inb-band,
+.workflow-page .hero.inbound-hero-rebuilt > .inb-tabbar-wrap{
+  display:block;width:100%;box-sizing:border-box;
+}
+.workflow-page .hero.inbound-hero-rebuilt > .inb-tabbar-wrap{
+  display:flex;            /* tab bar internally is a row */
+}
 
 /* ── Branded band ───────────────────────────────────────────────── */
 .workflow-page .inb-band{
