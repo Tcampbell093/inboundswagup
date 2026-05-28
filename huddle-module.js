@@ -430,20 +430,19 @@
     return `<span class="mc-status-chip ${cls}">${label || status}</span>`;
   }
 
-  function floorCard(title, metric, sub, pills, status, action) {
-    const cls = status === 'good' ? 'mc-status-good' : status === 'risk' ? 'mc-status-risk' : 'mc-status-watch';
-    const statusLabel = status === 'good' ? 'Ready' : status === 'risk' ? 'Empty' : 'Pending';
+  function floorCard(title, metric, sub, detail, status, action) {
+    const statusCls = status === 'good' ? 'is-good' : status === 'risk' ? 'is-risk' : 'is-watch';
     const actionHtml = action && action.label
       ? `<button type="button" class="huddle-floor-action" data-floor-action="${esc(action.key)}">${esc(action.label)} →</button>`
       : '';
-    return `<article class="mc-dept-card huddle-floor-card">
-      <div class="mc-dept-top">
-        <div class="eyebrow">${esc(title)}</div>
-        <span class="mc-status-chip ${cls}">${statusLabel}</span>
-      </div>
-      <div class="mc-dept-metric">${metric}</div>
-      <div class="mc-dept-sub">${sub}</div>
-      <div class="mc-mini-list">${pills.map(p => `<span class="mc-mini-pill">${p}</span>`).join('')}</div>
+    const detailHtml = detail
+      ? `<div class="floor-card-detail">${detail}</div>`
+      : '';
+    return `<article class="floor-card ${statusCls}">
+      <div class="floor-card-label">${esc(title)}</div>
+      <div class="floor-card-metric">${metric}</div>
+      <div class="floor-card-sub">${sub}</div>
+      ${detailHtml}
       ${actionHtml}
     </article>`;
   }
@@ -486,51 +485,56 @@
       floorNow.innerHTML = [
         floorCard(
           'QA Receiving',
-          fmtInt(floor.receivingPOs) + ' POs',
+          fmtInt(floor.receivingPOs) + ' <span class="floor-card-unit">POs</span>',
           rcvHasData
             ? `${fmtInt(rcvWorkable)} workable units`
             : `${fmtInt(floor.receivingUnits)} units on floor`,
           rcvHasData
-            ? [
-                `Ordered: ${fmtInt(floor.receivingOrderedUnits)}`,
-                `Received so far: ${fmtInt(floor.receivingReceivedUnits)}`,
-                `Workable: ${fmtInt(rcvWorkable)}`
-              ]
-            : [`Items Partially Received`],
-          floor.receivingPOs > 0 ? 'good' : 'risk',
+            ? `${fmtInt(floor.receivingOrderedUnits)} ordered · ${fmtInt(floor.receivingReceivedUnits)} received`
+            : '',
+          floor.receivingPOs > 0 ? 'good' : 'watch',
           floor.receivingPOs > 0 ? { key: 'receiving', label: 'View POs' } : null
         ),
         floorCard(
           'QA Prep',
-          fmtInt(floor.prepPOs) + ' POs',
+          fmtInt(floor.prepPOs) + ' <span class="floor-card-unit">POs</span>',
           prepHasData
             ? `${fmtInt(prepWorkable)} workable units`
             : `${fmtInt(floor.prepUnits)} units ready`,
           prepHasData
-            ? [
-                `Ordered: ${fmtInt(floor.prepOrderedUnits)}`,
-                `Received so far: ${fmtInt(floor.prepReceivedUnits)}`,
-                `Workable: ${fmtInt(prepWorkable)}`
-              ]
-            : [`Items Fully Received`],
-          floor.prepPOs > 0 ? 'good' : 'risk',
+            ? `${fmtInt(floor.prepOrderedUnits)} ordered · ${fmtInt(floor.prepReceivedUnits)} received`
+            : '',
+          floor.prepPOs > 0 ? 'good' : 'watch',
           floor.prepPOs > 0 ? { key: 'prep', label: 'View POs' } : null
         ),
         floorCard(
-          'Assembly Today',
-          fmtInt(asm.scheduledPBs) + ' PBs',
-          `${fmtInt(asm.totalUnits)} units scheduled • ${fmtInt(asm.totalPacks)} packs`,
-          [`Done: ${fmtInt(asm.doneUnits)} units • ${fmtInt(asm.donePacks)} packs`, `PBs done: ${asm.doneRows}`],
-          asm.scheduledPBs > 0 ? 'good' : 'risk'
+          'Assembly',
+          fmtInt(asm.scheduledPBs) + ' <span class="floor-card-unit">PBs</span>',
+          `${fmtInt(asm.totalUnits)} units · ${fmtInt(asm.totalPacks)} packs scheduled`,
+          `${asm.doneRows} of ${fmtInt(asm.scheduledPBs)} PBs done · ${fmtInt(asm.doneUnits)} units complete`,
+          asm.scheduledPBs > 0 ? 'good' : 'watch'
         ),
         floorCard(
-          'Backup / Available',
-          fmtInt(asm.backupPBs) + ' PBs',
-          `${fmtInt(asm.backupUnits)} units ready-to-pack • ${fmtInt(asm.backupPacks)} packs`,
-          [`Unscheduled queue`],
-          asm.backupPBs > 0 ? 'watch' : 'risk'
+          'Staffing',
+          fmtInt(att.present) + ' <span class="floor-card-unit">present</span>',
+          att.total ? `of ${fmtInt(att.total)} on roster` : 'No attendance logged today',
+          (att.late || att.absent)
+            ? `${fmtInt(att.late)} late · ${fmtInt(att.absent)} absent`
+            : (att.total ? 'All present and on time' : ''),
+          att.total && (att.present / Math.max(att.total,1)) >= 0.9 && !att.absent ? 'good'
+            : att.total && (att.present / Math.max(att.total,1)) >= 0.75 ? 'watch' : 'risk'
         ),
       ].join('');
+    }
+
+    // Today's Execution is now merged into Floor status above — clear its
+    // container so the old redundant grid no longer renders.
+    const execClear = qs('#huddleTodayExec');
+    if (execClear) {
+      const sordLoaded = getSordDataset().length > 0;
+      execClear.innerHTML = !sordLoaded
+        ? '<div class="mc-empty">Import the SORD / PO detail report to enrich floor data.</div>'
+        : '';
     }
 
     // ── Attendance strip ─────────────────────────────────────
@@ -563,43 +567,8 @@
     }
 
     // ── Today's Execution ────────────────────────────────────
-    const exec = qs('#huddleTodayExec');
-    if (exec) {
-      const sordLoaded = getSordDataset().length > 0;
-      const rcvWorkable  = Math.max(0, floor.receivingOrderedUnits - floor.receivingReceivedUnits);
-      const prepWorkable = Math.max(0, floor.prepOrderedUnits - floor.prepReceivedUnits);
-      const rcvHasData   = floor.receivingOrderedUnits > 0 || floor.receivingReceivedUnits > 0;
-      const prepHasData  = floor.prepOrderedUnits > 0     || floor.prepReceivedUnits > 0;
-      exec.innerHTML = `
-        <div class="huddle-exec-grid">
-          <article class="huddle-exec-card">
-            <div class="eyebrow">QA Receiving</div>
-            <strong>${fmtInt(floor.receivingPOs)} POs</strong>
-            <p>${rcvHasData
-              ? `${fmtInt(floor.receivingOrderedUnits)} ordered · ${fmtInt(floor.receivingReceivedUnits)} received · <strong>${fmtInt(rcvWorkable)} workable</strong>`
-              : `${fmtInt(floor.receivingUnits)} units on floor`}</p>
-          </article>
-          <article class="huddle-exec-card">
-            <div class="eyebrow">QA Prep</div>
-            <strong>${fmtInt(floor.prepPOs)} POs</strong>
-            <p>${prepHasData
-              ? `${fmtInt(floor.prepOrderedUnits)} ordered · ${fmtInt(floor.prepReceivedUnits)} received · <strong>${fmtInt(prepWorkable)} workable</strong>`
-              : `${fmtInt(floor.prepUnits)} units ready`}</p>
-          </article>
-          <article class="huddle-exec-card">
-            <div class="eyebrow">Assembly</div>
-            <strong>${fmtInt(asm.doneUnits)} units • ${fmtInt(asm.donePacks)} packs</strong>
-            <p>${asm.doneRows} PBs done of ${asm.scheduledPBs} scheduled · ${fmtInt(asm.totalPacks)} packs on today's schedule</p>
-          </article>
-          <article class="huddle-exec-card">
-            <div class="eyebrow">Staffing</div>
-            <strong>${att.present}</strong>
-            <p>${att.late} late · ${att.absent} absent</p>
-          </article>
-        </div>
-        ${!sordLoaded ? '<div class="mc-empty" style="margin-top:10px;">Import the SORD / PO detail report to enrich floor data.</div>' : (floor.newestReceivedAt ? `<div class="mc-empty" style="margin-top:10px;">Latest warehouse receipt in import: ${esc(floor.newestReceivedAt)}</div>` : '')}
-      `;
-    }
+    // ── Today's Execution: merged into Floor status (handled above) ──
+    // Container cleared in the floorNow block; nothing further to render here.
 
     // ── EOD Recap form ───────────────────────────────────────
     renderRecapForm();

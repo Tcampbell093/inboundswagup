@@ -5343,21 +5343,76 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 }
 #homePage .brief-section-head-row .mc-mini-list{
   display:flex;gap:8px;flex-wrap:wrap;align-items:center;
-  font-size:12px;color:var(--muted);
+  font-size:12px;color:var(--brief-ink-soft);
+  padding-top:2px;
 }
 
-/* Floor Now cards — clean editorial tiles instead of heavy panels */
-#homePage .brief-floor-grid{
-  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
-  gap:12px;
+/* Floor status — flat editorial department cards, hairline borders,
+   serif numbers, status carried by a small dot on the label. */
+#homePage .floor-status-grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  border:1px solid var(--brief-rule);
+  border-radius:2px;
+  overflow:hidden;
 }
-#homePage .brief-floor-grid .mc-radar-card,
-#homePage .brief-floor-grid > div{
-  border-radius:14px;
+#homePage .floor-card{
+  padding:16px 18px;
+  border-right:1px solid var(--brief-rule-soft);
+  display:flex;flex-direction:column;gap:3px;
+  background:none;
+  min-width:0;
+}
+#homePage .floor-card:last-child{border-right:none;}
+#homePage .floor-card-label{
+  font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--brief-ink-soft);font-weight:700;
+  display:inline-flex;align-items:center;gap:7px;
+  margin-bottom:4px;
+}
+#homePage .floor-card-label::before{
+  content:'';width:6px;height:6px;border-radius:50%;
+  background:var(--brief-ink-faint);flex-shrink:0;
+}
+#homePage .floor-card.is-good .floor-card-label::before{background:var(--brief-good);}
+#homePage .floor-card.is-watch .floor-card-label::before{background:var(--brief-watch);}
+#homePage .floor-card.is-risk .floor-card-label::before{background:var(--brief-risk);}
+#homePage .floor-card-metric{
+  font-family:var(--brief-serif);
+  font-size:30px;font-weight:700;letter-spacing:-0.02em;line-height:1.05;
+  color:var(--brief-ink);
+  font-variant-numeric:tabular-nums;
+}
+#homePage .floor-card-metric .floor-card-unit{
+  font-family:'Inter',-apple-system,sans-serif;
+  font-size:13px;font-weight:600;letter-spacing:0;
+  color:var(--brief-ink-soft);
+  margin-left:3px;
+}
+#homePage .floor-card-sub{
+  font-size:12.5px;color:var(--brief-ink);font-weight:500;line-height:1.35;
+  margin-top:2px;
+}
+#homePage .floor-card-detail{
+  font-size:11.5px;color:var(--brief-ink-soft);line-height:1.4;
+  margin-top:3px;
+}
+#homePage .floor-card .huddle-floor-action{
+  align-self:flex-start;
+  margin-top:8px;
+  background:none;border:none;padding:0;
+  font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;
+  color:var(--brief-info);cursor:pointer;
+}
+#homePage .floor-card .huddle-floor-action:hover{color:var(--brief-ink);}
+#homePage .floor-status-note{margin-top:12px;}
+#homePage .floor-status-note .mc-empty{
+  background:none;border:none;border-top:1px solid var(--brief-rule-soft);
+  border-radius:0;padding:12px 0 0;
+  font-size:12px;color:var(--brief-ink-soft);font-style:italic;
 }
 
 /* Today's Execution + Snapshot panels — soften any inherited card chrome */
-#homePage #huddleTodayExec .mc-panel,
 #homePage #huddleSnapshotPanel .mc-panel,
 #homePage #meetingHubCarryover .mc-panel{
   background:transparent;border:none;padding:0;box-shadow:none;
@@ -5600,6 +5655,10 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   #homePage .brief-masthead-title{font-size:38px;}
   #homePage .brief-lede .rev-grand-total{font-size:38px;}
   #homePage .brief-headline{font-size:27px;}
+  #homePage .floor-status-grid{grid-template-columns:repeat(2,1fr);}
+  #homePage .floor-card:nth-child(2){border-right:none;}
+  #homePage .floor-card:nth-child(1),
+  #homePage .floor-card:nth-child(2){border-bottom:1px solid var(--brief-rule-soft);}
 }
 @media (max-width: 760px){
   #homePage .brief-shell{padding:16px 16px 48px;}
@@ -5617,6 +5676,9 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   #homePage .brief-exceptions{grid-template-columns:1fr;}
   #homePage .brief-exceptions .mc-exception-card{border-right:none !important;padding-left:0 !important;padding-right:0 !important;}
   #homePage .brief-lede .rev-grand-total{font-size:30px;}
+  #homePage .floor-status-grid{grid-template-columns:1fr;}
+  #homePage .floor-card{border-right:none;border-bottom:1px solid var(--brief-rule-soft);}
+  #homePage .floor-card:last-child{border-bottom:none;}
 }
 
 
