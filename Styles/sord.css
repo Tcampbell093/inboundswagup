@@ -217,7 +217,141 @@
 .po-category-badge.mix { background: #efeaff; color: #5a3ea6; }
 
 
-/* ── Confirmed This Month ─────────────────────────────────────────────────── */
+/* ── SORD Dossier — Lux stat cards ────────────────────────────────────────
+   Scoped to .sord-stats-lux so the global .stats / .stat-value styles used
+   elsewhere are untouched. Fluid type via clamp() means the big revenue
+   number scales down smoothly on tablet instead of overflowing its card. */
+.sord-stats-lux {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.sord-stats-lux .stat-card-lux {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 18px 18px 16px;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+  border: 1px solid #e8edf3;
+  box-shadow:
+    0 1px 2px rgba(15, 28, 46, .04),
+    0 8px 24px -12px rgba(15, 28, 46, .10);
+  transition: transform .16s ease, box-shadow .16s ease;
+}
+.sord-stats-lux .stat-card-lux:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 2px 4px rgba(15, 28, 46, .05),
+    0 16px 36px -14px rgba(15, 28, 46, .18);
+}
+/* Thin accent rail at the top of each card */
+.sord-stats-lux .stat-card-lux::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, #185FA5, #3b82c4);
+  opacity: .9;
+}
+.sord-stats-lux .stat-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+.sord-stats-lux .stat-label {
+  color: #5b6b80;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin: 0;
+}
+.sord-stats-lux .stat-icon {
+  font-size: 16px;
+  line-height: 1;
+  opacity: .65;
+  flex-shrink: 0;
+}
+.sord-stats-lux .stat-value {
+  /* Fluid: shrinks on narrow cards, never overflows. The cap is kept modest
+     so the longest value ($-millions, 14+ chars) fits a ~210px card. */
+  font-size: clamp(19px, 1.9vw, 28px);
+  font-weight: 800;
+  line-height: 1.1;
+  margin-top: 10px;
+  color: #0f1c2e;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sord-stats-lux .stat-hint {
+  margin-top: 7px;
+  color: #71839c;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* ── Tone variants ──────────────────────────────────────────────────────── */
+/* Confirmed This Month — green */
+.sord-stats-lux .stat-card-confirmed {
+  background: linear-gradient(180deg, #f3fdf6 0%, #e6f9ec 100%);
+  border-color: #b6e6c4;
+}
+.sord-stats-lux .stat-card-confirmed::before {
+  background: linear-gradient(90deg, #15803d, #22a155);
+}
+.sord-stats-lux .stat-card-confirmed .stat-label { color: #14532d; }
+.sord-stats-lux .stat-card-confirmed .stat-value { color: #15803d; }
+.sord-stats-lux .stat-card-confirmed .stat-hint  { color: #2f6f44; }
+
+/* Blocked — red */
+.sord-stats-lux .stat-card-blocked::before {
+  background: linear-gradient(90deg, #b42318, #e0584b);
+}
+.sord-stats-lux .stat-card-blocked .stat-value { color: #b42318; }
+
+/* High Complexity — amber */
+.sord-stats-lux .stat-card-complexity::before {
+  background: linear-gradient(90deg, #b45309, #e0972a);
+}
+.sord-stats-lux .stat-card-complexity .stat-value { color: #b45309; }
+
+/* Risk Flags — orange-red */
+.sord-stats-lux .stat-card-risk::before {
+  background: linear-gradient(90deg, #c2410c, #ef6c2f);
+}
+.sord-stats-lux .stat-card-risk .stat-value { color: #c2410c; }
+
+/* Tablet & down: two per row, comfortable */
+@media (max-width: 900px) {
+  .sord-stats-lux {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .sord-stats-lux .stat-value {
+    font-size: clamp(19px, 4.2vw, 26px);
+  }
+}
+/* Narrow phones: single column */
+@media (max-width: 420px) {
+  .sord-stats-lux {
+    grid-template-columns: 1fr;
+  }
+  .sord-stats-lux .stat-value {
+    white-space: normal;       /* let big money wrap rather than ellipsis on tiny screens */
+  }
+}
+
+/* ── Legacy confirmed-card (kept for any non-lux usage elsewhere) ──────────── */
 .stat-card-confirmed {
   background: linear-gradient(160deg, #f0fdf4 0%, #dcfce7 100%) !important;
   border-color: #86efac !important;
