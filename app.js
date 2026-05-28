@@ -416,12 +416,38 @@ const pageConfig = {
   },
 };
 
+// ── Logged-in identity (from the main app's auth session) ───────────────────
+// People now sign in, so the inbound module no longer needs a manual
+// "current user" picker. We read the persisted auth user and use their
+// display name as the active associate for stamping work, ownership locks,
+// and per-person UPH. Falls back to any legacy stored value.
+function getAuthUser() {
+  try {
+    const raw = localStorage.getItem("hcAuthUser");
+    if (raw) return JSON.parse(raw);
+  } catch (_) {}
+  return null;
+}
+function deriveCurrentUserFromAuth() {
+  const au = getAuthUser();
+  if (au && (au.name || au.email)) {
+    return (au.name && au.name.trim()) || au.email;
+  }
+  // Legacy fallback for sessions predating login
+  return localStorage.getItem(CURRENT_USER_KEY) || "";
+}
+function authHasLeadershipAccess() {
+  const au = getAuthUser();
+  const role = au && String(au.role || "").toLowerCase();
+  return role === "admin" || role === "manager";
+}
+
 const state = {
   data: loadWorkflowData(),
   masters: loadMasters(),
   currentPage: "dock",
   language: localStorage.getItem(LANGUAGE_KEY) || "en",
-  currentUser: localStorage.getItem(CURRENT_USER_KEY) || "",
+  currentUser: deriveCurrentUserFromAuth(),
   performanceDeptView: localStorage.getItem("qaWorkflowPerformanceDeptViewV1") || "receiving",
 };
 
@@ -676,23 +702,30 @@ async function clearImportedLibraryData() {
 }
 
 function renderCurrentUser() {
-  if (!currentUserNameEl) return;
-  currentUserLabelEl.textContent = t("currentUser");
-  setCurrentUserBtn.textContent = t("setUser");
-  clearCurrentUserBtn.textContent = t("clearUser");
+  // The visible current-user picker has been removed (people sign in now).
+  // These elements may be absent; guard everything. We still keep the
+  // mine-only button labels in sync.
   document.querySelectorAll("#myItemsBtn, #receivingMyItemsBtn, #prepMyItemsBtn, #overstockMyItemsBtn").forEach(btn => {
     if (btn) btn.textContent = t("myItemsOnly");
   });
+  if (!currentUserNameEl) return;
+  if (currentUserLabelEl) currentUserLabelEl.textContent = t("currentUser");
+  if (setCurrentUserBtn) setCurrentUserBtn.textContent = t("setUser");
+  if (clearCurrentUserBtn) clearCurrentUserBtn.textContent = t("clearUser");
   if (state.currentUser) {
     currentUserNameEl.textContent = state.currentUser;
-    currentUserAvatarEl.textContent = getInitials(state.currentUser);
+    if (currentUserAvatarEl) currentUserAvatarEl.textContent = getInitials(state.currentUser);
   } else {
     currentUserNameEl.textContent = t("noUserSelected");
-    currentUserAvatarEl.textContent = "?";
+    if (currentUserAvatarEl) currentUserAvatarEl.textContent = "?";
   }
 }
 
 function bindCurrentUserControls() {
+  // Legacy manual picker — only binds if the old controls still exist.
+  // With login in place, currentUser is derived from the auth session,
+  // so these elements are normally absent and this is a no-op.
+  if (!setCurrentUserBtn || !clearCurrentUserBtn || !currentUserSelect) return;
   if (window.__currentUserControlsBound) {
     populateCurrentUserSelect();
     return;
@@ -749,7 +782,9 @@ function isLeadershipUnlocked() {
 }
 
 function isLeadershipUserActive() {
-  return state.currentUser === LEADERSHIP_USER;
+  // Either the legacy manual "Leadership" pick, or an admin/manager who is
+  // signed in — they get the leadership view automatically now.
+  return state.currentUser === LEADERSHIP_USER || authHasLeadershipAccess();
 }
 
 const IMPORT_DB_NAME = "qaImportedMonthlyLibraryV1";

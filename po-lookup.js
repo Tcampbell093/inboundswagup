@@ -263,16 +263,13 @@
     var widget = document.getElementById('poLookupWidget');
     if (!widget) return;
     widget.innerHTML =
-      '<div style="background:var(--blue1,#f0f6ff);border:1px solid var(--blue2,#d0e4ff);border-radius:10px;padding:12px 14px;margin-bottom:14px;">' +
-        '<div style="display:flex;gap:8px;align-items:center;">' +
-          '<span style="font-size:12px;font-weight:800;color:var(--muted,#888);white-space:nowrap;">PO Lookup</span>' +
-          '<input id="poLookupInput" type="text" placeholder="Enter PO number…" ' +
-            'style="flex:1;padding:7px 12px;border-radius:8px;border:1px solid var(--blue2,#d0e4ff);background:var(--bg,#fff);color:var(--text,#111);font-size:13px;" />' +
-          '<button id="poLookupBtn" style="padding:7px 16px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">Search</button>' +
-          '<button id="poLookupClear" style="padding:7px 12px;border-radius:8px;border:1px solid var(--blue2,#d0e4ff);background:none;font-size:13px;color:var(--muted,#888);cursor:pointer;">Clear</button>' +
-        '</div>' +
-        '<div id="poLookupResults" style="margin-top:10px;"></div>' +
-      '</div>';
+      '<div class="inb-po-lookup-inner">' +
+        '<i class="inb-po-search-ico" aria-hidden="true">⌕</i>' +
+        '<input id="poLookupInput" type="text" placeholder="Lookup PO number…" autocomplete="off" />' +
+        '<button id="poLookupBtn" type="button">Search</button>' +
+        '<button id="poLookupClear" type="button" title="Clear">✕</button>' +
+      '</div>' +
+      '<div id="poLookupResults" class="inb-po-results"></div>';
 
     var input    = document.getElementById('poLookupInput');
     var btn      = document.getElementById('poLookupBtn');

@@ -10,76 +10,75 @@
 </head>
 <body class="workflow-page">
   <div class="app-shell">
-    <header class="hero">
-      <div class="hero-copy-wrap">
-        <p class="eyebrow">Warehouse Operations Hub</p>
-        <h1 id="heroTitle">Inbound Tracker</h1>
-        <p class="hero-copy" id="heroCopy">One cleaner inbound tracker for Docker, QA Receiving, Prep, Overstock, Putaway, and performance.</p>
-      </div>
-      
-<div class="hero-badges hero-strip-rebuilt">
-  <div class="hero-badge current-user-badge hero-card-user">
-    <span id="currentUserLabel">currentUser</span>
-    <div class="current-user-card">
-      <div class="current-user-avatar" id="currentUserAvatar">?</div>
-      <div class="current-user-meta">
-        <strong id="currentUserName">No user selected</strong>
-        <div class="current-user-controls">
+    <header class="hero inbound-hero-rebuilt">
+      <!-- Branded band: title + identity + live metrics + PO lookup -->
+      <div class="inb-band">
+        <div class="inb-band-top">
+          <div class="inb-band-title">
+            <p class="inb-eyebrow">Warehouse Operations Hub</p>
+            <h1 id="heroTitle">Inbound Tracker</h1>
+          </div>
+          <div class="inb-band-identity">
+            <span class="inb-user-name" id="currentUserName">—</span>
+            <span class="inb-user-avatar" id="currentUserAvatar">?</span>
+          </div>
+        </div>
+
+        <div class="inb-band-metrics">
+          <div class="inb-metric">
+            <span class="inb-metric-label" id="todayLabelText">Today</span>
+            <strong class="inb-metric-value" id="todayLabel">—</strong>
+          </div>
+          <div class="inb-metric" id="currentDeptUphBadge">
+            <span class="inb-metric-label" id="currentDeptUphLabel">QA Prep UPH</span>
+            <strong class="inb-metric-value" id="currentDeptUphValue">—</strong>
+            <small class="inb-metric-meta" id="currentDeptUphMeta">Switch to QA Receiving or Prep</small>
+          </div>
+          <div class="inb-metric">
+            <span class="inb-metric-label" id="totalQtyLabel">Total Qty</span>
+            <strong class="inb-metric-value" id="totalQty">0</strong>
+          </div>
+
+          <div class="inb-band-tools">
+            <!-- PO Lookup mounts here (po-lookup.js) -->
+            <div id="poLookupWidget" class="inb-po-lookup"></div>
+            <button class="inb-pace pulse-check-trigger" id="uphPaceVisual" data-stage="0" type="button" title="Open department pulse check">
+              <img id="uphPaceIcon" src="assets/uph_stage_1_sleep.png" alt="UPH pace icon">
+              <span class="inb-pace-meta">
+                <strong id="uphPaceLabel">UPH Pace</strong>
+                <span id="uphPaceText">Waiting</span>
+              </span>
+            </button>
+            <div class="inb-lang lang-switch">
+              <button id="langEnBtn" class="lang-btn active" type="button">EN</button>
+              <button id="langEsBtn" class="lang-btn" type="button">ES</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hidden legacy current-user controls kept for JS compatibility -->
+        <div class="inb-legacy-user" hidden aria-hidden="true">
+          <span id="currentUserLabel"></span>
           <select id="currentUserSelect"></select>
-          <button id="setCurrentUserBtn" class="secondary-btn" type="button">setUser</button>
-          <button id="clearCurrentUserBtn" class="secondary-btn" type="button">clearUser</button>
+          <button id="setCurrentUserBtn" type="button"></button>
+          <button id="clearCurrentUserBtn" type="button"></button>
         </div>
       </div>
-    </div>
-  </div>
 
-  <div class="hero-badge hero-card-date">
-    <span id="todayLabelText">Today</span>
-    <strong id="todayLabel">—</strong>
-  </div>
-
-  <div class="hero-badge hero-card-uph uph-hero-badge" id="currentDeptUphBadge">
-    <span id="currentDeptUphLabel">Current UPH</span>
-    <strong id="currentDeptUphValue">—</strong>
-    <small id="currentDeptUphMeta">Switch to QA Receiving or Prep</small>
-  </div>
-
-  <div class="hero-badge hero-card-qty">
-    <span id="totalQtyLabel">Total Qty</span>
-    <strong id="totalQty">0</strong>
-  </div>
-
-  <div class="hero-badge hero-card-language hero-badge-language">
-    <span id="languageLabel">Language</span>
-    <div class="lang-switch">
-      <button id="langEnBtn" class="lang-btn active" type="button">EN</button>
-      <button id="langEsBtn" class="lang-btn" type="button">ES</button>
-    </div>
-  </div>
-
-  <button class="hero-badge hero-card-pace hero-badge-pace pulse-check-trigger" id="uphPaceVisual" data-stage="0" type="button" title="Open department pulse check">
-    <img id="uphPaceIcon" src="assets/uph_stage_1_sleep.png" alt="UPH pace icon">
-    <div class="uph-pace-card-meta">
-      <strong id="uphPaceLabel">UPH Pace</strong>
-      <span id="uphPaceText">Waiting</span>
-    </div>
-  </button>
-</div>
-</header>
-
-<!-- ── PO Lookup ──────────────────────────────────────────── -->
-<div id="poLookupWidget" style="margin:12px 24px 0;"></div>
-      <div class="role-tabs" id="roleTabs">
-        <button class="role-tab active" data-page="dock" data-i18n="tabDock">Docker</button>
-        <button class="role-tab" data-page="receiving" data-i18n="tabReceiving">QA Receiving</button>
-        <button class="role-tab" data-page="prep" data-i18n="tabPrep">Prepping</button>
-        <button class="role-tab" data-page="overstock" data-i18n="tabOverstock">Overstock</button>
-        <button class="role-tab" data-page="putaway" data-i18n="tabPutaway">Putaway</button>
-        <button class="role-tab" data-page="performance">Performance</button>
-        <button class="role-tab" data-page="settings" data-i18n="tabSettings">Settings</button>
+      <!-- Attached department tab bar (underline-active, scrolls on overflow) -->
+      <div class="inb-tabbar-wrap">
+        <div class="role-tabs inb-tabbar" id="roleTabs">
+          <button class="role-tab active" data-page="dock" data-i18n="tabDock">Docker</button>
+          <button class="role-tab" data-page="receiving" data-i18n="tabReceiving">QA Receiving</button>
+          <button class="role-tab" data-page="prep" data-i18n="tabPrep">Prepping</button>
+          <button class="role-tab" data-page="overstock" data-i18n="tabOverstock">Overstock</button>
+          <button class="role-tab" data-page="putaway" data-i18n="tabPutaway">Putaway</button>
+          <button class="role-tab" data-page="performance">Performance</button>
+          <button class="role-tab" data-page="settings" data-i18n="tabSettings">Settings</button>
+        </div>
+        <button id="toggleSummaryBtn" class="inb-summary-btn" type="button">Show Summary</button>
       </div>
-      <button id="toggleSummaryBtn" class="secondary-btn compact-summary-btn" type="button">Show Summary</button>
-    </section>
+    </header>
 
     <section class="stats-grid hidden" id="statsGrid">
       <article class="stat-card"><span class="stat-label">Active Pallets</span><strong id="statSections">0</strong><p>Pallets at this stage right now</p></article>
