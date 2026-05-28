@@ -1806,22 +1806,30 @@ function finalizeOrder(order){
     const confirmedCount = confirmedList.length;
     const isConfirmedFilterActive = safeText(els.confirmedFilter?.value) === 'confirmed';
     els.topStats.innerHTML = [
-      statCard('SORDs', fmtInt(list.length), 'Orders visible in explorer'),
-      statCard('Revenue', fmtMoney(totalRevenue), 'Subtotal from imported revenue / EOM data'),
+      statCard('SORDs', fmtInt(list.length), 'Orders visible in explorer', '', '📦'),
+      statCard('Revenue', fmtMoney(totalRevenue), 'Subtotal from imported revenue / EOM data', '', '💰'),
       statCard('Confirmed This Month', fmtMoney(confirmedRevenue),
         isConfirmedFilterActive
           ? `${fmtInt(confirmedCount)} SORD${confirmedCount===1?'':'s'} — all items confirmed completable`
           : `${fmtInt(confirmedCount)} of ${fmtInt(list.length)} SORDs fully confirmed for this month`,
-        'confirmed'),
-      statCard('Blocked', fmtInt(blocked), 'Orders with blocked readiness'),
-      statCard('High Complexity', fmtInt(highComplexity), 'Orders with higher operational complexity'),
-      statCard('Risk Flags', fmtInt(totalFlags), 'Total active flags across visible SORDs')
+        'confirmed', '✅'),
+      statCard('Blocked', fmtInt(blocked), 'Orders with blocked readiness', 'blocked', '🚫'),
+      statCard('High Complexity', fmtInt(highComplexity), 'Orders with higher operational complexity', 'complexity', '🧩'),
+      statCard('Risk Flags', fmtInt(totalFlags), 'Total active flags across visible SORDs', 'risk', '⚠️')
     ].join('');
   }
 
-  function statCard(label, value, hint, tone=''){
+  function statCard(label, value, hint, tone='', icon=''){
     const toneClass = tone ? ` stat-card-${escape(tone)}` : '';
-    return `<div class="card${toneClass}"><div class="stat-label">${escape(label)}</div><div class="stat-value">${escape(value)}</div><div class="stat-hint">${escape(hint)}</div></div>`;
+    const iconHtml = icon ? `<div class="stat-icon" aria-hidden="true">${icon}</div>` : '';
+    return `<div class="card stat-card-lux${toneClass}">`
+      + `<div class="stat-card-top">`
+      +   `<div class="stat-label">${escape(label)}</div>`
+      +   iconHtml
+      + `</div>`
+      + `<div class="stat-value">${escape(value)}</div>`
+      + `<div class="stat-hint">${escape(hint)}</div>`
+      + `</div>`;
   }
 
   
