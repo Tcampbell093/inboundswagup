@@ -5035,14 +5035,17 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   --brief-serif: Georgia, 'Iowan Old Style', 'Apple Garamond', 'Times New Roman', Times, serif;
   --brief-ink: #0f1f33;
   --brief-ink-soft: #4a627d;
+  --brief-ink-faint: #8194ab;
   --brief-rule: #d6dee8;
   --brief-rule-soft: #e6ecf3;
   --brief-bg: #ffffff;
   --brief-bg-tint: #fbfcfe;
+  --brief-bg-warm: #faf8f3;
   --brief-good: #1e7a34;
   --brief-watch: #9a6a00;
   --brief-risk: #b42318;
   --brief-info: #1a4f86;
+  --brief-accent: #9a6a00;
 }
 
 /* Outer shell — generous breathing room, max readable width */
@@ -5056,22 +5059,32 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 }
 
 /* ── Masthead ──────────────────────────────────── */
+/* Classic newspaper double-rule: heavy rule on top of a hairline */
 #homePage .brief-masthead{
-  border-bottom:2px solid var(--brief-ink);
-  padding-bottom:14px;
-  margin-bottom:20px;
+  position:relative;
+  border-bottom:3px double var(--brief-ink);
+  padding-bottom:16px;
+  margin-bottom:22px;
 }
 #homePage .brief-masthead-meta{
-  display:flex;align-items:center;gap:8px;
-  font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+  display:flex;align-items:center;gap:10px;
+  font-size:11px;letter-spacing:.2em;text-transform:uppercase;
   color:var(--brief-ink-soft);font-weight:700;
+  padding-bottom:8px;
+  border-bottom:1px solid var(--brief-rule-soft);
 }
-#homePage .brief-masthead-dot{opacity:.5;}
+#homePage .brief-masthead-meta::before{
+  content:'';
+  display:inline-block;width:18px;height:2px;
+  background:var(--brief-accent);
+  margin-right:2px;
+}
+#homePage .brief-masthead-dot{opacity:.45;}
 #homePage .brief-masthead-title{
   font-family:var(--brief-serif);
-  font-size:42px;font-weight:700;letter-spacing:-0.01em;line-height:1.05;
+  font-size:46px;font-weight:700;letter-spacing:-0.02em;line-height:1.02;
   color:var(--brief-ink);
-  margin:6px 0 0;
+  margin:12px 0 0;
 }
 #homePage .brief-masthead-row{
   display:flex;justify-content:space-between;align-items:flex-end;
@@ -5082,19 +5095,27 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   font-style:italic;
   color:var(--brief-ink-soft);
   font-size:15px;line-height:1.5;
-  margin:0;max-width:680px;
+  margin:0;max-width:620px;
 }
 #homePage .brief-toolbar{display:flex;gap:8px;flex-shrink:0;}
 #homePage .brief-toolbar .btn{font-size:12px;border-radius:8px;padding:8px 14px;}
 
 /* Eyebrow */
 #homePage .brief-eyebrow{
-  font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+  font-size:10px;letter-spacing:.2em;text-transform:uppercase;
   color:var(--brief-ink-soft);font-weight:700;
-  display:inline-block;
+  display:inline-flex;align-items:center;gap:7px;
+}
+#homePage .brief-eyebrow::before{
+  content:'';
+  width:5px;height:5px;border-radius:50%;
+  background:var(--brief-accent);
+  flex-shrink:0;
 }
 #homePage .brief-eyebrow-warning{color:var(--brief-watch);}
+#homePage .brief-eyebrow-warning::before{background:var(--brief-watch);}
 #homePage .brief-eyebrow-danger{color:var(--brief-risk);}
+#homePage .brief-eyebrow-danger::before{background:var(--brief-risk);}
 
 /* Alert banner — slim ribbon under masthead */
 #homePage .brief-alert-banner:not([hidden]){
@@ -5120,9 +5141,9 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 #homePage .brief-lede{display:flex;flex-direction:column;gap:8px;}
 #homePage .brief-headline{
   font-family:var(--brief-serif);
-  font-size:30px;font-weight:600;letter-spacing:-0.005em;line-height:1.18;
+  font-size:31px;font-weight:600;letter-spacing:-0.01em;line-height:1.16;
   color:var(--brief-ink);
-  margin:4px 0 8px;
+  margin:6px 0 10px;
   max-width:640px;
 }
 
@@ -5133,12 +5154,15 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 }
 #homePage .brief-lede .rev-grand-total{
   font-family:var(--brief-serif);
-  font-size:38px;font-weight:700;letter-spacing:-0.01em;color:var(--brief-ink);
+  font-size:44px;font-weight:700;letter-spacing:-0.02em;color:var(--brief-ink);
+  line-height:1;
+  font-variant-numeric:tabular-nums;
 }
 #homePage .brief-lede .rev-pct-badge{
-  font-size:16px;font-weight:600;
+  font-size:14px;font-weight:700;
   color:var(--brief-good);
   background:none;padding:0;border:none;
+  letter-spacing:.02em;text-transform:uppercase;
 }
 #homePage .brief-rev-meta{
   display:flex;gap:18px;flex-wrap:wrap;
@@ -5151,11 +5175,12 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 #homePage .brief-lede .rev-remaining.rev-over{color:var(--brief-good);font-weight:600;}
 
 #homePage .brief-rev-bar{
-  height:6px;background:var(--brief-rule-soft);border-radius:999px;
-  margin:6px 0 14px;overflow:hidden;
+  height:5px;background:var(--brief-rule-soft);border-radius:0;
+  margin:8px 0 14px;overflow:hidden;
+  border-bottom:1px solid var(--brief-rule);
 }
 #homePage .brief-rev-bar .rev-progress-fill{
-  height:100%;background:var(--brief-info);border-radius:999px;
+  height:100%;background:var(--brief-ink);border-radius:0;
 }
 
 #homePage .brief-rev-breakdown{display:flex;flex-direction:column;gap:4px;margin-bottom:8px;}
@@ -5196,14 +5221,20 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 
 /* At-a-glance sidebar */
 #homePage .brief-glance{
-  border-left:1px solid var(--brief-rule-soft);
+  border-left:1px solid var(--brief-rule);
   padding-left:24px;
   display:flex;flex-direction:column;gap:10px;
 }
+#homePage .brief-glance > .brief-eyebrow{
+  position:relative;padding-bottom:8px;
+}
+#homePage .brief-glance > .brief-eyebrow::after{
+  content:'';position:absolute;left:0;right:0;bottom:0;
+  height:1px;background:var(--brief-ink);opacity:.85;
+}
 #homePage .brief-glance-list{
   display:flex;flex-direction:column;
-  border-top:1px solid var(--brief-rule-soft);
-  margin-top:6px;
+  margin-top:2px;
 }
 #homePage .brief-glance .brief-glance-row{
   display:grid;
@@ -5211,7 +5242,7 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   grid-template-rows:auto auto;
   align-items:baseline;
   gap:2px 12px;
-  padding:10px 0;
+  padding:11px 0;
   border:none;
   border-bottom:1px solid var(--brief-rule-soft);
   border-radius:0;
@@ -5219,26 +5250,42 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   box-shadow:none;
   min-height:auto;
   cursor:pointer;
+  transition:padding-left .12s ease;
 }
 #homePage .brief-glance .brief-glance-row:last-child{border-bottom:none;}
 #homePage .brief-glance .brief-glance-row .mc-label{
   grid-column:1;grid-row:1;
   font-size:13px;color:var(--brief-ink-soft);font-weight:500;
   letter-spacing:0;text-transform:none;
+  display:inline-flex;align-items:center;gap:8px;
 }
+/* Status dot before each label — neutral by default, colored by row state */
+#homePage .brief-glance .brief-glance-row .mc-label::before{
+  content:'';
+  width:6px;height:6px;border-radius:50%;
+  background:var(--brief-ink-faint);
+  flex-shrink:0;
+}
+#homePage .brief-glance .brief-glance-row.is-good .mc-label::before{background:var(--brief-good);}
+#homePage .brief-glance .brief-glance-row.is-watch .mc-label::before{background:var(--brief-watch);}
+#homePage .brief-glance .brief-glance-row.is-risk .mc-label::before{background:var(--brief-risk);}
 #homePage .brief-glance .brief-glance-row strong{
   grid-column:2;grid-row:1;
-  font-size:18px;font-weight:600;color:var(--brief-ink);
+  font-size:19px;font-weight:600;color:var(--brief-ink);
   font-family:var(--brief-serif);text-align:right;
+  font-variant-numeric:tabular-nums;
 }
 #homePage .brief-glance .brief-glance-row p{
   grid-column:1 / -1;grid-row:2;
-  font-size:11px;color:var(--brief-ink-soft);margin:0;line-height:1.3;
+  font-size:11px;color:var(--brief-ink-soft);margin:0 0 0 14px;line-height:1.3;
 }
 #homePage .brief-glance .brief-glance-row.is-good strong{color:var(--brief-good);}
 #homePage .brief-glance .brief-glance-row.is-watch strong{color:var(--brief-watch);}
 #homePage .brief-glance .brief-glance-row.is-risk strong{color:var(--brief-risk);}
-#homePage .brief-glance .brief-glance-row:hover{background:var(--brief-bg-tint);transform:none;box-shadow:none;}
+#homePage .brief-glance .brief-glance-row:hover{
+  background:none;transform:none;box-shadow:none;
+  padding-left:6px;
+}
 
 /* ── Section heads ─────────────────────────────── */
 #homePage .brief-section{
@@ -5247,12 +5294,30 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   margin-bottom:24px;
 }
 #homePage .brief-section:last-of-type{border-bottom:none;}
-#homePage .brief-section-head{margin-bottom:14px;}
+/* Department header: eyebrow + title with a hairline rule trailing across */
+#homePage .brief-section-head{
+  margin-bottom:16px;
+}
+#homePage .brief-section-head .brief-eyebrow{
+  position:relative;
+  padding-bottom:8px;
+  width:100%;
+}
+#homePage .brief-section-head .brief-eyebrow::after{
+  content:'';
+  position:absolute;left:0;right:0;bottom:0;
+  height:1px;background:var(--brief-ink);
+  opacity:.85;
+}
+/* In the Floor Now head-row the eyebrow sits beside an attendance list;
+   keep its rule scoped to just the label column, not the whole row */
+#homePage .brief-section-head-row .brief-eyebrow{width:auto;}
+#homePage .brief-section-head-row .brief-eyebrow::after{display:none;}
 #homePage .brief-section-title{
   font-family:var(--brief-serif);
-  font-size:22px;font-weight:600;letter-spacing:-0.005em;line-height:1.2;
+  font-size:23px;font-weight:600;letter-spacing:-0.01em;line-height:1.2;
   color:var(--brief-ink);
-  margin:4px 0 0;
+  margin:10px 0 0;
 }
 
 /* Two-column section layout */
@@ -5524,10 +5589,17 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 @media (max-width: 1100px){
   #homePage .brief-top-story-grid{grid-template-columns:1fr;gap:24px;}
   #homePage .brief-glance{border-left:none;padding-left:0;border-top:1px solid var(--brief-rule-soft);padding-top:18px;}
+  #homePage .brief-glance > .brief-eyebrow::after{display:none;}
   #homePage .brief-priority{grid-template-columns:repeat(2,1fr);}
   #homePage .brief-priority .mc-priority-item:nth-child(3n){border-right:1px solid var(--brief-rule-soft);padding-right:24px;}
   #homePage .brief-priority .mc-priority-item:nth-child(2n){border-right:none;padding-right:0;}
   #homePage .brief-priority .mc-priority-item:nth-child(n+3){border-top:1px solid var(--brief-rule-soft);padding-top:18px;margin-top:18px;}
+}
+/* Tablet (iPad) — trim the oversized display type so it sits comfortably */
+@media (max-width: 1024px){
+  #homePage .brief-masthead-title{font-size:38px;}
+  #homePage .brief-lede .rev-grand-total{font-size:38px;}
+  #homePage .brief-headline{font-size:27px;}
 }
 @media (max-width: 760px){
   #homePage .brief-shell{padding:16px 16px 48px;}
