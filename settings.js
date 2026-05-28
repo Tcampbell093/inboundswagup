@@ -126,7 +126,6 @@
       { key: 'assemblyFlightTrackerPage', label: 'Flight Tracker' },
       { key: 'calendarPage', label: 'Calendar' },
       { key: 'policyPage', label: 'Policy & SOPs' },
-      { key: 'huddlePage', label: 'Daily Brief' },
       { key: 'attendancePage', label: 'Attendance' },
       { key: 'queuePage', label: 'Pack Builder Queue' },
       { key: 'errorsPage', label: 'Error Log' },

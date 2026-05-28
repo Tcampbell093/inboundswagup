@@ -105,10 +105,6 @@
           <svg class="nav-group-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <div class="nav-list" id="navg-overview">
-          <button class="nav-btn" data-page="huddlePage" title="Daily Brief">
-            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M4 5h12M4 9h8M4 13h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="16" cy="13" r="3" fill="currentColor" opacity=".35"/></svg>
-            <span class="nav-label">Daily Brief</span>
-          </button>
           <button class="nav-btn active" data-page="homePage" title="Mission Control">
             <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M3 9.5L10 3l7 6.5V17a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
             <span class="nav-label">Mission Control</span>
@@ -251,110 +247,8 @@
 
     <!-- Home -->
     <!-- ═══════════════════════════════════════════════════════════
-         DAILY BRIEF / HUDDLE DASHBOARD
+         MISSION CONTROL — combined brief (Daily Brief merged in)
          ═══════════════════════════════════════════════════════════ -->
-    <section id="huddlePage" class="page">
-      <div class="mc-shell">
-
-        <!-- Hero -->
-        <div class="mc-hero">
-          <div>
-            <div class="eyebrow">Operations Brief</div>
-            <h2>Daily Brief</h2>
-            <p class="subtitle">Morning huddle, end-of-day recap, incoming potential, and historical snapshots — all from your live SORD and assembly data.</p>
-          </div>
-          <div class="toolbar right">
-            <button class="btn" type="button" onclick="window.hcMeeting.openAM()" style="background:#0f9d58;border-color:#0f9d58;">☀️ AM Huddle</button>
-            <button class="btn" type="button" onclick="window.hcMeeting.openLeadership()" style="background:#1a73e8;border-color:#1a73e8;">👔 Leadership</button>
-            <button class="btn" type="button" onclick="window.hcMeeting.openPM()" style="background:#e37400;border-color:#e37400;">🌙 PM Inbound</button>
-            <button class="btn secondary" type="button" data-home-jump="sordPage">Open SORD</button>
-            <button class="btn secondary" type="button" data-home-jump="assemblyPage">Open Assembly</button>
-          </div>
-        </div>
-
-        <!-- ── SECTION 0: Carryover From Yesterday ───────────────── -->
-        <section class="mc-panel">
-          <div class="mc-panel-head">
-            <div>
-              <div class="eyebrow">Carryover</div>
-              <h3>Open items from yesterday</h3>
-            </div>
-          </div>
-          <div id="meetingHubCarryover"></div>
-        </section>
-
-        <!-- ── SECTION 1: Floor Now ────────────────────────────────── -->
-        <section class="mc-panel">
-          <div class="mc-panel-head">
-            <div>
-              <div class="eyebrow">Floor Now</div>
-              <h3>Current workable floor state</h3>
-            </div>
-            <div id="huddleAttendance" class="mc-mini-list"></div>
-          </div>
-          <div class="mc-radar-grid" id="huddleFloorNow"></div>
-        </section>
-
-        <!-- ── SECTION 1b: Today's Execution ─────────────────────── -->
-        <section class="mc-panel">
-          <div class="mc-panel-head">
-            <div>
-              <div class="eyebrow">Today's Execution</div>
-              <h3>Live department summary</h3>
-            </div>
-          </div>
-          <div id="huddleTodayExec"></div>
-        </section>
-
-        <!-- ── SECTION 2: Incoming Potential ─────────────────────── -->
-        <section class="mc-panel">
-          <div class="mc-panel-head">
-            <div>
-              <div class="eyebrow">Incoming Potential</div>
-              <h3>Likely arrivals — not guaranteed</h3>
-            </div>
-          </div>
-          <div class="huddle-incoming-grid" id="huddleIncoming"></div>
-        </section>
-
-        <!-- ── SECTION 3: Huddle Notes ────────────────────────────── -->
-        <section class="mc-panel" id="huddleRecapPanel">
-          <div class="mc-panel-head">
-            <div>
-              <div class="eyebrow">Huddle Notes</div>
-              <h3>AM check-in · PM check-in · EOD recap</h3>
-            </div>
-          </div>
-          <div id="huddleNotesContainer">
-            <div id="huddleRecapForm"></div>
-          </div>
-        </section>
-
-        <!-- ── SECTION 3b: Recap History ─────────────────────────── -->
-        <section class="mc-panel">
-          <div class="mc-panel-head">
-            <div>
-              <div class="eyebrow">Recap History</div>
-              <h3>Previous end-of-day notes</h3>
-            </div>
-          </div>
-          <div id="huddleRecapHistory"></div>
-        </section>
-
-        <!-- ── SECTION 4: SORD Snapshot History ─────────────────── -->
-        <section class="mc-panel">
-          <div class="mc-panel-head">
-            <div>
-              <div class="eyebrow">Status Snapshot History</div>
-              <h3>Daily SORD state — what was on the floor, by date</h3>
-            </div>
-          </div>
-          <div id="huddleSnapshotPanel"></div>
-        </section>
-
-      </div>
-    </section>
-
     <section id="homePage" class="page active">
       <div class="brief-shell">
 
@@ -435,6 +329,27 @@
           </div>
         </section>
 
+        <!-- ── FLOOR NOW + TODAY'S EXECUTION (merged from Daily Brief) ── -->
+        <section class="brief-section brief-two-col">
+          <div class="brief-col">
+            <div class="brief-section-head brief-section-head-row">
+              <div>
+                <div class="brief-eyebrow">Floor now</div>
+                <h2 class="brief-section-title">Current workable state</h2>
+              </div>
+              <div id="huddleAttendance" class="mc-mini-list"></div>
+            </div>
+            <div class="mc-radar-grid brief-floor-grid" id="huddleFloorNow"></div>
+          </div>
+          <div class="brief-col brief-col-divided">
+            <div class="brief-section-head">
+              <div class="brief-eyebrow">Today's execution</div>
+              <h2 class="brief-section-title">Live department summary</h2>
+            </div>
+            <div id="huddleTodayExec"></div>
+          </div>
+        </section>
+
         <!-- ── NEEDS ATTENTION: Priority radar as editorial story columns ── -->
         <section class="brief-section">
           <div class="brief-section-head">
@@ -480,6 +395,15 @@
           </div>
         </section>
 
+        <!-- ── INCOMING POTENTIAL (merged from Daily Brief) ── -->
+        <section class="brief-section">
+          <div class="brief-section-head">
+            <div class="brief-eyebrow">Incoming potential</div>
+            <h2 class="brief-section-title">Likely arrivals — not guaranteed</h2>
+          </div>
+          <div class="huddle-incoming-grid brief-incoming" id="huddleIncoming"></div>
+        </section>
+
         <!-- ── RECENT CHANGES ── -->
         <section class="brief-section">
           <div class="brief-section-head">
@@ -487,6 +411,24 @@
             <h2 class="brief-section-title">Policies, imports, and system updates</h2>
           </div>
           <div class="mc-list brief-recent" id="mcRecentChanges"></div>
+        </section>
+
+        <!-- ── SORD SNAPSHOT HISTORY + CARRYOVER (merged from Daily Brief) ── -->
+        <section class="brief-section brief-two-col">
+          <div class="brief-col">
+            <div class="brief-section-head">
+              <div class="brief-eyebrow">Status snapshot history</div>
+              <h2 class="brief-section-title">Daily SORD state by date</h2>
+            </div>
+            <div id="huddleSnapshotPanel"></div>
+          </div>
+          <div class="brief-col brief-col-divided">
+            <div class="brief-section-head">
+              <div class="brief-eyebrow">Carryover</div>
+              <h2 class="brief-section-title">Open items from yesterday</h2>
+            </div>
+            <div id="meetingHubCarryover"></div>
+          </div>
         </section>
 
         <!-- ── JUMP TO ── -->

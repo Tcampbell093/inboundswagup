@@ -15,7 +15,7 @@
   const ROLE_ACCESS = {
     admin:   ['all'],
     manager: [
-      'homePage', 'huddlePage',
+      'homePage',
       'attendancePage', 'workflowInboundPage', 'fulfillmentScanPage',
       'returnsPage', 'cycleCountPage', 'errorsPage',
       'assemblyPage', 'queuePage', 'assemblyFlightTrackerPage',

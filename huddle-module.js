@@ -465,7 +465,7 @@
 
   // ── Render full page ──────────────────────────────────────────────────────
   function render() {
-    const root = document.getElementById('huddlePage');
+    const root = document.getElementById('homePage');
     if (!root) return;
 
     const floor = getFloorStats();
@@ -927,16 +927,16 @@
   });
 
   async function init() {
-    const root = document.getElementById('huddlePage');
+    const root = document.getElementById('homePage');
     if (!root) return;
 
     await loadFromBackend();
     render();
 
-    // Re-render when the huddle page becomes active
+    // Re-render when Mission Control becomes active
     document.querySelectorAll('.nav-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        if (btn.dataset.page === 'huddlePage') setTimeout(render, 50);
+        if (btn.dataset.page === 'homePage') setTimeout(render, 50);
       });
     });
 

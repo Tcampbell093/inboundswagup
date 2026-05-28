@@ -5270,6 +5270,46 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   padding-left:32px;
 }
 
+/* ── Merged Daily Brief panels — lux treatment within Mission Control ── */
+/* Section head with an inline attendance mini-list on the right */
+#homePage .brief-section-head-row{
+  display:flex;align-items:flex-start;justify-content:space-between;
+  gap:16px;flex-wrap:wrap;
+}
+#homePage .brief-section-head-row .mc-mini-list{
+  display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+  font-size:12px;color:var(--muted);
+}
+
+/* Floor Now cards — clean editorial tiles instead of heavy panels */
+#homePage .brief-floor-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:12px;
+}
+#homePage .brief-floor-grid .mc-radar-card,
+#homePage .brief-floor-grid > div{
+  border-radius:14px;
+}
+
+/* Today's Execution + Snapshot panels — soften any inherited card chrome */
+#homePage #huddleTodayExec .mc-panel,
+#homePage #huddleSnapshotPanel .mc-panel,
+#homePage #meetingHubCarryover .mc-panel{
+  background:transparent;border:none;padding:0;box-shadow:none;
+}
+
+/* Incoming Potential — responsive lux grid */
+#homePage .brief-incoming{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:14px;
+}
+#homePage .brief-incoming > *{
+  border-radius:14px;
+}
+
+/* Floor PO modal launched from Floor Now still needs to sit above everything */
+#huddleFloorPoModal{z-index:10000;}
+
 /* ── Priority Radar — three serif story columns ─ */
 #homePage .brief-priority{
   display:grid;

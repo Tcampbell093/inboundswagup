@@ -845,9 +845,9 @@
   // ═══════════════════════════════════════════════════════════
 
   function init() {
-    // Render carryover when Daily Brief page becomes visible
+    // Render carryover when Mission Control page becomes visible
     const observer = new MutationObserver(function() {
-      const page = document.getElementById('huddlePage');
+      const page = document.getElementById('homePage');
       if (page && page.classList.contains('active')) {
         renderCarryover();
       }
