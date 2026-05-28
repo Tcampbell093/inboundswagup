@@ -3170,7 +3170,12 @@ font-weight:800
 .workflow-page .hero.inbound-hero-rebuilt{
   background:none;border:none;box-shadow:none;padding:0;margin:0 0 4px;
   border-radius:0;
+  display:block;            /* override base .hero flex row */
+  overflow:visible;         /* allow PO results overlay to escape */
+  backdrop-filter:none;
 }
+.workflow-page .hero.inbound-hero-rebuilt::after{display:none;}  /* kill glow */
+.workflow-page .hero.inbound-hero-rebuilt > *{width:100%;}
 
 /* ── Branded band ───────────────────────────────────────────────── */
 .workflow-page .inb-band{
@@ -3212,6 +3217,10 @@ font-weight:800
 }
 .workflow-page .inb-metric-value{font-size:17px;font-weight:700;color:#fff;line-height:1.1;}
 .workflow-page .inb-metric-meta{font-size:10px;color:#7ba0c9;}
+/* UPH state tint on the band (classes set by app.js on #currentDeptUphBadge) */
+.workflow-page #currentDeptUphBadge.uph-state-green .inb-metric-value{color:#5fe0a0;}
+.workflow-page #currentDeptUphBadge.uph-state-yellow .inb-metric-value{color:#ffd166;}
+.workflow-page #currentDeptUphBadge.uph-state-red .inb-metric-value{color:#ff8a7a;}
 
 .workflow-page .inb-band-tools{
   margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
@@ -3256,10 +3265,23 @@ font-weight:800
   border:none;border-radius:10px;padding:5px 11px 5px 7px;cursor:pointer;
 }
 .workflow-page .inb-pace:hover{background:rgba(255,255,255,.2);}
-.workflow-page .inb-pace img{width:30px;height:30px;object-fit:contain;flex-shrink:0;}
-.workflow-page .inb-pace-meta{display:flex;flex-direction:column;align-items:flex-start;line-height:1.15;}
-.workflow-page .inb-pace-meta strong{font-size:11px;color:#fff;font-weight:700;}
-.workflow-page .inb-pace-meta span{font-size:10px;color:#9dc0e8;}
+/* Beat the global #uphPaceIcon 86px !important rule with id+context + !important */
+.workflow-page .inb-pace img#uphPaceIcon,
+.workflow-page .inb-pace img{
+  width:30px !important;height:30px !important;
+  min-height:30px !important;max-height:30px !important;max-width:30px !important;
+  object-fit:contain !important;margin:0 !important;flex-shrink:0;display:block !important;
+}
+.workflow-page .inb-pace-meta{display:flex;flex-direction:column;align-items:flex-start;line-height:1.15;max-width:140px;}
+.workflow-page .inb-pace-meta strong,
+.workflow-page .inb-pace-meta strong#uphPaceLabel{
+  font-size:11px !important;color:#fff !important;font-weight:700 !important;margin:0 !important;
+}
+.workflow-page .inb-pace-meta span,
+.workflow-page .inb-pace-meta span#uphPaceText{
+  font-size:10px !important;color:#9dc0e8 !important;margin:0 !important;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;
+}
 
 /* Language toggle on the band */
 .workflow-page .inb-lang.lang-switch{
