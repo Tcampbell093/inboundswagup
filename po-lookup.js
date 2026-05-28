@@ -259,6 +259,52 @@
     '</div>';
   }
 
+  function ensureResultsModal() {
+    var modal = document.getElementById('poLookupModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'poLookupModal';
+    modal.className = 'po-lookup-modal';
+    modal.hidden = true;
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'poLookupModalTitle');
+    modal.innerHTML =
+      '<div class="po-lookup-modal-dialog" role="document">' +
+        '<div class="po-lookup-modal-header">' +
+          '<div>' +
+            '<div class="po-lookup-modal-eyebrow">PO Lookup</div>' +
+            '<h2 id="poLookupModalTitle">PO details</h2>' +
+          '</div>' +
+          '<button type="button" class="po-lookup-modal-close" aria-label="Close">&times;</button>' +
+        '</div>' +
+        '<div class="po-lookup-modal-body" id="poLookupResults"></div>' +
+      '</div>';
+    document.body.appendChild(modal);
+
+    // Close handlers
+    function close() {
+      modal.hidden = true;
+      document.body.style.overflow = '';
+    }
+    modal.querySelector('.po-lookup-modal-close').addEventListener('click', close);
+    modal.addEventListener('click', function(e) {
+      if (e.target === modal) close();
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && !modal.hidden) close();
+    });
+    return modal;
+  }
+
+  function openResultsModal(title) {
+    var modal = ensureResultsModal();
+    var titleEl = modal.querySelector('#poLookupModalTitle');
+    if (titleEl) titleEl.textContent = title || 'PO details';
+    modal.hidden = false;
+    document.body.style.overflow = 'hidden';
+  }
+
   function mount() {
     var widget = document.getElementById('poLookupWidget');
     if (!widget) return;
@@ -268,18 +314,33 @@
         '<input id="poLookupInput" type="text" placeholder="Lookup PO number…" autocomplete="off" />' +
         '<button id="poLookupBtn" type="button">Search</button>' +
         '<button id="poLookupClear" type="button" title="Clear">✕</button>' +
-      '</div>' +
-      '<div id="poLookupResults" class="inb-po-results"></div>';
+      '</div>';
+
+    // Make sure the results modal exists in the DOM, ready to receive content
+    ensureResultsModal();
 
     var input    = document.getElementById('poLookupInput');
     var btn      = document.getElementById('poLookupBtn');
     var clearBtn = document.getElementById('poLookupClear');
 
-    btn.addEventListener('click', function() { lookupPO(input.value); });
-    input.addEventListener('keydown', function(e) { if (e.key === 'Enter') lookupPO(input.value); });
+    btn.addEventListener('click', function() {
+      var q = (input.value || '').trim();
+      if (!q) return;
+      openResultsModal('PO# ' + q);
+      lookupPO(q);
+    });
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        var q = (input.value || '').trim();
+        if (!q) return;
+        openResultsModal('PO# ' + q);
+        lookupPO(q);
+      }
+    });
     clearBtn.addEventListener('click', function() {
       input.value = '';
-      document.getElementById('poLookupResults').innerHTML = '';
+      var results = document.getElementById('poLookupResults');
+      if (results) results.innerHTML = '';
     });
   }
 
