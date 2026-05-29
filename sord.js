@@ -440,7 +440,11 @@
     if (!PREKIT_STAGE_BY_ID[stage]) return;
     if (!state.prekit) state.prekit = {};
     const now = new Date().toISOString();
-    if (stage === 'not_ready') {
+    // 'unset' is the implicit default — represented by the absence of a record.
+    // Picking Unset deletes the record so the PB returns to the blank state.
+    // Every other stage (including the now-deliberate "Not Ready") writes a
+    // real record so it sticks and shows up under its own filter chip.
+    if (stage === 'unset') {
       delete state.prekit[key];
       savePrekit();
       return;
@@ -3100,7 +3104,9 @@ function finalizeOrder(order){
         const key = clearBtn.getAttribute('data-prekit-clear');
         const pb = findPbByPrekitKey(key);
         if (pb) {
-          setPrekitStage(pb, 'not_ready');
+          // Clear means "remove any deliberate stage" — back to Unset (the
+          // blank default), not back to Not Ready.
+          setPrekitStage(pb, 'unset');
           refreshDossierForKey(getItemKeyForPb(pb));
           if (typeof renderPrekitBoard === 'function') renderPrekitBoard();
         }
