@@ -7,7 +7,7 @@
   const SEARCH_LIMIT_DEFAULT = 250;
   const SALESFORCE_BASE = 'https://swagup.lightning.force.com';
   const PURCHASE_ORDER_OBJECT = 'Purchase_Order__c';
-  const SYNC_ENDPOINT = '/netlify/functions/sord-imports';
+  const SYNC_ENDPOINT = '/.netlify/functions/sord-imports';
 
   const els = {
     page: document.getElementById('sordPage'),
@@ -33,6 +33,10 @@
     typeCntPb:   document.getElementById('sordTypeCntPb'),
     typeCntBulk: document.getElementById('sordTypeCntBulk'),
     typeCntMix:  document.getElementById('sordTypeCntMix'),
+    weightFilterRoot: document.getElementById('sordWeightFilter'),
+    weightSlider: document.getElementById('sordWeightSlider'),
+    weightInput: document.getElementById('sordWeightInput'),
+    weightSummary: document.getElementById('sordWeightSummary'),
     ownerMapBody: document.getElementById('sordOwnerMapBody'),
     ownerUtilityLabel: document.getElementById('sordOwnerUtilityLabel'),
     ownerUtilityUrl: document.getElementById('sordOwnerUtilityUrl'),
@@ -45,7 +49,17 @@
     pbClearSelBtn: document.getElementById('pbClearSelBtn'),
     pbCopyBtn: document.getElementById('pbCopyBtn'),
     pbPostWrap: document.getElementById('pbPostWrap'),
-    pbPostContent: document.getElementById('pbPostContent')
+    pbPostContent: document.getElementById('pbPostContent'),
+    prekitBoardPanel: document.getElementById('prekitBoardPanel'),
+    prekitBoardBody: document.getElementById('prekitBoardBody'),
+    prekitBoardToggle: document.getElementById('prekitBoardToggle'),
+    prekitBoardSearch: document.getElementById('prekitBoardSearch'),
+    prekitBoardAssignee: document.getElementById('prekitBoardAssignee'),
+    prekitBoardStats: document.getElementById('prekitBoardStats'),
+    prekitBoardFilters: document.getElementById('prekitBoardFilters'),
+    prekitBoardSort: document.getElementById('prekitBoardSort'),
+    prekitBoardSortDir: document.getElementById('prekitBoardSortDir'),
+    prekitBoardList: document.getElementById('prekitBoardList')
   };
 
 
@@ -198,14 +212,24 @@
     }
   }
 
+  function stripHeavyFields(rows){
+    if(!Array.isArray(rows)) return [];
+    return rows.map(r => {
+      if(!r || typeof r !== 'object') return r;
+      if(!('productsReceived' in r)) return r;
+      const { productsReceived, ...rest } = r;
+      return rest;
+    });
+  }
+
   async function pushImportsToServer(imports){
     try {
       const payload = {
         importedAt:  imports.importedAt,
         fileNames:   imports.fileNames,
-        queueRows:   imports.queueRows,
-        revenueRows: imports.revenueRows,
-        eomRows:     imports.eomRows,
+        queueRows:   stripHeavyFields(imports.queueRows),
+        revenueRows: stripHeavyFields(imports.revenueRows),
+        eomRows:     stripHeavyFields(imports.eomRows),
       };
       const res = await fetch(SYNC_ENDPOINT, {
         method: 'POST',
@@ -289,6 +313,63 @@
   }
 
   const PRIORITY_KEY = 'ops_hub_sord_priority_v1';
+  const WEIGHT_FILTER_KEY = 'ops_hub_sord_weight_filter_v1';
+  // Slider config — covers the realistic range of per-unit product weights in the warehouse.
+  const WEIGHT_FILTER_MIN = 0.1;
+  const WEIGHT_FILTER_MAX = 50;
+  const WEIGHT_FILTER_STEP = 0.1;
+  const WEIGHT_FILTER_DEFAULT = 5;
+
+  function loadWeightFilter(){
+    try {
+      const raw = JSON.parse(localStorage.getItem(WEIGHT_FILTER_KEY) || 'null');
+      if (raw && typeof raw === 'object') {
+        return {
+          mode: raw.mode === 'full' || raw.mode === 'partial' ? raw.mode : 'off',
+          threshold: Number.isFinite(+raw.threshold) ? +raw.threshold : WEIGHT_FILTER_DEFAULT
+        };
+      }
+    } catch {}
+    return { mode: 'off', threshold: WEIGHT_FILTER_DEFAULT };
+  }
+
+  // ── Pre-Kit Lifecycle ────────────────────────────────────────────────────
+  // Stage-aware tracking. Each record:
+  //   { stage, assignee, assignedAt, note, updatedAt, history? }
+  // Stages drive every surface: per-PB chip, per-SORD Pre-Kit tab, and the
+  // top-level Pre-Kit Command Board. "unset" is the new implicit default for
+  // PBs with no explicit stage — replaces the old "not_ready" fallback so
+  // teams can mark Not Ready deliberately rather than by omission. Old
+  // records (just {assignee, assignedAt}) migrate to stage = "assigned" on load.
+  const PREKIT_KEY = 'ops_hub_sord_prekit_v1';
+  const PREKIT_STAGES = [
+    { id:'unset',        label:'Unset',         short:'Unset',        icon:'·',  tone:'blank'   },
+    { id:'not_ready',    label:'Not Ready',     short:'Not Ready',    icon:'○',  tone:'neutral' },
+    { id:'ineligible',   label:'Ineligible',    short:'Ineligible',   icon:'⊘',  tone:'muted'   },
+    { id:'ready',        label:'Ready',         short:'Ready',        icon:'◐',  tone:'info'    },
+    { id:'assigned',     label:'Assigned',      short:'Assigned',     icon:'👤', tone:'primary' },
+    { id:'complication', label:'Complication',  short:'Complication', icon:'⚠',  tone:'warn'    },
+    { id:'completed',    label:'Completed',     short:'Completed',    icon:'✓',  tone:'good'    }
+  ];
+  const PREKIT_STAGE_BY_ID = Object.fromEntries(PREKIT_STAGES.map(s => [s.id, s]));
+  function loadPrekit(){
+    try {
+      const raw = JSON.parse(localStorage.getItem(PREKIT_KEY) || '{}');
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+      // Migrate legacy {assignee, assignedAt} → {stage:'assigned', ...}
+      for (const k of Object.keys(raw)) {
+        const r = raw[k];
+        if (r && typeof r === 'object' && !r.stage) {
+          if (r.assignee) {
+            raw[k] = { stage:'assigned', assignee:r.assignee, assignedAt:r.assignedAt || '', note:'', updatedAt:r.assignedAt || new Date().toISOString() };
+          } else {
+            delete raw[k];
+          }
+        }
+      }
+      return raw;
+    } catch { return {}; }
+  }
 
   const state = {
     poCategoryFilter: 'all',
@@ -298,6 +379,9 @@
     expandedKey: '',
     expandedTabMap: {},
     activeTypeFilter: 'all',
+    weightFilter: loadWeightFilter(),
+    prekit: loadPrekit(),
+    prekitBoard: { stageFilter:'active', assignee:'', search:'', open:true, sortBy:'default', sortDir:'desc' },
     ownerMap: loadJson(OWNER_MAP_KEY, DEFAULT_OWNER_MAP),
     prioritySords: new Set(JSON.parse(localStorage.getItem(PRIORITY_KEY) || '[]'))
   };
@@ -305,6 +389,377 @@
   function savePriority() {
     try { localStorage.setItem(PRIORITY_KEY, JSON.stringify([...state.prioritySords])); } catch {}
   }
+  function saveWeightFilter() {
+    try { localStorage.setItem(WEIGHT_FILTER_KEY, JSON.stringify(state.weightFilter)); } catch {}
+  }
+  function savePrekit(){
+    try { localStorage.setItem(PREKIT_KEY, JSON.stringify(state.prekit || {})); } catch {}
+  }
+
+  // Stable key for a PB across imports: prefer the SF id, fall back to pb+so.
+  function prekitKeyForPb(pb){
+    if (!pb) return '';
+    const id = String(pb.pbId || '').trim();
+    if (id) return 'id:' + id;
+    const name = String(pb.pb || '').trim();
+    const so = String(pb.so || '').trim();
+    if (!name && !so) return '';
+    return 'ns:' + name + '|' + so;
+  }
+  function getPrekitAssignment(pb){
+    const key = prekitKeyForPb(pb);
+    if (!key) return null;
+    return (state.prekit && state.prekit[key]) || null;
+  }
+  function getPrekitStage(pb){
+    const rec = getPrekitAssignment(pb);
+    return (rec && rec.stage) || 'unset';
+  }
+  function setPrekitAssignment(pb, assignee){
+    // Back-compat helper: assign a name, set stage='assigned'. Empty clears.
+    const key = prekitKeyForPb(pb);
+    if (!key) return;
+    if (!state.prekit) state.prekit = {};
+    if (!assignee) {
+      delete state.prekit[key];
+    } else {
+      const prev = state.prekit[key] || {};
+      state.prekit[key] = {
+        stage: 'assigned',
+        assignee: String(assignee).trim(),
+        assignedAt: new Date().toISOString(),
+        note: prev.note || '',
+        updatedAt: new Date().toISOString()
+      };
+    }
+    savePrekit();
+  }
+  function setPrekitStage(pb, stage, opts){
+    const key = prekitKeyForPb(pb);
+    if (!key) return;
+    if (!PREKIT_STAGE_BY_ID[stage]) return;
+    if (!state.prekit) state.prekit = {};
+    const now = new Date().toISOString();
+    // 'unset' is the implicit default — represented by the absence of a record.
+    // Picking Unset deletes the record so the PB returns to the blank state.
+    // Every other stage (including the now-deliberate "Not Ready") writes a
+    // real record so it sticks and shows up under its own filter chip.
+    if (stage === 'unset') {
+      delete state.prekit[key];
+      savePrekit();
+      return;
+    }
+    const prev = state.prekit[key] || {};
+    const next = {
+      stage,
+      assignee: prev.assignee || '',
+      assignedAt: prev.assignedAt || '',
+      note: prev.note || '',
+      updatedAt: now
+    };
+    if (opts && typeof opts.assignee === 'string') {
+      next.assignee = opts.assignee.trim();
+      if (next.assignee && !next.assignedAt) next.assignedAt = now;
+      if (!next.assignee) next.assignedAt = '';
+    }
+    if (opts && typeof opts.note === 'string') {
+      next.note = opts.note;
+    }
+    // Complication requires a note. If none provided and none on file, no-op.
+    if (stage === 'complication' && !String(next.note || '').trim()) return;
+    state.prekit[key] = next;
+    savePrekit();
+  }
+  // Pull active employee names from the existing employees store. Sorted A→Z.
+  function getActiveEmployeeNames(){
+    try {
+      const raw = JSON.parse(localStorage.getItem('ops_hub_employees_v1') || '[]');
+      if (!Array.isArray(raw)) return [];
+      return [...new Set(
+        raw
+          .filter(e => e && e.active !== false)
+          .map(e => typeof e === 'string' ? e.trim() : String(e.name || '').trim())
+          .filter(Boolean)
+      )].sort((a, b) => a.localeCompare(b));
+    } catch {
+      return [];
+    }
+  }
+  // Compute pre-kit progress for a SORD: { assigned, total, byStage }.
+  function prekitProgressForItem(item){
+    const pbs = (item && item.packBuilders) || [];
+    const byStage = { unset:0, not_ready:0, ineligible:0, ready:0, assigned:0, complication:0, completed:0 };
+    if (!pbs.length) return { assigned: 0, total: 0, byStage };
+    let assigned = 0;
+    for (const pb of pbs) {
+      const stage = getPrekitStage(pb);
+      byStage[stage] = (byStage[stage] || 0) + 1;
+      if (stage === 'assigned' || stage === 'complication' || stage === 'completed') assigned += 1;
+    }
+    return { assigned, total: pbs.length, byStage };
+  }
+  // Reverse-lookup: given a stable prekit key, find the PB object inside the
+  // currently-loaded dataset. We also track which dossier key it belongs to
+  // so we can do an in-place tab refresh after a change.
+  function findPbByPrekitKey(key){
+    if (!key) return null;
+    for (const item of (state.dataset || [])) {
+      const pbs = item.packBuilders || [];
+      for (const pb of pbs) {
+        if (prekitKeyForPb(pb) === key) {
+          // Stash the back-ref so getItemKeyForPb is O(1)
+          pb._sordItemKey = item.key;
+          return pb;
+        }
+      }
+    }
+    return null;
+  }
+  function getItemKeyForPb(pb){
+    return pb && pb._sordItemKey ? pb._sordItemKey : null;
+  }
+  // After a prekit change, re-render the affected dossier (header + tabs)
+  // without disturbing the rest of the list.
+  function refreshDossierForKey(itemKey){
+    if (!itemKey) { renderAccordion(); return; }
+    // Simplest reliable approach: re-render the whole accordion. The expand
+    // state and active-tab state are already preserved in state.expandedKey
+    // and state.expandedTabMap, so the user's view is unchanged.
+    renderAccordion();
+  }
+
+  // Render the stage chip — used on Pack Builders tab, Pre-Kit tab, and the
+  // top-level Pre-Kit Command Board. `variant` lets the caller request a
+  // compact or full presentation. The chip is a single button that opens the
+  // stage menu; the menu pivots into the picker / note popover.
+  function renderPrekitChip(pb, pkKey, opts){
+    const variant = (opts && opts.variant) || 'pb-row';
+    const rec = getPrekitAssignment(pb);
+    const stage = (rec && rec.stage) || 'unset';
+    const stageDef = PREKIT_STAGE_BY_ID[stage] || PREKIT_STAGE_BY_ID.unset;
+    const label = (() => {
+      if (stage === 'assigned' && rec && rec.assignee) return rec.assignee;
+      if (stage === 'complication') return 'Complication';
+      return stageDef.label;
+    })();
+    const title = (() => {
+      const parts = [`Pre-Kit · ${stageDef.label}`];
+      if (rec && rec.assignee) parts.push(`Assignee: ${rec.assignee}`);
+      if (rec && rec.assignedAt) parts.push(`Assigned ${fmtDate(rec.assignedAt)}`);
+      if (rec && rec.note && stage === 'complication') parts.push(`Note: ${rec.note}`);
+      parts.push('Click to change stage');
+      return parts.join('\n');
+    })();
+    const warnIcon = stage === 'complication' ? '<span class="prekit-chip-warn" aria-hidden="true">⚠</span>' : '';
+    return `<button type="button"
+      class="prekit-chip prekit-chip-${stage} prekit-chip-variant-${variant}"
+      data-prekit-stage-menu="${escape(pkKey)}"
+      title="${escape(title)}">
+        <span class="prekit-chip-dot prekit-stage-dot-${stage}" aria-hidden="true">${stageDef.icon}</span>
+        <span class="prekit-chip-label">${escape(label)}</span>
+        ${warnIcon}
+        <span class="prekit-chip-caret" aria-hidden="true">▾</span>
+      </button>`;
+  }
+
+  // ── Inline assignee picker ─────────────────────────────────────────────
+  // Floating dropdown attached to the clicked Assign button. Lists active
+  // employees; allows free-text fallback if no employees are loaded yet.
+  let _prekitPickerEl = null;
+  function closePrekitPicker(){
+    if (_prekitPickerEl && _prekitPickerEl.parentNode) {
+      _prekitPickerEl.parentNode.removeChild(_prekitPickerEl);
+    }
+    _prekitPickerEl = null;
+  }
+  function openPrekitPicker(anchorBtn){
+    closePrekitPicker();
+    const key = anchorBtn.getAttribute('data-prekit-assign');
+    if (!key) return;
+    const names = getActiveEmployeeNames();
+    const picker = document.createElement('div');
+    picker.className = 'prekit-picker';
+    picker.setAttribute('role', 'listbox');
+    const options = names.length
+      ? names.map(n => `<button type="button" class="prekit-pick-opt" data-prekit-row-key="${escape(key)}" data-prekit-pick="${escape(n)}">${escape(n)}</button>`).join('')
+      : `<div class="prekit-picker-empty">No active employees yet. Add people in <strong>Settings → Employees</strong>.</div>`;
+    picker.innerHTML = `
+      <div class="prekit-picker-head">
+        <input type="text" class="prekit-picker-search" placeholder="Search…" autofocus />
+        <button type="button" class="prekit-picker-close" aria-label="Close">×</button>
+      </div>
+      <div class="prekit-picker-list">${options}</div>
+      <div class="prekit-picker-foot">
+        <input type="text" class="prekit-picker-custom" placeholder="Or type a name…" />
+        <button type="button" class="prekit-picker-custom-go" data-prekit-row-key="${escape(key)}">Assign</button>
+      </div>
+    `;
+    document.body.appendChild(picker);
+    // Position below the button
+    const r = anchorBtn.getBoundingClientRect();
+    const top = r.bottom + window.scrollY + 4;
+    let left = r.left + window.scrollX;
+    // Clamp to viewport
+    const maxLeft = window.scrollX + (window.innerWidth - 280);
+    if (left > maxLeft) left = maxLeft;
+    picker.style.top = top + 'px';
+    picker.style.left = left + 'px';
+    _prekitPickerEl = picker;
+
+    // Wire close + search + custom name
+    picker.querySelector('.prekit-picker-close')?.addEventListener('click', closePrekitPicker);
+    const searchEl = picker.querySelector('.prekit-picker-search');
+    searchEl?.addEventListener('input', () => {
+      const q = String(searchEl.value || '').trim().toLowerCase();
+      picker.querySelectorAll('.prekit-pick-opt').forEach(opt => {
+        const name = (opt.getAttribute('data-prekit-pick') || '').toLowerCase();
+        opt.style.display = !q || name.includes(q) ? '' : 'none';
+      });
+    });
+    setTimeout(() => searchEl?.focus(), 0);
+    const customEl = picker.querySelector('.prekit-picker-custom');
+    const goBtn = picker.querySelector('.prekit-picker-custom-go');
+    const submitCustom = () => {
+      const name = String(customEl?.value || '').trim();
+      if (!name) return;
+      closePrekitPicker();
+      const pb = findPbByPrekitKey(key);
+      if (pb) {
+        setPrekitAssignment(pb, name);
+        refreshDossierForKey(getItemKeyForPb(pb));
+      }
+    };
+    goBtn?.addEventListener('click', submitCustom);
+    customEl?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); submitCustom(); }
+    });
+  }
+
+  // ── Stage menu popover ──────────────────────────────────────────────────
+  // Anchored to the chip. Lets the user move a PB between lifecycle stages.
+  // Selecting "Assigned" pivots into the existing picker. Selecting
+  // "Complication" opens an inline note prompt (note is required).
+  let _prekitStageMenuEl = null;
+  function closePrekitStageMenu(){
+    if (_prekitStageMenuEl && _prekitStageMenuEl.parentNode) {
+      _prekitStageMenuEl.parentNode.removeChild(_prekitStageMenuEl);
+    }
+    _prekitStageMenuEl = null;
+  }
+  function openPrekitStageMenu(anchorBtn){
+    closePrekitStageMenu();
+    closePrekitPicker();
+    closePrekitNotePopover();
+    const key = anchorBtn.getAttribute('data-prekit-stage-menu');
+    if (!key) return;
+    const pb = findPbByPrekitKey(key);
+    const rec = pb ? getPrekitAssignment(pb) : null;
+    const currentStage = (rec && rec.stage) || 'unset';
+    const menu = document.createElement('div');
+    menu.className = 'prekit-stage-menu';
+    menu.setAttribute('role','menu');
+    const summary = rec && rec.assignee
+      ? `<div class="prekit-stage-menu-sub">Assigned to <strong>${escape(rec.assignee)}</strong>${rec.assignedAt?` · ${escape(fmtDate(rec.assignedAt))}`:''}</div>`
+      : '<div class="prekit-stage-menu-sub">No assignee yet</div>';
+    const noteLine = rec && rec.note && currentStage === 'complication'
+      ? `<div class="prekit-stage-menu-note">⚠ ${escape(rec.note)}</div>`
+      : '';
+    menu.innerHTML = `
+      <div class="prekit-stage-menu-head">
+        <div class="prekit-stage-menu-title">Pre-Kit Stage</div>
+        ${summary}
+        ${noteLine}
+      </div>
+      <div class="prekit-stage-menu-list">
+        ${PREKIT_STAGES.map(s => `
+          <button type="button" class="prekit-stage-opt prekit-stage-opt-${s.id}${currentStage===s.id?' is-current':''}"
+                  data-prekit-row-key="${escape(key)}" data-prekit-set-stage="${s.id}">
+            <span class="prekit-stage-opt-dot prekit-stage-dot-${s.id}" aria-hidden="true">${s.icon}</span>
+            <span class="prekit-stage-opt-label">${escape(s.label)}</span>
+            ${currentStage===s.id?'<span class="prekit-stage-opt-check">✓</span>':''}
+          </button>`).join('')}
+      </div>
+      <div class="prekit-stage-menu-foot">
+        ${rec && rec.assignee
+          ? `<button type="button" class="prekit-stage-menu-reassign" data-prekit-reassign="${escape(key)}">Reassign…</button>`
+          : ''}
+      </div>
+    `;
+    document.body.appendChild(menu);
+    const r = anchorBtn.getBoundingClientRect();
+    const top = r.bottom + window.scrollY + 6;
+    let left = r.left + window.scrollX;
+    const maxLeft = window.scrollX + (window.innerWidth - 300);
+    if (left > maxLeft) left = maxLeft;
+    if (left < 12) left = 12;
+    menu.style.top = top + 'px';
+    menu.style.left = left + 'px';
+    _prekitStageMenuEl = menu;
+  }
+
+  // ── Complication note popover ───────────────────────────────────────────
+  // Required note input for the Complication stage. Cannot save empty.
+  let _prekitNoteEl = null;
+  function closePrekitNotePopover(){
+    if (_prekitNoteEl && _prekitNoteEl.parentNode) {
+      _prekitNoteEl.parentNode.removeChild(_prekitNoteEl);
+    }
+    _prekitNoteEl = null;
+  }
+  function openPrekitNotePopover(key, anchorRect, prefill){
+    closePrekitNotePopover();
+    const pop = document.createElement('div');
+    pop.className = 'prekit-note-pop';
+    pop.innerHTML = `
+      <div class="prekit-note-head">
+        <span class="prekit-note-title">⚠ Log a Complication</span>
+        <button type="button" class="prekit-note-close" aria-label="Close">×</button>
+      </div>
+      <div class="prekit-note-body">
+        <label class="prekit-note-lbl">Describe what's blocking pre-kit <span class="prekit-note-req">required</span></label>
+        <textarea class="prekit-note-input" rows="3" placeholder="Missing items, damaged components, qty mismatch…">${escape(prefill || '')}</textarea>
+      </div>
+      <div class="prekit-note-foot">
+        <button type="button" class="btn secondary prekit-note-cancel">Cancel</button>
+        <button type="button" class="btn prekit-note-save" data-prekit-note-save="${escape(key)}" disabled>Log Complication</button>
+      </div>
+    `;
+    document.body.appendChild(pop);
+    const top = anchorRect.bottom + window.scrollY + 6;
+    let left = anchorRect.left + window.scrollX;
+    const maxLeft = window.scrollX + (window.innerWidth - 360);
+    if (left > maxLeft) left = maxLeft;
+    if (left < 12) left = 12;
+    pop.style.top = top + 'px';
+    pop.style.left = left + 'px';
+    _prekitNoteEl = pop;
+    const ta = pop.querySelector('.prekit-note-input');
+    const saveBtn = pop.querySelector('.prekit-note-save');
+    const updateValid = () => {
+      saveBtn.disabled = !String(ta.value || '').trim();
+    };
+    updateValid();
+    ta?.addEventListener('input', updateValid);
+    setTimeout(() => { ta?.focus(); ta?.select?.(); }, 0);
+    pop.querySelector('.prekit-note-close')?.addEventListener('click', closePrekitNotePopover);
+    pop.querySelector('.prekit-note-cancel')?.addEventListener('click', closePrekitNotePopover);
+    saveBtn?.addEventListener('click', () => {
+      const note = String(ta.value || '').trim();
+      if (!note) return;
+      const pb = findPbByPrekitKey(key);
+      if (pb) {
+        setPrekitStage(pb, 'complication', { note });
+        closePrekitNotePopover();
+        refreshDossierForKey(getItemKeyForPb(pb));
+        if (typeof renderPrekitBoard === 'function') renderPrekitBoard();
+      }
+    });
+    ta?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveBtn?.click(); }
+      if (e.key === 'Escape') { e.preventDefault(); closePrekitNotePopover(); }
+    });
+  }
+
 window.__sordState = state;
 
   async function saveState(){
@@ -334,6 +789,31 @@ window.__sordState = state;
     return Number.isNaN(d.getTime()) ? s : d.toISOString().slice(0,10);
   }
   function minDate(values){ return unique(values.map(dateToIso).filter(Boolean)).sort()[0] || ''; }
+  // Returns full epoch ms (preserves time-of-day) for sort. Returns 0 on failure.
+  function safeDateTime(v){
+    const s = safeText(v);
+    if (!s) return 0;
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+  }
+  function minTime(values){
+    const arr = (values||[]).map(safeDateTime).filter(t=>t>0);
+    return arr.length ? Math.min.apply(null, arr) : 0;
+  }
+  function maxTime(values){
+    const arr = (values||[]).map(safeDateTime).filter(t=>t>0);
+    return arr.length ? Math.max.apply(null, arr) : 0;
+  }
+  // For display: 5/7/2026 9:33 AM -style formatting
+  function fmtDateTime(v){
+    const t = (typeof v === 'number') ? v : safeDateTime(v);
+    if (!t) return '—';
+    const d = new Date(t);
+    return d.toLocaleString('en-US', {
+      year:'numeric', month:'numeric', day:'numeric',
+      hour:'numeric', minute:'2-digit'
+    });
+  }
   function salesOrderUrl(id){
     const clean = safeText(id);
     return clean ? `${SALESFORCE_BASE}/lightning/r/SalesOrder__c/${encodeURIComponent(clean)}/view` : '';
@@ -571,6 +1051,11 @@ window.__sordState = state;
         sord: safeText(r.opportunity_quote_sales_order_sales_order_name || r.sales_order_name || r.sales_order || r.sord),
         salesOrderId: safeText(r.sales_order_id),
         salesOrderCreatedDate: safeText(r.sales_order_created_date),
+        // Raw timestamp strings preserved for true chronological sorting (date + time)
+        salesOrderCreatedAtRaw: safeText(r.sales_order_created_date),
+        lastModifiedDate: safeText(r.last_modified_date),
+        lastModifiedAtRaw: safeText(r.last_modified_date),
+        lastModifiedBy: safeText(r.last_modified_by_full_name || r.last_modified_by),
         purchaseOrderName: safeText(r.purchase_order_purchase_order_name || r.purchase_order_name || r.purchase_order),
         purchaseOrderId: safeText(r.purchase_order_id || r.purchase_order_purchase_order_id || r.purchase_order_id_1),
         poOwner: safeText(r.po_owner || r.purchase_order_owner || r.owner),
@@ -595,8 +1080,10 @@ window.__sordState = state;
         externalId: safeText(r.external_id),
         quantity,
         quantityReceived,
+        // Per-unit weight in pounds, parsed from the SORD Summary 'Total Weight(lb)' column.
+        // Negative values (e.g. canceled corrections) and non-numeric inputs collapse to 0.
+        unitWeight: Math.max(0, num(r.total_weightlb || r.total_weight_lb || r.weight || r.unit_weight)),
         itemReceivedAtWarehouseDate: safeText(r.item_received_at_warehouse_date || r.received_at_warehouse_date || r.item_received_date),
-        productsReceived: safeText(r.products_received || r.products_received_description || r.received_products),
         floorValue: quantityReceived > 0 && unitPrice > 0 ? quantityReceived * unitPrice : 0,
         image: safeText(r.image || r.image_url || r.thumbnail || r.po_image)
       };
@@ -718,6 +1205,8 @@ window.__sordState = state;
       a.accountProductName = a.accountProductName || b.accountProductName;
       a.accountProductExternalId = a.accountProductExternalId || b.accountProductExternalId;
       a.quantity = Math.max(a.quantity || 0, b.quantity || 0);
+      a.totalWeight = Math.max(a.totalWeight || 0, b.totalWeight || 0);
+      a.unitWeight = Math.max(a.unitWeight || 0, b.unitWeight || 0);
       a.status = a.status || b.status;
       a.image = a.image || b.image;
     });
@@ -743,6 +1232,10 @@ window.__sordState = state;
     (source.dueDates || []).forEach(v => target.dueDates.push(v));
     (source.createdDates || []).forEach(v => target.createdDates.push(v));
     (source.salesOrderCreatedDates || []).forEach(v => target.salesOrderCreatedDates.push(v));
+    (source.salesOrderCreatedAtRaws || []).forEach(v => (target.salesOrderCreatedAtRaws = target.salesOrderCreatedAtRaws || []).push(v));
+    (source.lastModifiedDates || []).forEach(v => (target.lastModifiedDates = target.lastModifiedDates || []).push(v));
+    (source.lastModifiedAtRaws || []).forEach(v => (target.lastModifiedAtRaws = target.lastModifiedAtRaws || []).push(v));
+    (source.lastModifiedBys || new Set()).forEach(v => (target.lastModifiedBys = target.lastModifiedBys || new Set()).add(v));
     (source.flags || []).forEach(v => target.flags.push(v));
     return target;
   }
@@ -798,6 +1291,11 @@ function buildDataset(){
           dueDates: [],
           createdDates: [],
           salesOrderCreatedDates: [],
+          // New: preserve full date+time strings for accurate chronological sort
+          salesOrderCreatedAtRaws: [],
+          lastModifiedDates: [],
+          lastModifiedAtRaws: [],
+          lastModifiedBys: new Set(),
           flags: []
         });
       }
@@ -864,7 +1362,13 @@ function buildDataset(){
       if(row.ihd) obj.ihdDates.push(row.ihd);
       if(row.createdDate) obj.createdDates.push(row.createdDate);
       if(row.salesOrderCreatedDate) obj.salesOrderCreatedDates.push(row.salesOrderCreatedDate);
+      if(row.salesOrderCreatedAtRaw) obj.salesOrderCreatedAtRaws.push(row.salesOrderCreatedAtRaw);
+      if(row.lastModifiedDate) obj.lastModifiedDates.push(row.lastModifiedDate);
+      if(row.lastModifiedAtRaw) obj.lastModifiedAtRaws.push(row.lastModifiedAtRaw);
+      if(row.lastModifiedBy) obj.lastModifiedBys.add(row.lastModifiedBy);
       const poKey = row.purchaseOrderId || row.purchaseOrderName || `${obj.key}-${obj.poMap.size+1}`;
+      // Weight contribution from this row: per-unit lbs × quantity on this line
+      const rowWeightLb = (row.unitWeight || 0) * (row.quantity || 0);
       if(!obj.poMap.has(poKey)){
         obj.poMap.set(poKey, {
           purchaseOrderName: row.purchaseOrderName,
@@ -880,6 +1384,8 @@ function buildDataset(){
           accountProductName: row.accountProductName,
           accountProductExternalId: row.accountProductExternalId,
           quantity: row.quantity,
+          unitWeight: row.unitWeight || 0,
+          totalWeight: rowWeightLb,
           status: row.status,
           image: row.image
         });
@@ -888,6 +1394,9 @@ function buildDataset(){
         po.itemTotalCost += row.itemTotalCost || 0;
         po.lineItemPrice += row.lineItemPrice || 0;
         po.quantity += row.quantity || 0;
+        po.totalWeight = (po.totalWeight || 0) + rowWeightLb;
+        // Keep the heaviest per-unit weight seen (most rows for one PO share a unit weight; this is conservative)
+        po.unitWeight = Math.max(po.unitWeight || 0, row.unitWeight || 0);
         po.accountProductName = po.accountProductName || row.accountProductName;
         po.accountProductExternalId = po.accountProductExternalId || row.accountProductExternalId;
         po.status = po.status || row.status;
@@ -974,6 +1483,15 @@ function finalizeOrder(order){
     const dueDate = minDate(order.dueDates);
     const createdDate = minDate(order.createdDates);
     const salesOrderCreatedDate = minDate(order.salesOrderCreatedDates) || createdDate;
+    // Full-precision timestamps for sorting (preserves time-of-day)
+    const salesOrderCreatedAt = minTime(order.salesOrderCreatedAtRaws || []);
+    const lastModifiedAt = maxTime(order.lastModifiedAtRaws || []);
+    // Display string for last modified — pick most recent ISO date
+    const lastModifiedDate = (function(){
+      const arr = unique((order.lastModifiedDates || []).map(dateToIso).filter(Boolean)).sort();
+      return arr[arr.length-1] || '';
+    })();
+    const lastModifiedBy = [...(order.lastModifiedBys || new Set())][0] || '';
     const notes = [...order.notesSet];
     const relatedSords = [...order.relatedSords];
     const poOwners = [...order.poOwners].sort();
@@ -1017,6 +1535,10 @@ function finalizeOrder(order){
       dueDate,
       createdDate,
       salesOrderCreatedDate,
+      salesOrderCreatedAt,
+      lastModifiedDate,
+      lastModifiedAt,
+      lastModifiedBy,
       notes,
       relatedSords,
       readiness,
@@ -1148,11 +1670,55 @@ function finalizeOrder(order){
     if(scheduledDates[0]) rows.push({label:'Scheduled in app', value: scheduledDates[0]});
     const assemblyDates = unique(order.liveRows.filter(r=>r.source==='Assembly Board').map(r=>r.date).filter(Boolean)).sort();
     if(assemblyDates[0]) rows.push({label:'Seen on assembly board', value: assemblyDates[0]});
+    // Last modified from SORD Summary import (most recent ISO date across rows)
+    const lastModIso = (function(){
+      const arr = unique((order.lastModifiedDates || []).map(dateToIso).filter(Boolean)).sort();
+      return arr[arr.length-1] || '';
+    })();
+    if(lastModIso) rows.push({label:'Last modified', value: lastModIso});
     return rows;
   }
 
   function itemHasPb(item)   { return item.pbCount > 0 || item.totalPackItems > 0; }
   function itemHasBulk(item) { return item.totalBulkProducts > 0; }
+
+  // A PO is considered "in the warehouse" when its status is one of the three
+  // statuses that mean physical goods are on-site (per Yordani's spec).
+  const IN_WAREHOUSE_STATUSES = new Set([
+    'item partially received at warehouse',
+    'item fully received at warehouse',
+    'qa approved'
+  ]);
+  function isInWarehouseStatus(status){
+    return IN_WAREHOUSE_STATUSES.has(safeText(status).toLowerCase());
+  }
+
+  // Given an order and a per-unit weight threshold (lb), figure out:
+  //  - how many of its POs are at-or-under that threshold (eligible)
+  //  - of those, how many are physically in the warehouse
+  //  - the coverage percentage (in-WH / eligible)
+  // Returns null when the order has no eligible POs at this threshold (so the
+  // filter knows to exclude it from "Full" / "Partial" results).
+  function computeWeightCoverage(item, thresholdLb){
+    const thr = Math.max(0, num(thresholdLb));
+    const eligible = (item.poRows || []).filter(po => {
+      const w = num(po.unitWeight);
+      // Weight must be known (>0) AND at or under the threshold to be eligible.
+      // POs with no weight on file are excluded from the calculation entirely.
+      return w > 0 && w <= thr;
+    });
+    if (!eligible.length) return null;
+    const inWh = eligible.filter(po => isInWarehouseStatus(po.status));
+    const pct = (inWh.length / eligible.length) * 100;
+    return {
+      eligibleCount: eligible.length,
+      inWarehouseCount: inWh.length,
+      percent: pct,
+      bucket: pct >= 100 ? 'full' : pct >= 75 ? 'partial' : 'below',
+      eligible,
+      inWh
+    };
+  }
 
   function getFilteredDataset(){
     const q = norm(els.searchInput?.value || '');
@@ -1177,6 +1743,19 @@ function finalizeOrder(order){
       if(state.activeTypeFilter === 'pb'   && !(itemHasPb(item) && !itemHasBulk(item))) return false;
       if(state.activeTypeFilter === 'bulk' && !(!itemHasPb(item) && itemHasBulk(item)))  return false;
       if(state.activeTypeFilter === 'mix'  && !(itemHasPb(item) && itemHasBulk(item)))   return false;
+      // Weight-coverage filter: show only SORDs whose POs at-or-below the threshold
+      // are sufficiently in the warehouse. Mode: 'off' | 'full' | 'partial'.
+      const wf = state.weightFilter;
+      if (wf && (wf.mode === 'full' || wf.mode === 'partial')) {
+        const cov = computeWeightCoverage(item, wf.threshold);
+        // Stash on the item so the renderer can show the badge without recomputing
+        item._weightCov = cov;
+        if (!cov) return false;
+        if (wf.mode === 'full'    && cov.bucket !== 'full')    return false;
+        if (wf.mode === 'partial' && cov.bucket !== 'partial') return false;
+      } else {
+        item._weightCov = null;
+      }
       return true;
     });
     list.sort((a,b)=>{
@@ -1184,6 +1763,39 @@ function finalizeOrder(order){
       if(sortVal === 'readiness-asc') { const order = {'Blocked':0,'Needs Review':1,'Partially Ready':2,'Ready':3}; return (order[a.readiness]??1) - (order[b.readiness]??1); }
       if(sortVal === 'flags-desc') return num(b.flagCount) - num(a.flagCount);
       if(sortVal === 'account') return safeText(a.account).localeCompare(safeText(b.account));
+      // New: chronological sorts using full timestamps. 0 always sinks to the end.
+      if(sortVal === 'modified-desc') {
+        const at = num(a.lastModifiedAt) || safeDateTime(a.lastModifiedDate);
+        const bt = num(b.lastModifiedAt) || safeDateTime(b.lastModifiedDate);
+        if (!at && !bt) return 0;
+        if (!at) return 1;
+        if (!bt) return -1;
+        return bt - at;
+      }
+      if(sortVal === 'modified-asc') {
+        const at = num(a.lastModifiedAt) || safeDateTime(a.lastModifiedDate);
+        const bt = num(b.lastModifiedAt) || safeDateTime(b.lastModifiedDate);
+        if (!at && !bt) return 0;
+        if (!at) return 1;
+        if (!bt) return -1;
+        return at - bt;
+      }
+      if(sortVal === 'created-desc') {
+        const at = num(a.salesOrderCreatedAt) || safeDateTime(a.salesOrderCreatedDate);
+        const bt = num(b.salesOrderCreatedAt) || safeDateTime(b.salesOrderCreatedDate);
+        if (!at && !bt) return 0;
+        if (!at) return 1;
+        if (!bt) return -1;
+        return bt - at;
+      }
+      if(sortVal === 'created-asc') {
+        const at = num(a.salesOrderCreatedAt) || safeDateTime(a.salesOrderCreatedDate);
+        const bt = num(b.salesOrderCreatedAt) || safeDateTime(b.salesOrderCreatedDate);
+        if (!at && !bt) return 0;
+        if (!at) return 1;
+        if (!bt) return -1;
+        return at - bt;
+      }
       // default: IHD ascending
       const aDate = a.earliestIhd || a.dueDate || '9999';
       const bDate = b.earliestIhd || b.dueDate || '9999';
@@ -1202,22 +1814,30 @@ function finalizeOrder(order){
     const confirmedCount = confirmedList.length;
     const isConfirmedFilterActive = safeText(els.confirmedFilter?.value) === 'confirmed';
     els.topStats.innerHTML = [
-      statCard('SORDs', fmtInt(list.length), 'Orders visible in explorer'),
-      statCard('Revenue', fmtMoney(totalRevenue), 'Subtotal from imported revenue / EOM data'),
+      statCard('SORDs', fmtInt(list.length), 'Orders visible in explorer', '', '📦'),
+      statCard('Revenue', fmtMoney(totalRevenue), 'Subtotal from imported revenue / EOM data', '', '💰'),
       statCard('Confirmed This Month', fmtMoney(confirmedRevenue),
         isConfirmedFilterActive
           ? `${fmtInt(confirmedCount)} SORD${confirmedCount===1?'':'s'} — all items confirmed completable`
           : `${fmtInt(confirmedCount)} of ${fmtInt(list.length)} SORDs fully confirmed for this month`,
-        'confirmed'),
-      statCard('Blocked', fmtInt(blocked), 'Orders with blocked readiness'),
-      statCard('High Complexity', fmtInt(highComplexity), 'Orders with higher operational complexity'),
-      statCard('Risk Flags', fmtInt(totalFlags), 'Total active flags across visible SORDs')
+        'confirmed', '✅'),
+      statCard('Blocked', fmtInt(blocked), 'Orders with blocked readiness', 'blocked', '🚫'),
+      statCard('High Complexity', fmtInt(highComplexity), 'Orders with higher operational complexity', 'complexity', '🧩'),
+      statCard('Risk Flags', fmtInt(totalFlags), 'Total active flags across visible SORDs', 'risk', '⚠️')
     ].join('');
   }
 
-  function statCard(label, value, hint, tone=''){
+  function statCard(label, value, hint, tone='', icon=''){
     const toneClass = tone ? ` stat-card-${escape(tone)}` : '';
-    return `<div class="card${toneClass}"><div class="stat-label">${escape(label)}</div><div class="stat-value">${escape(value)}</div><div class="stat-hint">${escape(hint)}</div></div>`;
+    const iconHtml = icon ? `<div class="stat-icon" aria-hidden="true">${icon}</div>` : '';
+    return `<div class="card stat-card-lux${toneClass}">`
+      + `<div class="stat-card-top">`
+      +   `<div class="stat-label">${escape(label)}</div>`
+      +   iconHtml
+      + `</div>`
+      + `<div class="stat-value">${escape(value)}</div>`
+      + `<div class="stat-hint">${escape(hint)}</div>`
+      + `</div>`;
   }
 
   
@@ -1282,7 +1902,206 @@ function finalizeOrder(order){
     return 'ac-pb-yellow';
   }
 
+  // Flatten all PBs across the current dataset, attaching stage + parent SORD
+  // metadata so the board can filter / sort / render without re-walking.
+  function collectAllPbsForBoard(){
+    const out = [];
+    for (const item of (state.dataset || [])) {
+      const pbs = item.packBuilders || [];
+      for (const pb of pbs) {
+        const key = prekitKeyForPb(pb);
+        if (!key) continue;
+        pb._sordItemKey = item.key;
+        const rec = getPrekitAssignment(pb);
+        const stage = (rec && rec.stage) || 'unset';
+        out.push({ pb, pkKey:key, rec, stage, item });
+      }
+    }
+    return out;
+  }
+
+  function renderPrekitBoard(){
+    if (!els.prekitBoardList) return;
+    const board = state.prekitBoard;
+    const rows = collectAllPbsForBoard();
+    // Stage counts across the entire dataset
+    const counts = { unset:0, not_ready:0, ineligible:0, ready:0, assigned:0, complication:0, completed:0 };
+    rows.forEach(r => { counts[r.stage] = (counts[r.stage] || 0) + 1; });
+    const total = rows.length;
+    const active = counts.ready + counts.assigned + counts.complication;
+
+    // Stats strip
+    if (els.prekitBoardStats) {
+      els.prekitBoardStats.innerHTML = `
+        <div class="prekit-stat prekit-stat-total"><div class="prekit-stat-lbl">Pack Builders</div><div class="prekit-stat-val">${fmtInt(total)}</div></div>
+        <div class="prekit-stat prekit-stat-active"><div class="prekit-stat-lbl">In Pre-Kit Flow</div><div class="prekit-stat-val">${fmtInt(active)}</div></div>
+        ${PREKIT_STAGES.filter(s => s.id !== 'unset').map(s => `
+          <div class="prekit-stat prekit-stat-${s.id}">
+            <div class="prekit-stat-lbl"><span class="prekit-stat-dot prekit-stage-bg-${s.id}">${s.icon}</span> ${escape(s.short)}</div>
+            <div class="prekit-stat-val">${fmtInt(counts[s.id] || 0)}</div>
+          </div>`).join('')}
+      `;
+    }
+
+    // Filter chips (stage)
+    const filterDefs = [
+      { id:'active', label:'Active', count: active, hint:'Ready, Assigned, Complication' },
+      { id:'all',    label:'All',    count: total,  hint:'Every pack builder, every stage' },
+      ...PREKIT_STAGES.map(s => ({ id:s.id, label:s.label, count: counts[s.id] || 0, hint:'', stage:true }))
+    ];
+    if (els.prekitBoardFilters) {
+      els.prekitBoardFilters.innerHTML = filterDefs.map(f => `
+        <button type="button" class="prekit-chip-filter${board.stageFilter===f.id?' is-active':''}${f.stage?` prekit-chip-filter-${f.id}`:''}"
+                data-prekit-filter="${f.id}">
+          ${f.stage?`<span class="prekit-chip-filter-dot prekit-stage-bg-${f.id}">${PREKIT_STAGE_BY_ID[f.id].icon}</span>`:''}
+          <span>${escape(f.label)}</span>
+          <span class="prekit-chip-filter-count">${fmtInt(f.count)}</span>
+        </button>`).join('');
+    }
+
+    // Assignee dropdown options (active employees ∪ anyone with current records)
+    if (els.prekitBoardAssignee) {
+      const set = new Set(getActiveEmployeeNames());
+      rows.forEach(r => { if (r.rec && r.rec.assignee) set.add(r.rec.assignee); });
+      const names = [...set].sort((a,b) => a.localeCompare(b));
+      const prev = els.prekitBoardAssignee.value;
+      els.prekitBoardAssignee.innerHTML = '<option value="">All associates</option>' + names.map(n => `<option value="${escape(n)}">${escape(n)}</option>`).join('');
+      if (names.includes(prev)) els.prekitBoardAssignee.value = prev;
+      else if (board.assignee && names.includes(board.assignee)) els.prekitBoardAssignee.value = board.assignee;
+    }
+
+    // Apply filters
+    let filtered = rows.slice();
+    if (board.stageFilter === 'active') {
+      filtered = filtered.filter(r => r.stage === 'ready' || r.stage === 'assigned' || r.stage === 'complication');
+    } else if (board.stageFilter !== 'all') {
+      filtered = filtered.filter(r => r.stage === board.stageFilter);
+    }
+    if (board.assignee) {
+      filtered = filtered.filter(r => r.rec && r.rec.assignee === board.assignee);
+    }
+    const q = String(board.search || '').trim().toLowerCase();
+    if (q) {
+      filtered = filtered.filter(r => {
+        const hay = [
+          r.pb.pb, r.pb.pbId, r.item.sord, r.item.account, r.item.accountOwner,
+          r.rec && r.rec.assignee, r.rec && r.rec.note
+        ].filter(Boolean).join(' ').toLowerCase();
+        return hay.includes(q);
+      });
+    }
+
+    // Sort — driven by board.sortBy and board.sortDir. The default mode
+    // (no explicit pick) keeps the original priority-aware order:
+    // complications first, then by IHD, then by stage rank.
+    const stageRank = { complication:0, ready:1, assigned:2, completed:3, not_ready:4, unset:5, ineligible:6 };
+    const sortBy  = board.sortBy  || 'default';
+    const sortDir = board.sortDir || 'desc';
+    const dirMul  = sortDir === 'asc' ? 1 : -1;
+
+    function _ts(d){ const t = new Date(d || 0).getTime(); return isNaN(t) ? 0 : t; }
+    function _num(v){ const n = Number(v); return isNaN(n) ? 0 : n; }
+    function _str(v){ return String(v == null ? '' : v).toLowerCase(); }
+
+    if (sortBy === 'default') {
+      filtered.sort((a, b) => {
+        const sa = stageRank[a.stage] ?? 9;
+        const sb = stageRank[b.stage] ?? 9;
+        if (sa !== sb) return sa - sb;
+        const ihdA = _ts(a.item.earliestIhd || a.item.dueDate);
+        const ihdB = _ts(b.item.earliestIhd || b.item.dueDate);
+        return ihdA - ihdB;
+      });
+    } else {
+      filtered.sort((a, b) => {
+        let av, bv;
+        switch (sortBy) {
+          case 'activity':
+            av = _ts(a.rec && a.rec.updatedAt);
+            bv = _ts(b.rec && b.rec.updatedAt);
+            break;
+          case 'created':
+            // No created-at field on PBs; SORD number is a sensible proxy
+            av = _num(String(a.item.sord || '').replace(/\D/g,''));
+            bv = _num(String(b.item.sord || '').replace(/\D/g,''));
+            break;
+          case 'ihd':
+            av = _ts(a.item.earliestIhd || a.item.dueDate);
+            bv = _ts(b.item.earliestIhd || b.item.dueDate);
+            break;
+          case 'units':
+            av = _num(a.pb.units);
+            bv = _num(b.pb.units);
+            break;
+          case 'kits':
+            av = _num(a.pb.qty);
+            bv = _num(b.pb.qty);
+            break;
+          case 'sord':
+            av = _str(a.item.sord);
+            bv = _str(b.item.sord);
+            return av.localeCompare(bv) * dirMul;
+          default:
+            av = 0; bv = 0;
+        }
+        if (av === bv) return 0;
+        return (av < bv ? -1 : 1) * dirMul;
+      });
+    }
+
+    if (!filtered.length) {
+      els.prekitBoardList.innerHTML = `<div class="prekit-board-empty">
+        <div class="prekit-board-empty-ico">○</div>
+        <div class="prekit-board-empty-title">Nothing here yet</div>
+        <div class="prekit-board-empty-sub">${total ? 'Try another stage filter or clear your search.' : 'Import your Queue / SORD reports, then mark pack builders Ready for Pre-Kit from inside a SORD.'}</div>
+      </div>`;
+      return;
+    }
+
+    els.prekitBoardList.innerHTML = filtered.map(r => {
+      const sdef = PREKIT_STAGE_BY_ID[r.stage];
+      const ihd = r.item.earliestIhd || r.item.dueDate || '';
+      const ihdHtml = ihd ? `<span class="prekit-board-row-ihd">IHD ${escape(fmtDate(ihd))}</span>` : '';
+      const noteHtml = r.rec && r.rec.note && r.stage === 'complication'
+        ? `<div class="prekit-board-row-note">⚠ ${escape(r.rec.note)}</div>`
+        : '';
+      const assignedHtml = r.rec && r.rec.assignee
+        ? `<span class="prekit-board-row-assignee"><span aria-hidden="true">👤</span> ${escape(r.rec.assignee)}</span>`
+        : '';
+      const pbUrl = (typeof window.buildSalesforcePbLink === 'function')
+        ? window.buildSalesforcePbLink(r.pb.pbId, r.pb.link && r.pb.link.endsWith && r.pb.link.endsWith('.pdf') ? '' : r.pb.link)
+        : '';
+      const nameHtml = pbUrl
+        ? `<a class="pb-link prekit-board-row-pb" href="${escape(pbUrl)}" target="_blank" rel="noopener noreferrer">${escape(r.pb.pb||'—')}</a>`
+        : `<span class="prekit-board-row-pb">${escape(r.pb.pb||'—')}</span>`;
+      const jumpHtml = `<button type="button" class="prekit-board-row-jump" data-prekit-jump="${escJs(r.item.key)}" title="Open this SORD">↗</button>`;
+      return `<div class="prekit-board-row prekit-board-row-${r.stage}">
+        <div class="prekit-board-row-stripe prekit-stage-bg-${r.stage}" aria-hidden="true"></div>
+        <div class="prekit-board-row-main">
+          <div class="prekit-board-row-top">
+            ${nameHtml}
+            <span class="prekit-board-row-sord">${escape(r.item.sord || '—')}</span>
+            <span class="prekit-board-row-account">${escape(r.item.account || '')}</span>
+            ${ihdHtml}
+            ${jumpHtml}
+          </div>
+          <div class="prekit-board-row-meta">
+            <span>${fmtInt(r.pb.qty)} kits · ${fmtInt(r.pb.units)} units · ${fmtInt(r.pb.products)} products</span>
+            ${r.pb.scheduledFor?`<span>Sched: <strong>${escape(r.pb.scheduledFor)}</strong></span>`:''}
+            ${assignedHtml}
+            ${r.rec && r.rec.updatedAt?`<span class="prekit-board-row-when">${escape(fmtDate(r.rec.updatedAt))}</span>`:''}
+          </div>
+          ${noteHtml}
+        </div>
+        <div class="prekit-board-row-chip">
+          ${renderPrekitChip(r.pb, r.pkKey, { variant:'board-row' })}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
   function renderAccordion(){
+    renderPrekitBoard();
     const list = getFilteredDataset();
     renderTopStats(list);
 
@@ -1309,9 +2128,16 @@ function finalizeOrder(order){
 
     const visible = list.slice(0, SEARCH_LIMIT_DEFAULT);
 
+    // When user has explicitly chosen a chronological sort, respect it visually:
+    // skip the "Needs Attention / Active" partition so the top of the list is
+    // truly the newest / oldest item, not the most-flagged one.
+    const sortVal = safeText(els.sortSelect?.value);
+    const isChronoSort = sortVal === 'modified-desc' || sortVal === 'modified-asc'
+                       || sortVal === 'created-desc'  || sortVal === 'created-asc';
+
     // Group: flagged/blocked float to top when showing all
     let html = '';
-    if(state.activeTypeFilter === 'all' && !safeText(els.searchInput?.value)){
+    if(state.activeTypeFilter === 'all' && !safeText(els.searchInput?.value) && !isChronoSort){
       const urgent = visible.filter(x => x.flagCount > 0 || /block|exception/.test((x.readiness||'').toLowerCase()));
       const rest   = visible.filter(x => !urgent.includes(x));
       if(urgent.length){
@@ -1364,6 +2190,30 @@ function finalizeOrder(order){
               <span class="sord-acc-account">${escape(item.account||'—')}</span>
               <span class="sord-acc-owner">AO: ${escape(ownerLabel)}</span>
               <span class="sord-acc-status-chip ${acStatusColor(item.status||item.poStatus)}">${escape(item.status||item.poStatus||'—')}</span>
+              ${item.lastModifiedDate?`<span class="sord-acc-modified" title="Last modified${item.lastModifiedBy?' by '+item.lastModifiedBy:''}">Modified ${escape(fmtDate(item.lastModifiedDate))}</span>`:''}
+              ${item._weightCov ? `<span class="sord-acc-wcov sord-acc-wcov-${item._weightCov.bucket}" title="POs at-or-under ${state.weightFilter.threshold} lb that are in the warehouse">⚖ ${item._weightCov.inWarehouseCount}/${item._weightCov.eligibleCount} in WH · ${Math.round(item._weightCov.percent)}%</span>` : ''}
+              ${(function(){
+                const p = prekitProgressForItem(item);
+                if (!p.total) return '';
+                const bs = p.byStage;
+                const done = bs.completed;
+                // Eligible PBs exclude "ineligible" so a SORD with everything
+                // either Completed or Ineligible reads as fully done.
+                const eligibleTotal = p.total - bs.ineligible;
+                const cls = (eligibleTotal > 0 && done === eligibleTotal) ? 'sord-acc-prekit-full'
+                          : (bs.assigned + done) === 0 ? 'sord-acc-prekit-none'
+                          : 'sord-acc-prekit-partial';
+                const segs = [
+                  bs.ready ? `<span class="sord-acc-prekit-seg prekit-stage-bg-ready"   title="Ready">${bs.ready}</span>` : '',
+                  bs.assigned ? `<span class="sord-acc-prekit-seg prekit-stage-bg-assigned" title="Assigned">${bs.assigned}</span>` : '',
+                  bs.complication ? `<span class="sord-acc-prekit-seg prekit-stage-bg-complication" title="Complications">⚠ ${bs.complication}</span>` : '',
+                  bs.completed ? `<span class="sord-acc-prekit-seg prekit-stage-bg-completed"   title="Completed">✓ ${bs.completed}</span>` : '',
+                  bs.ineligible ? `<span class="sord-acc-prekit-seg prekit-stage-bg-ineligible" title="Ineligible">⊘ ${bs.ineligible}</span>` : ''
+                ].filter(Boolean).join('');
+                const denom = eligibleTotal > 0 ? eligibleTotal : p.total;
+                const title = `Pre-Kit · Ready ${bs.ready} · Assigned ${bs.assigned} · Complication ${bs.complication} · Completed ${bs.completed} · Not Ready ${bs.not_ready} · Ineligible ${bs.ineligible}`;
+                return `<span class="sord-acc-prekit ${cls}" title="${escape(title)}"><span class="sord-acc-prekit-ico" aria-hidden="true">👤</span><span>Pre-kit ${done}/${denom}</span>${segs}</span>`;
+              })()}
             </div>
           </div>
           <div class="sord-acc-right">
@@ -1432,6 +2282,8 @@ function finalizeOrder(order){
           ${item.productionTypes?.length?`<div class="ac-kv-row"><span class="ac-kv-key">Production Types</span><span class="ac-kv-val">${escape(item.productionTypes.join(', '))}</span></div>`:''}
           ${item.supplierCount?`<div class="ac-kv-row"><span class="ac-kv-key">Suppliers</span><span class="ac-kv-val">${escape([...item.raw.suppliers||[]].slice(0,5).join(', ')||'—')}</span></div>`:''}
           ${item.poOwners?.length?`<div class="ac-kv-row"><span class="ac-kv-key">PO Owner(s)</span><span class="ac-kv-val">${escape(item.poOwners.join(', '))}</span></div>`:''}
+          ${item.salesOrderCreatedAt?`<div class="ac-kv-row"><span class="ac-kv-key">Order Created</span><span class="ac-kv-val">${escape(fmtDateTime(item.salesOrderCreatedAt))}</span></div>`:(item.salesOrderCreatedDate?`<div class="ac-kv-row"><span class="ac-kv-key">Order Created</span><span class="ac-kv-val">${escape(fmtDate(item.salesOrderCreatedDate))}</span></div>`:'')}
+          ${item.lastModifiedDate?`<div class="ac-kv-row"><span class="ac-kv-key">Last Modified</span><span class="ac-kv-val">${escape(fmtDate(item.lastModifiedDate))}${item.lastModifiedBy?` <span style="color:#67839d">· by ${escape(item.lastModifiedBy)}</span>`:''}</span></div>`:''}
           ${item.relatedSords?.length?`<div class="ac-kv-row"><span class="ac-kv-key">Related SORDs</span><span class="ac-kv-val">${item.relatedSords.map(r=>`<span class="ac-related-chip">${escape(r)}</span>`).join(' ')}</span></div>`:''}
         </div>
       </div>
@@ -1463,12 +2315,28 @@ function finalizeOrder(order){
       ? '<div class="ac-empty">No pack builder detail found for this SORD.</div>'
       : `<div class="ac-pb-list">${item.packBuilders.map(pb=>{
           const stCls = acPbStageColor(pb.stage||pb.status||'');
-          return `<div class="ac-pb-row">
+          const pbUrl = (typeof window.buildSalesforcePbLink === 'function')
+            ? window.buildSalesforcePbLink(pb.pbId, pb.link && pb.link.endsWith && pb.link.endsWith('.pdf') ? '' : pb.link)
+            : '';
+          const pbNameHtml = pbUrl
+            ? `<a class="ac-pb-id pb-link" href="${escape(pbUrl)}" target="_blank" rel="noopener noreferrer" title="Open Pack Builder in Salesforce">${escape(pb.pb||'—')}</a>`
+            : `<span class="ac-pb-id">${escape(pb.pb||'—')}</span>`;
+          const pbIdHtml = pb.pbId
+            ? (pbUrl
+                ? `<a class="ac-pb-sfid pb-link" href="${escape(pbUrl)}" target="_blank" rel="noopener noreferrer" title="Open Pack Builder in Salesforce">${escape(pb.pbId)}</a>`
+                : `<span class="ac-pb-sfid">${escape(pb.pbId)}</span>`)
+            : '';
+          // Pre-kit stage chip. Click opens the stage menu; the menu pivots
+          // into the assignee picker or the complication-note popover as needed.
+          const pkKey = prekitKeyForPb(pb);
+          const prekitHtml = renderPrekitChip(pb, pkKey, { variant:'pb-row' });
+          return `<div class="ac-pb-row" data-prekit-row="${escape(pkKey)}">
             <div class="ac-pb-top">
-              <span class="ac-pb-id">${escape(pb.pb||'—')}</span>
-              ${pb.pbId?`<span class="ac-pb-sfid">${escape(pb.pbId)}</span>`:''}
+              ${pbNameHtml}
+              ${pbIdHtml}
               <span class="ac-pb-stage ${stCls}">${escape(pb.stage||pb.status||'—')}</span>
               ${pb.link?`<a class="ac-pb-link" href="${escape(pb.link)}" target="_blank">📄 PDF</a>`:'<span class="ac-pb-nopdf">No PDF</span>'}
+              ${prekitHtml}
             </div>
             <div class="ac-pb-meta">
               <span>${fmtInt(pb.qty)} kits</span>
@@ -1508,6 +2376,7 @@ function finalizeOrder(order){
                 ${po.estimatedShipDate?`<span>Est. Ship: <strong>${escape(fmtDate(po.estimatedShipDate))}</strong></span>`:''}
                 ${po.ihd?`<span>IHD: <strong>${escape(fmtDate(po.ihd))}</strong></span>`:''}
                 ${po.itemTotalCost?`<span>Item Cost: <strong>${fmtMoney(po.itemTotalCost)}</strong></span>`:''}
+                ${po.unitWeight?`<span>Unit Wt: <strong>${(+po.unitWeight).toFixed(2)} lb</strong>${po.totalWeight?` <span style="color:#67839d">· total ${(+po.totalWeight).toFixed(1)} lb</span>`:''}</span>`:''}
                 ${po.accountProductName?`<span>${escape(po.accountProductName)}</span>`:''}
                 ${imageUrl?`<span><button class="btn secondary btn-sm po-image-link" type="button" data-po-image="${escape(imageUrl)}" data-po-title="${escape(po.purchaseOrderName||'')} image">View image</button></span>`:''}
               </div>
@@ -1544,10 +2413,92 @@ function finalizeOrder(order){
         <div class="ac-fin-card"><div class="ac-fin-lbl">Bulk Products</div><div class="ac-fin-val">${fmtInt(item.totalBulkProducts)}</div></div>
       </div>`;
 
+    // ── Pre-Kit tab ───────────────────────────────────────────────────────────
+    // Per-SORD lifecycle view. PBs are grouped by stage (Ready → Assigned →
+    // Complication → Completed → Not Ready). Each row carries the stage chip
+    // (full menu) so transitions happen in-line. The summary bar shows a
+    // multi-segment breakdown across the five stages.
+    const _pkProgress = prekitProgressForItem(item);
+    const _pkPbs = item.packBuilders || [];
+    const _pkByStage = { unset:[], not_ready:[], ineligible:[], ready:[], assigned:[], complication:[], completed:[] };
+    _pkPbs.forEach(pb => {
+      const stage = getPrekitStage(pb);
+      (_pkByStage[stage] || _pkByStage.not_ready).push(pb);
+    });
+    const _pkStageOrder = ['ready','assigned','complication','completed','not_ready','unset','ineligible'];
+    const _pkRow = (pb) => {
+      const pkKey = prekitKeyForPb(pb);
+      const rec = getPrekitAssignment(pb);
+      const pbUrl = (typeof window.buildSalesforcePbLink === 'function')
+        ? window.buildSalesforcePbLink(pb.pbId, pb.link && pb.link.endsWith && pb.link.endsWith('.pdf') ? '' : pb.link)
+        : '';
+      const nameHtml = pbUrl
+        ? `<a class="pb-link" href="${escape(pbUrl)}" target="_blank" rel="noopener noreferrer">${escape(pb.pb||'—')}</a>`
+        : `<span>${escape(pb.pb||'—')}</span>`;
+      const assignedLine = rec && rec.assignee
+        ? `<span class="ac-pk-row-assignee"><span aria-hidden="true">👤</span> ${escape(rec.assignee)}</span>`
+        : '';
+      const stamp = rec && rec.updatedAt ? `<span class="ac-pk-when">${escape(fmtDate(rec.updatedAt))}</span>` : '';
+      const noteHtml = rec && rec.note && rec.stage === 'complication'
+        ? `<div class="ac-pk-row-note"><span aria-hidden="true">⚠</span> ${escape(rec.note)}</div>`
+        : '';
+      return `<div class="ac-pk-row" data-prekit-row="${escape(pkKey)}">
+        <div class="ac-pk-row-main">
+          <div class="ac-pk-row-name">${nameHtml}</div>
+          <div class="ac-pk-row-meta">
+            <span>${fmtInt(pb.qty)} kits · ${fmtInt(pb.units)} units</span>
+            ${pb.scheduledFor?`<span>Sched: <strong>${escape(pb.scheduledFor)}</strong></span>`:''}
+            ${assignedLine}
+            ${stamp}
+          </div>
+          ${noteHtml}
+        </div>
+        <div class="ac-pk-row-action">${renderPrekitChip(pb, pkKey, { variant:'pk-row' })}</div>
+      </div>`;
+    };
+    const _pkSegments = PREKIT_STAGES.map(s => {
+      const count = _pkByStage[s.id].length;
+      const pct = _pkPbs.length ? (count / _pkPbs.length) * 100 : 0;
+      return { ...s, count, pct };
+    });
+    const prekitHTML = !_pkPbs.length
+      ? '<div class="ac-empty">No pack builders to pre-kit on this SORD.</div>'
+      : `
+        <div class="ac-pk-summary">
+          <div class="ac-pk-summary-bar ac-pk-summary-bar-multi" aria-label="Pre-kit stage breakdown">
+            ${_pkSegments.map(seg => seg.count
+              ? `<span class="ac-pk-summary-seg prekit-stage-bg-${seg.id}" style="width:${seg.pct}%" title="${escape(seg.label)}: ${seg.count}"></span>`
+              : '').join('')}
+          </div>
+          <div class="ac-pk-summary-legend">
+            ${_pkSegments.map(seg => `<span class="ac-pk-summary-lg"><span class="ac-pk-summary-sw prekit-stage-bg-${seg.id}"></span>${escape(seg.short)} <strong>${seg.count}</strong></span>`).join('')}
+          </div>
+          <div class="ac-pk-summary-text">
+            <strong>${_pkProgress.assigned}</strong> of <strong>${_pkProgress.total}</strong> in flight
+            ${_pkByStage.complication.length ? ` · <span class="ac-pk-text-warn">⚠ ${_pkByStage.complication.length} complication${_pkByStage.complication.length===1?'':'s'}</span>` : ''}
+          </div>
+        </div>
+        ${_pkStageOrder.map(stageId => {
+          const list = _pkByStage[stageId];
+          if (!list.length) return '';
+          const sdef = PREKIT_STAGE_BY_ID[stageId];
+          return `
+            <div class="ac-pk-group ac-pk-group-${stageId}">
+              <div class="ac-pk-group-head">
+                <span class="ac-pk-group-dot prekit-stage-bg-${stageId}" aria-hidden="true">${sdef.icon}</span>
+                <span class="ac-pk-group-name">${escape(sdef.label)}</span>
+                <span class="ac-pk-group-count">${list.length} PB${list.length===1?'':'s'}</span>
+              </div>
+              ${list.map(pb => _pkRow(pb)).join('')}
+            </div>`;
+        }).join('')}
+      `;
+
     const tabs = [
       {id:'ov',  label:'Overview'},
       {id:'tl',  label:'Timeline'},
       {id:'pbs', label:`Pack Builders${item.pbCount?` (${item.pbCount})`:''}`, hidden: !hasPb},
+      {id:'pk',  label:`Pre-Kit (${prekitProgressForItem(item).assigned}/${prekitProgressForItem(item).total})`, hidden: !hasPb},
       {id:'pos', label:`POs (${item.poCount})`},
       {id:'ap',  label:`Products (${item.accountProducts?.length||0})`, hidden: !item.accountProducts?.length},
       {id:'fin', label:'Financials'},
@@ -1559,7 +2510,7 @@ function finalizeOrder(order){
       <div class="ac-dossier-tabs">${tabs.map(t=>`<div class="ac-dtab${activeDossierTab===t.id?' active':''}" data-key="${escJs(item.key)}" data-dtab="${t.id}" onclick="window.sordSwitchTab('${escJs(item.key)}','${t.id}')">${escape(t.label)}</div>`).join('')}</div>
       <div class="ac-dossier-body">
         ${tabs.map(t=>{
-          const body = t.id==='ov'?overviewHTML : t.id==='tl'?timelineHTML : t.id==='pbs'?pbHTML : t.id==='pos'?poHTML : t.id==='ap'?apHTML : finHTML;
+          const body = t.id==='ov'?overviewHTML : t.id==='tl'?timelineHTML : t.id==='pbs'?pbHTML : t.id==='pk'?prekitHTML : t.id==='pos'?poHTML : t.id==='ap'?apHTML : finHTML;
           return `<div class="ac-dtab-pane${activeDossierTab===t.id?' active':''}" id="ac-pane-${escJs(item.key)}-${t.id}">${body}</div>`;
         }).join('')}
       </div>
@@ -1902,6 +2853,151 @@ function finalizeOrder(order){
     renderAccordion();
   };
 
+  function clampWeight(v){
+    const n = +v;
+    if (!Number.isFinite(n)) return WEIGHT_FILTER_DEFAULT;
+    return Math.min(WEIGHT_FILTER_MAX, Math.max(WEIGHT_FILTER_MIN, Math.round(n*10)/10));
+  }
+
+  function syncWeightFilterUi(){
+    const wf = state.weightFilter;
+    if (els.weightSlider) els.weightSlider.value = String(wf.threshold);
+    if (els.weightInput)  els.weightInput.value  = String(wf.threshold);
+    document.querySelectorAll('#sordWeightFilter .sord-weight-mode').forEach(b=>{
+      b.classList.toggle('is-active', b.getAttribute('data-wmode') === wf.mode);
+    });
+    if (els.weightSummary){
+      if (wf.mode === 'off') {
+        els.weightSummary.textContent = 'Off — showing all SORDs';
+        els.weightSummary.classList.remove('is-active');
+      } else {
+        const label = wf.mode === 'full' ? 'Full coverage (100%)' : 'Partial coverage (75–99%)';
+        els.weightSummary.textContent = `${label} · POs at-or-under ${wf.threshold} lb`;
+        els.weightSummary.classList.add('is-active');
+      }
+    }
+    if (els.weightFilterRoot) els.weightFilterRoot.classList.toggle('is-active', wf.mode !== 'off');
+  }
+
+  function bindWeightFilter(){
+    if (!els.weightFilterRoot) return;
+    // Mode pills
+    els.weightFilterRoot.addEventListener('click', (e)=>{
+      const btn = e.target.closest('.sord-weight-mode');
+      if (!btn) return;
+      const mode = btn.getAttribute('data-wmode');
+      if (mode !== 'off' && mode !== 'full' && mode !== 'partial') return;
+      state.weightFilter.mode = mode;
+      saveWeightFilter();
+      syncWeightFilterUi();
+      renderAccordion();
+    });
+    // Slider drag — keep numeric input in sync, re-filter live
+    els.weightSlider?.addEventListener('input', ()=>{
+      const v = clampWeight(els.weightSlider.value);
+      state.weightFilter.threshold = v;
+      if (els.weightInput) els.weightInput.value = String(v);
+      saveWeightFilter();
+      syncWeightFilterUi();
+      // Only re-render the list when an active mode is on; otherwise just update the summary
+      if (state.weightFilter.mode !== 'off') renderAccordion();
+    });
+    // Number input — same path, plus snap slider to entered value on commit
+    els.weightInput?.addEventListener('input', ()=>{
+      const v = clampWeight(els.weightInput.value);
+      state.weightFilter.threshold = v;
+      if (els.weightSlider) els.weightSlider.value = String(v);
+      saveWeightFilter();
+      syncWeightFilterUi();
+      if (state.weightFilter.mode !== 'off') renderAccordion();
+    });
+    syncWeightFilterUi();
+  }
+
+  function bindPrekitBoard(){
+    if (!els.prekitBoardPanel) return;
+    // Filter chips
+    els.prekitBoardFilters?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-prekit-filter]');
+      if (!btn) return;
+      state.prekitBoard.stageFilter = btn.getAttribute('data-prekit-filter') || 'active';
+      renderPrekitBoard();
+    });
+    // Search
+    let _searchT = null;
+    els.prekitBoardSearch?.addEventListener('input', () => {
+      clearTimeout(_searchT);
+      _searchT = setTimeout(() => {
+        state.prekitBoard.search = els.prekitBoardSearch.value || '';
+        renderPrekitBoard();
+      }, 80);
+    });
+    // Assignee filter
+    els.prekitBoardAssignee?.addEventListener('change', () => {
+      state.prekitBoard.assignee = els.prekitBoardAssignee.value || '';
+      renderPrekitBoard();
+    });
+    // Sort selector
+    els.prekitBoardSort?.addEventListener('change', () => {
+      const v = els.prekitBoardSort.value || 'default';
+      state.prekitBoard.sortBy = v;
+      // Sensible default direction per sort. Activity, created, units, kits
+      // are most useful descending (newest/biggest first); IHD ascending
+      // (earliest deadline first); SORD number ascending (lexical).
+      const desc = ['activity','created','units','kits'];
+      state.prekitBoard.sortDir = desc.includes(v) ? 'desc' : 'asc';
+      _syncSortDirBtn();
+      renderPrekitBoard();
+    });
+    // Sort direction toggle
+    function _syncSortDirBtn(){
+      if (!els.prekitBoardSortDir) return;
+      const dir = state.prekitBoard.sortDir || 'desc';
+      els.prekitBoardSortDir.textContent = dir === 'asc' ? '↑' : '↓';
+      els.prekitBoardSortDir.setAttribute('aria-label',
+        'Sort direction: ' + (dir === 'asc' ? 'ascending' : 'descending'));
+      // Smart-priority mode doesn't honor direction, so dim the toggle there
+      const isDefault = (state.prekitBoard.sortBy || 'default') === 'default';
+      els.prekitBoardSortDir.disabled = isDefault;
+      els.prekitBoardSortDir.style.opacity = isDefault ? '0.35' : '';
+    }
+    els.prekitBoardSortDir?.addEventListener('click', () => {
+      if ((state.prekitBoard.sortBy || 'default') === 'default') return;
+      state.prekitBoard.sortDir = state.prekitBoard.sortDir === 'asc' ? 'desc' : 'asc';
+      _syncSortDirBtn();
+      renderPrekitBoard();
+    });
+    // Initialize control state from persisted board state
+    if (els.prekitBoardSort) els.prekitBoardSort.value = state.prekitBoard.sortBy || 'default';
+    _syncSortDirBtn();
+    // Collapse / expand
+    els.prekitBoardToggle?.addEventListener('click', () => {
+      state.prekitBoard.open = !state.prekitBoard.open;
+      els.prekitBoardBody.style.display = state.prekitBoard.open ? '' : 'none';
+      els.prekitBoardToggle.textContent = state.prekitBoard.open ? 'Collapse' : 'Expand';
+      els.prekitBoardToggle.setAttribute('aria-expanded', String(state.prekitBoard.open));
+      els.prekitBoardPanel.classList.toggle('is-collapsed', !state.prekitBoard.open);
+    });
+    // Jump to SORD from a board row
+    els.prekitBoardList?.addEventListener('click', (e) => {
+      const jump = e.target.closest('[data-prekit-jump]');
+      if (!jump) return;
+      e.preventDefault();
+      const key = jump.getAttribute('data-prekit-jump');
+      if (!key) return;
+      state.expandedKey = key;
+      // Open the Pre-Kit tab on the target SORD by default
+      state.expandedTabMap = state.expandedTabMap || {};
+      state.expandedTabMap[key] = 'pk';
+      renderAccordion();
+      // Scroll to the expanded row
+      setTimeout(() => {
+        const el = document.getElementById('sord-acc-' + key);
+        if (el) el.scrollIntoView({ behavior:'smooth', block:'start' });
+      }, 30);
+    });
+  }
+
   function bind(){
     els.importBtn.addEventListener('click', importFiles);
     bindPriorityBuilder();
@@ -1917,8 +3013,13 @@ function finalizeOrder(order){
       if(els.riskFilter) els.riskFilter.value='';
       if(els.confirmedFilter) els.confirmedFilter.value='';
       state.activeTypeFilter = 'all';
+      state.weightFilter = { mode: 'off', threshold: WEIGHT_FILTER_DEFAULT };
+      saveWeightFilter();
+      syncWeightFilterUi();
       renderAccordion();
     });
+    bindWeightFilter();
+    bindPrekitBoard();
     if(els.addOwnerRowBtn){
       els.addOwnerRowBtn.addEventListener('click', ()=>{ syncOwnerMapFromUi(); state.ownerMap.rows.push(emptyOwnerRow()); renderOwnerMapTable(); });
       els.saveOwnerMapBtn.addEventListener('click', ()=>{ syncOwnerMapFromUi(); saveOwnerMap(); renderOwnerMapTable(); rebuildAndRender(); setStatus('Owner mapping saved.'); });
@@ -1935,6 +3036,109 @@ function finalizeOrder(order){
     document.getElementById('sordImageCloseBtn')?.addEventListener('click', closeImagePreview);
     document.getElementById('sordImageOverlay')?.addEventListener('click', (event)=>{
       if(event.target && event.target.id === 'sordImageOverlay') closeImagePreview();
+    });
+
+    // Pre-kit delegation: stage menu / picker / note popover / clear
+    document.addEventListener('click', (event)=>{
+      const stageMenuBtn = event.target.closest('[data-prekit-stage-menu]');
+      const setStageBtn  = event.target.closest('[data-prekit-set-stage]');
+      const reassignBtn  = event.target.closest('[data-prekit-reassign]');
+      const clearBtn     = event.target.closest('[data-prekit-clear]');
+      const assignBtn    = event.target.closest('[data-prekit-assign]');
+      const pickBtn      = event.target.closest('[data-prekit-pick]');
+      if (stageMenuBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        openPrekitStageMenu(stageMenuBtn);
+        return;
+      }
+      if (setStageBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        const key = setStageBtn.getAttribute('data-prekit-row-key');
+        const stage = setStageBtn.getAttribute('data-prekit-set-stage');
+        const pb = findPbByPrekitKey(key);
+        if (!pb) { closePrekitStageMenu(); return; }
+        if (stage === 'assigned') {
+          // Open the existing assignee picker, anchored to the stage menu.
+          const anchor = setStageBtn;
+          const rect = anchor.getBoundingClientRect();
+          closePrekitStageMenu();
+          // Build a virtual anchor element by passing the chip itself instead.
+          const chip = document.querySelector(`[data-prekit-stage-menu="${CSS.escape(key)}"]`);
+          // Reuse openPrekitPicker with a sentinel button (carries data-prekit-assign).
+          const sentinel = document.createElement('button');
+          sentinel.setAttribute('data-prekit-assign', key);
+          sentinel.getBoundingClientRect = () => chip ? chip.getBoundingClientRect() : rect;
+          openPrekitPicker(sentinel);
+        } else if (stage === 'complication') {
+          const rec = getPrekitAssignment(pb);
+          const chip = document.querySelector(`[data-prekit-stage-menu="${CSS.escape(key)}"]`);
+          const rect = chip ? chip.getBoundingClientRect() : setStageBtn.getBoundingClientRect();
+          closePrekitStageMenu();
+          openPrekitNotePopover(key, rect, rec && rec.note || '');
+        } else {
+          setPrekitStage(pb, stage);
+          closePrekitStageMenu();
+          refreshDossierForKey(getItemKeyForPb(pb));
+          if (typeof renderPrekitBoard === 'function') renderPrekitBoard();
+        }
+        return;
+      }
+      if (reassignBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        const key = reassignBtn.getAttribute('data-prekit-reassign');
+        const chip = document.querySelector(`[data-prekit-stage-menu="${CSS.escape(key)}"]`);
+        const rect = chip ? chip.getBoundingClientRect() : reassignBtn.getBoundingClientRect();
+        closePrekitStageMenu();
+        const sentinel = document.createElement('button');
+        sentinel.setAttribute('data-prekit-assign', key);
+        sentinel.getBoundingClientRect = () => rect;
+        openPrekitPicker(sentinel);
+        return;
+      }
+      if (clearBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        const key = clearBtn.getAttribute('data-prekit-clear');
+        const pb = findPbByPrekitKey(key);
+        if (pb) {
+          // Clear means "remove any deliberate stage" — back to Unset (the
+          // blank default), not back to Not Ready.
+          setPrekitStage(pb, 'unset');
+          refreshDossierForKey(getItemKeyForPb(pb));
+          if (typeof renderPrekitBoard === 'function') renderPrekitBoard();
+        }
+        return;
+      }
+      if (pickBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        const key = pickBtn.getAttribute('data-prekit-row-key');
+        const name = pickBtn.getAttribute('data-prekit-pick');
+        closePrekitPicker();
+        const pb = findPbByPrekitKey(key);
+        if (pb) {
+          setPrekitStage(pb, 'assigned', { assignee: name });
+          refreshDossierForKey(getItemKeyForPb(pb));
+          if (typeof renderPrekitBoard === 'function') renderPrekitBoard();
+        }
+        return;
+      }
+      if (assignBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        openPrekitPicker(assignBtn);
+        return;
+      }
+      // Click outside any popover → dismiss
+      if (!event.target.closest('.prekit-picker')) closePrekitPicker();
+      if (!event.target.closest('.prekit-stage-menu') && !event.target.closest('[data-prekit-stage-menu]')) closePrekitStageMenu();
+      if (!event.target.closest('.prekit-note-pop')) closePrekitNotePopover();
+    });
+    document.addEventListener('keydown', (event)=>{
+      if (event.key === 'Escape') { closePrekitPicker(); closePrekitStageMenu(); closePrekitNotePopover(); }
     });
     // Type pill delegation (works for both static HTML pills and any dynamically added ones)
     els.page?.addEventListener('click', (event)=>{

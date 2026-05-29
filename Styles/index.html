@@ -1,0 +1,3294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Warehouse Operations Hub</title>
+<link rel="stylesheet" href="Styles/base.css">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="Styles/layout.css">
+<link rel="stylesheet" href="Styles/attendance.css">
+<link rel="stylesheet" href="Styles/errors.css">
+<link rel="stylesheet" href="Styles/employees.css">
+<link rel="stylesheet" href="Styles/calendar.css">
+<link rel="stylesheet" href="Styles/queue.css">
+<link rel="stylesheet" href="Styles/assembly.css">
+<link rel="stylesheet" href="Styles/workflow.css">
+<link rel="stylesheet" href="Styles/sord.css">
+<link rel="stylesheet" href="Styles/policy.css">
+<link rel="stylesheet" href="Styles/history.css">
+<link rel="stylesheet" href="Styles/productivity.css">
+<link rel="stylesheet" href="fulfillment-scan-prototype.css">
+<link rel="stylesheet" href="Styles/cycle-count.css">
+<link rel="stylesheet" href="risk-row.css">
+  <link rel="icon" type="image/png" href="assets/houston-control-logo-left.png">
+</head>
+<body>
+
+<!-- ── Houston Control Login Overlay ───────────────────────── -->
+<div id="hcLoginOverlay" class="hc-login-overlay">
+  <div class="hc-login-card">
+    <img src="assets/houston-control-logo-left.png" alt="Houston Control" class="hc-login-logo">
+    <h1 class="hc-login-title">Houston Control</h1>
+    <p class="hc-login-sub">Warehouse Operations Hub</p>
+    <button id="hcGoogleLoginBtn" class="hc-google-btn">
+      <svg width="20" height="20" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.36-8.16 2.36-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+        <path fill="none" d="M0 0h48v48H0z"/>
+      </svg>
+      Sign in with Google
+    </button>
+    <p class="hc-login-notice">Access is by invitation only.<br>Contact your manager if you need access.</p>
+  </div>
+</div>
+
+<!-- ── User display chip (shown when logged in) ─────────────── -->
+<div id="hcUserDisplay" class="hc-user-chip" hidden role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="false"></div>
+
+<!-- ── Profile popover (opened by clicking the chip) ────────── -->
+<div id="hcProfilePopover" hidden role="dialog" aria-modal="false" aria-labelledby="hcProfileTitle">
+  <p class="profile-eyebrow" id="hcProfileTitle">Your profile</p>
+  <p class="profile-email" id="hcProfileEmail"></p>
+  <div class="profile-field">
+    <label for="hcProfileName">Display name</label>
+    <input id="hcProfileName" type="text" maxlength="80" placeholder="e.g. Yordani Hernandez" autocomplete="name" />
+  </div>
+  <p class="profile-status" id="hcProfileStatus"></p>
+  <div class="profile-row-btns">
+    <button class="profile-signout-btn" id="hcProfileSignOut" type="button">Sign out</button>
+    <button class="profile-save-btn" id="hcProfileSave" type="button">Save</button>
+  </div>
+</div>
+
+<!-- ── Admin Notification Banner ─────────────────────────── -->
+<div id="hcNotifBanner" hidden style="position:fixed;top:0;left:0;right:0;z-index:9998;background:linear-gradient(90deg,#f5a623,#e8960f);color:#fff;padding:12px 20px;display:flex;align-items:center;gap:12px;font-size:14px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.18);">
+  <span style="font-size:18px;">⚡</span>
+  <span id="hcNotifText" style="flex:1;"></span>
+  <button id="hcNotifDismiss" style="background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.4);color:#fff;padding:5px 14px;border-radius:8px;cursor:pointer;font-weight:800;font-size:13px;">Dismiss</button>
+</div>
+<div class="app" data-app-shell="warehouse-hub">
+  <!-- Mobile overlay -->
+  <div class="sidebar-overlay" id="sidebarOverlay" aria-hidden="true"></div>
+
+  <aside class="sidebar" id="appSidebar" aria-label="Main navigation">
+
+    <!-- Brand -->
+    <div class="sidebar-brand">
+      <img class="sidebar-logo" src="assets/houston-control-logo-left.png" alt="Houston Control">
+      <div class="sidebar-brand-text">
+        <span class="sidebar-brand-name">Houston Control</span>
+        <span class="sidebar-brand-sub">Warehouse Operations</span>
+      </div>
+      <button class="sidebar-close-btn" id="sidebarCloseBtn" type="button" aria-label="Close menu">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 4l10 10M14 4L4 14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <!-- Collapse toggle -->
+    <button class="sidebar-rail-toggle" id="sidebarRailToggle" type="button" aria-label="Collapse sidebar">
+      <svg class="rail-toggle-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+
+    <!-- Scrollable nav -->
+    <nav class="sidebar-nav" aria-label="Modules">
+
+      <!-- Overview group -->
+      <div class="nav-group" data-group="overview">
+        <button class="nav-group-header" type="button" aria-expanded="true" aria-controls="navg-overview">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/><path d="M10 6v4l2.5 2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span class="nav-group-label">Overview</span>
+          <svg class="nav-group-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="nav-list" id="navg-overview">
+          <button class="nav-btn active" data-page="homePage" title="Mission Control">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M3 9.5L10 3l7 6.5V17a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+            <span class="nav-label">Mission Control</span>
+          </button>
+          <button class="nav-btn" data-page="importHubPage" title="Import Hub">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M10 3v10m-4-4l4 4 4-4M4 17h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="nav-label">Import Hub</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Floor Operations group -->
+      <div class="nav-group" data-group="floor">
+        <button class="nav-group-header" type="button" aria-expanded="true" aria-controls="navg-floor">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="none"><rect x="2" y="12" width="16" height="5" rx="1.5" stroke="currentColor" stroke-width="1.6"/><path d="M5 12V7m5 5V5m5 7V8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span class="nav-group-label">Floor Ops</span>
+          <svg class="nav-group-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="nav-list" id="navg-floor">
+          <button class="nav-btn" data-page="attendancePage" title="Attendance">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3" stroke="currentColor" stroke-width="1.6"/><path d="M3 17c0-3.314 3.134-6 7-6s7 2.686 7 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="nav-label">Attendance</span>
+          </button>
+          <button class="nav-btn" data-page="workflowInboundPage" title="QA Inbound">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><rect x="3" y="8" width="14" height="9" rx="1.5" stroke="currentColor" stroke-width="1.6"/><path d="M7 8V6a3 3 0 016 0v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="nav-label">QA Inbound</span>
+          </button>
+          <button class="nav-btn" data-page="inboundFlightTrackerPage" title="Inbound PO Flight Tracker">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M3 10h14M11 4l6 6-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="3" y="6" width="4" height="8" rx="1" stroke="currentColor" stroke-width="1.6"/></svg>
+            <span class="nav-label">Inbound Flight Tracker</span>
+          </button>
+          <button class="nav-btn" data-page="fulfillmentScanPage" title="Fulfillment Scan-Out">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M4 6.5h12v8a2 2 0 01-2 2H6a2 2 0 01-2-2v-8z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M7 10h6M8 13h4M6 6.5l1.5-3h5L14 6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="nav-label">Fulfillment Scan-Out</span>
+          </button>
+          <button class="nav-btn" data-page="returnsPage" title="Returns">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M4 10h9a4 4 0 010 8H4m0-8l3-3M4 10l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="nav-label">Returns</span>
+          </button>
+          <button class="nav-btn" data-page="cycleCountPage" title="Cycle Count">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M4 5h12M4 9h8M4 13h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="15" cy="14" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M13.5 14l1 1 2-2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="nav-label">Cycle Count</span>
+          </button>
+          <button class="nav-btn" data-page="errorsPage" title="Error Log">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M10 3L2 17h16L10 3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 9v4M10 15v.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="nav-label">Error Log</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Assembly group -->
+      <div class="nav-group" data-group="assembly">
+        <button class="nav-group-header" type="button" aria-expanded="true" aria-controls="navg-assembly">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="none"><rect x="3" y="11" width="5" height="6" rx="1" stroke="currentColor" stroke-width="1.6"/><rect x="8" y="7" width="5" height="10" rx="1" stroke="currentColor" stroke-width="1.6"/><rect x="13" y="3" width="4" height="14" rx="1" stroke="currentColor" stroke-width="1.6"/></svg>
+          <span class="nav-group-label">Assembly</span>
+          <svg class="nav-group-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="nav-list" id="navg-assembly">
+          <button class="nav-btn" data-page="assemblyPage" title="Assembly Planner">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><rect x="3" y="11" width="5" height="6" rx="1" stroke="currentColor" stroke-width="1.6"/><rect x="8" y="7" width="5" height="10" rx="1" stroke="currentColor" stroke-width="1.6"/><rect x="13" y="3" width="4" height="14" rx="1" stroke="currentColor" stroke-width="1.6"/></svg>
+            <span class="nav-label">Assembly Planner</span>
+          </button>
+          <button class="nav-btn" data-page="queuePage" title="Pack Builder Queue">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M4 6h12M4 10h8M4 14h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="nav-label">Pack Builder Queue</span>
+          </button>
+          <button class="nav-btn" data-page="assemblyFlightTrackerPage" title="Assembly Flight Tracker">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M3 10h14M11 4l6 6-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 5v10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="nav-label">Flight Tracker</span>
+            <span id="ftNavBadge" hidden style="margin-left:auto;min-width:18px;height:18px;border-radius:999px;background:#e74c3c;color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;padding:0 5px;flex-shrink:0;"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Intelligence + Management merged -->
+      <div class="nav-group" data-group="ops">
+        <button class="nav-group-header" type="button" aria-expanded="true" aria-controls="navg-ops">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="none"><path d="M4 15V9m4 6V5m4 10v-7m4 7V3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M3 17h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span class="nav-group-label">Management</span>
+          <svg class="nav-group-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="nav-list" id="navg-ops">
+          <button class="nav-btn" data-page="sordPage" title="Daily Tools Dossier">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/><path d="M10 7v3l2 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="nav-label">Daily Tools Dossier</span>
+          </button>
+          <button class="nav-btn" data-page="calendarPage" title="Calendar">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M3 8h14M7 3v2M13 3v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="nav-label">Calendar</span>
+          </button>
+          <button class="nav-btn" data-page="productivityPage" title="Productivity">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M4 15V9m4 6V5m4 10v-7m4 7V3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M3 17h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="nav-label">Productivity</span>
+          </button>
+          <button class="nav-btn" data-page="policyPage" title="Policy &amp; SOPs">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><rect x="4" y="2" width="12" height="16" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M7 7h6M7 10h6M7 13h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="nav-label">Policy &amp; SOPs</span>
+          </button>
+          <button class="nav-btn" data-page="historyPage" title="History Log">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M10 17A7 7 0 1 0 3 10h1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M3 10 1.5 8M3 10l1.5-2M10 7v3l2 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="nav-label">History Log</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Help — pinned at bottom of scroll -->
+      <div class="nav-group nav-group--utility">
+        <div class="nav-list">
+          <button class="nav-btn" data-page="helpPage" title="Help &amp; Guide">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.6"/><path d="M10 13v.5M10 7a2 2 0 011.732 3C11.268 10.5 10 11 10 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="nav-label">Help &amp; Guide</span>
+          </button>
+          <button class="nav-btn" data-page="settingsPage" title="Settings">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.5" stroke="currentColor" stroke-width="1.6"/><path d="M10 3v1.5M10 15.5V17M3 10h1.5M15.5 10H17M4.93 4.93l1.06 1.06M14.01 14.01l1.06 1.06M4.93 15.07l1.06-1.06M14.01 5.99l1.06-1.06" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="nav-label">Settings</span>
+          </button>
+        </div>
+      </div>
+
+    </nav>
+
+    <!-- Footer -->
+    <div class="sidebar-footer">
+      <div class="sidebar-footer-label">Houston Control</div>
+      <button id="hcLogoutBtn" class="hc-logout-btn" type="button" onclick="(function(){localStorage.removeItem('hcAuthUser');localStorage.removeItem('qaWorkflowCurrentUserV2');window.location.href='login.html';})()">Sign Out</button>
+    </div>
+
+  </aside>
+
+  <main class="main">
+
+    <!-- Mobile top bar -->
+    <div class="mobile-topbar">
+      <button class="mobile-menu-btn" id="mobileMenuBtn" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="appSidebar">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M3 6h16M3 11h16M3 16h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <img class="mobile-logo" src="assets/houston-control-logo-left.png" alt="Houston Control">
+      <span class="mobile-title">Houston Control</span>
+    </div>
+
+    <!-- Home -->
+    <!-- ═══════════════════════════════════════════════════════════
+         MISSION CONTROL — combined brief (Daily Brief merged in)
+         ═══════════════════════════════════════════════════════════ -->
+    <section id="homePage" class="page active">
+      <div class="brief-shell">
+
+        <!-- Masthead -->
+        <header class="brief-masthead">
+          <div class="brief-masthead-meta">
+            <span class="brief-eyebrow">Mission Control</span>
+            <span class="brief-masthead-dot">·</span>
+            <span class="brief-masthead-date" id="briefMastheadDate">—</span>
+          </div>
+          <h1 class="brief-masthead-title">Houston Control</h1>
+          <div class="brief-masthead-row">
+            <p class="brief-masthead-sub">The daily warehouse brief — people, inbound, assembly, exceptions, and system freshness.</p>
+            <div class="brief-toolbar">
+              <button class="btn secondary" id="exportSnapshotBtn" type="button">Export</button>
+              <button class="btn secondary" id="printSnapshotBtn" type="button">Print</button>
+            </div>
+          </div>
+        </header>
+
+        <!-- Alert banner ribbon -->
+        <div id="homeAlertBanner" class="home-alert-banner brief-alert-banner" hidden></div>
+
+        <!-- ── TOP STORY: Revenue (always default; CSS-overridable for critical alerts) ── -->
+        <section class="brief-top-story" id="revTrackerPanel">
+          <div class="brief-top-story-grid">
+
+            <!-- Lede: revenue narrative -->
+            <article class="brief-lede">
+              <div class="brief-eyebrow brief-eyebrow-warning">Top story · Pacing</div>
+              <h2 class="brief-headline">Month-to-date revenue against goal</h2>
+
+              <div class="rev-total-row brief-rev-row">
+                <span class="rev-grand-total" id="revGrandTotal">$0.00</span>
+                <span class="rev-pct-badge" id="revPctDisplay">—</span>
+              </div>
+              <div class="brief-rev-meta">
+                <span class="rev-goal-display">Goal: <strong id="revGoalDisplay">No goal set</strong></span>
+                <span class="rev-remaining" id="revRemainingDisplay">—</span>
+              </div>
+
+              <div class="rev-progress-bar brief-rev-bar" id="revProgressBar">
+                <div class="rev-progress-fill" id="revProgressFill" style="width:0%"></div>
+              </div>
+
+              <div class="rev-breakdown brief-rev-breakdown">
+                <div class="rev-line" id="revImportedLine">No monthly revenue report imported yet.</div>
+                <div class="rev-line rev-line-asm" id="revAssemblyLine">+ $0.00 from 0 assembly-completed SORDs</div>
+              </div>
+
+              <div class="rev-import-meta brief-rev-import-meta" id="revImportMeta">Import a monthly revenue estimate report via the Import Hub.</div>
+
+              <details class="brief-rev-details">
+                <summary>Assembly-completed SORDs not yet in report</summary>
+                <div id="revAssemblyDetail"><p class="rev-empty">No assembly-completed SORDs to add yet.</p></div>
+              </details>
+
+              <div class="brief-goal-form">
+                <input id="revGoalInput" type="text" placeholder="Set monthly goal e.g. 2500000" class="rev-goal-input" />
+                <button id="revSaveGoalBtn" class="btn secondary" type="button">Set Goal</button>
+              </div>
+            </article>
+
+            <!-- At a glance: 7 health cards as editorial table -->
+            <aside class="brief-glance">
+              <div class="brief-eyebrow">At a glance</div>
+              <div class="brief-glance-list">
+                <article class="mc-health-card mc-clickable-card brief-glance-row" id="mcAttendanceHealthCard" data-home-jump="attendancePage" role="button" tabindex="0"><span class="mc-label">Attendance</span><strong id="mcAttendanceHealth">—</strong><p id="mcAttendanceHealthSub">No data</p></article>
+                <article class="mc-health-card mc-clickable-card brief-glance-row" id="mcInboundHealthCard" data-home-jump="workflowInboundPage" role="button" tabindex="0"><span class="mc-label">Inbound</span><strong id="mcInboundHealth">—</strong><p id="mcInboundHealthSub">No data</p></article>
+                <article class="mc-health-card mc-clickable-card brief-glance-row" id="mcAssemblyHealthCard" data-home-jump="assemblyPage" role="button" tabindex="0"><span class="mc-label">Assembly</span><strong id="mcAssemblyHealth">—</strong><p id="mcAssemblyHealthSub">No data</p></article>
+                <article class="mc-health-card mc-clickable-card brief-glance-row" id="mcIssueHealthCard" data-home-jump="errorsPage" role="button" tabindex="0"><span class="mc-label">Issues</span><strong id="mcIssueHealth">—</strong><p id="mcIssueHealthSub">No data</p></article>
+                <article class="mc-health-card mc-clickable-card brief-glance-row" id="mcDataFreshnessCard" data-home-jump="importHubPage" role="button" tabindex="0"><span class="mc-label">Data freshness</span><strong id="mcDataFreshness">—</strong><p id="mcDataFreshnessSub">No data</p></article>
+                <article class="mc-health-card mc-clickable-card brief-glance-row" id="mcTodayOutputCard" data-home-jump="homePage" role="button" tabindex="0"><span class="mc-label">Today's output</span><strong id="mcTodayOutput">—</strong><p id="mcTodayOutputSub">No data</p></article>
+                <article class="mc-health-card mc-clickable-card brief-glance-row" id="mcMonthRevenueCard" role="button" tabindex="0" onclick="document.getElementById('revTrackerPanel').scrollIntoView({behavior:'smooth'})"><span class="mc-label">Month revenue</span><strong id="mcMonthRevenue">—</strong><p id="mcMonthRevenueSub">No goal set</p></article>
+              </div>
+            </aside>
+
+          </div>
+        </section>
+
+        <!-- ── FLOOR STATUS (merged Floor Now + Today's Execution) ── -->
+        <section class="brief-section">
+          <div class="brief-section-head brief-section-head-row">
+            <div>
+              <div class="brief-eyebrow">Floor status</div>
+              <h2 class="brief-section-title">Live department summary</h2>
+            </div>
+            <div id="huddleAttendance" class="mc-mini-list"></div>
+          </div>
+          <div class="floor-status-grid" id="huddleFloorNow"></div>
+          <div id="huddleTodayExec" class="floor-status-note"></div>
+        </section>
+
+        <!-- ── NEEDS ATTENTION: Priority radar as editorial story columns ── -->
+        <section class="brief-section">
+          <div class="brief-section-head">
+            <div class="brief-eyebrow brief-eyebrow-danger">Needs attention</div>
+            <h2 class="brief-section-title">Priority radar</h2>
+          </div>
+          <div class="mc-list brief-priority" id="mcPriorityRadar"></div>
+        </section>
+
+        <!-- ── DEPARTMENT REPORT + CALENDAR PRESSURE ── -->
+        <section class="brief-section brief-two-col">
+          <div class="brief-col">
+            <div class="brief-section-head">
+              <div class="brief-eyebrow">Department report</div>
+              <h2 class="brief-section-title">Floor-wide status</h2>
+            </div>
+            <div class="mc-radar-grid brief-dept-list" id="mcDeptRadar"></div>
+          </div>
+          <div class="brief-col brief-col-divided">
+            <div class="brief-section-head">
+              <div class="brief-eyebrow">Calendar · the day ahead</div>
+              <h2 class="brief-section-title">Time-sensitive pressure</h2>
+            </div>
+            <div class="mc-list brief-calendar" id="mcUrgencyRail"></div>
+          </div>
+        </section>
+
+        <!-- ── EXCEPTIONS + TIMELINE ── -->
+        <section class="brief-section brief-two-col">
+          <div class="brief-col">
+            <div class="brief-section-head">
+              <div class="brief-eyebrow">Exception center</div>
+              <h2 class="brief-section-title">Pressure points</h2>
+            </div>
+            <div class="mc-exception-grid brief-exceptions" id="mcExceptionCenter"></div>
+          </div>
+          <div class="brief-col brief-col-divided">
+            <div class="brief-section-head">
+              <div class="brief-eyebrow">Timeline · PO traceability</div>
+              <h2 class="brief-section-title">Edit and trace activity</h2>
+            </div>
+            <div class="mc-timeline-list brief-timeline" id="mcTimelinePulse"></div>
+          </div>
+        </section>
+
+        <!-- ── INCOMING POTENTIAL (merged from Daily Brief) ── -->
+        <section class="brief-section">
+          <div class="brief-section-head">
+            <div class="brief-eyebrow">Incoming potential</div>
+            <h2 class="brief-section-title">Likely arrivals — not guaranteed</h2>
+          </div>
+          <div class="huddle-incoming-grid brief-incoming" id="huddleIncoming"></div>
+        </section>
+
+        <!-- ── RECENT CHANGES ── -->
+        <section class="brief-section">
+          <div class="brief-section-head">
+            <div class="brief-eyebrow">Recent changes</div>
+            <h2 class="brief-section-title">Policies, imports, and system updates</h2>
+          </div>
+          <div class="mc-list brief-recent" id="mcRecentChanges"></div>
+        </section>
+
+        <!-- ── SORD SNAPSHOT HISTORY + CARRYOVER (merged from Daily Brief) ── -->
+        <section class="brief-section brief-two-col">
+          <div class="brief-col">
+            <div class="brief-section-head">
+              <div class="brief-eyebrow">Status snapshot history</div>
+              <h2 class="brief-section-title">Daily SORD state by date</h2>
+            </div>
+            <div id="huddleSnapshotPanel"></div>
+          </div>
+          <div class="brief-col brief-col-divided">
+            <div class="brief-section-head">
+              <div class="brief-eyebrow">Carryover</div>
+              <h2 class="brief-section-title">Open items from yesterday</h2>
+            </div>
+            <div id="meetingHubCarryover"></div>
+          </div>
+        </section>
+
+        <!-- ── JUMP TO ── -->
+        <section class="brief-section brief-jump">
+          <div class="brief-section-head">
+            <div class="brief-eyebrow">Jump to</div>
+          </div>
+          <div class="mc-actions brief-actions" id="mcQuickActions">
+            <button class="btn" data-home-jump="importHubPage" type="button">Import Reports</button>
+            <button class="btn secondary" data-home-jump="attendancePage" type="button">Open Attendance</button>
+            <button class="btn secondary" data-home-jump="workflowInboundPage" type="button">Open Inbound</button>
+            <button class="btn secondary" data-home-jump="assemblyPage" type="button">Open Assembly</button>
+            <button class="btn secondary" data-home-jump="errorsPage" type="button">Open Errors</button>
+            <button class="btn secondary" data-home-jump="policyPage" type="button">Open Policies</button>
+            <button class="btn secondary" data-home-jump="sordPage" type="button">Open SORD Summary</button>
+            <button class="btn secondary" data-home-jump="calendarPage" type="button">Open Calendar</button>
+          </div>
+        </section>
+
+      </div>
+    </section>
+    <script>
+      (function(){
+        try{
+          var el=document.getElementById('briefMastheadDate');
+          if(!el) return;
+          var d=new Date();
+          var opts={weekday:'long',year:'numeric',month:'long',day:'numeric'};
+          el.textContent=d.toLocaleDateString(undefined,opts);
+        }catch(e){}
+      })();
+
+      // Top story eyebrow: stays "Pacing" by default; swaps to a critical
+      // label when the home alert banner contains overdue / stale / coverage
+      // signals. Mirrors the same triggers script.js uses for the banner.
+      (function(){
+        try{
+          var banner=document.getElementById('homeAlertBanner');
+          var lede=document.querySelector('#homePage .brief-lede');
+          if(!banner||!lede) return;
+          var eyebrow=lede.querySelector('.brief-eyebrow');
+          var headline=lede.querySelector('.brief-headline');
+          if(!eyebrow||!headline) return;
+          var defaults={eyebrowText:eyebrow.textContent,eyebrowClass:'brief-eyebrow-warning',headlineText:headline.textContent};
+          var sync=function(){
+            var html=(banner.innerHTML||'').toLowerCase();
+            // Critical = overdue, attendance gap, or stale data
+            var critical=html.indexOf('overdue')>-1||html.indexOf('attendance gaps')>-1||html.indexOf('stale')>-1;
+            eyebrow.classList.remove('brief-eyebrow-warning','brief-eyebrow-danger');
+            if(critical){
+              eyebrow.classList.add('brief-eyebrow-danger');
+              eyebrow.textContent='Top story · Critical alert';
+              headline.textContent='Critical operational signal — review banner above';
+            }else{
+              eyebrow.classList.add('brief-eyebrow-warning');
+              eyebrow.textContent=defaults.eyebrowText;
+              headline.textContent=defaults.headlineText;
+            }
+          };
+          sync();
+          var mo=new MutationObserver(sync);
+          mo.observe(banner,{childList:true,subtree:true,characterData:true});
+        }catch(e){}
+      })();
+    </script>
+
+
+    
+
+    <!-- ── Settings Page ──────────────────────────────────────── -->
+    <section id="settingsPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Admin Only</div>
+          <h1 class="hero-title">Settings</h1>
+          <p class="hero-sub">Manage users, access, and app configuration</p>
+        </div>
+      </div>
+      <div class="page-body" style="max-width:900px;margin:0 auto;padding:24px 16px;display:flex;flex-direction:column;gap:24px;">
+
+        <!-- User Management -->
+        <div class="card" style="padding:24px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+            <div>
+              <div class="eyebrow">Access Control</div>
+              <h2 style="font-size:18px;font-weight:800;margin:0;">User Management</h2>
+              <p style="font-size:13px;color:var(--muted);margin:4px 0 0;">Invite users, assign roles, and manage module access</p>
+            </div>
+            <button class="btn" id="settingsInviteBtn" type="button" onclick="window.hcSettings.openInviteModal()">+ Invite User</button>
+          </div>
+          <div id="settingsUserList" style="font-size:14px;color:var(--muted);padding:16px;text-align:center;background:var(--blue1);border-radius:10px;">
+            Loading…
+          </div>
+        </div>
+
+        <!-- Audit Log -->
+        <div class="card" style="padding:24px;">
+          <div class="eyebrow">History</div>
+          <h2 style="font-size:18px;font-weight:800;margin:0 0 4px;">Audit Log</h2>
+          <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">Record of all access changes — who granted what and when</p>
+          <div id="settingsAuditLog" style="font-size:14px;color:var(--muted);padding:16px;text-align:center;background:var(--blue1);border-radius:10px;">
+            Loading…
+          </div>
+        </div>
+
+        <!-- Notifications -->
+        <div class="card" style="padding:24px;">
+          <div class="eyebrow">Alerts</div>
+          <h2 style="font-size:18px;font-weight:800;margin:0 0 4px;">Notification Preferences</h2>
+          <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">Configure email alerts for temp admin expiry and access changes</p>
+          <div style="font-size:14px;color:var(--muted);padding:16px;text-align:center;background:var(--blue1);border-radius:10px;">
+            Notification settings coming in Phase 5
+          </div>
+        </div>
+
+        <!-- App Info -->
+        <div class="card" style="padding:24px;">
+          <div class="eyebrow">System</div>
+          <h2 style="font-size:18px;font-weight:800;margin:0 0 12px;">App Info</h2>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;">
+            <div><span style="color:var(--muted);">App</span><br><strong>Houston Control</strong></div>
+            <div><span style="color:var(--muted);">Environment</span><br><strong>Production</strong></div>
+            <div><span style="color:var(--muted);">Identity</span><br><strong>Netlify Identity + Google OAuth</strong></div>
+            <div><span style="color:var(--muted);">Database</span><br><strong>Neon PostgreSQL</strong></div>
+            <div><span style="color:var(--muted);">Build</span><br><strong id="appInfoBuildSha">unknown</strong></div>
+            <div><span style="color:var(--muted);">Branch</span><br><strong id="appInfoBuildBranch">unknown</strong></div>
+            <div style="grid-column:1/-1;"><span style="color:var(--muted);">Deployed</span><br><strong id="appInfoBuildTime">unknown</strong></div>
+          </div>
+        </div>
+
+        <!-- Data Export -->
+        <div class="card" style="padding:24px;">
+          <div class="eyebrow">Backup</div>
+          <h2 style="font-size:18px;font-weight:800;margin:0 0 4px;">Data Export</h2>
+          <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">Download a JSON snapshot of all locally stored Ops Hub data (queue, assembly, attendance, employees, errors, calendar). Keep this somewhere safe.</p>
+          <button class="btn" type="button" onclick="window.hcSettings.exportAllData()">Download all data</button>
+        </div>
+
+        <!-- System Reset -->
+        <div class="card" style="padding:24px;border:1px solid #ffc0c0;background:#fff8f8;">
+          <div class="eyebrow" style="color:#e55;">Danger Zone</div>
+          <h2 style="font-size:18px;font-weight:800;margin:0 0 4px;color:#c0392b;">System Reset</h2>
+          <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">Permanently wipes all operational data. User accounts are preserved. This cannot be undone.</p>
+          <button class="btn" id="systemResetBtn" onclick="window.hcReset.openModal()" style="background:#c0392b;border-color:#c0392b;">
+            🗑 Reset All Data
+          </button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ── AM Floor Huddle Modal ──────────────────────────────── -->
+    <div id="meetingHubAMModal" class="cm-overlay" hidden aria-modal="true" role="dialog">
+      <div class="cm-dialog" style="max-width:720px;max-height:90vh;overflow-y:auto;">
+        <div class="cm-header">
+          <div>
+            <div class="eyebrow" style="color:#0f9d58;">☀️ Morning Meeting</div>
+            <h2 class="cm-title">AM Floor Huddle</h2>
+          </div>
+          <button class="cm-close" onclick="window.hcMeeting.closeModal()" type="button">✕</button>
+        </div>
+        <div class="cm-body" style="padding:0;">
+          <div id="amHuddleForm" style="padding:20px 0;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Leadership Huddle Modal ────────────────────────────── -->
+    <div id="meetingHubLeadershipModal" class="cm-overlay" hidden aria-modal="true" role="dialog">
+      <div class="cm-dialog" style="max-width:900px;max-height:90vh;overflow-y:auto;">
+        <div class="cm-header">
+          <div>
+            <div class="eyebrow" style="color:#1a73e8;">👔 Leadership Meeting</div>
+            <h2 class="cm-title">Leadership Huddle</h2>
+          </div>
+          <button class="cm-close" onclick="window.hcMeeting.closeModal()" type="button">✕</button>
+        </div>
+        <div class="cm-body" style="padding:0;">
+          <div id="leadershipHuddleForm" style="padding:20px 0;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PM Inbound Huddle Modal ────────────────────────────── -->
+    <div id="meetingHubPMModal" class="cm-overlay" hidden aria-modal="true" role="dialog">
+      <div class="cm-dialog" style="max-width:720px;max-height:90vh;overflow-y:auto;">
+        <div class="cm-header">
+          <div>
+            <div class="eyebrow" style="color:#e37400;">🌙 PM Meeting</div>
+            <h2 class="cm-title">PM Inbound Huddle</h2>
+          </div>
+          <button class="cm-close" onclick="window.hcMeeting.closeModal()" type="button">✕</button>
+        </div>
+        <div class="cm-body" style="padding:0;">
+          <div id="pmHuddleForm" style="padding:20px 0;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── System Reset Modal ─────────────────────────────────── -->
+    <div id="systemResetModal" class="cm-overlay" hidden aria-modal="true" role="dialog">
+      <div class="cm-dialog" style="max-width:480px;">
+        <div class="cm-header">
+          <div>
+            <div class="eyebrow" style="color:#e55;text-transform:uppercase;letter-spacing:.16em;font-size:11px;font-weight:800;margin-bottom:6px;">⚠️ Danger Zone</div>
+            <h2 class="cm-title">System Reset</h2>
+          </div>
+          <button class="cm-close" onclick="window.hcReset.closeModal()" type="button">✕</button>
+        </div>
+        <div class="cm-body" style="padding:20px 0;">
+          <p style="font-size:14px;font-weight:700;color:#c0392b;margin:0 0 12px;">This will permanently delete all of the following:</p>
+          <ul style="font-size:13px;color:var(--muted);line-height:2;margin:0 0 16px;padding-left:20px;">
+            <li>Assembly board & queue data</li>
+            <li>Attendance records</li>
+            <li>Cycle count data</li>
+            <li>Flight tracker comments</li>
+            <li>Fulfillment scan data</li>
+            <li>Huddle recaps & SORD snapshots</li>
+            <li>Productivity records & imports</li>
+            <li>Putaway data</li>
+            <li>Revenue tracker data</li>
+            <li>Inbound workflow & pallet events</li>
+            <li>All browser storage on this device</li>
+          </ul>
+          <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 14px;font-size:13px;font-weight:600;margin-bottom:16px;">
+            ✓ Preserved: User accounts, roles, access settings, audit log
+          </div>
+          <p id="resetStepLabel" style="font-size:13px;text-align:center;color:var(--muted);min-height:18px;"></p>
+        </div>
+        <div class="cm-footer" style="display:flex;gap:10px;">
+          <button id="resetConfirmBtn" class="btn" onclick="window.hcReset.confirmStep()"
+            style="flex:1;background:#e67e22;border-color:#e67e22;">
+            Yes, I want to reset
+          </button>
+          <button class="btn secondary" onclick="window.hcReset.closeModal()" style="flex:1;">Cancel</button>
+        </div>
+        <div id="resetStatus" style="margin-top:12px;font-size:13px;text-align:center;min-height:20px;padding:0 4px;"></div>
+      </div>
+    </div>
+    <div id="settingsInviteModal" class="cm-overlay" hidden aria-modal="true" role="dialog">
+      <div class="cm-dialog" style="max-width:420px;">
+        <div class="cm-header">
+          <div>
+            <div class="eyebrow" style="text-transform:uppercase;letter-spacing:.16em;font-size:11px;font-weight:800;color:#6d879d;margin-bottom:6px;">User Management</div>
+            <h2 class="cm-title">Invite User</h2>
+          </div>
+          <button class="cm-close" onclick="document.getElementById('settingsInviteModal').hidden=true" type="button">✕</button>
+        </div>
+        <div class="cm-body" style="display:flex;flex-direction:column;gap:16px;padding:20px 0;">
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px;">Email Address</label>
+            <input type="email" id="inviteEmail" placeholder="employee@bdainc.com" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);font-size:14px;">
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px;">Role</label>
+            <select id="inviteRole" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);font-size:14px;font-weight:700;">
+              <option value="l1">Associate L1</option>
+              <option value="l2">Associate L2</option>
+              <option value="manager">Manager</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <p style="font-size:12px;color:var(--muted);margin:0;">They'll receive an email invitation to sign in with Google. Only their invited email will be able to access the app.</p>
+          <div id="inviteStatus" style="font-size:13px;text-align:center;min-height:18px;"></div>
+        </div>
+        <div class="cm-footer" style="display:flex;gap:10px;">
+          <button class="btn" onclick="window.hcSettings.sendInvite()" style="flex:1;">Send Invite</button>
+          <button class="btn secondary" onclick="document.getElementById('settingsInviteModal').hidden=true" style="flex:1;">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── User Edit Drawer ───────────────────────────────────── -->
+    <div id="settingsUserDrawer" hidden style="position:fixed;top:0;right:0;bottom:0;width:min(460px,100vw);background:var(--bg);border-left:1px solid var(--blue2);z-index:8000;overflow-y:auto;padding:28px 24px;box-shadow:-8px 0 32px rgba(0,0,0,.12);">
+      <div id="settingsUserDrawerContent"></div>
+    </div>
+
+    <section id="helpPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Help &amp; Guide</div>
+          <h2>Houston Control — Feature Guide</h2>
+          <p class="subtitle">Everything the app does, explained. Hover the ⓘ icons anywhere in the app for quick context. Search below to find any feature.</p>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:20px">
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <input id="helpSearchInput" type="search" placeholder="Search features, filters, modules…" style="flex:1;min-width:220px;border:1px solid #c9d7e6;border-radius:16px;padding:11px 16px;font-size:15px;background:#fff;color:var(--text)" />
+          <span id="helpResultCount" style="font-size:13px;color:var(--muted);white-space:nowrap"></span>
+        </div>
+      </div>
+
+      <div id="helpPageBody" class="help-body"></div>
+    </section>
+
+    <section id="importHubPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Shared imports</div>
+          <h2>Import hub</h2>
+          <p class="subtitle">Use one import area for the Queue and Daily Tools dossier. Queue report feeds the Available Queue and Daily Tools. Revenue feeds Queue revenue reference and Daily Tools. SORD / PO detail feeds Daily Tools.</p>
+        </div>
+      </div>
+
+      <div class="card import-hub-card">
+        <div class="import-hub-grid">
+          <div class="field">
+            <label for="importHubQueueFile"><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00ODu000000XJCOMA4/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Queue / Assembly report</a></label>
+            <input id="importHubQueueFile" type="file" accept=".xlsx,.xls,.csv,text/csv" />
+            <div class="import-hub-hint">Updates Available Queue and Daily Tools.</div>
+          </div>
+          <div class="field">
+            <label for="importHubRevenueFile"><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BE2jMAG/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Revenue report</a></label>
+            <input id="importHubRevenueFile" type="file" accept=".xlsx,.xls,.csv,text/csv" />
+            <div class="import-hub-hint">Updates Queue revenue reference and Daily Tools.</div>
+          </div>
+          <div class="field">
+            <label for="importHubEomFile"><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BDbJMAW/view" target="_blank" rel="noopener noreferrer">SORD / PO detail report</a></label>
+            <input id="importHubEomFile" type="file" accept=".xlsx,.xls,.csv,text/csv" />
+            <div class="import-hub-hint">Updates Daily Tools dossier detail only.</div>
+          </div>
+          <div class="field">
+            <label for="importHubRevTrackerFile">Monthly Revenue Estimate</label>
+            <input id="importHubRevTrackerFile" type="file" accept=".xlsx,.xls,.csv,text/csv" />
+            <div class="import-hub-hint">Updates the Month Revenue tracker on Home.</div>
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <div class="toolbar" style="margin:0;flex-wrap:wrap">
+              <button class="btn" id="importHubRunBtn" type="button">Import Selected Files</button>
+              <button class="btn secondary" id="importHubClearBtn" type="button">Clear Shared Imports</button>
+            </div>
+          </div>
+        </div>
+        <div id="importHubStatus" class="import-status">No shared imports have been loaded yet.</div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="eyebrow">What this controls</div>
+          <h3 style="margin:6px 0 14px;font-size:24px">One source of import truth</h3>
+          <ul class="import-hub-list">
+            <li><strong><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00ODu000000XJCOMA4/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Queue / Assembly report</a></strong> updates the Available Queue and the Daily Tools dossier pack-builder side.</li>
+            <li><strong>Revenue reference report</strong> updates Queue revenue reference and the Daily Tools dossier revenue side.</li>
+            <li><strong><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BDbJMAW/view" target="_blank" rel="noopener noreferrer">SORD / PO detail report</a></strong> updates purchase orders, supplier detail, account products, and related dossier intelligence.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="eyebrow">Legacy page imports</div>
+          <h3 style="margin:6px 0 14px;font-size:24px">Now centralized</h3>
+          <p class="subtitle" style="margin:0">The old import bars on Queue and Daily Tools are hidden so you only have to import once here.</p>
+          <div class="toolbar" style="margin-top:12px">
+            <button class="btn secondary" type="button" data-page-jump="queuePage">Open Available Queue</button>
+            <button class="btn secondary" type="button" data-page-jump="sordPage">Open Daily Tools</button>
+          </div>
+        </div>
+      </div>
+    </section>
+<!-- Attendance -->
+<section id="attendancePage" class="page">
+  <div class="attendance-remix-shell">
+
+    <!-- STICKY DEPARTMENT TABS (top bar) — "All" is first -->
+    <div class="attendance-remix-sticky-bar">
+      <div class="attendance-remix-dept-tabs" id="attendanceRemixDeptTabs"></div>
+      <div class="attendance-remix-sticky-actions">
+        <button class="attendance-remix-gear-btn" id="attendanceRemixOpenSettingsBtn" type="button" title="Settings">⚙</button>
+      </div>
+    </div>
+
+    <!-- STATS ROW -->
+    <div class="attendance-remix-stats-row" id="attendanceRemixStats"></div>
+
+    <!-- DATE BAR -->
+    <div class="attendance-remix-datebar">
+      <div class="attendance-remix-date-nav">
+        <button id="attendanceRemixPrevBtn" type="button">← Previous</button>
+        <button id="attendanceRemixTodayBtn" type="button" class="today-btn">Today</button>
+        <button id="attendanceRemixNextBtn" type="button">Next →</button>
+        <input id="attendanceRemixDateInput" type="date" />
+        <span class="attendance-remix-date-label" id="attendanceRemixDateLabel">Selected date</span>
+      </div>
+      <div class="attendance-remix-date-actions">
+        <button class="attendance-remix-quick-present-btn" id="attendanceRemixQuickPresentBtn" type="button">✓ Mark All Present</button>
+        <button class="attendance-remix-open-editor-btn" id="attendanceRemixOpenEditorBtn" type="button">Open Attendance Editor</button>
+      </div>
+    </div>
+
+    <!-- MAIN: AT-A-GLANCE SUMMARY (replaces roster) -->
+    <div class="attendance-remix-summary-section">
+      <h3 id="attendanceRemixSummaryTitle">Warehouse Overview</h3>
+      <div class="attendance-remix-summary-table-wrap">
+        <table class="attendance-remix-summary-table" id="attendanceRemixSummaryTable">
+          <thead id="attendanceRemixSummaryHead"></thead>
+          <tbody id="attendanceRemixSummaryBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Hidden legacy shells for backward compat -->
+  <div class="attendance-legacy-shell" hidden>
+    <div class="dept-tabs" id="attendanceDeptTabs"></div>
+    <div class="stats">
+      <div class="card"><div class="stat-label">Total entries</div><div class="stat-value" id="attendanceTotalEntries">0</div></div>
+      <div class="card"><div class="stat-label">Present</div><div class="stat-value" id="attendancePresentCount">0</div></div>
+      <div class="card"><div class="stat-label">Late / Absent</div><div class="stat-value" id="attendanceLateAbsentCount">0 / 0</div></div>
+      <div class="card"><div class="stat-label">Net demerits</div><div class="stat-value" id="attendanceNetDemerits">0</div></div>
+    </div>
+    <div class="card"><div class="form-grid attendance-form-grid">
+      <div class="field"><select id="attendanceEmployeeName"></select></div>
+      <div class="field"><select id="attendanceDepartment"></select></div>
+      <div class="field"><input id="attendanceDate" type="date" /></div>
+      <div class="field"><select id="attendanceMark"></select></div>
+      <div class="field"><input id="attendanceDemerits" type="number" value="0" disabled /></div>
+    </div>
+    <div class="toolbar">
+      <div class="left"><input class="search" id="attendanceSearch" type="text" /><span class="pill" id="attendanceCurrentDepartmentPill">Receiving</span><select id="attendanceSortBy"><option value="date_desc">Newest first</option></select></div>
+      <div class="right"><button class="btn secondary" id="attendanceManageEmployeesBtn">Manage</button><button class="btn secondary" id="attendanceUndoBtn" disabled>Undo clear</button><button class="btn warn" id="attendanceClearBtn">Clear all data</button><button class="btn" id="attendanceAddBtn">Add record</button></div>
+    </div>
+    <table><tbody id="attendanceRecordsBody"></tbody></table></div>
+    <div class="card"><table><tbody id="attendanceSummaryBody"></tbody></table></div>
+    <!-- Legacy batch/roster elements -->
+    <input id="attendanceBatchDate" type="date" />
+    <select id="attendanceBatchMark"></select>
+    <select id="attendanceMoveToDepartment"></select>
+    <input id="attendanceMoveStartTime" type="time" />
+    <input id="attendanceMoveEndTime" type="time" />
+    <input id="attendanceMoveNote" />
+    <div id="attendanceBatchSummary"></div>
+    <div id="attendanceRosterGrid"></div>
+    <div id="attendanceMoveLogBody"></div>
+    <button id="attendanceSeedBtn"></button>
+    <button id="attendanceExportBtn"></button>
+    <button id="attendanceApplyBatchBtn"></button>
+    <button id="attendanceSelectAllBtn"></button>
+    <button id="attendanceClearSelectionBtn"></button>
+    <button id="attendanceMarkAllPresentBtn"></button>
+    <button id="attendanceLogMoveBtn"></button>
+  </div>
+</section>
+
+    
+    <!-- Errors -->
+    <section id="errorsPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Warehouse Errors</div>
+          <h2>Error log</h2>
+          <p class="subtitle">A separate tab for warehouse and department errors. Voice can be added later without changing the overall structure.</p>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="card"><div class="stat-label">Total errors</div><div class="stat-value" id="errorsTotalCount">0</div><div class="stat-hint">Errors in current view</div></div>
+        <div class="card"><div class="stat-label">Absolute error qty</div><div class="stat-value" id="errorsAbsoluteTotal">0</div><div class="stat-hint">Sum of quantity differences</div></div>
+        <div class="card"><div class="stat-label">Avg error rate</div><div class="stat-value" id="errorsAverageRate">0%</div><div class="stat-hint">Average rate across filtered records</div></div>
+        <div class="card"><div class="stat-label">Most common type</div><div class="stat-value" id="errorsTopType">—</div><div class="stat-hint">Most frequent error type</div></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Log warehouse error</h3>
+          <div class="form-grid errors-form-grid">
+            <div class="field"><label for="errorDate">Date</label><input id="errorDate" type="date" /></div>
+            <div class="field"><label for="errorDepartment">Department</label><select id="errorDepartment"></select></div>
+            <div class="field"><label for="errorAssociate">Associate</label><select id="errorAssociate"></select></div>
+            <div class="field"><label for="errorProofed">Lead Notified</label><select id="errorProofed"><option>Yes</option><option>No</option></select></div>
+            <div class="field"><label for="errorPoNumber">PO Number</label><input id="errorPoNumber" placeholder="PO number" /></div>
+            <div class="field"><label for="errorLinkedId">Linked ID</label><input id="errorLinkedId" placeholder="SORD, Pack Builder, etc." /></div>
+            <div class="field"><label for="errorCategory">Category</label><input id="errorCategory" placeholder="Drinkware, Apparel, etc." /></div>
+            <div class="field"><label for="errorPalletLocation">Pallet Location</label><input id="errorPalletLocation" placeholder="A-12-4" /></div>
+            <div class="field"><label for="errorExpectedQty">Expected Qty</label><input id="errorExpectedQty" type="number" min="0" value="0" /></div>
+            <div class="field"><label for="errorReceivedQty">Received Qty</label><input id="errorReceivedQty" type="number" min="0" value="0" /></div>
+            <div class="field"><label for="errorType">Error Type</label><select id="errorType"></select></div>
+            <div class="field"><label for="errorAbsoluteAmount">Absolute Error Amount</label><input id="errorAbsoluteAmount" type="number" value="0" disabled /></div>
+          </div>
+          <div class="form-grid" style="grid-template-columns:1.4fr .7fr .9fr;align-items:end">
+            <div class="field"><label for="errorNotes">Notes</label><textarea id="errorNotes" placeholder="Describe exactly what the issue was"></textarea></div>
+            <div class="field"><label for="errorRate">Error Rate</label><input id="errorRate" value="0%" disabled /></div>
+            <div class="toolbar right" style="margin:0;justify-content:flex-end"><button class="btn" id="errorAddBtn">Add error</button></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Error quick controls</h3>
+          <div class="toolbar" style="margin-bottom:8px">
+            <div class="left"><input class="search" id="errorsSearch" type="text" placeholder="Search associate, PO, ID, or type" /></div>
+            <div class="right"><select id="errorsSortBy"><option value="date_desc">Newest first</option><option value="date_asc">Oldest first</option><option value="associate_asc">Associate A-Z</option><option value="po_asc">PO A-Z</option><option value="absolute_desc">Highest absolute error</option><option value="rate_desc">Highest error rate</option></select></div>
+          </div>
+          <div class="form-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:0">
+            <div class="field"><label for="errorsDepartmentFilter">Department Filter</label><select id="errorsDepartmentFilter"></select></div>
+            <div class="field"><label for="errorsTypeFilter">Type Filter</label><select id="errorsTypeFilter"></select></div>
+            <div class="field"><label for="errorsNotifiedFilter">Lead Notified</label><select id="errorsNotifiedFilter"><option value="All">All</option><option value="Yes">Yes</option><option value="No">No</option></select></div>
+          </div>
+          <div class="small-note"><strong>Note:</strong> Voice input is intentionally not included in this version so we can keep the architecture clean and the attendance tab intact. It can be added later as an enhancement to this errors module.</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Warehouse error log</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Department</th><th>Associate</th><th>Lead Notified</th><th>PO Number</th><th>Linked ID</th><th>Category</th><th>Pallet</th><th>Expected</th><th>Received</th><th>Error Type</th><th>Absolute</th><th>Rate</th><th>Notes</th><th>Action</th></tr></thead>
+            <tbody id="errorsRecordsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    
+    
+<!-- Employees -->
+<section id="employeesPage" class="page">
+  <div class="card attendance-merged-card">
+    <div class="eyebrow">Merged into Attendance</div>
+    <h2>Employees now live inside Attendance Settings</h2>
+    <p class="subtitle">This page is intentionally reduced so employee management can stay attached to the attendance workflow. Use Attendance → Settings to add names, remove names, move people between departments, and manage marks and demerits.</p>
+    <div class="toolbar">
+      <div class="left">
+        <button class="btn" id="employeesMergedGoBtn" type="button">Go to Attendance</button>
+      </div>
+    </div>
+  </div>
+  <div class="employees-legacy-shell" hidden>
+
+  <div class="hero">
+    <div>
+      <div class="eyebrow">Employees</div>
+      <h2>Shared employee source</h2>
+      <p class="subtitle">Manage employees in one place so every module can pull from the same source. Add or remove people here, and Attendance and Warehouse Errors will use the updated list.</p>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="card"><div class="stat-label">Active employees</div><div class="stat-value" id="employeesActiveCount">0</div><div class="stat-hint">Available in dropdowns across the site</div></div>
+    <div class="card"><div class="stat-label">Departments used</div><div class="stat-value" id="employeesDepartmentCount">0</div><div class="stat-hint">Departments currently assigned</div></div>
+    <div class="card"><div class="stat-label">Attendance source</div><div class="stat-value">Shared</div><div class="stat-hint">Attendance pulls from this employee list</div></div>
+    <div class="card"><div class="stat-label">Errors source</div><div class="stat-value">Shared</div><div class="stat-hint">Warehouse Errors pulls from this employee list</div></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Add employee</h3>
+      <div class="form-grid" style="grid-template-columns:1.4fr 1fr 1fr .8fr;align-items:end">
+        <div class="field"><label for="employeeManagerName">Employee Name</label><input id="employeeManagerName" placeholder="Full name" /></div>
+        <div class="field"><label for="employeeManagerAdpName">ADP Name <span style="font-weight:400;color:#6b88a6">(optional)</span></label><input id="employeeManagerAdpName" placeholder="e.g. Campbell, TJ" title="How this person's name appears in ADP exports" /></div>
+        <div class="field"><label for="employeeManagerDepartment">Default Department</label><select id="employeeManagerDepartment"></select></div>
+        <div class="field"><label for="employeeManagerBirthday">Birthday</label><input id="employeeManagerBirthday" type="date" /></div>
+        <div class="field"><label for="employeeManagerSize">Preferred Size</label><select id="employeeManagerSize"></select></div>
+        <div class="toolbar right" style="margin:0;justify-content:flex-end"><button class="btn" id="employeeAddBtn">Save employee</button></div>
+      </div>
+      <div class="small-note"><strong>How this works:</strong> this tab is now the shared source. New employees are added from the form above. Existing employees are edited directly in the table below so you do not have to scroll back up and down.</div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Quick controls</h3>
+      <div class="toolbar" style="margin-bottom:8px">
+        <div class="left"><input class="search" id="employeesSearch" type="text" placeholder="Search employee or department" /></div>
+        <div class="right"><select id="employeesDepartmentFilter"></select></div>
+      </div>
+      <div class="small-note">Removing an employee here removes them from the shared dropdown source. Existing attendance or error history tied to that name stays in the records unless you delete those records separately.</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px">
+    <h3 style="margin:0 0 14px;font-size:22px;font-weight:900">Employee list</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Employee Name</th><th>ADP Name</th><th>Default Department</th><th>Birthday</th><th>Preferred Size</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody id="employeesTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  </div>
+</section>
+
+
+    
+    <!-- Calendar -->
+    <section id="calendarPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Calendar</div>
+          <h2>Planning calendar</h2>
+          <p class="subtitle">A live planning view for assembly load and employee birthdays. Days with scheduled pack builders can jump straight into the Assembly board for that date.</p>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="card"><div class="stat-label">Current month</div><div class="stat-value" id="calendarCurrentMonthLabel">—</div><div class="stat-hint">Calendar updates with the selected month</div></div>
+        <div class="card"><div class="stat-label">Scheduled events</div><div class="stat-value" id="calendarEventCount">0</div><div class="stat-hint">Custom calendar events this month</div></div>
+        <div class="card"><div class="stat-label">Assembly days</div><div class="stat-value" id="calendarAssemblyDays">0</div><div class="stat-hint">Scheduled production days this month</div></div>
+        <div class="card"><div class="stat-label">Scheduled units</div><div class="stat-value" id="calendarScheduledUnits">0</div><div class="stat-hint">Total units on the Assembly calendar</div></div>
+      </div>
+
+      <div class="calendar-grid">
+        <div class="card">
+          <div class="calendar-controls">
+            <div class="calendar-month-title" id="calendarMonthTitle">Month</div>
+            <div class="cal-tools">
+              <div class="cal-navg">
+                <button id="calendarPrevBtn" type="button" title="Previous month">‹</button>
+                <button class="today" id="calendarTodayBtn" type="button">Today</button>
+                <button id="calendarNextBtn" type="button" title="Next month">›</button>
+              </div>
+            </div>
+          </div>
+          <div class="calendar-filters" id="calendarFilters">
+            <span class="fp on" data-filter="assembly"><i></i>Assembly</span>
+            <span class="fp plum on" data-filter="custom"><i></i>Events</span>
+            <span class="fp warn on" data-filter="birthday"><i></i>Birthdays</span>
+          </div>
+          <div class="calendar-days" id="calendarHeaderRow"></div>
+          <div class="calendar-days" id="calendarGrid"></div>
+        </div>
+
+        <div class="card calendar-side-panel">
+          <div class="calendar-panel-head">
+            <div>
+              <div class="eyebrow">Selected Day</div>
+              <h3 id="calendarSelectedDateLabel">Today</h3>
+            </div>
+            <button class="btn primary" id="calendarOpenAssemblyBtn" type="button" hidden>Open Assembly →</button>
+          </div>
+
+          <div class="calendar-section">
+            <div class="calendar-section-title">Assembly scheduled</div>
+            <div id="calendarSelectedAssemblyList" class="calendar-list"></div>
+          </div>
+
+          <div class="calendar-section">
+            <div class="calendar-section-title">Add scheduled event</div>
+            <div class="form-grid calendar-event-form">
+              <div class="field"><label for="calendarEventDate">Date</label><input id="calendarEventDate" type="date" /></div>
+              <div class="field"><label for="calendarEventTime">Time</label><input id="calendarEventTime" type="time" /></div>
+              <div class="field field-span-2"><label for="calendarEventTitle">Event</label><input id="calendarEventTitle" placeholder="Team lunch, carrier pickup, deadline..." /></div>
+              <div class="field"><label for="calendarEventType">Type</label><select id="calendarEventType"><option value="event">Event</option><option value="meeting">Meeting</option><option value="deadline">Deadline</option><option value="reminder">Reminder</option></select></div>
+              <div class="field field-span-2"><label for="calendarEventNote">Note</label><textarea id="calendarEventNote" placeholder="Optional details"></textarea></div>
+            </div>
+            <button class="btn" id="calendarAddEventBtn" type="button">Add Event</button>
+          </div>
+
+          <div class="calendar-section">
+            <div class="calendar-section-title">Scheduled events</div>
+            <div id="calendarCustomEventList" class="calendar-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    
+    
+    <!-- Policy -->
+    
+    <section id="returnsPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Returns Desk</div>
+          <h2>Returns intake</h2>
+          <p class="subtitle">A cleaner, scanner-friendly version of Henry’s daily returns sheet. Log returns fast, then search and review them below.</p>
+        </div>
+        <div class="toolbar right">
+          <span class="pill" id="returnsTotalPill">0 returns</span>
+          <span class="pill" id="returnsTodayPill">0 today</span>
+        </div>
+      </div>
+
+      <div class="returns-grid">
+        <div class="card returns-intake-card">
+          <div class="toolbar">
+            <div class="left">
+              <div>
+                <div class="eyebrow">New Return</div>
+                <h3 style="margin:6px 0 0">Scanner-first intake</h3>
+              </div>
+            </div>
+            <div class="right">
+              <button class="btn secondary" id="returnsClearBtn" type="button">Clear</button>
+            </div>
+          </div>
+
+          <div class="returns-type-toggle" id="returnsTypeToggle">
+            <button class="returns-type-btn active" data-value="Pack" type="button">Pack</button>
+            <button class="returns-type-btn" data-value="Bulk" type="button">Bulk</button>
+          </div>
+          <input id="returnsTypeInput" type="hidden" value="Pack" />
+
+          <div class="returns-form-grid">
+            <div class="field">
+              <label for="returnsDateInput">Date</label>
+              <input id="returnsDateInput" type="date" />
+            </div>
+            <div class="field">
+              <label for="returnsCompanyInput">Company</label>
+              <input id="returnsCompanyInput" type="text" list="returnsCompanyOptions" placeholder="Type or select company" />
+              <datalist id="returnsCompanyOptions"></datalist>
+            </div>
+            <div class="field field-span-2">
+              <label for="returnsTrackingInput">Tracking Number</label>
+              <input id="returnsTrackingInput" class="returns-scan-input" type="text" placeholder="Scan or paste tracking number" />
+            </div>
+            <div class="field field-span-2">
+              <label for="returnsBarcodeInput">Barcode</label>
+              <input id="returnsBarcodeInput" class="returns-scan-input" type="text" placeholder="Scan or paste barcode" />
+              <div class="hint">For now, barcode is logged exactly as entered.</div>
+            </div>
+            <div class="field">
+              <label for="returnsClientNameInput">Client Full Name</label>
+              <input id="returnsClientNameInput" type="text" placeholder="Enter client full name" />
+            </div>
+            <div class="field">
+              <label for="returnsSizeInput">Size</label>
+              <input id="returnsSizeInput" type="text" placeholder="Ex: One Size, M, XL" />
+            </div>
+            <div class="field field-span-2">
+              <label for="returnsNotesInput">Notes / Returned Items</label>
+              <textarea id="returnsNotesInput" rows="4" placeholder="Add notes or item details if needed"></textarea>
+            </div>
+          </div>
+
+          <div class="toolbar returns-form-actions">
+            <div class="left">
+              <button class="btn" id="returnsSaveBtn" type="button">Save Return</button>
+              <button class="btn secondary" id="returnsSaveNewBtn" type="button">Save + New</button>
+            </div>
+            <div class="right">
+              <span class="mc-snapshot-note">Tracking or barcode is enough to save.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card returns-side-card">
+          <div class="eyebrow">Today</div>
+          <h3 style="margin:6px 0 14px;font-size:24px">Quick returns pulse</h3>
+          <div class="stats returns-side-stats">
+            <div class="card"><div class="stat-label">Today</div><div class="stat-value" id="returnsTodayCount">0</div><div class="stat-hint">Returns logged today</div></div>
+            <div class="card"><div class="stat-label">Pack</div><div class="stat-value" id="returnsPackCount">0</div><div class="stat-hint">Pack returns</div></div>
+            <div class="card"><div class="stat-label">Bulk</div><div class="stat-value" id="returnsBulkCount">0</div><div class="stat-hint">Bulk returns</div></div>
+            <div class="card"><div class="stat-label">Companies</div><div class="stat-value" id="returnsCompanyCount">0</div><div class="stat-hint">Unique companies today</div></div>
+          </div>
+
+          <div class="eyebrow" style="margin-top:18px">Recent Entries</div>
+          <div id="returnsRecentList" class="mc-list"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <div class="toolbar">
+          <div class="left">
+            <div>
+              <div class="eyebrow">Returns Log</div>
+              <h3 style="margin:6px 0 0">Searchable history</h3>
+            </div>
+          </div>
+          <div class="right">
+            <button class="btn secondary" id="returnsExportCsvBtn" type="button">Export CSV</button>
+          </div>
+        </div>
+
+        <div class="returns-filter-grid">
+          <div class="field">
+            <label for="returnsSearchInput">Search</label>
+            <input id="returnsSearchInput" type="text" placeholder="Tracking, barcode, company, client..." />
+          </div>
+          <div class="field">
+            <label for="returnsTypeFilter">Return Type</label>
+            <select id="returnsTypeFilter">
+              <option value="All">All</option>
+              <option value="Pack">Pack</option>
+              <option value="Bulk">Bulk</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="returnsCompanyFilter">Company</label>
+            <select id="returnsCompanyFilter">
+              <option value="All">All</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="returnsDateFilter">Date</label>
+            <input id="returnsDateFilter" type="date" />
+          </div>
+        </div>
+
+        <div class="table-wrap" style="margin-top:16px">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Company</th>
+                <th>Type</th>
+                <th>Tracking</th>
+                <th>Barcode</th>
+                <th>Client Full Name</th>
+                <th>Size</th>
+                <th>Notes</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="returnsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+
+    
+<section id="fulfillmentScanPage" class="page">
+  <div id="fspSyncBanner" class="fsp-sync-banner" style="display:none;"></div>
+  <div class="fsp-shell fsp-embedded">
+    <header class="fsp-hero">
+      <div class="fsp-brand">
+        <img src="assets/houston-control-logo-left.png" alt="Houston Control logo">
+        <div>
+          <div class="fsp-eyebrow">Fulfillment module</div>
+          <h1>Fulfillment Scan-Out</h1>
+          <p>Scanner-first shipment confirmation with pallet tracking, duplicate protection, traffic visibility, and shipment lookup for investigations.</p>
+        </div>
+      </div>
+      <div class="fsp-hero-actions">
+        <button id="fspExportBtn" class="fsp-btn secondary" type="button">Export day JSON</button>
+        <a class="fsp-btn secondary" href="fulfillment-scan-out.html" target="_blank" rel="noopener">Open standalone page</a>
+        <button id="fspResetBtn" class="fsp-btn danger" type="button">Clear fulfillment data</button>
+      </div>
+    </header>
+
+    <section class="fsp-grid-top">
+      <article class="fsp-card fsp-card-operator">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Session</div>
+            <h2>Operator & day</h2>
+          </div>
+        </div>
+        <div class="fsp-form-grid two">
+          <label>
+            <span>Operator</span>
+            <input id="fspOperatorInput" type="text" list="fspOperatorOptions" autocomplete="off" spellcheck="false" placeholder="Select or type operator name">
+            <datalist id="fspOperatorOptions"></datalist>
+          </label>
+          <div class="fsp-info-card">
+            <span>Station</span>
+            <strong>Main scan station</strong>
+            <small>Names come from Attendance so you can type to narrow the list or pick a name fast.</small>
+          </div>
+          <label>
+            <span>View date</span>
+            <input id="fspDateInput" type="date">
+          </label>
+          <label>
+            <span>Shift note</span>
+            <input id="fspSessionNoteInput" type="text" placeholder="Optional shift note">
+          </label>
+        </div>
+      </article>
+
+      <article class="fsp-card fsp-card-status">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Live status</div>
+            <h2>Current pallet</h2>
+          </div>
+          <span id="fspStatusPill" class="fsp-status-pill idle">No pallet open</span>
+        </div>
+        <div class="fsp-open-pallet" id="fspOpenPalletSummary">
+          <div class="fsp-empty-state">Pick a carrier below, start a pallet, then scan box after box.</div>
+        </div>
+        <div class="fsp-summary-strip" id="fspLiveStrip"></div>
+      </article>
+    </section>
+
+    <section class="fsp-grid-main">
+      <article class="fsp-card fsp-scan-card">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Scanner lane</div>
+            <h2>Scan intake</h2>
+          </div>
+          <div class="fsp-inline-actions">
+            <span class="fsp-helper-copy" style="margin:0;">Use the carrier popup to open the next pallet.</span>
+          </div>
+        </div>
+
+        <div class="fsp-scan-box">
+          <div class="fsp-start-toolbar">
+            <div class="fsp-info-card">
+              <span>Carrier for next pallet</span>
+              <strong id="fspSelectedCarrierText">—</strong>
+              <small>Keep this tucked away in a popup so the main scan page stays clean.</small>
+            </div>
+            <div class="fsp-inline-actions">
+              <button id="fspOpenCarrierPickerBtn" class="fsp-btn secondary" type="button">Choose carrier</button>
+              <button id="fspOpenCarrierSetupBtn" class="fsp-btn secondary" type="button">Carrier setup</button>
+              <button id="fspStartSelectedBtn" class="fsp-btn primary" type="button">Start selected carrier</button>
+            </div>
+          </div>
+
+          <label for="fspScanInput"><span>Scan barcode value</span></label>
+          <p class="fsp-helper-copy">Operator must be selected before a pallet can be opened or any scan can be accepted.</p>
+          <div class="fsp-scan-row">
+            <input id="fspScanInput" type="text" autocomplete="off" spellcheck="false" placeholder="Scanner waits for Enter suffix after each scan">
+            <button id="fspProcessScanBtn" class="fsp-btn primary" type="button">Submit</button>
+          </div>
+          <div class="fsp-command-list">
+            <span>Scanner command:</span>
+            <button type="button" class="fsp-chip" data-command="PALLET_END">PALLET_END</button>
+          </div>
+        </div>
+
+        <div id="fspAlertArea" class="fsp-alert-area"></div>
+
+        <div class="fsp-card-subsection">
+          <div class="fsp-subhead-row">
+            <h3>Current pallet scans</h3>
+            <div class="fsp-inline-actions">
+              <button id="fspUndoBtn" class="fsp-btn secondary" type="button">Delete last accepted scan</button>
+            </div>
+          </div>
+          <div class="fsp-table-wrap">
+            <table class="fsp-table fsp-compact-table">
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Tracking</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="fspCurrentScanBody"></tbody>
+            </table>
+          </div>
+          <p class="fsp-helper-copy">If the wrong box gets scanned onto the pallet, remove it here before closing the pallet.</p>
+        </div>
+
+        <div class="fsp-card-subsection">
+          <div class="fsp-subhead-row">
+            <h3>Last events</h3>
+          </div>
+          <div class="fsp-table-wrap">
+            <table class="fsp-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Type</th>
+                  <th>Value</th>
+                  <th>Carrier</th>
+                  <th>Result</th>
+                  <th>Pallet</th>
+                </tr>
+              </thead>
+              <tbody id="fspEventLogBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </article>
+
+      <aside class="fsp-side-stack">
+        <article class="fsp-card">
+          <div class="fsp-card-head">
+            <div>
+              <div class="fsp-eyebrow">Shipment lookup</div>
+              <h2>Find a scanned label</h2>
+            </div>
+          </div>
+          <div class="fsp-form-grid">
+            <label for="fspLookupInput">
+              <span>Scan or paste tracking number</span>
+              <input id="fspLookupInput" type="text" autocomplete="off" spellcheck="false" placeholder="Scan label here to search full history">
+            </label>
+            <div class="fsp-inline-actions">
+              <button id="fspLookupBtn" class="fsp-btn primary" type="button">Search shipment</button>
+              <button id="fspLookupClearBtn" class="fsp-btn secondary" type="button">Clear</button>
+            </div>
+          </div>
+          <div id="fspLookupResult" class="fsp-lookup-result"></div>
+        </article>
+
+        <article class="fsp-card">
+          <div class="fsp-card-head">
+            <div>
+              <div class="fsp-eyebrow">Daily snapshot</div>
+              <h2>Today’s numbers</h2>
+            </div>
+          </div>
+          <div class="fsp-stat-grid" id="fspStatsGrid"></div>
+        </article>
+      </aside>
+    </section>
+
+    <section class="fsp-grid-bottom">
+      <article class="fsp-card">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Traffic through the day</div>
+            <h2>Volume by time block</h2>
+          </div>
+          <label class="fsp-traffic-control">
+            <span>Bucket size</span>
+            <select id="fspBucketSizeSelect">
+              <option value="15">15 min</option>
+              <option value="30">30 min</option>
+              <option value="60">60 min</option>
+            </select>
+          </label>
+        </div>
+        <div class="fsp-traffic-summary" id="fspTrafficSummary"></div>
+        <div class="fsp-chart-wrap" id="fspTrafficChart"></div>
+        <div class="fsp-table-wrap">
+          <table class="fsp-table">
+            <thead>
+              <tr>
+                <th>Time block</th>
+                <th>Accepted scans</th>
+                <th>Pallets closed</th>
+                <th>Rejected scans</th>
+              </tr>
+            </thead>
+            <tbody id="fspTrafficBody"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="fsp-card">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Closed pallets</div>
+            <h2>Pallet history for selected date</h2>
+          </div>
+        </div>
+        <div class="fsp-table-wrap">
+          <table class="fsp-table">
+            <thead>
+              <tr>
+                <th>Pallet ID</th>
+                <th>Carrier</th>
+                <th>Boxes</th>
+                <th>Opened</th>
+                <th>Closed</th>
+                <th>Operator</th>
+              </tr>
+            </thead>
+            <tbody id="fspPalletHistoryBody"></tbody>
+          </table>
+        </div>
+
+        <div class="fsp-card-subsection">
+          <div class="fsp-subhead-row">
+            <h3>Rejected lane</h3>
+          </div>
+          <div class="fsp-table-wrap">
+            <table class="fsp-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Value</th>
+                  <th>Result</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody id="fspRejectedBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <div id="fspCarrierPickerModal" class="fsp-modal-backdrop" hidden>
+      <div class="fsp-modal">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Carrier for next pallet</div>
+            <h2>Choose carrier for the next pallet</h2>
+          </div>
+          <button class="fsp-btn secondary" type="button" data-close-modal="carrier-picker">Close</button>
+        </div>
+        <div id="fspQuickStartArea" class="fsp-quick-start-grid"></div>
+      </div>
+    </div>
+
+    <div id="fspCarrierSetupModal" class="fsp-modal-backdrop" hidden>
+      <div class="fsp-modal">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Carrier setup</div>
+            <h2>Add or remove carriers</h2>
+          </div>
+          <button class="fsp-btn secondary" type="button" data-close-modal="carrier-setup">Close</button>
+        </div>
+        <div class="fsp-form-grid carrier-admin-grid">
+          <label>
+            <span>New carrier name</span>
+            <input id="fspNewCarrierInput" type="text" placeholder="Example: DHL">
+          </label>
+          <button id="fspAddCarrierBtn" class="fsp-btn primary" type="button">Add carrier</button>
+        </div>
+        <div id="fspCarrierList" class="fsp-carrier-list"></div>
+      </div>
+    </div>
+
+    <div id="fspInfoModal" class="fsp-modal-backdrop" hidden>
+      <div class="fsp-modal" style="width:min(560px,100%)">
+        <div class="fsp-card-head">
+          <div>
+            <div class="fsp-eyebrow">Full value</div>
+            <h2 id="fspInfoModalTitle">Details</h2>
+          </div>
+          <button class="fsp-btn secondary" type="button" data-close-modal="info">Close</button>
+        </div>
+        <div id="fspInfoModalValue" class="fsp-info-value">—</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section id="productivityPage" class="page">
+      <div class="hero productivity-hero">
+        <div>
+          <div class="eyebrow">Management</div>
+          <h2>Daily Productivity</h2>
+          <p class="subtitle">Week-based productivity board with department pop-outs. QA Receiving, QA Prep, and Assembly counts auto-pull from your live modules where possible, while ADP hours stay manual.</p>
+        </div>
+        <div class="toolbar right productivity-top-pills">
+          <span class="pill" id="productivityRecordsPill">0 daily records</span>
+          <span class="pill" id="productivityCpuPill">CPU —</span>
+          <span class="pill" id="productivityHoursPill">Hours —</span>
+        </div>
+      </div>
+
+      <div id="productivityModuleRoot"></div>
+    </section>
+
+
+    <section id="policyPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Policy Desk</div>
+          <h2>Policy & SOP Library</h2>
+          <p class="subtitle">Create, update, archive, and search internal policies. Import SOP files into one place so you have a clean policy module instead of scattered reference docs.</p>
+        </div>
+        <div class="toolbar right">
+          <span class="pill" id="policyDocCountPill">0 SOP files</span>
+          <span class="pill" id="policyRuleCountPill">0 policies</span>
+        </div>
+      </div>
+
+      <div class="grid-2 policy-grid">
+        <div style="display:grid;gap:20px">
+          <div class="card">
+            <div class="toolbar">
+              <div class="left">
+                <div>
+                  <div class="eyebrow">Policy entry</div>
+                  <h3 style="margin:6px 0 0">Add or update policy</h3>
+                </div>
+              </div>
+              <div class="right">
+                <button class="btn secondary" id="policyFormResetBtn" type="button">Clear Form</button>
+              </div>
+            </div>
+
+            <div class="form-grid policy-form-grid">
+              <div class="field">
+                <label for="policyTitleInput">Policy title</label>
+                <input id="policyTitleInput" type="text" placeholder="Ex: Attendance point reset policy">
+              </div>
+              <div class="field">
+                <label for="policyCategoryInput">Category</label>
+                <input id="policyCategoryInput" type="text" placeholder="Ex: Attendance, Safety, QA, Assembly">
+              </div>
+              <div class="field">
+                <label for="policyOwnerInput">Owner</label>
+                <input id="policyOwnerInput" type="text" placeholder="Ex: Operations, HR, QA">
+              </div>
+              <div class="field">
+                <label for="policyStatusSelect">Status</label>
+                <select id="policyStatusSelect">
+                  <option value="Active">Active</option>
+                  <option value="Draft">Draft</option>
+                  <option value="Archived">Archived</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="policyEffectiveDateInput">Effective date</label>
+                <input id="policyEffectiveDateInput" type="date">
+              </div>
+              <div class="field">
+                <label for="policyReviewDateInput">Review date</label>
+                <input id="policyReviewDateInput" type="date">
+              </div>
+            </div>
+
+            <div class="field" style="margin-top:12px">
+              <label for="policySummaryInput">Short summary</label>
+              <textarea id="policySummaryInput" placeholder="What is this policy for and when should it be used?"></textarea>
+            </div>
+
+            <div class="field" style="margin-top:12px">
+              <label for="policyBodyInput">Policy details</label>
+              <textarea id="policyBodyInput" class="policy-body-input" placeholder="Write the policy here. You can paste SOP steps, exception notes, escalation rules, examples, and anything you want later reference for."></textarea>
+            </div>
+
+            <div class="toolbar" style="margin-top:14px">
+              <div class="left">
+                <span class="pill" id="policyEditingPill">Creating new policy</span>
+              </div>
+              <div class="right">
+                <button class="btn" id="policySaveBtn" type="button">Save Policy</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="toolbar">
+              <div class="left">
+                <div>
+                  <div class="eyebrow">SOP library</div>
+                  <h3 style="margin:6px 0 0">Import SOPs and reference files</h3>
+                </div>
+              </div>
+              <div class="right">
+                <label class="btn secondary policy-upload-btn" for="policyFileInput">Import SOP Files</label>
+                <input id="policyFileInput" type="file" multiple accept=".pdf,.doc,.docx,.txt,.md,.csv,.json,.rtf">
+              </div>
+            </div>
+            <p class="subtitle" style="max-width:none">Imported files are stored in your browser for quick reference. Text-based files can be previewed directly in the module. Binary files still save with metadata so you can label, remove, and revisit them later.</p>
+            <div id="policyDocsList" class="policy-doc-list"></div>
+          </div>
+        </div>
+
+        <div style="display:grid;gap:20px">
+          <div class="card">
+            <div class="toolbar">
+              <div class="left">
+                <div>
+                  <div class="eyebrow">Search</div>
+                  <h3 style="margin:6px 0 0">Find policy fast</h3>
+                </div>
+              </div>
+            </div>
+            <div class="form-grid" style="grid-template-columns:1.6fr 1fr 1fr">
+              <div class="field">
+                <label for="policySearchInput">Search</label>
+                <input id="policySearchInput" type="text" placeholder="Search title, category, owner, summary, policy text">
+              </div>
+              <div class="field">
+                <label for="policyCategoryFilter">Category</label>
+                <select id="policyCategoryFilter">
+                  <option value="">All categories</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="policyStatusFilter">Status</label>
+                <select id="policyStatusFilter">
+                  <option value="">All statuses</option>
+                  <option value="Active">Active</option>
+                  <option value="Draft">Draft</option>
+                  <option value="Archived">Archived</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="toolbar">
+              <div class="left">
+                <div>
+                  <div class="eyebrow">Library</div>
+                  <h3 style="margin:6px 0 0">Policies</h3>
+                </div>
+              </div>
+            </div>
+            <div id="policyList" class="policy-list"></div>
+          </div>
+
+          <div class="card">
+            <div class="eyebrow">Preview</div>
+            <h3 style="margin:6px 0 14px">Policy / SOP preview</h3>
+            <div id="policyPreview" class="policy-preview empty">Select a policy or SOP file to preview it here.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- Assembly -->
+    <section id="assemblyPage" class="page">
+
+      <!-- ── Top bar ──────────────────────────────────────────── -->
+      <div style="margin-bottom:18px;">
+        <div class="eyebrow">Assembly</div>
+        <h2 style="margin:2px 0 14px;">Assembly Planner</h2>
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;overflow-x:auto;padding-bottom:2px;">
+          <button class="btn secondary" id="assemblyPrevDayBtn" style="font-size:14px;padding:7px 11px;flex-shrink:0;">&#9664;</button>
+          <input id="assemblyDate" type="date" style="padding:7px 10px;border-radius:8px;border:1.5px solid var(--blue2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;flex-shrink:0;" />
+          <span id="assemblySelectedDatePill" style="font-size:13px;font-weight:700;color:var(--text);background:var(--blue1);border:1px solid var(--blue2);border-radius:20px;padding:6px 14px;white-space:nowrap;flex-shrink:0;">Today</span>
+          <button class="btn secondary" id="assemblyNextDayBtn" style="font-size:14px;padding:7px 11px;flex-shrink:0;">&#9654;</button>
+          <div style="width:1px;height:22px;background:var(--blue2);margin:0 4px;flex-shrink:0;"></div>
+          <button class="btn" id="assemblyEditModeToggleBtn" type="button" style="flex-shrink:0;">+ Add Row</button>
+          <button class="btn secondary" id="assemblyExportStyledSnapshotBtn" style="flex-shrink:0;">Export XLSX</button>
+          <button class="btn secondary" id="exportStakeholderDashboardBtn" style="flex-shrink:0;">7-Day</button>
+        </div>
+      </div>
+
+      <!-- ── Two-column: Shift Setup + Live Output ────────────── -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+
+        <div class="card" style="padding:18px 20px;">
+          <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;">Shift Setup</div>
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px;">
+            <div><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px;">Headcount</div><input id="assemblyHeadcount" type="number" min="0" value="7" style="width:100%;padding:7px 8px;border-radius:7px;border:1.5px solid var(--blue2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;" /></div>
+            <div><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px;">Hours</div><input id="assemblyHours" type="number" min="0" step="0.25" value="8" style="width:100%;padding:7px 8px;border-radius:7px;border:1.5px solid var(--blue2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;" /></div>
+            <div><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px;">Elapsed</div><input id="assemblyHoursElapsed" type="number" min="0" step="0.25" value="1" style="width:100%;padding:7px 8px;border-radius:7px;border:1.5px solid var(--blue2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;" /></div>
+            <div><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px;">Target UPH</div><input id="assemblyUph" type="number" min="0" value="150" style="width:100%;padding:7px 8px;border-radius:7px;border:1.5px solid var(--blue2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;" /></div>
+            <div><div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px;">Sched. PBs</div><input id="assemblyScheduledPb" type="number" min="0" value="0" style="width:100%;padding:7px 8px;border-radius:7px;border:1.5px solid var(--blue2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;" /></div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;">
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">People</div><div style="font-size:22px;font-weight:800;color:var(--text);" id="assemblyHeadcountStat">0</div></div>
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Hours</div><div style="font-size:22px;font-weight:800;color:var(--text);" id="assemblyHoursStat">0</div></div>
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">UPH Target</div><div style="font-size:22px;font-weight:800;color:var(--text);" id="assemblyUphStat">0</div></div>
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Goal %</div><div style="font-size:22px;font-weight:800;color:var(--text);" id="assemblyGoalProgressDisplay">0%</div></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:5px;"><span>Capacity</span><strong style="color:var(--text);" id="assemblyCapacityStat">0</strong></div>
+          <div style="height:5px;background:var(--blue2);border-radius:3px;overflow:hidden;"><div id="assemblyCapacityBar" style="height:5px;background:#1a73e8;border-radius:3px;width:0%;transition:width .4s;"></div></div>
+        </div>
+
+        <div class="card" style="padding:18px 20px;">
+          <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;">Live Output</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Scheduled</div><div style="font-size:16px;font-weight:800;color:var(--text);line-height:1.3;" id="assemblyScheduledUnitsStat">0</div></div>
+            <div style="text-align:center;padding:9px 6px;background:#e6f9ee;border-radius:8px;"><div style="font-size:10px;font-weight:800;color:#0F6E56;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Done</div><div style="font-size:16px;font-weight:800;color:#0F6E56;line-height:1.3;" id="assemblyDoneUnitsStat2">0</div></div>
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Remaining</div><div style="font-size:16px;font-weight:800;color:var(--text);line-height:1.3;" id="assemblyRemainingUnitsStat">0</div></div>
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">UPH Now</div><div style="font-size:16px;font-weight:800;color:var(--text);line-height:1.3;" id="assemblyCurrentUphDisplay">0</div></div>
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Revenue</div><div style="font-size:16px;font-weight:800;color:var(--text);line-height:1.3;" id="assemblyScheduledRevenueStat">$0</div></div>
+            <div style="text-align:center;padding:9px 6px;background:var(--blue1);border-radius:8px;"><div style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">PB Rows</div><div style="font-size:16px;font-weight:800;color:var(--text);line-height:1.3;" id="assemblyRowsTodayStat">0</div></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:5px;"><span>Completion</span><strong style="color:var(--text);" id="assemblyCompletionStat">0%</strong></div>
+          <div style="height:5px;background:var(--blue2);border-radius:3px;overflow:hidden;"><div id="assemblyCompletionBar" style="height:5px;background:#0F6E56;border-radius:3px;width:0%;transition:width .4s;"></div></div>
+        </div>
+      </div>
+
+      <!-- ── Stage strip ──────────────────────────────────────── -->
+      <div class="card" style="padding:12px 18px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+          <span id="assemblyBoardCountPill" style="font-size:13px;font-weight:700;color:var(--muted);min-width:48px;">0 rows</span>
+          <div style="flex:1;display:flex;gap:20px;justify-content:center;flex-wrap:wrap;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;color:var(--text);" id="asmStripAa">0</span><span style="font-size:10px;background:#E6F1FB;color:#0C447C;padding:2px 8px;border-radius:999px;font-weight:700;white-space:nowrap;">A.A.</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;color:var(--text);" id="asmStripPrint">0</span><span style="font-size:10px;background:#FAEEDA;color:#633806;padding:2px 8px;border-radius:999px;font-weight:700;white-space:nowrap;">Print</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;color:var(--text);" id="asmStripPicked">0</span><span style="font-size:10px;background:#EEEDFE;color:#3C3489;padding:2px 8px;border-radius:999px;font-weight:700;white-space:nowrap;">Picked</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;color:var(--text);" id="asmStripLine">0</span><span style="font-size:10px;background:#EAF3DE;color:#27500A;padding:2px 8px;border-radius:999px;font-weight:700;white-space:nowrap;">Line</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;color:var(--text);" id="asmStripDpmo">0</span><span style="font-size:10px;background:#FAECE7;color:#712B13;padding:2px 8px;border-radius:999px;font-weight:700;white-space:nowrap;">DPMO</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:16px;font-weight:800;color:var(--text);" id="asmStripDone">0</span><span style="font-size:10px;background:#E1F5EE;color:#085041;padding:2px 8px;border-radius:999px;font-weight:700;white-space:nowrap;">Done</span></div>
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0;">
+            <button class="btn secondary" id="assemblyBreakdownToggleBtn" type="button" style="font-size:12px;padding:5px 12px;">Units</button>
+            <button class="btn secondary" id="assemblyDetailsToggleBtn" type="button" style="font-size:12px;padding:5px 12px;">Detail View</button>
+          </div>
+          <span class="pill" id="assemblyViewModePill" style="display:none;"></span>
+          <span id="assemblyScheduledPbDisplay" style="display:none;"></span>
+        </div>
+      </div>
+
+      <!-- ── Stage breakdown (collapsible) ───────────────────── -->
+      <div class="assembly-collapse" id="assemblyBreakdownPanel" hidden style="margin-bottom:10px;">
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;">
+          <div class="card assembly-card-tight"><div class="stat-label">A.A.</div><div class="stat-value" id="assemblyAaUnits">0</div></div>
+          <div class="card assembly-card-tight"><div class="stat-label">Print</div><div class="stat-value" id="assemblyPrintUnits">0</div></div>
+          <div class="card assembly-card-tight"><div class="stat-label">Picked</div><div class="stat-value" id="assemblyPickedUnits">0</div></div>
+          <div class="card assembly-card-tight"><div class="stat-label">Line</div><div class="stat-value" id="assemblyLineUnits">0</div></div>
+          <div class="card assembly-card-tight"><div class="stat-label">DPMO</div><div class="stat-value" id="assemblyDpmoUnits">0</div></div>
+          <div class="card assembly-card-tight"><div class="stat-label">Done</div><div class="stat-value" id="assemblyDoneUnits">0</div></div>
+        </div>
+      </div>
+
+      <!-- ── Add row panel ────────────────────────────────────── -->
+      <div class="assembly-collapse assembly-add-modal-backdrop" id="assemblyEditModePanel" hidden style="margin-bottom:10px;">
+        <div class="assembly-add-modal-card">
+          <div class="modal-header assembly-add-modal-header">
+            <div>
+              <div class="eyebrow">Row Creator</div>
+              <h3 style="margin:4px 0;font-size:20px;font-weight:800;">Add to today's board</h3>
+            </div>
+            <button class="btn secondary" id="closeAssemblyCreateBtn" type="button">Close</button>
+          </div>
+          <div class="form-grid assembly-board-form">
+            <div class="field"><label for="assemblyWorkType">Work Type</label><select id="assemblyWorkType"><option value="pack_builder">Pack Builder</option><option value="jira">Jira</option><option value="placeholder">Placeholder</option></select></div>
+            <div class="field"><label for="assemblyPb">Primary ID / Name</label><input id="assemblyPb" placeholder="PB-00031972 or JIRA-1234" /></div>
+            <div class="field"><label for="assemblySo">Sales Order</label><input id="assemblySo" placeholder="SORD-047805" /></div>
+            <div class="field"><label for="assemblyAccount">Account</label><input id="assemblyAccount" placeholder="Account name" /></div>
+            <div class="field"><label for="assemblyQty">Scheduled Qty</label><input id="assemblyQty" type="number" min="0" value="0" /></div>
+            <div class="field"><label for="assemblyFullQty">Full Qty</label><input id="assemblyFullQty" type="number" min="0" value="0" /></div>
+            <div class="field"><label for="assemblyProducts">Total Products</label><input id="assemblyProducts" type="number" min="0" value="0" /></div>
+            <div class="field"><label for="assemblyStatus">Status</label><input id="assemblyStatus" placeholder="Ready, Printing, On Line..." /></div>
+            <div class="field"><label for="assemblyIhd">IHD</label><input id="assemblyIhd" type="date" /></div>
+            <div class="field"><label for="assemblyExternalLink">External Link</label><input id="assemblyExternalLink" placeholder="Jira or other URL" /></div>
+          </div>
+          <div class="form-grid assembly-edit-subgrid">
+            <div class="field"><label for="assemblyStage">Stage</label><select id="assemblyStage"><option value="aa">A.A.</option><option value="print">Print</option><option value="picked">Picked</option><option value="line">Line</option><option value="dpmo">DPMO</option><option value="done">Done</option></select></div>
+            <div class="field"><label for="assemblyIsPartial">Partial Pack</label><select id="assemblyIsPartial"><option value="false">No</option><option value="true">Yes</option></select></div>
+            <div class="field"><label>Units</label><input id="assemblyUnitsPreview" value="0" disabled /></div>
+            <div class="toolbar right" style="margin:0;justify-content:flex-end;"><button class="btn" id="assemblyAddBoardRowBtn" type="button">Add row</button></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Filter bar ───────────────────────────────────────── -->
+      <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;" id="assemblyFilterBar">
+        <button class="btn secondary asm-filter-btn asm-filter-active" data-filter="all" style="font-size:12px;padding:5px 14px;font-weight:700;">All</button>
+        <button class="btn secondary asm-filter-btn" data-filter="overdue" style="font-size:12px;padding:5px 14px;border-color:#e74c3c;color:#a01a1a;">Overdue</button>
+        <button class="btn secondary asm-filter-btn" data-filter="at_risk" style="font-size:12px;padding:5px 14px;border-color:#f1c40f;color:#7d5a00;">At Risk</button>
+        <button class="btn secondary asm-filter-btn" data-filter="on_track" style="font-size:12px;padding:5px 14px;">On Track</button>
+        <button class="btn secondary asm-filter-btn" data-filter="done" style="font-size:12px;padding:5px 14px;border-color:#2ecc71;color:#0F6E56;">Done</button>
+      </div>
+
+      <!-- ── Bulk action bar (visible when rows selected) ──────── -->
+      <div id="asmBulkBar" class="asm-bulk-bar" hidden>
+        <span class="asm-bulk-bar-count"><strong id="asmBulkBarCount">0</strong> selected</span>
+        <div class="asm-bulk-bar-actions">
+          <button class="btn secondary" type="button" id="asmBulkRescheduleBtn">Reschedule selected</button>
+          <button class="btn warn" type="button" id="asmBulkUnscheduleBtn">Unschedule selected</button>
+          <button class="btn secondary" type="button" id="asmBulkClearBtn" style="margin-left:8px;">Clear</button>
+        </div>
+      </div>
+
+      <!-- ── Focus list ───────────────────────────────────────── -->
+      <div id="assemblyFocusList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;"></div>
+
+      <!-- ── Detail table ─────────────────────────────────────── -->
+      <div class="table-wrap assembly-table-desktop" id="assemblyDetailTableWrap" style="display:none;">
+        <table>
+          <thead id="assemblyBoardHead"></thead>
+          <tbody id="assemblyBoardBody"></tbody>
+        </table>
+      </div>
+      <div id="assemblyBoardCards" class="assembly-cards-mobile"></div>
+
+    </section>
+
+
+<section id="queuePage" class="page queue-page-redesign">
+
+      <!-- ── Import bar (hidden, kept for JS compat) ──────────── -->
+      <div class="queue-sticky-bar legacy-import-ui" style="display:none;">
+        <div class="queue-sticky-inner">
+          <div class="queue-sticky-group">
+            <div class="queue-sticky-actions">
+              <input id="queueFileInput" type="file" accept=".xlsx,.xls" />
+              <button class="btn" id="queueImportBtn">Import report</button>
+              <button class="btn secondary" id="queueClearBtn">Clear queue</button>
+            </div>
+            <div id="queueImportStatus" class="queue-inline-status">Waiting for file.</div>
+          </div>
+          <div class="queue-sticky-divider"></div>
+          <div class="queue-sticky-group">
+            <div class="queue-sticky-actions">
+              <input id="revenueFileInput" type="file" accept=".xlsx,.xls" />
+              <button class="btn" id="revenueImportBtn">Import revenue reference</button>
+              <button class="btn secondary" id="revenueClearBtn">Clear revenue reference</button>
+            </div>
+            <div id="revenueImportStatus" class="queue-inline-status">Waiting for revenue reference file.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Hidden stats elements (kept for queue.js compat) ─── -->
+      <div style="display:none;">
+        <span id="queueImportedCount">0</span>
+        <span id="queueIncompleteCount">0</span>
+        <span id="queueScheduledCount">0</span>
+        <span id="queueEarliestIhd">—</span>
+        <span id="queueReadyUnitsStat">0</span>
+        <span id="queueReadyPbsStat">0</span>
+        <span id="queuePendingUnitsStat">0</span>
+        <span id="queuePendingPbsStat">0</span>
+        <span id="queueScheduledUnitsStat">0</span>
+        <span id="queueScheduledPbsStat">0</span>
+        <span id="queueScheduledTodayUnitsStat">0</span>
+        <span id="queueScheduledTodayPbsStat">0</span>
+        <span id="queueIssueHoldCountStat">0</span>
+        <span id="queueIssueHoldUnitsStat">0</span>
+        <span id="queueIssueHoldRevenueStat">$0</span>
+        <span id="queueIssueHoldTopTypeStat">—</span>
+        <span id="queueRawRowsCount">0</span>
+        <span id="queueGroupedRowsCount">0</span>
+        <span id="queuePriorityUnits">0</span>
+        <span id="queueSortModeLabel">IHD</span>
+        <span id="revenueRowsCount">0</span>
+        <span id="revenueKeysCount">0</span>
+        <span id="revenueSubtotalTotal">0</span>
+        <span id="revenueEarliestIhd">—</span>
+        <select id="queueSortBy"><option value="ihd_asc">IHD earliest first</option><option value="units_desc">Units highest first</option><option value="account_asc">Account A-Z</option><option value="pb_asc">Pack Builder A-Z</option></select>
+        <input id="queueSearch" placeholder="Search..." />
+        <button id="queueClearSearchBtn">Clear</button>
+        <select id="scheduledQueueLimit"><option value="all">All</option></select>
+        <select id="readyQueueLimit"><option value="all">All</option></select>
+        <select id="incompleteQueueLimit"><option value="all">All</option></select>
+        <select id="issueHoldQueueLimit"><option value="all">All</option></select>
+        <table><tbody id="queueTableBody"></tbody></table>
+        <table><tbody id="scheduledQueueTableBody"></tbody></table>
+        <table><tbody id="incompleteQueueTableBody"></tbody></table>
+        <table><tbody id="issueHoldQueueTableBody"></tbody></table>
+        <div id="readyQueueCards"></div>
+        <div id="scheduledQueueCards"></div>
+        <div id="incompleteQueueCards"></div>
+        <div id="assemblyBoardBodyCards"></div>
+      </div>
+
+      <!-- ── Command Center UI ─────────────────────────────────── -->
+      <div id="queueCommandCenter">
+
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+          <div>
+            <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;">Pack Builder Queue</div>
+            <h2 style="margin:0;font-size:26px;font-weight:800;">Available builders</h2>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn secondary" type="button" data-page-jump="importHubPage">Open Import Hub</button>
+            <button class="btn secondary" type="button" id="qccLegacyToggle">Legacy View</button>
+          </div>
+        </div>
+
+        <!-- Stats row -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:18px;" id="qccStats">
+          <div class="qcc-stat"><div class="qcc-stat-n" id="qccTotal">0</div><div class="qcc-stat-l">Total builders</div></div>
+          <div class="qcc-stat"><div class="qcc-stat-n" style="color:#27500A;" id="qccReady">0</div><div class="qcc-stat-l">Ready</div></div>
+          <div class="qcc-stat"><div class="qcc-stat-n" style="color:#A32D2D;" id="qccHold">0</div><div class="qcc-stat-l">On hold</div></div>
+          <div class="qcc-stat"><div class="qcc-stat-n" style="color:#0F6E56;" id="qccRev">$0</div><div class="qcc-stat-l">Total value</div></div>
+          <div class="qcc-stat"><div class="qcc-stat-n" style="color:#0F6E56;" id="qccReadyRev">$0</div><div class="qcc-stat-l">Ready value</div></div>
+          <div class="qcc-stat"><div class="qcc-stat-n" style="color:#854F0B;" id="qccPendingRev">$0</div><div class="qcc-stat-l">Pending value</div></div>
+          <div class="qcc-stat"><div class="qcc-stat-n" style="color:#185FA5;" id="qccScheduledRev">$0</div><div class="qcc-stat-l">Scheduled value</div></div>
+          <div class="qcc-stat"><div class="qcc-stat-n" style="color:#A32D2D;" id="qccHoldRev">$0</div><div class="qcc-stat-l">Hold value</div></div>
+          <div class="qcc-stat"><div class="qcc-stat-n" id="qccIhd">—</div><div class="qcc-stat-l">Next IHD</div></div>
+        </div>
+
+        <!-- Search + Sort -->
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+          <input type="text" id="qccSearch" placeholder="Search by PB, account, owner, status, issue…" style="flex:1;min-width:200px;padding:8px 12px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);font-size:13px;color:var(--text);" oninput="window.qcc&&window.qcc.applyFilters()" />
+          <select id="qccSort" style="padding:8px 10px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);font-size:13px;color:var(--text);" onchange="window.qcc&&window.qcc.applyFilters()">
+            <option value="ihd">Sort: IHD earliest</option>
+            <option value="rev">Sort: Revenue highest</option>
+            <option value="units">Sort: Units highest</option>
+            <option value="acc">Sort: Account A–Z</option>
+            <option value="pb">Sort: PB A–Z</option>
+          </select>
+          <select id="qccPageSize" style="padding:8px 10px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);font-size:13px;color:var(--text);" onchange="window.qcc&&window.qcc.applyFilters()">
+            <option value="25">25 per page</option>
+            <option value="50">50 per page</option>
+            <option value="100">100 per page</option>
+            <option value="all">All</option>
+          </select>
+        </div>
+
+        <!-- Filter pills -->
+        <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;align-items:center;" id="qccFilters">
+          <button class="qcc-pill qcc-pill-on" data-f="all">All</button>
+          <button class="qcc-pill" data-f="scheduled" style="color:#0C447C;border-color:#85B7EB;">Scheduled</button>
+          <button class="qcc-pill" data-f="ready" style="color:#27500A;border-color:#C0DD97;">Ready</button>
+          <button class="qcc-pill" data-f="hold" style="color:#791F1F;border-color:#F09595;">On hold</button>
+          <button class="qcc-pill" data-f="pending">Pending</button>
+          <button class="qcc-pill" data-f="urgent" style="color:#A32D2D;border-color:#F09595;">Urgent</button>
+          <span style="margin-left:auto;font-size:12px;color:var(--muted);" id="qccMatchCount"></span>
+        </div>
+
+        <!-- Bulk action bar -->
+        <div id="qccBulkBar" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 14px;border-radius:8px;background:#E6F1FB;margin-bottom:10px;font-size:13px;color:#0C447C;">
+          <span id="qccBulkCount">0 selected</span>
+          <strong id="qccBulkValue" style="margin-left:auto;color:#0F6E56;">$0 schedule value</strong>
+          <button class="btn" onclick="window.qcc&&window.qcc.bulkSchedule()" style="font-size:12px;padding:5px 14px;background:#185FA5;border-color:#185FA5;">Schedule selected</button>
+          <button class="btn secondary" onclick="window.qcc&&window.qcc.clearSelection()" style="font-size:12px;padding:5px 14px;">Clear</button>
+        </div>
+
+        <!-- List container -->
+        <div id="qccList"></div>
+
+        <!-- Pager -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;font-size:12px;color:var(--muted);">
+          <span id="qccPagerInfo"></span>
+          <div id="qccPagerBtns" style="display:flex;gap:4px;"></div>
+        </div>
+
+      </div>
+
+      <!-- ── Legacy view (hidden by default) ──────────────────── -->
+      <div id="queueLegacyView" style="display:none;">
+        <div class="card import-hub-inline-note">
+          <div><strong>Imports moved.</strong> Use the shared <strong>Import Hub</strong> page for Queue, Revenue, and Daily Tools report imports.</div>
+          <button class="btn secondary" type="button" data-page-jump="importHubPage">Open Import Hub</button>
+        </div>
+        <div class="hero queue-hero">
+          <div>
+            <div class="eyebrow">Available Queue</div>
+            <h2>Salesforce-ready pack builders</h2>
+          </div>
+        </div>
+        <section class="queue-stats-shell">
+          <div class="queue-stat-group"><div class="queue-stat-group-title">Operations</div><div class="queue-stat-grid">
+            <article class="queue-stat-card"><span class="queue-stat-label">Ready builders</span><strong class="queue-stat-value" id="queueImportedCountLeg">0</strong></article>
+            <article class="queue-stat-card"><span class="queue-stat-label">Incomplete builders</span><strong class="queue-stat-value" id="queueIncompleteCountLeg">0</strong></article>
+            <article class="queue-stat-card"><span class="queue-stat-label">Scheduled builders</span><strong class="queue-stat-value" id="queueScheduledCountLeg">0</strong></article>
+            <article class="queue-stat-card"><span class="queue-stat-label">Earliest IHD</span><strong class="queue-stat-value" id="queueEarliestIhdLeg">—</strong></article>
+          </div></div>
+        </section>
+        <div class="card queue-controls-card">
+          <div class="toolbar queue-controls-toolbar" style="margin-bottom:0">
+            <div class="left queue-controls-left">
+              <div class="field queue-control-field"><label for="queueSearchLeg">Search</label><input id="queueSearchLeg" placeholder="PB, SORD, account..." /></div>
+              <div class="field queue-control-field queue-control-select"><label for="queueSortByLeg">Sort By</label>
+                <select id="queueSortByLeg"><option value="ihd_asc">IHD earliest first</option><option value="units_desc">Units highest first</option><option value="account_asc">Account A-Z</option><option value="pb_asc">Pack Builder A-Z</option></select>
+              </div>
+            </div>
+            <div class="right"><button class="btn secondary" id="queueClearSearchBtnLeg">Clear Search</button></div>
+          </div>
+        </div>
+        <div class="card queue-section-card" style="margin-top:20px">
+          <div class="toolbar" style="margin-bottom:14px"><div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Scheduled pack builders</h3></div>
+            <div class="right"><label style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="scheduledQueueLimitLeg"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="all">All</option></select></div>
+          </div>
+          <div class="table-wrap queue-table-wrap"><table><thead><tr><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>Scheduled For</th><th>Scheduled At</th><th>Revenue</th><th>Flags</th><th>Note</th><th>Comments</th><th>Action</th></tr></thead><tbody id="scheduledQueueTableBodyLeg"></tbody></table></div>
+        </div>
+        <div class="card queue-section-card" style="margin-top:20px">
+          <div class="toolbar" style="margin-bottom:14px"><div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Issue Hold</h3></div>
+            <div class="right"><label style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="issueHoldQueueLimitLeg"><option value="10">10</option><option value="25">25</option><option value="all">All</option></select></div>
+          </div>
+          <div class="table-wrap queue-table-wrap"><table><thead><tr><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Units</th><th>IHD</th><th>Issue Type</th><th>Hold Note</th><th>Hold Start</th><th>Days</th><th>Revenue</th><th>Action</th></tr></thead><tbody id="issueHoldQueueTableBodyLeg"></tbody></table></div>
+        </div>
+        <div class="card queue-section-card" style="margin-top:20px">
+          <div class="toolbar" style="margin-bottom:14px"><div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Ready pack builders</h3></div>
+            <div class="right"><label style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="readyQueueLimitLeg"><option value="10">10</option><option value="25">25</option><option value="all">All</option></select></div>
+          </div>
+          <div class="table-wrap queue-table-wrap"><table><thead><tr><th>Priority</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Qty</th><th>Total Products</th><th>Units</th><th>IHD</th><th>Revenue</th><th>Status</th><th>Flags</th><th>Account Owner</th><th>Link</th><th>Action</th></tr></thead><tbody id="queueTableBodyLeg"></tbody></table></div>
+          <div id="readyQueueCardsLeg" class="assembly-cards-mobile"></div>
+        </div>
+        <div class="card queue-section-card" style="margin-top:20px">
+          <div class="toolbar" style="margin-bottom:14px"><div class="left"><h3 style="margin:0;font-size:22px;font-weight:900">Incomplete / pending</h3></div>
+            <div class="right"><label style="font-size:13px;font-weight:800;color:var(--muted)">Show</label><select id="incompleteQueueLimitLeg"><option value="10">10</option><option value="25">25</option><option value="all">All</option></select></div>
+          </div>
+          <div class="table-wrap queue-table-wrap"><table><thead><tr><th>Priority</th><th>Pack Builder</th><th>Sales Order</th><th>Account</th><th>Qty</th><th>Total Products</th><th>Units</th><th>IHD</th><th>Revenue</th><th>Status</th><th>Flags</th><th>Account Owner</th><th>Link</th><th>Action</th></tr></thead><tbody id="incompleteQueueTableBodyLeg"></tbody></table></div>
+          <div id="incompleteQueueCardsLeg" class="assembly-cards-mobile"></div>
+        </div>
+      </div>
+
+    </section>
+
+<section id="sordPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Daily tools</div>
+          <h2>Daily tools dossier</h2>
+          <p class="subtitle">Search one SORD and see pack builders, revenue, purchase orders, suppliers, account-product detail, notes, owner coverage, and feasibility clues in one place. This page uses your imported reports plus live queue / assembly data when available.</p>
+        </div>
+        <div class="toolbar right">
+          <button class="btn secondary" id="sordRefreshBtn" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <div class="card sord-import-card legacy-import-ui">
+        <div class="sord-import-grid">
+          <div class="field">
+            <label for="sordQueueFileInput"><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00ODu000000XJCOMA4/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Assembly / Queue report</a></label>
+            <input id="sordQueueFileInput" type="file" accept=".xlsx,.xls,.csv,text/csv" />
+          </div>
+          <div class="field">
+            <label for="sordRevenueFileInput"><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BE2jMAG/view?queryScope=userFolders" target="_blank" rel="noopener noreferrer">Revenue report</a></label>
+            <input id="sordRevenueFileInput" type="file" accept=".xlsx,.xls,.csv,text/csv" />
+          </div>
+          <div class="field">
+            <label for="sordEomFileInput"><a class="import-report-link" href="https://swagup.lightning.force.com/lightning/r/Report/00OQm000003BDbJMAW/view" target="_blank" rel="noopener noreferrer">SORD / PO detail report</a></label>
+            <input id="sordEomFileInput" type="file" accept=".xlsx,.xls,.csv,text/csv" />
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <div class="toolbar" style="margin:0">
+              <button class="btn" id="sordImportBtn" type="button">Import / Replace SORD Data</button>
+              <button class="btn secondary" id="sordClearImportsBtn" type="button">Clear Imported Data</button>
+            </div>
+          </div>
+        </div>
+        <div id="sordImportStatus" class="import-status">No SORD imports loaded yet.</div>
+      </div>
+
+      <div class="card import-hub-inline-note">
+        <div><strong>Imports moved.</strong> Use the shared <strong>Import Hub</strong> page to load the Queue, Revenue, and SORD / PO reports for this dossier.</div>
+        <button class="btn secondary" type="button" data-page-jump="importHubPage">Open Import Hub</button>
+      </div>
+
+      <div class="stats sord-stats-lux" id="sordTopStats"></div>
+
+      <div class="card" style="margin-bottom:20px">
+        <div class="toolbar">
+          <div class="left" style="gap:12px;flex-wrap:wrap">
+            <div class="field">
+              <label for="sordStatusFilter">Status</label>
+              <select id="sordStatusFilter"><option value="">All</option></select>
+            </div>
+            <div class="field">
+              <label for="sordReadinessFilter">Readiness</label>
+              <select id="sordReadinessFilter"><option value="">All</option><option value="Ready">Ready</option><option value="Partially Ready">Partially Ready</option><option value="Blocked">Blocked</option><option value="Needs Review">Needs Review</option></select>
+            </div>
+            <div class="field">
+              <label for="sordComplexityFilter">Complexity</label>
+              <select id="sordComplexityFilter"><option value="">All</option><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option></select>
+            </div>
+            <div class="field">
+              <label for="sordRiskFilter">Risk</label>
+              <select id="sordRiskFilter"><option value="">All</option><option value="none">No Flags</option><option value="flagged">Flagged</option></select>
+            </div>
+            <div class="field">
+              <label for="sordConfirmedFilter">Confirmed Revenue</label>
+              <select id="sordConfirmedFilter"><option value="">All SORDs</option><option value="confirmed">Confirmed This Month</option></select>
+            </div>
+          </div>
+          <div class="right">
+            <button class="btn secondary" id="sordResetFiltersBtn" type="button">Reset Filters</button>
+          </div>
+        </div>
+
+        <!-- Weight-coverage filter: which SORDs have their light-weight POs already in the warehouse -->
+        <div class="sord-weight-filter" id="sordWeightFilter">
+          <div class="sord-weight-filter-head">
+            <div>
+              <div class="eyebrow">In-Warehouse by Weight</div>
+              <p class="sord-weight-filter-sub">Of each SORD's POs at-or-under the chosen per-unit weight, how many are physically in the warehouse (Partially Received, Fully Received, or QA Approved)?</p>
+            </div>
+            <div class="sord-weight-filter-modes" role="radiogroup" aria-label="Weight coverage mode">
+              <button type="button" class="sord-weight-mode is-active" data-wmode="off">Off</button>
+              <button type="button" class="sord-weight-mode" data-wmode="full" title="100% of eligible POs are in the warehouse">Full · 100%</button>
+              <button type="button" class="sord-weight-mode" data-wmode="partial" title="Between 75% and 99% of eligible POs are in the warehouse">Partial · 75–99%</button>
+            </div>
+          </div>
+          <div class="sord-weight-filter-row">
+            <span class="sord-weight-bound">0.1 lb</span>
+            <input id="sordWeightSlider" class="sord-weight-slider" type="range" min="0.1" max="50" step="0.1" value="5" />
+            <span class="sord-weight-bound">50 lb</span>
+            <div class="sord-weight-readout">
+              <label for="sordWeightInput" class="sord-weight-readout-lbl">Threshold</label>
+              <input id="sordWeightInput" class="sord-weight-input" type="number" min="0.1" max="50" step="0.1" value="5" /> <span>lb</span>
+            </div>
+            <div id="sordWeightSummary" class="sord-weight-summary">Off — showing all SORDs</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ Priority Builder Panel ══ -->
+      <div class="card priority-builder-panel" id="priorityBuilderPanel">
+        <div class="priority-builder-head">
+          <div>
+            <div class="eyebrow">Priority Builder</div>
+            <h3>Select SORDs that need same-day attention</h3>
+            <p class="priority-builder-sub">Pick SORDs from the list, then generate a Slack-ready post with POs that still need inbound work, pack builder assignments, and key dates.</p>
+          </div>
+          <div class="priority-builder-actions">
+            <button class="btn secondary" id="pbClearSelBtn" type="button">Clear Selection</button>
+            <button class="btn" id="pbGenerateBtn" type="button">Generate Post</button>
+          </div>
+        </div>
+
+        <!-- Selected SORD chips -->
+        <div id="pbSelectedChips" class="pb-chips-wrap"></div>
+
+        <!-- Generated Slack post -->
+        <div id="pbPostWrap" class="pb-post-wrap" hidden>
+          <div class="pb-post-toolbar">
+            <span class="pb-post-label">📋 Slack Post — copy and paste into your channel</span>
+            <button class="btn secondary" id="pbCopyBtn" type="button">Copy to Clipboard</button>
+          </div>
+          <pre id="pbPostContent" class="pb-post-content"></pre>
+        </div>
+      </div>
+
+      <!-- ══ Pre-Kit Command Board ══ -->
+      <div class="card prekit-board" id="prekitBoardPanel">
+        <div class="prekit-board-head">
+          <div>
+            <div class="eyebrow">Pre-Kit Command Board</div>
+            <h3>Bundle now. Ship faster.</h3>
+            <p class="prekit-board-sub">Move pack builders through the pre-kit lifecycle — mark what's ready, assign associates, log complications, and confirm completion. Every chip syncs back to its SORD.</p>
+          </div>
+          <div class="prekit-board-actions">
+            <div class="prekit-board-search-wrap">
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6.5" stroke="#9ca3af" stroke-width="1.8"/><path d="M14.5 14.5l3.5 3.5" stroke="#9ca3af" stroke-width="1.8" stroke-linecap="round"/></svg>
+              <input id="prekitBoardSearch" class="prekit-board-search" placeholder="PB, SORD, account, associate…" />
+            </div>
+            <select id="prekitBoardAssignee" class="prekit-board-assignee"><option value="">All associates</option></select>
+            <div class="prekit-board-sort">
+              <select id="prekitBoardSort" class="prekit-board-sort-select" aria-label="Sort pack builders by">
+                <option value="default">Sort: Smart priority</option>
+                <option value="activity">Sort: Latest activity</option>
+                <option value="created">Sort: Created (SORD #)</option>
+                <option value="ihd">Sort: In-hands date</option>
+                <option value="units">Sort: Unit quantity</option>
+                <option value="kits">Sort: Kit quantity</option>
+                <option value="sord">Sort: SORD number</option>
+              </select>
+              <button id="prekitBoardSortDir" class="prekit-board-sort-dir" type="button" aria-label="Toggle sort direction" title="Toggle ascending / descending">↓</button>
+            </div>
+            <button class="btn secondary" id="prekitBoardToggle" type="button" aria-expanded="true">Collapse</button>
+          </div>
+        </div>
+
+        <div class="prekit-board-body" id="prekitBoardBody">
+          <div class="prekit-board-stats" id="prekitBoardStats"></div>
+          <div class="prekit-board-filters" id="prekitBoardFilters"></div>
+          <div class="prekit-board-list" id="prekitBoardList"></div>
+        </div>
+      </div>
+
+      <!-- ── Accordion filter bar ─────────────────────────────────────── -->
+      <div class="sord-accordion-bar">
+        <div class="sord-accordion-tools">
+          <div class="sord-search-wrap">
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6.5" stroke="#9ca3af" stroke-width="1.8"/><path d="M14.5 14.5l3.5 3.5" stroke="#9ca3af" stroke-width="1.8" stroke-linecap="round"/></svg>
+            <input id="sordSearchInput" class="sord-search-input" placeholder="SORD, account, owner, supplier, pack builder…" />
+          </div>
+          <select id="sordSortSelect" class="sord-sort-select">
+            <option value="ihd">IHD ↑</option>
+            <option value="rev-desc">Revenue ↓</option>
+            <option value="readiness-asc">Readiness</option>
+            <option value="flags-desc">Flags ↓</option>
+            <option value="account">Account A–Z</option>
+            <option value="modified-desc">Last Modified ↓ (newest)</option>
+            <option value="modified-asc">Last Modified ↑ (oldest)</option>
+            <option value="created-desc">Order Created ↓ (newest)</option>
+            <option value="created-asc">Order Created ↑ (oldest)</option>
+          </select>
+          <div id="sordExplorerCount" class="sord-meta-pill">0 results</div>
+        </div>
+        <div class="sord-type-pills">
+          <button class="sord-type-pill sord-type-pill-active" type="button" data-type-filter="all">
+            <span class="sord-type-dot" style="background:#64748b"></span>All&nbsp;<span class="sord-type-count" id="sordTypeCntAll">0</span>
+          </button>
+          <button class="sord-type-pill" type="button" data-type-filter="pb">
+            <span class="sord-type-dot" style="background:#185fa5"></span>PB&nbsp;<span class="sord-type-count" id="sordTypeCntPb">0</span>
+          </button>
+          <button class="sord-type-pill" type="button" data-type-filter="bulk">
+            <span class="sord-type-dot" style="background:#059669"></span>Bulk&nbsp;<span class="sord-type-count" id="sordTypeCntBulk">0</span>
+          </button>
+          <button class="sord-type-pill" type="button" data-type-filter="mix">
+            <span class="sord-type-dot" style="background:#7c3aed"></span>PB+Bulk&nbsp;<span class="sord-type-count" id="sordTypeCntMix">0</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ── Accordion list ─────────────────────────────────────────────── -->
+      <div id="sordAccordionList"></div>
+
+      <!-- ── Owner mapping (reference card) ───────────────────────────── -->
+      <div class="card" style="margin-top:20px">
+        <div class="sord-card-head">
+          <div><div class="eyebrow">Reference</div><h3>Owner mapping</h3></div>
+          <div class="toolbar right" style="margin:0">
+            <a id="sordOwnerUtilityLink" class="btn secondary" href="#" target="_blank" rel="noopener" style="display:none">Open link</a>
+            <button class="btn secondary" id="sordAddOwnerRowBtn" type="button">Add Row</button>
+            <button class="btn" id="sordSaveOwnerMapBtn" type="button">Save Mapping</button>
+          </div>
+        </div>
+        <div class="sord-owner-toolbar">
+          <div class="field">
+            <label for="sordOwnerUtilityLabel">Utility Link Label</label>
+            <input id="sordOwnerUtilityLabel" placeholder="Open team directory" />
+          </div>
+          <div class="field">
+            <label for="sordOwnerUtilityUrl">Utility Link URL</label>
+            <input id="sordOwnerUtilityUrl" placeholder="https://…" />
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="sord-owner-table">
+            <thead>
+              <tr>
+                <th>Name in SF</th>
+                <th>Account Manager</th>
+                <th>Project Manager</th>
+                <th>PSA</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="sordOwnerMapBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+<section id="assemblyFlightTrackerPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Assembly Visibility</div>
+          <h2>Embedded assembly flight tracker</h2>
+          <p class="subtitle">Give account owners and outside stakeholders a clean, read-only window into scheduled pack builders without exposing the rest of Houston Control.</p>
+        </div>
+        <div class="toolbar right">
+          <a class="btn secondary" href="assembly-flight-tracker.html" target="_blank" rel="noopener">Open Standalone</a>
+        </div>
+      </div>
+      <div class="card" style="padding:12px">
+        <iframe id="assemblyFlightTrackerIframe" src="assembly-flight-tracker.html" loading="lazy" title="Assembly Flight Tracker" style="width:100%;min-height:1200px;border:none;border-radius:18px;background:#fff;"></iframe>
+      </div>
+    </section>
+
+<section id="inboundFlightTrackerPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Inbound Visibility</div>
+          <h2>Embedded inbound PO flight tracker</h2>
+          <p class="subtitle">Live stage-by-stage visibility for inbound POs — Dock, Receiving, Prep, Routed, Complete. Built for account owners and outside stakeholders who need to track the POs they are accountable for.</p>
+        </div>
+        <div class="toolbar right">
+          <a class="btn secondary" href="inbound-flight-tracker.html" target="_blank" rel="noopener">Open Standalone</a>
+        </div>
+      </div>
+      <div class="card" style="padding:12px">
+        <iframe id="inboundFlightTrackerIframe" src="inbound-flight-tracker.html" loading="lazy" title="Inbound PO Flight Tracker" style="width:100%;min-height:1200px;border:none;border-radius:18px;background:#fff;"></iframe>
+      </div>
+    </section>
+
+<section id="workflowInboundPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">QA Inbound Workflow</div>
+          <h2>Embedded inbound workflow board</h2>
+          <p class="subtitle">One clean entry point for Docker, QA Receiving, Prep, Overstock, Putaway, and performance. Open the board below and switch views inside the embedded workflow when needed.</p>
+        </div>
+        <div class="toolbar right">
+          <a class="btn secondary" href="workflow.html" target="_blank" rel="noopener">Open Full Screen</a>
+        </div>
+      </div>
+
+      <div class="card" style="padding:12px">
+        <iframe id="workflowIframe" src="workflow.html" loading="lazy" title="QA Inbound Workflow" style="width:100%;min-height:1200px;border:none;border-radius:18px;background:#fff;"></iframe>
+      </div>
+    </section>
+
+
+    <!-- CYCLE COUNT MODULE -->
+    <section id="cycleCountPage" class="page">
+      <div id="ccSyncBanner" class="cc-sync-banner" style="display:none;"></div>
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Inventory Operations</div>
+          <h2>Cycle Count</h2>
+          <p class="subtitle">Daily inventory cycle counts — assign work, enter counts in batches, verify results, and track performance.</p>
+        </div>
+      </div>
+      <div class="cc-body">
+        <div class="cc-tabs">
+          <button class="cc-tab active" data-tab="my-work">My Work <span class="cc-tab-badge">0</span></button>
+          <button class="cc-tab" data-tab="assignments">Assignments</button>
+          <button class="cc-tab" data-tab="review">Review Queue <span class="cc-tab-badge">0</span></button>
+          <button class="cc-tab" data-tab="history">History</button>
+          <button class="cc-tab" data-tab="kpi">Performance</button>
+          <button class="cc-tab" data-tab="settings">Settings</button>
+        </div>
+        <div class="cc-panel active" data-panel="my-work"></div>
+        <div class="cc-panel" data-panel="assignments"></div>
+        <div class="cc-panel" data-panel="review"></div>
+        <div class="cc-panel" data-panel="history"></div>
+        <div class="cc-panel" data-panel="kpi"></div>
+        <div class="cc-panel" data-panel="settings"></div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════════
+         HISTORY LOG
+         ═══════════════════════════════════════════════════════════ -->
+    <section id="historyPage" class="page">
+      <div class="mc-shell">
+        <div class="mc-hero">
+          <div>
+            <div class="eyebrow">Audit Trail</div>
+            <h2>History Log</h2>
+            <p class="subtitle">Search the full change history for any pack builder, employee, purchase order, sales order, or error record.</p>
+          </div>
+        </div>
+
+        <div class="toolbar" style="flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+          <select id="historyEntityType" style="min-width:160px;">
+            <option value="">All Types</option>
+            <option value="pack_builder">Pack Builder</option>
+            <option value="sales_order">Sales Order</option>
+            <option value="po">Purchase Order</option>
+            <option value="employee">Employee</option>
+            <option value="error_record">Error Record</option>
+          </select>
+          <input id="historyEntityId" type="text" placeholder="ID, name, or keyword…" style="flex:1;min-width:200px;" />
+          <input id="historyFrom" type="date" title="From date" />
+          <input id="historyTo"   type="date" title="To date" />
+          <button id="historySearchBtn" class="btn" type="button">Search</button>
+        </div>
+
+        <div id="historyStatus" style="font-size:12px;color:#888;margin-bottom:12px;min-height:16px;"></div>
+        <div id="historyResults"></div>
+        <div id="historyLoadMore" style="display:none;text-align:center;padding:20px;">
+          <button id="historyLoadMoreBtn" class="btn secondary" type="button">Load more</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="modal-backdrop" id="profileModalBackdrop">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="eyebrow">Employee Profile</div>
+        <h2 id="profileName" style="margin:6px 0 4px;font-size:32px"></h2>
+        <p id="profileSubtitle" class="subtitle" style="max-width:none"></p>
+      </div>
+      <button class="btn secondary" id="closeProfileBtn">Close</button>
+    </div>
+    <div class="profile-grid" id="profileStats"></div>
+    <div class="table-wrap"><table><thead><tr><th>Date</th><th>Department</th><th>Mark</th><th>Demerits</th></tr></thead><tbody id="profileHistoryBody"></tbody></table></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="scheduleModalBackdrop">
+  <div class="modal" style="width:min(560px,100%)">
+    <div class="modal-header">
+      <div>
+        <div class="eyebrow">Schedule Pack Builder</div>
+        <h2 style="margin:6px 0 4px;font-size:30px">Choose a date</h2>
+        <p class="subtitle" style="max-width:none">Pick the Assembly date from the calendar input below. This is safer than typing dates manually.</p>
+      </div>
+      <button class="btn secondary" id="closeScheduleBtn">Close</button>
+    </div>
+    <div class="schedule-summary" id="scheduleModalSummary"></div>
+    <div class="queue-modal-financial" id="scheduleFinancialImpact"></div>
+    <div class="schedule-modal-grid">
+      <div class="field"><label for="scheduleModalDate">Assembly Date</label><input id="scheduleModalDate" type="date" /></div>
+      <div class="field"><label for="scheduleModalNote">Schedule Note</label><input id="scheduleModalNote" placeholder="Optional note for the schedule" /></div>
+      <div class="field"><label for="scheduleMode">Schedule Mode</label><select id="scheduleMode"><option value="full">Full amount</option><option value="partial">Partial amount</option></select></div>
+      <div class="field"><label for="scheduleQty">Scheduled Qty</label><input id="scheduleQty" type="number" min="0" value="0" /></div>
+      <div class="field"><label for="scheduleFullQty">Full Qty</label><input id="scheduleFullQty" type="number" min="0" value="0" disabled /></div>
+      <div class="field"><label for="scheduleRemainderToggle">Auto-schedule Remainder</label><select id="scheduleRemainderToggle"><option value="false">No</option><option value="true">Yes</option></select></div>
+      <div class="field"><label for="scheduleRemainderDate">Remainder Date</label><input id="scheduleRemainderDate" type="date" /></div>
+    </div>
+    <div class="toolbar" style="margin-top:16px;margin-bottom:0;justify-content:flex-end">
+      <div class="right"><button class="btn secondary" id="cancelScheduleBtn">Cancel</button><button class="btn" id="confirmScheduleBtn">Confirm Schedule</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Bulk Schedule Modal ──────────────────────────────────── -->
+<div class="modal-backdrop" id="bulkScheduleModalBackdrop">
+  <div class="modal" style="width:min(540px,100%)">
+    <div class="modal-header">
+      <div>
+        <div class="eyebrow">Schedule to Assembly</div>
+        <h2 style="margin:6px 0 4px;font-size:26px;" id="bulkScheduleTitle">Schedule N pack builders</h2>
+      </div>
+      <button class="btn secondary" onclick="window.closeBulkScheduleModal()">Close</button>
+    </div>
+
+    <!-- Stats row -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:14px 20px 0;">
+      <div style="background:var(--blue1);border-radius:8px;padding:10px 12px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:var(--text);line-height:1;margin-bottom:2px;" id="bulkStatCount">0</div>
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Builders</div>
+      </div>
+      <div style="background:#E1F5EE;border-radius:8px;padding:10px 12px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:#0F6E56;line-height:1;margin-bottom:2px;" id="bulkStatUnits">0</div>
+        <div style="font-size:11px;font-weight:700;color:#0F6E56;text-transform:uppercase;letter-spacing:.05em;">Total units</div>
+      </div>
+      <div style="background:var(--blue1);border-radius:8px;padding:10px 12px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:var(--text);line-height:1;margin-bottom:2px;" id="bulkStatPacks">0</div>
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Total packs</div>
+      </div>
+      <div style="background:#E1F5EE;border-radius:8px;padding:10px 12px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:#0F6E56;line-height:1;margin-bottom:2px;" id="bulkStatRevenue">$0</div>
+        <div style="font-size:11px;font-weight:700;color:#0F6E56;text-transform:uppercase;letter-spacing:.05em;">Total value</div>
+      </div>
+    </div>
+
+    <!-- PB list -->
+    <div style="padding:14px 20px 0;">
+      <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Pack builders</div>
+      <div id="bulkScheduleList" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:5px;"></div>
+    </div>
+
+    <!-- Date + note -->
+    <div class="schedule-modal-grid" style="padding:14px 20px 0;">
+      <div class="field"><label for="bulkScheduleDate">Assembly Date</label><input id="bulkScheduleDate" type="date" oninput="window.updateBulkScheduleBtn()" /></div>
+      <div class="field"><label for="bulkScheduleNote">Note <span style="font-weight:400;opacity:.7;">(optional — applies to all)</span></label><input id="bulkScheduleNote" placeholder="e.g. Priority shift, rush order…" /></div>
+    </div>
+
+    <div class="toolbar" style="margin:16px 20px 0 20px;margin-bottom:0;justify-content:flex-end;padding-bottom:20px;">
+      <div class="right">
+        <button class="btn secondary" onclick="window.closeBulkScheduleModal()">Cancel</button>
+        <button class="btn" id="bulkScheduleConfirmBtn" onclick="window.confirmBulkSchedule()" disabled>Schedule all</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<div class="modal-backdrop" id="issueHoldModalBackdrop">
+  <div class="modal" style="width:min(620px,100%)">
+    <div class="modal-header">
+      <div>
+        <div class="eyebrow">Issue Hold</div>
+        <h2 style="margin:6px 0 4px;font-size:30px">Set this pack builder aside</h2>
+        <p class="subtitle" style="max-width:none">Use Issue Hold when the work is still real, but there is a problem blocking it. Pick the hold reason, add a note, and set the true start date so days on hold keep counting correctly.</p>
+      </div>
+      <button class="btn secondary" id="closeIssueHoldBtn">Close</button>
+    </div>
+    <div class="schedule-summary" id="issueHoldModalSummary"></div>
+    <div class="schedule-modal-grid">
+      <div class="field"><label for="issueHoldType">Issue Type</label><select id="issueHoldType"></select></div>
+      <div class="field"><label for="issueHoldStartDate">Hold Start Date</label><input id="issueHoldStartDate" type="date" /></div>
+      <div class="field field-span-2"><label for="issueHoldNote">Hold Note</label><textarea id="issueHoldNote" placeholder="What exactly is blocking this pack builder?"></textarea></div>
+    </div>
+    <div class="toolbar" style="margin-top:16px;margin-bottom:0;justify-content:flex-end">
+      <div class="right"><button class="btn secondary" id="cancelIssueHoldBtn">Cancel</button><button class="btn warn" id="confirmIssueHoldBtn">Put on Hold</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="assemblyEditModalBackdrop">
+  <div class="modal assembly-edit-modal">
+    <div class="modal-header">
+      <div>
+        <div class="eyebrow">Assembly Edit</div>
+        <h2 style="margin:6px 0 4px;font-size:30px">Edit scheduled work</h2>
+        <p class="subtitle" style="max-width:none">Make changes in a clean form instead of squeezing edits into the board row.</p>
+      </div>
+      <button class="btn secondary" id="closeAssemblyEditBtn">Close</button>
+    </div>
+    <div class="schedule-summary" id="assemblyEditModalSummary"></div>
+    <div class="assembly-edit-grid">
+      <div class="field"><label for="assemblyEditWorkType">Work Type</label><select id="assemblyEditWorkType"><option value="pack_builder">Pack Builder</option><option value="jira">Jira</option><option value="placeholder">Placeholder</option></select></div>
+      <div class="field"><label for="assemblyEditPb">Primary ID / Name</label><input id="assemblyEditPb" /></div>
+      <div class="field"><label for="assemblyEditSo">Sales Order</label><input id="assemblyEditSo" /></div>
+      <div class="field"><label for="assemblyEditAccount">Account</label><input id="assemblyEditAccount" /></div>
+      <div class="field"><label for="assemblyEditQty">Scheduled Qty</label><input id="assemblyEditQty" type="number" min="0" /></div>
+      <div class="field"><label for="assemblyEditFullQty">Full Qty</label><input id="assemblyEditFullQty" type="number" min="0" /></div>
+      <div class="field"><label for="assemblyEditProducts">Total Products</label><input id="assemblyEditProducts" type="number" min="0" /></div>
+      <div class="field"><label for="assemblyEditUnitsPreview">Units</label><input id="assemblyEditUnitsPreview" disabled /></div>
+      <div class="field"><label for="assemblyEditStatus">Status</label><input id="assemblyEditStatus" /></div>
+      <div class="field"><label for="assemblyEditIhd">IHD</label><input id="assemblyEditIhd" type="date" /></div>
+      <div class="field"><label for="assemblyEditExternalLink">External Link</label><input id="assemblyEditExternalLink" placeholder="Optional URL" /></div>
+      <div class="field"><label for="assemblyEditStage">Current Stage</label><select id="assemblyEditStage"><option value="aa">A.A.</option><option value="print">Print</option><option value="picked">Picked</option><option value="line">Line</option><option value="dpmo">DPMO</option><option value="done">Done</option></select></div>
+      <div class="field field-span-2"><label for="assemblyEditRescheduleNote">Reschedule Note</label><textarea id="assemblyEditRescheduleNote" placeholder="Hold, missing units, box issue..."></textarea></div>
+      <div class="field assembly-edit-readonly"><label>Revenue</label><div class="assembly-edit-readonly-value" id="assemblyEditRevenue">$0.00</div></div>
+    </div>
+    <div class="toolbar" style="margin-top:18px;margin-bottom:0;justify-content:flex-end">
+      <div class="right">
+        <button class="btn secondary" id="cancelAssemblyEditBtn">Cancel</button>
+        <button class="btn" id="saveAssemblyEditBtn">Save changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ATTENDANCE EDITOR POPUP (transparent blue overlay from sketch) -->
+<div class="attendance-remix-overlay" id="attendanceRemixEditorBackdrop">
+  <div class="attendance-remix-popup">
+    <div class="attendance-remix-popup-head">
+      <div>
+        <h3 id="attendanceRemixEditorTitle">Attendance Editor</h3>
+        <div class="attendance-remix-popup-subtitle">Select a status, then tap names to apply. Or use chips per person.</div>
+      </div>
+      <button class="attendance-remix-popup-close" id="attendanceRemixEditorCloseBtn" type="button">✕</button>
+    </div>
+    <div class="attendance-remix-popup-datebar">
+      <button id="attendanceRemixEditorPrevBtn" type="button">← Prev</button>
+      <button id="attendanceRemixEditorTodayBtn" type="button">Today</button>
+      <button id="attendanceRemixEditorNextBtn" type="button">Next →</button>
+      <input id="attendanceRemixEditorDateInput" type="date" />
+      <span class="attendance-remix-popup-date-label" id="attendanceRemixEditorDateLabel"></span>
+      <button id="attendanceRemixEditorClearBtn" type="button" style="margin-left:auto;color:#dc2626;border-color:#fecaca;">Clear Day</button>
+    </div>
+    <div class="attendance-remix-popup-body" id="attendanceRemixEditorTable"></div>
+    <div class="attendance-remix-popup-foot">
+      <div class="foot-left">
+        <button class="attendance-remix-btn danger" id="attendanceRemixEditorCancelBtn" type="button">Cancel</button>
+      </div>
+      <div class="foot-right">
+        <button class="attendance-remix-btn primary" id="attendanceRemixEditorSaveBtn" type="button">Save & Quit</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS OVERLAY -->
+<div class="attendance-remix-settings-overlay" id="attendanceRemixSettingsBackdrop">
+  <div class="attendance-remix-settings-popup">
+    <div class="attendance-remix-settings-head">
+      <h3>Settings — Roster, Departments, Marks & Demerits</h3>
+      <button class="attendance-remix-popup-close" id="attendanceRemixSettingsCloseBtn" type="button">✕</button>
+    </div>
+    <div class="attendance-remix-settings-body">
+      <div class="attendance-remix-settings-section">
+        <h4>Departments</h4>
+        <div id="attendanceRemixDepartmentsList" class="attendance-remix-settings-list"></div>
+        <div class="attendance-remix-add-row">
+          <input id="attendanceRemixNewDepartmentInput" placeholder="New department name" />
+          <button class="add-btn" id="attendanceRemixAddDepartmentBtn" type="button">+ Add</button>
+        </div>
+      </div>
+
+      <div class="attendance-remix-settings-section">
+        <h4>Marks & Demerits</h4>
+        <div id="attendanceRemixMarksList" class="attendance-remix-settings-list"></div>
+        <div class="attendance-remix-add-row">
+          <input id="attendanceRemixNewMarkInput" placeholder="Mark name" />
+          <input id="attendanceRemixNewMarkDemeritInput" type="number" step="0.5" placeholder="Demerits" style="max-width:100px;" />
+          <button class="add-btn" id="attendanceRemixAddMarkBtn" type="button">+ Add</button>
+        </div>
+      </div>
+
+      <div class="attendance-remix-settings-section full-span">
+        <h4>Employees — move people between departments here</h4>
+        <div id="attendanceRemixEmployeesList" class="attendance-remix-settings-list"></div>
+        <div class="attendance-remix-add-row">
+          <input id="attendanceRemixNewEmployeeName" placeholder="Employee name" />
+          <input id="attendanceRemixNewEmployeeAdpName" placeholder="ADP name (e.g. Last, First)" title="How this person appears in ADP exports — leave blank if same as display name" />
+          <select id="attendanceRemixNewEmployeeDepartment"></select>
+          <input id="attendanceRemixNewEmployeeBirthday" type="date" title="Birthday" />
+          <select id="attendanceRemixNewEmployeeSize"></select>
+          <button class="add-btn" id="attendanceRemixAddEmployeeSaveBtn" type="button">+ Add Person</button>
+        </div>
+      </div>
+    </div>
+    <div class="attendance-remix-settings-foot">
+      <button class="attendance-remix-btn" id="attendanceRemixSettingsCancelBtn" type="button">Cancel</button>
+      <button class="attendance-remix-btn primary" id="attendanceRemixSettingsSaveBtn" type="button">Save Settings</button>
+    </div>
+  </div>
+</div>
+
+<link rel="stylesheet" href="Styles/attendance-remix.css">
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
+<script src="version.js"></script>
+<script src="history-client.js"></script>
+<script src="navigation.js"></script>
+<script src="sidebar.js"></script>
+<script src="storage.js"></script>
+<script src="state.js"></script>
+<script src="helpers.js"></script>
+<script src="queue.js"></script>
+<script src="queue-command-center.js"></script>
+<script src="assembly.js"></script>
+<script src="script.js"></script>
+<script src="history-panel.js"></script>
+<script src="sord.js"></script>
+<script src="import-hub.js"></script>
+<script src="revenue-tracker.js"></script>
+<script src="attendance-remix.js"></script>
+<script src="productivity-module.js"></script>
+<script src="fulfillment-scan-prototype.js"></script>
+
+<script src="huddle-module.js"></script>
+<script src="meeting-hub.js"></script>
+<script src="policy.js"></script>
+
+<!-- Global tooltip -->
+<div id="hcTooltip" class="hc-tooltip" style="display:none" role="tooltip">
+  <div class="hc-tip-title"></div>
+  <div class="hc-tip-body"></div>
+  <button class="hc-tip-jump btn secondary" type="button" style="display:none;margin-top:10px;font-size:12px;padding:6px 12px">Go to page →</button>
+</div>
+
+<!-- New comment alert banner -->
+<!-- Internal comment modal (Assembly & Queue) -->
+<div id="internalCommentModal" class="cm-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="icmTitle">
+  <div class="cm-dialog">
+    <div class="cm-header">
+      <div>
+        <div class="eyebrow" style="text-transform:uppercase;letter-spacing:.16em;font-size:11px;font-weight:800;color:#6d879d;margin-bottom:6px;">Order Communication</div>
+        <h2 class="cm-title" id="icmTitle">Comments</h2>
+        <p class="cm-subtitle" id="icmSubtitle"></p>
+      </div>
+      <button class="cm-close" id="icmClose" type="button" aria-label="Close">&#x2715;</button>
+    </div>
+    <div class="cm-thread" id="icmThread">
+      <p class="cm-loading">Loading comments…</p>
+    </div>
+    <div class="cm-compose">
+      <div class="cm-compose-row">
+        <label class="cm-field">
+          <span>Your name</span>
+          <input id="icmAuthor" type="text" maxlength="80" placeholder="e.g. Jane Smith" autocomplete="name" />
+        </label>
+        <label class="cm-field cm-field-cat">
+          <span>Type</span>
+          <select id="icmCategory">
+            <option value="general">General note</option>
+            <option value="priority">Priority request</option>
+            <option value="instructions">Special instructions</option>
+          </select>
+        </label>
+      </div>
+      <label class="cm-field">
+        <span>Message</span>
+        <textarea id="icmBody" rows="3" maxlength="2000" placeholder="Share a request or note for the assembly team…"></textarea>
+      </label>
+      <div class="cm-compose-footer">
+        <span class="cm-char-count" id="icmCharCount">0 / 2000</span>
+        <button class="cm-submit" id="icmSubmit" type="button">Send</button>
+      </div>
+      <p class="cm-error" id="icmError" hidden></p>
+    </div>
+  </div>
+</div>
+
+<div id="commentAlertBanner" hidden style="position:fixed;top:0;left:0;right:0;z-index:9999;align-items:center;gap:12px;padding:12px 20px;font-size:14px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.18);">
+  <span id="commentAlertIcon" style="font-size:20px;">💬</span>
+  <span id="commentAlertText" style="flex:1;">New comment on a scheduled order</span>
+  <button id="commentAlertView" style="background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.4);color:inherit;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:800;font-size:13px;">View</button>
+  <button id="commentAlertDismiss" style="background:rgba(255,255,255,.15);border:none;color:inherit;padding:5px 12px;border-radius:8px;cursor:pointer;font-weight:800;font-size:13px;">Dismiss</button>
+</div>
+
+<script src="help.js"></script>
+<script src="cycle-count.js"></script>
+<script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
+<script src="auth.js"></script>
+<script src="access.js"></script>
+<script>
+// ── Role bridge: pass user role into flight tracker iframe ──
+(function() {
+  function sendRoleToIframe() {
+    const user = window.hcCurrentUser;
+    if (!user) return;
+    const iframe = document.getElementById('assemblyFlightTrackerIframe');
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage({
+        type: 'HC_ROLE',
+        role: user.role || 'l1',
+        name: user.name || '',
+        email: user.email || ''
+      }, '*');
+    }
+    if (user.role === 'external') {
+      const nav = document.querySelector('[data-page="assemblyFlightTrackerPage"]');
+      if (nav) nav.click();
+    }
+  }
+  setTimeout(sendRoleToIframe, 800);
+  const _ftIframe = document.getElementById('assemblyFlightTrackerIframe');
+  if (_ftIframe) _ftIframe.addEventListener('load', function(){ setTimeout(sendRoleToIframe, 300); });
+  document.addEventListener('click', function(e) {
+    if (e.target.closest('[data-page="assemblyFlightTrackerPage"]')) setTimeout(sendRoleToIframe, 400);
+  });
+  window.addEventListener('hc-profile-updated', function() {
+    setTimeout(sendRoleToIframe, 100);
+  });
+})();
+
+// ── Role bridge: pass user role into INBOUND flight tracker iframe ──
+(function() {
+  function sendIdentityToInboundIframe() {
+    const user = window.hcCurrentUser;
+    if (!user) return;
+    const iframe = document.getElementById('inboundFlightTrackerIframe');
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage({
+        type: 'HC_ROLE',
+        role: user.role || 'l1',
+        name: user.name || '',
+        email: user.email || ''
+      }, '*');
+    }
+  }
+  setTimeout(sendIdentityToInboundIframe, 800);
+  const _iptIframe = document.getElementById('inboundFlightTrackerIframe');
+  if (_iptIframe) _iptIframe.addEventListener('load', function(){ setTimeout(sendIdentityToInboundIframe, 300); });
+  document.addEventListener('click', function(e) {
+    if (e.target.closest('[data-page="inboundFlightTrackerPage"]')) setTimeout(sendIdentityToInboundIframe, 400);
+  });
+  // Re-broadcast when the user updates their profile name
+  window.addEventListener('hc-profile-updated', function() {
+    setTimeout(sendIdentityToInboundIframe, 100);
+  });
+})();
+
+// ── Data-changed bridge: notify the inbound tracker iframe whenever the ──
+// ── inbound workflow data is saved, so it can refresh without waiting    ──
+// ── for its 60s poll. Debounced lightly to avoid spamming during typing. ──
+(function() {
+  let _dcTimer = null;
+  function notifyInboundIframe() {
+    const iframe = document.getElementById('inboundFlightTrackerIframe');
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage({ type: 'HC_INBOUND_DATA_CHANGED' }, '*');
+    }
+  }
+  window.addEventListener('qa-workflow-data-changed', function() {
+    if (_dcTimer) clearTimeout(_dcTimer);
+    // Wait briefly so the workflow-sync POST has time to reach the backend.
+    // The tracker then re-fetches and sees the new state.
+    _dcTimer = setTimeout(notifyInboundIframe, 600);
+  });
+})();
+
+// ── Flight Tracker nav badge ─────────────────────────────────
+(function() {
+  const COMMENTS_API = '/.netlify/functions/flight-tracker-comments';
+  let pollTimer = null;
+
+  function getBadge() { return document.getElementById('ftNavBadge'); }
+  function getEmail() {
+    try { return (JSON.parse(localStorage.getItem('hcAuthUser') || '{}').email || '').toLowerCase(); }
+    catch(_) { return ''; }
+  }
+
+  function updateBadge(count) {
+    const badge = getBadge();
+    if (!badge) return;
+    console.log('HC Badge: updateBadge called with count=' + count, new Error().stack.split('\n')[2]);
+    if (count > 0) { badge.textContent = count > 99 ? '99+' : String(count); badge.hidden = false; }
+    else { badge.hidden = true; }
+  }
+
+  async function pollUnread() {
+    const email = getEmail();
+    if (!email) return;
+    try {
+      const res = await fetch(COMMENTS_API + '?unread_for=' + encodeURIComponent(email));
+      const data = await res.json();
+      updateBadge(data.count || 0);
+    } catch(_) {}
+  }
+
+  // Listen for postMessage from iframe when a comment is posted
+  // so badge updates instantly without waiting for next poll
+  window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'FT_COMMENT_POSTED') {
+      pollUnread();
+    }
+  });
+
+  function tryStart() {
+    const user = window.hcCurrentUser;
+    if (user && user.email && ['admin','manager','l2','l1'].includes(user.role)) {
+      pollUnread();
+      clearInterval(pollTimer);
+      pollTimer = setInterval(pollUnread, 10000); // poll every 10s
+    } else {
+      setTimeout(tryStart, 800);
+    }
+  }
+  setTimeout(tryStart, 1000);
+  window.addEventListener('focus', pollUnread);
+})();
+</script>
+<script src="settings.js"></script>
+<script>
+// ── Houston Control System Reset ──────────────────────────────
+(function() {
+  'use strict';
+
+  let step = 0; // 0 = fresh, 1 = armed, 2 = executing
+
+  function getToken() {
+    try { return JSON.parse(localStorage.getItem('hcAuthUser') || '{}').token || null; }
+    catch(_) { return null; }
+  }
+
+  function openModal() {
+    step = 0;
+    const modal = document.getElementById('systemResetModal');
+    const btn   = document.getElementById('resetConfirmBtn');
+    const label = document.getElementById('resetStepLabel');
+    const status = document.getElementById('resetStatus');
+    if (!modal) return;
+    if (btn)    { btn.textContent = 'Yes, I want to reset'; btn.style.background = '#e67e22'; btn.style.borderColor = '#e67e22'; btn.disabled = false; }
+    if (label)  label.textContent = 'Click the button below to arm the reset.';
+    if (status) status.textContent = '';
+    modal.hidden = false;
+  }
+
+  function closeModal() {
+    const modal = document.getElementById('systemResetModal');
+    if (modal) modal.hidden = true;
+    step = 0;
+  }
+
+  function confirmStep() {
+    const btn    = document.getElementById('resetConfirmBtn');
+    const label  = document.getElementById('resetStepLabel');
+    const status = document.getElementById('resetStatus');
+
+    if (step === 0) {
+      // Arm it
+      step = 1;
+      if (btn)   { btn.textContent = '⚠️ CONFIRM — Delete everything'; btn.style.background = '#c0392b'; btn.style.borderColor = '#c0392b'; }
+      if (label) label.textContent = 'Click again to permanently delete all operational data.';
+      return;
+    }
+
+    if (step === 1) {
+      // Fire
+      step = 2;
+      if (btn)   { btn.disabled = true; btn.textContent = 'Resetting…'; }
+      if (label) label.textContent = '';
+      if (status) status.textContent = 'Clearing backend data…';
+
+      const token = getToken();
+      if (!token) {
+        if (status) status.innerHTML = '<span style="color:#e55;">Not authenticated. Please sign out and back in.</span>';
+        step = 0;
+        return;
+      }
+
+      fetch('/.netlify/functions/system-reset', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token,
+        },
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!data.ok) throw new Error(data.error || 'Reset failed');
+
+        if (status) status.innerHTML = '<span style="color:#2ecc71;">✓ Backend cleared. Clearing browser storage…</span>';
+
+        // Clear all ops_hub localStorage keys
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('ops_hub_')) keysToRemove.push(key);
+        }
+        keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
+        // Additional module-specific keys not prefixed with ops_hub_
+        ['ft_author_name', 'cc_active_name', 'qaWorkflowCurrentUserV2',
+         'houston_control_fulfillment_scan_prototype_v2_manual_carriers',
+         'qaV5SeparatedWorkflowData_v4fixed',
+         'qaActiveImportedMonthKeyV1', 'qaCompareImportedMonthKeyV1',
+         'qaWorkflowPerformanceDeptViewV1'].forEach(function(k) {
+          localStorage.removeItem(k);
+        });
+
+        setTimeout(function() {
+          if (status) status.innerHTML = `<span style="color:#2ecc71;">✓ ${data.message} Reloading…</span>`;
+          setTimeout(function() {
+            closeModal();
+            window.location.reload();
+          }, 1500);
+        }, 500);
+      })
+      .catch(function(err) {
+        if (status) status.innerHTML = '<span style="color:#e55;">Error: ' + err.message + '</span>';
+        if (btn)   { btn.disabled = false; btn.textContent = 'Retry'; }
+        step = 1;
+      });
+    }
+  }
+
+  window.hcReset = { openModal, closeModal, confirmStep };
+})();
+</script>
+<script>
+// ── Houston Control Notification Poller ───────────────────────
+(function() {
+  'use strict';
+
+  const banner    = document.getElementById('hcNotifBanner');
+  const notifText = document.getElementById('hcNotifText');
+  const dismissBtn = document.getElementById('hcNotifDismiss');
+  let activeNotifId = null;
+
+  function getToken() {
+    try { return JSON.parse(localStorage.getItem('hcAuthUser') || '{}').token || null; }
+    catch(_) { return null; }
+  }
+
+  function showBanner(message, id) {
+    if (!banner || !notifText) return;
+    notifText.textContent = message;
+    activeNotifId = id;
+    banner.hidden = false;
+  }
+
+  function hideBanner() {
+    if (banner) banner.hidden = true;
+  }
+
+  if (dismissBtn) {
+    dismissBtn.addEventListener('click', function() {
+      hideBanner();
+      const token = getToken();
+      if (!token) return;
+      fetch('/.netlify/functions/notifications?action=read', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({ id: activeNotifId })
+      }).catch(function() {});
+    });
+  }
+
+  function checkNotifications() {
+    const user = window.hcCurrentUser;
+    if (!user || !['admin', 'manager'].includes(user.role)) return;
+    const token = getToken();
+    if (!token) return;
+
+    fetch('/.netlify/functions/notifications?action=list', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      const notifs = data.notifications || [];
+      if (notifs.length > 0) {
+        showBanner(notifs[0].message, notifs[0].id);
+      }
+    })
+    .catch(function() {});
+  }
+
+  // Poll after user is set, then every 5 minutes
+  function startPolling() {
+    if (window.hcCurrentUser) {
+      checkNotifications();
+      setInterval(checkNotifications, 5 * 60 * 1000);
+    } else {
+      setTimeout(startPolling, 500);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startPolling);
+  } else {
+    startPolling();
+  }
+})();
+</script>
+<script>
+// ── Upcoming Schedule collapsible ─────────────────────────────────────────
+(function(){
+  const toggle = document.getElementById('upcomingScheduleToggle');
+  const body   = document.getElementById('upcomingScheduleBody');
+  const icon   = document.getElementById('upcomingToggleIcon');
+  if(!toggle || !body) return;
+  let open = true;
+  toggle.addEventListener('click', function(){
+    open = !open;
+    body.style.display = open ? '' : 'none';
+    icon.textContent = open ? '▼' : '▶';
+  });
+})();
+
+// ── Internal Comment Modal (Assembly & Queue) ──────────────────────────────
+(function(){
+  const COMMENTS_API = '/.netlify/functions/flight-tracker-comments';
+  const CATEGORY_LABELS = { priority:'🔴 Priority Request', instructions:'📋 Special Instructions', general:'💬 General Note' };
+  const modal    = document.getElementById('internalCommentModal');
+  const thread   = document.getElementById('icmThread');
+  const titleEl  = document.getElementById('icmTitle');
+  const subtitle = document.getElementById('icmSubtitle');
+  const closeBtn = document.getElementById('icmClose');
+  const author   = document.getElementById('icmAuthor');
+  const category = document.getElementById('icmCategory');
+  const body     = document.getElementById('icmBody');
+  const charCount= document.getElementById('icmCharCount');
+  const submitBtn= document.getElementById('icmSubmit');
+  const errorEl  = document.getElementById('icmError');
+  if(!modal) return;
+
+  let icmState = { pbId:'', pbName:'', so:'', account:'' };
+
+  function escHtml(v){ return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function fmtTime(iso){ const d=new Date(iso); return isNaN(d)?'':d.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
+
+  function renderThread(comments){
+    if(!comments.length){ thread.innerHTML='<p class="cm-empty">No comments yet.</p>'; return; }
+    thread.innerHTML = comments.map(c=>{
+      const isInternal = String(c.author_name||'').toLowerCase().includes('(internal)') || String(c.author_name||'').toLowerCase().includes('[team]');
+      const displayName = String(c.author_name||'').replace(/\s*\(internal\)/i,'').replace(/\s*\[team\]/i,'').trim() || 'Team';
+      return `<div class="cm-comment cm-cat-${escHtml(c.category)}${isInternal?' cm-internal':''}">
+        <div class="cm-comment-meta">
+          <span class="cm-cat-badge">${escHtml(CATEGORY_LABELS[c.category]||c.category)}</span>
+          <span class="cm-comment-author">${escHtml(displayName)}</span>
+          <span class="cm-comment-time">${escHtml(fmtTime(c.created_at))}</span>
+        </div>
+        <p class="cm-comment-body">${escHtml(c.body)}</p>
+      </div>`;
+    }).join('');
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  async function loadComments(){
+    thread.innerHTML='<p class="cm-loading">Loading comments…</p>';
+    try{
+      const key = icmState.pbId ? `pb_id=${encodeURIComponent(icmState.pbId)}` : `so=${encodeURIComponent(icmState.so)}`;
+      const res = await fetch(`${COMMENTS_API}?${key}`,{headers:{Accept:'application/json'}});
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error||'Load failed');
+      renderThread(data.comments||[]);
+    }catch(err){ thread.innerHTML=`<p class="cm-empty cm-err-text">Could not load comments: ${escHtml(err.message)}</p>`; }
+  }
+
+  window.openInternalCommentModal = function(pbId, pbName, so, account){
+    icmState = { pbId:pbId||'', pbName:pbName||'', so:so||'', account:account||'' };
+    titleEl.textContent  = pbName || so || 'Order';
+    subtitle.textContent = [so?`SO: ${so}`:'', account?`Account: ${account}`:''].filter(Boolean).join(' · ');
+    errorEl.hidden = true;
+    modal.hidden   = false;
+    document.body.style.overflow = 'hidden';
+    // Pre-fill author from current user
+    if (!author.value) {
+      const user = localStorage.getItem('qaWorkflowCurrentUserV2') || '';
+      if (user) author.value = user;
+    }
+    loadComments();
+    // Mark thread as read in background
+    if (typeof window._markCommentThreadRead === 'function') {
+      window._markCommentThreadRead(pbId||'', so||'').then(() => {
+        if (typeof window.renderAssemblyCommentBadges === 'function') window.renderAssemblyCommentBadges();
+        if (typeof window.renderQueueCommentBadges   === 'function') window.renderQueueCommentBadges();
+      });
+    }
+  };
+
+  function closeModal(){ modal.hidden=true; document.body.style.overflow=''; }
+
+  closeBtn.addEventListener('click', closeModal);
+  modal.addEventListener('click', e=>{ if(e.target===modal) closeModal(); });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape'&&!modal.hidden) closeModal(); });
+  body.addEventListener('input', ()=>{ charCount.textContent=`${body.value.length} / 2000`; });
+
+  submitBtn.addEventListener('click', async function(){
+    const msg = body.value.trim();
+    const who = (author.value.trim()||'Lead') + ' (internal)';
+    errorEl.hidden = true;
+    if(!msg){ errorEl.textContent='Please write a message.'; errorEl.hidden=false; return; }
+    submitBtn.disabled=true; submitBtn.textContent='Sending…';
+    try{
+      const res = await fetch(COMMENTS_API,{
+        method:'POST', headers:{'Content-Type':'application/json',Accept:'application/json'},
+        body: JSON.stringify({ pb_id:icmState.pbId, pb_name:icmState.pbName, so:icmState.so, account:icmState.account, author_name:who, category:category.value, body:msg })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error||'Submit failed');
+      body.value=''; charCount.textContent='0 / 2000';
+      await loadComments();
+      if(window._cmBatchData) window._cmBatchData.loadedAt = 0;
+      if(typeof window.renderAssemblyCommentBadges==='function') window.renderAssemblyCommentBadges();
+      if(typeof window.renderQueueCommentBadges==='function') window.renderQueueCommentBadges();
+    }catch(err){ errorEl.textContent=err.message||'Failed to send.'; errorEl.hidden=false; }
+    finally{ submitBtn.disabled=false; submitBtn.textContent='Send'; }
+  });
+
+  // Delegated click — catches any comment badge (.cb-has, .cb-none) in Assembly board and Queue
+  // Works for table rows (<tr>), mobile cards (.mob-card), and focus list rows (.asm-focus-row)
+  document.addEventListener('click', function(e){
+    const badge = e.target.closest('.cb-badge');
+    if(!badge || badge.classList.contains('cb-loading')) return;
+
+    // Focus list rows: badge is direct child of .asm-focus-row, no cb-cell wrapper needed
+    const focusRow = badge.closest('.asm-focus-row');
+    if(focusRow) {
+      const cbKey = focusRow.dataset.cbkey || badge.dataset.cbkey || '';
+      const so = cbKey.toUpperCase().startsWith('SORD') ? cbKey : '';
+      const actualPbId = cbKey.toUpperCase().startsWith('SORD') ? '' : cbKey;
+      window.openInternalCommentModal(actualPbId, '', so, '');
+      return;
+    }
+
+    // Detail table rows and mobile cards: need cb-cell
+    const cell = badge.closest('.cb-cell');
+    if(!cell) return;
+    const row = cell.closest('tr') || cell.closest('.mob-card');
+    if(!row) return;
+    const cbKey   = row.dataset.cbkey || cell.dataset.cbkey || '';
+    const pbName  = row.dataset.pbname || '';
+    const so      = cbKey.toUpperCase().startsWith('SORD') ? cbKey : '';
+    const actualPbId = cbKey.toUpperCase().startsWith('SORD') ? '' : cbKey;
+    window.openInternalCommentModal(actualPbId, pbName, so, '');
+  });
+})();
+
+// ── New-comment global alert polling ─────────────────────────────────────
+(function(){
+  const COMMENTS_API = '/.netlify/functions/flight-tracker-comments';
+  const POLL_MS  = 20000;
+  const SEEN_KEY = 'hc_last_seen_comment_id';
+
+  let lastSeenId      = parseInt(localStorage.getItem(SEEN_KEY) || '0', 10);
+  let pendingComments = [];
+  let alertPbId='', alertPbName='', alertSo='', alertAccount='';
+
+  const banner    = document.getElementById('commentAlertBanner');
+  const alertText = document.getElementById('commentAlertText');
+  const alertIcon = document.getElementById('commentAlertIcon');
+  const viewBtn   = document.getElementById('commentAlertView');
+  const dismissBtn= document.getElementById('commentAlertDismiss');
+
+  function escH(v){ return String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function showBanner(comments){
+    if(!banner||!comments.length) return;
+    const hasPri = comments.some(c=>c.category==='priority');
+    const latest = comments[0];
+    alertPbId    = latest.pb_id    || '';
+    alertPbName  = latest.pb_name  || '';
+    alertSo      = latest.so       || '';
+    alertAccount = latest.account  || '';
+    const label  = alertPbName || alertSo || 'an order';
+    const author = latest.author_name || 'A stakeholder';
+    const extra  = comments.length > 1 ? ` (+${comments.length - 1} more)` : '';
+    if(hasPri){
+      banner.style.background = '#dc2626';
+      if(alertIcon) alertIcon.textContent = '\uD83D\uDD34';
+      alertText.textContent = `Priority request from ${author} on ${escH(label)}${extra}`;
+    } else {
+      banner.style.background = '#1a56db';
+      if(alertIcon) alertIcon.textContent = '\uD83D\uDCAC';
+      alertText.textContent = `${author} commented on ${escH(label)}${extra}`;
+    }
+    banner.style.color = '#fff';
+    banner.hidden = false;
+  }
+
+  function dismissBanner(){
+    if(banner) banner.hidden = true;
+    pendingComments = [];
+  }
+
+  if(dismissBtn) dismissBtn.addEventListener('click', dismissBanner);
+  if(viewBtn) viewBtn.addEventListener('click', ()=>{
+    dismissBanner();
+    if(typeof window.openInternalCommentModal === 'function'){
+      window.openInternalCommentModal(alertPbId, alertPbName, alertSo, alertAccount);
+    }
+  });
+
+  async function pollLatest(){
+    try{
+      const res  = await fetch(`${COMMENTS_API}?latest=10`, { headers:{ Accept:'application/json' } });
+      if(!res.ok) return;
+      const data = await res.json();
+      const comments = (data.comments || []).filter(c => Number(c.id||0) > lastSeenId);
+      if(!comments.length) return;
+      const maxId = Math.max(...comments.map(c=>Number(c.id||0)));
+      lastSeenId  = maxId;
+      localStorage.setItem(SEEN_KEY, String(maxId));
+      const external = comments.filter(c => {
+        const a = String(c.author_name||'').toLowerCase();
+        return !a.includes('(internal)') && !a.includes('[team]');
+      });
+      if(!external.length) return;
+      pendingComments = external;
+      showBanner(pendingComments);
+      if(window._cmBatchData) window._cmBatchData.loadedAt = 0;
+      if(typeof window.renderQueueCommentBadges === 'function')   window.renderQueueCommentBadges();
+      if(typeof window.renderAssemblyCommentBadges === 'function') window.renderAssemblyCommentBadges();
+    }catch(e){ /* silent */ }
+  }
+
+  fetch(`${COMMENTS_API}?latest=1`, { headers:{ Accept:'application/json' } })
+    .then(r=>r.ok?r.json():null)
+    .then(data=>{
+      const c = data && (data.comments ? data.comments[0] : data.comment);
+      if(c){ const id=Number(c.id||0); if(id>lastSeenId){ lastSeenId=id; localStorage.setItem(SEEN_KEY,String(id)); } }
+      setInterval(pollLatest, POLL_MS);
+    })
+    .catch(()=>{ setInterval(pollLatest, POLL_MS); });
+})();
+</script>
+</body>
+</html>
