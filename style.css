@@ -6226,6 +6226,7 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 }
 
 /* Solid-color backgrounds used for stripes, dots, bar segments */
+.prekit-stage-bg-unset        { background:#f1f5f9; color:#94a3b8; border:1px dashed #cbd5e1; box-sizing:border-box; }
 .prekit-stage-bg-not_ready    { background: #cbd5e1; color:#475569; }
 .prekit-stage-bg-ineligible   { background: linear-gradient(135deg, #64748b 0%, #334155 100%); color:#fff; }
 .prekit-stage-bg-ready        { background: linear-gradient(135deg, #4f8fef 0%, #2563eb 100%); color:#fff; }
@@ -6233,6 +6234,7 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 .prekit-stage-bg-complication { background: linear-gradient(135deg, #f87171 0%, #dc2626 100%); color:#fff; }
 .prekit-stage-bg-completed    { background: linear-gradient(135deg, #34d399 0%, #059669 100%); color:#fff; }
 
+.prekit-stage-dot-unset        { background:#f8fafc; color:#94a3b8; border:1px dashed #cbd5e1; box-sizing:border-box; }
 .prekit-stage-dot-not_ready    { background:#e2e8f0; color:#64748b; }
 .prekit-stage-dot-ineligible   { background:linear-gradient(135deg, #64748b 0%, #334155 100%); color:#fff; }
 .prekit-stage-dot-ready        { background:linear-gradient(135deg, #4f8fef 0%, #2563eb 100%); color:#fff; }
@@ -6501,6 +6503,38 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   font-weight: 600;
   cursor: pointer;
 }
+/* Sort selector + direction toggle live as a grouped control */
+.prekit-board-sort {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+.prekit-board-sort-select {
+  border: none;
+  padding: 8px 12px;
+  font-size: 13px;
+  background: transparent;
+  color: #1e293b;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+.prekit-board-sort-dir {
+  border: none;
+  border-left: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  padding: 0 14px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .12s;
+}
+.prekit-board-sort-dir:not(:disabled):hover { background: #e2e8f0; color: #0f172a; }
+.prekit-board-sort-dir:disabled { cursor: default; }
 .prekit-board.is-collapsed .prekit-board-body { display: none; }
 
 /* Stats strip */

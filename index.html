@@ -329,25 +329,17 @@
           </div>
         </section>
 
-        <!-- ── FLOOR NOW + TODAY'S EXECUTION (merged from Daily Brief) ── -->
-        <section class="brief-section brief-two-col">
-          <div class="brief-col">
-            <div class="brief-section-head brief-section-head-row">
-              <div>
-                <div class="brief-eyebrow">Floor now</div>
-                <h2 class="brief-section-title">Current workable state</h2>
-              </div>
-              <div id="huddleAttendance" class="mc-mini-list"></div>
-            </div>
-            <div class="mc-radar-grid brief-floor-grid" id="huddleFloorNow"></div>
-          </div>
-          <div class="brief-col brief-col-divided">
-            <div class="brief-section-head">
-              <div class="brief-eyebrow">Today's execution</div>
+        <!-- ── FLOOR STATUS (merged Floor Now + Today's Execution) ── -->
+        <section class="brief-section">
+          <div class="brief-section-head brief-section-head-row">
+            <div>
+              <div class="brief-eyebrow">Floor status</div>
               <h2 class="brief-section-title">Live department summary</h2>
             </div>
-            <div id="huddleTodayExec"></div>
+            <div id="huddleAttendance" class="mc-mini-list"></div>
           </div>
+          <div class="floor-status-grid" id="huddleFloorNow"></div>
+          <div id="huddleTodayExec" class="floor-status-note"></div>
         </section>
 
         <!-- ── NEEDS ATTENTION: Priority radar as editorial story columns ── -->
@@ -2215,6 +2207,18 @@
               <input id="prekitBoardSearch" class="prekit-board-search" placeholder="PB, SORD, account, associate…" />
             </div>
             <select id="prekitBoardAssignee" class="prekit-board-assignee"><option value="">All associates</option></select>
+            <div class="prekit-board-sort">
+              <select id="prekitBoardSort" class="prekit-board-sort-select" aria-label="Sort pack builders by">
+                <option value="default">Sort: Smart priority</option>
+                <option value="activity">Sort: Latest activity</option>
+                <option value="created">Sort: Created (SORD #)</option>
+                <option value="ihd">Sort: In-hands date</option>
+                <option value="units">Sort: Unit quantity</option>
+                <option value="kits">Sort: Kit quantity</option>
+                <option value="sord">Sort: SORD number</option>
+              </select>
+              <button id="prekitBoardSortDir" class="prekit-board-sort-dir" type="button" aria-label="Toggle sort direction" title="Toggle ascending / descending">↓</button>
+            </div>
             <button class="btn secondary" id="prekitBoardToggle" type="button" aria-expanded="true">Collapse</button>
           </div>
         </div>

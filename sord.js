@@ -57,6 +57,8 @@
     prekitBoardAssignee: document.getElementById('prekitBoardAssignee'),
     prekitBoardStats: document.getElementById('prekitBoardStats'),
     prekitBoardFilters: document.getElementById('prekitBoardFilters'),
+    prekitBoardSort: document.getElementById('prekitBoardSort'),
+    prekitBoardSortDir: document.getElementById('prekitBoardSortDir'),
     prekitBoardList: document.getElementById('prekitBoardList')
   };
 
@@ -335,11 +337,13 @@
   // Stage-aware tracking. Each record:
   //   { stage, assignee, assignedAt, note, updatedAt, history? }
   // Stages drive every surface: per-PB chip, per-SORD Pre-Kit tab, and the
-  // top-level Pre-Kit Command Board. "not_ready" is the implicit default
-  // (no record). Old records (just {assignee, assignedAt}) migrate to
-  // stage = "assigned" on load.
+  // top-level Pre-Kit Command Board. "unset" is the new implicit default for
+  // PBs with no explicit stage — replaces the old "not_ready" fallback so
+  // teams can mark Not Ready deliberately rather than by omission. Old
+  // records (just {assignee, assignedAt}) migrate to stage = "assigned" on load.
   const PREKIT_KEY = 'ops_hub_sord_prekit_v1';
   const PREKIT_STAGES = [
+    { id:'unset',        label:'Unset',         short:'Unset',        icon:'·',  tone:'blank'   },
     { id:'not_ready',    label:'Not Ready',     short:'Not Ready',    icon:'○',  tone:'neutral' },
     { id:'ineligible',   label:'Ineligible',    short:'Ineligible',   icon:'⊘',  tone:'muted'   },
     { id:'ready',        label:'Ready',         short:'Ready',        icon:'◐',  tone:'info'    },
@@ -377,7 +381,7 @@
     activeTypeFilter: 'all',
     weightFilter: loadWeightFilter(),
     prekit: loadPrekit(),
-    prekitBoard: { stageFilter:'active', assignee:'', search:'', open:true },
+    prekitBoard: { stageFilter:'active', assignee:'', search:'', open:true, sortBy:'default', sortDir:'desc' },
     ownerMap: loadJson(OWNER_MAP_KEY, DEFAULT_OWNER_MAP),
     prioritySords: new Set(JSON.parse(localStorage.getItem(PRIORITY_KEY) || '[]'))
   };
@@ -409,7 +413,7 @@
   }
   function getPrekitStage(pb){
     const rec = getPrekitAssignment(pb);
-    return (rec && rec.stage) || 'not_ready';
+    return (rec && rec.stage) || 'unset';
   }
   function setPrekitAssignment(pb, assignee){
     // Back-compat helper: assign a name, set stage='assigned'. Empty clears.
@@ -480,7 +484,7 @@
   // Compute pre-kit progress for a SORD: { assigned, total, byStage }.
   function prekitProgressForItem(item){
     const pbs = (item && item.packBuilders) || [];
-    const byStage = { not_ready:0, ineligible:0, ready:0, assigned:0, complication:0, completed:0 };
+    const byStage = { unset:0, not_ready:0, ineligible:0, ready:0, assigned:0, complication:0, completed:0 };
     if (!pbs.length) return { assigned: 0, total: 0, byStage };
     let assigned = 0;
     for (const pb of pbs) {
@@ -527,8 +531,8 @@
   function renderPrekitChip(pb, pkKey, opts){
     const variant = (opts && opts.variant) || 'pb-row';
     const rec = getPrekitAssignment(pb);
-    const stage = (rec && rec.stage) || 'not_ready';
-    const stageDef = PREKIT_STAGE_BY_ID[stage] || PREKIT_STAGE_BY_ID.not_ready;
+    const stage = (rec && rec.stage) || 'unset';
+    const stageDef = PREKIT_STAGE_BY_ID[stage] || PREKIT_STAGE_BY_ID.unset;
     const label = (() => {
       if (stage === 'assigned' && rec && rec.assignee) return rec.assignee;
       if (stage === 'complication') return 'Complication';
@@ -646,7 +650,7 @@
     if (!key) return;
     const pb = findPbByPrekitKey(key);
     const rec = pb ? getPrekitAssignment(pb) : null;
-    const currentStage = (rec && rec.stage) || 'not_ready';
+    const currentStage = (rec && rec.stage) || 'unset';
     const menu = document.createElement('div');
     menu.className = 'prekit-stage-menu';
     menu.setAttribute('role','menu');
@@ -1905,7 +1909,7 @@ function finalizeOrder(order){
         if (!key) continue;
         pb._sordItemKey = item.key;
         const rec = getPrekitAssignment(pb);
-        const stage = (rec && rec.stage) || 'not_ready';
+        const stage = (rec && rec.stage) || 'unset';
         out.push({ pb, pkKey:key, rec, stage, item });
       }
     }
@@ -1917,7 +1921,7 @@ function finalizeOrder(order){
     const board = state.prekitBoard;
     const rows = collectAllPbsForBoard();
     // Stage counts across the entire dataset
-    const counts = { not_ready:0, ineligible:0, ready:0, assigned:0, complication:0, completed:0 };
+    const counts = { unset:0, not_ready:0, ineligible:0, ready:0, assigned:0, complication:0, completed:0 };
     rows.forEach(r => { counts[r.stage] = (counts[r.stage] || 0) + 1; });
     const total = rows.length;
     const active = counts.ready + counts.assigned + counts.complication;
@@ -1927,7 +1931,7 @@ function finalizeOrder(order){
       els.prekitBoardStats.innerHTML = `
         <div class="prekit-stat prekit-stat-total"><div class="prekit-stat-lbl">Pack Builders</div><div class="prekit-stat-val">${fmtInt(total)}</div></div>
         <div class="prekit-stat prekit-stat-active"><div class="prekit-stat-lbl">In Pre-Kit Flow</div><div class="prekit-stat-val">${fmtInt(active)}</div></div>
-        ${PREKIT_STAGES.filter(s => s.id !== 'not_ready').map(s => `
+        ${PREKIT_STAGES.filter(s => s.id !== 'unset').map(s => `
           <div class="prekit-stat prekit-stat-${s.id}">
             <div class="prekit-stat-lbl"><span class="prekit-stat-dot prekit-stage-bg-${s.id}">${s.icon}</span> ${escape(s.short)}</div>
             <div class="prekit-stat-val">${fmtInt(counts[s.id] || 0)}</div>
@@ -1983,16 +1987,63 @@ function finalizeOrder(order){
       });
     }
 
-    // Sort: complications first, then by IHD ascending, then by stage order
-    const stageRank = { complication:0, ready:1, assigned:2, completed:3, not_ready:4, ineligible:5 };
-    filtered.sort((a, b) => {
-      const sa = stageRank[a.stage] ?? 9;
-      const sb = stageRank[b.stage] ?? 9;
-      if (sa !== sb) return sa - sb;
-      const ihdA = new Date(a.item.earliestIhd || a.item.dueDate || 0).getTime() || 0;
-      const ihdB = new Date(b.item.earliestIhd || b.item.dueDate || 0).getTime() || 0;
-      return ihdA - ihdB;
-    });
+    // Sort — driven by board.sortBy and board.sortDir. The default mode
+    // (no explicit pick) keeps the original priority-aware order:
+    // complications first, then by IHD, then by stage rank.
+    const stageRank = { complication:0, ready:1, assigned:2, completed:3, not_ready:4, unset:5, ineligible:6 };
+    const sortBy  = board.sortBy  || 'default';
+    const sortDir = board.sortDir || 'desc';
+    const dirMul  = sortDir === 'asc' ? 1 : -1;
+
+    function _ts(d){ const t = new Date(d || 0).getTime(); return isNaN(t) ? 0 : t; }
+    function _num(v){ const n = Number(v); return isNaN(n) ? 0 : n; }
+    function _str(v){ return String(v == null ? '' : v).toLowerCase(); }
+
+    if (sortBy === 'default') {
+      filtered.sort((a, b) => {
+        const sa = stageRank[a.stage] ?? 9;
+        const sb = stageRank[b.stage] ?? 9;
+        if (sa !== sb) return sa - sb;
+        const ihdA = _ts(a.item.earliestIhd || a.item.dueDate);
+        const ihdB = _ts(b.item.earliestIhd || b.item.dueDate);
+        return ihdA - ihdB;
+      });
+    } else {
+      filtered.sort((a, b) => {
+        let av, bv;
+        switch (sortBy) {
+          case 'activity':
+            av = _ts(a.rec && a.rec.updatedAt);
+            bv = _ts(b.rec && b.rec.updatedAt);
+            break;
+          case 'created':
+            // No created-at field on PBs; SORD number is a sensible proxy
+            av = _num(String(a.item.sord || '').replace(/\D/g,''));
+            bv = _num(String(b.item.sord || '').replace(/\D/g,''));
+            break;
+          case 'ihd':
+            av = _ts(a.item.earliestIhd || a.item.dueDate);
+            bv = _ts(b.item.earliestIhd || b.item.dueDate);
+            break;
+          case 'units':
+            av = _num(a.pb.units);
+            bv = _num(b.pb.units);
+            break;
+          case 'kits':
+            av = _num(a.pb.qty);
+            bv = _num(b.pb.qty);
+            break;
+          case 'sord':
+            av = _str(a.item.sord);
+            bv = _str(b.item.sord);
+            return av.localeCompare(bv) * dirMul;
+          default:
+            av = 0; bv = 0;
+        }
+        if (av === bv) return 0;
+        return (av < bv ? -1 : 1) * dirMul;
+      });
+    }
 
     if (!filtered.length) {
       els.prekitBoardList.innerHTML = `<div class="prekit-board-empty">
@@ -2365,12 +2416,12 @@ function finalizeOrder(order){
     // multi-segment breakdown across the five stages.
     const _pkProgress = prekitProgressForItem(item);
     const _pkPbs = item.packBuilders || [];
-    const _pkByStage = { not_ready:[], ineligible:[], ready:[], assigned:[], complication:[], completed:[] };
+    const _pkByStage = { unset:[], not_ready:[], ineligible:[], ready:[], assigned:[], complication:[], completed:[] };
     _pkPbs.forEach(pb => {
       const stage = getPrekitStage(pb);
       (_pkByStage[stage] || _pkByStage.not_ready).push(pb);
     });
-    const _pkStageOrder = ['ready','assigned','complication','completed','not_ready','ineligible'];
+    const _pkStageOrder = ['ready','assigned','complication','completed','not_ready','unset','ineligible'];
     const _pkRow = (pb) => {
       const pkKey = prekitKeyForPb(pb);
       const rec = getPrekitAssignment(pb);
@@ -2882,6 +2933,39 @@ function finalizeOrder(order){
       state.prekitBoard.assignee = els.prekitBoardAssignee.value || '';
       renderPrekitBoard();
     });
+    // Sort selector
+    els.prekitBoardSort?.addEventListener('change', () => {
+      const v = els.prekitBoardSort.value || 'default';
+      state.prekitBoard.sortBy = v;
+      // Sensible default direction per sort. Activity, created, units, kits
+      // are most useful descending (newest/biggest first); IHD ascending
+      // (earliest deadline first); SORD number ascending (lexical).
+      const desc = ['activity','created','units','kits'];
+      state.prekitBoard.sortDir = desc.includes(v) ? 'desc' : 'asc';
+      _syncSortDirBtn();
+      renderPrekitBoard();
+    });
+    // Sort direction toggle
+    function _syncSortDirBtn(){
+      if (!els.prekitBoardSortDir) return;
+      const dir = state.prekitBoard.sortDir || 'desc';
+      els.prekitBoardSortDir.textContent = dir === 'asc' ? '↑' : '↓';
+      els.prekitBoardSortDir.setAttribute('aria-label',
+        'Sort direction: ' + (dir === 'asc' ? 'ascending' : 'descending'));
+      // Smart-priority mode doesn't honor direction, so dim the toggle there
+      const isDefault = (state.prekitBoard.sortBy || 'default') === 'default';
+      els.prekitBoardSortDir.disabled = isDefault;
+      els.prekitBoardSortDir.style.opacity = isDefault ? '0.35' : '';
+    }
+    els.prekitBoardSortDir?.addEventListener('click', () => {
+      if ((state.prekitBoard.sortBy || 'default') === 'default') return;
+      state.prekitBoard.sortDir = state.prekitBoard.sortDir === 'asc' ? 'desc' : 'asc';
+      _syncSortDirBtn();
+      renderPrekitBoard();
+    });
+    // Initialize control state from persisted board state
+    if (els.prekitBoardSort) els.prekitBoardSort.value = state.prekitBoard.sortBy || 'default';
+    _syncSortDirBtn();
     // Collapse / expand
     els.prekitBoardToggle?.addEventListener('click', () => {
       state.prekitBoard.open = !state.prekitBoard.open;
