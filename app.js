@@ -2509,22 +2509,49 @@ async function init() {
 }
 
 function t(key) {
-  return (translations[state.language] && translations[state.language][key]) || key;
+  // First check the inbound module's own translations table; if missing,
+  // fall through to the global HC_I18N dictionary so any shared key works.
+  var local = translations[state.language] && translations[state.language][key];
+  if (local) return local;
+  if (window.HC_I18N) {
+    var globalVal = window.HC_I18N(key);
+    if (globalVal && globalVal !== key) return globalVal;
+  }
+  return key;
 }
 
 function bindLanguageSwitch() {
-  langEnBtn.addEventListener("click", () => {
-    state.language = "en";
-    localStorage.setItem(LANGUAGE_KEY, "en");
+  // Inbound's EN/ES buttons now flip the GLOBAL language so the rest of the
+  // app stays in sync. The local state.language / LANGUAGE_KEY are still
+  // written for backward compatibility with code paths that read them.
+  function flip(lang) {
+    state.language = lang;
+    try { localStorage.setItem(LANGUAGE_KEY, lang); } catch (_) {}
+    if (window.HC_I18N) window.HC_I18N.setLang(lang);
     applyLanguage();
     renderAll();
-  });
-  langEsBtn.addEventListener("click", () => {
-    state.language = "es";
-    localStorage.setItem(LANGUAGE_KEY, "es");
-    applyLanguage();
-    renderAll();
-  });
+  }
+  langEnBtn.addEventListener("click", () => flip("en"));
+  langEsBtn.addEventListener("click", () => flip("es"));
+
+  // If the global language is changed elsewhere (e.g. from Settings on the
+  // parent page), pick it up here and re-render inbound.
+  if (window.HC_I18N) {
+    // Initialize from global on first load so a refresh respects the saved choice
+    var glob = window.HC_I18N.getLang();
+    if (glob && glob !== state.language) {
+      state.language = glob;
+      try { localStorage.setItem(LANGUAGE_KEY, glob); } catch (_) {}
+      applyLanguage();
+    }
+    window.HC_I18N.onChange(function (lang) {
+      if (lang === state.language) return;
+      state.language = lang;
+      try { localStorage.setItem(LANGUAGE_KEY, lang); } catch (_) {}
+      applyLanguage();
+      renderAll();
+    });
+  }
 }
 
 function bindFilterToggles() {

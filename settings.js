@@ -404,6 +404,31 @@
     observer.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['class'] });
   }
 
+  // ── Language toggle (Settings card) ───────────────────────
+  function bindLanguageToggle() {
+    var card = document.getElementById('settingsLangToggle');
+    if (!card || card.dataset.bound === '1') return;
+    card.dataset.bound = '1';
+    function syncActive() {
+      var lang = (window.HC_I18N && window.HC_I18N.getLang && window.HC_I18N.getLang()) || 'en';
+      card.querySelectorAll('.hc-lang-btn').forEach(function (b) {
+        b.classList.toggle('active', b.getAttribute('data-lang') === lang);
+      });
+    }
+    card.addEventListener('click', function (e) {
+      var btn = e.target.closest('.hc-lang-btn');
+      if (!btn) return;
+      var lang = btn.getAttribute('data-lang');
+      if (!lang || !window.HC_I18N) return;
+      window.HC_I18N.setLang(lang);
+      syncActive();
+    });
+    if (window.HC_I18N && window.HC_I18N.onChange) {
+      window.HC_I18N.onChange(syncActive);
+    }
+    syncActive();
+  }
+
   // ── Expose publicly ───────────────────────────────────────
   window.hcSettings = {
     loadUsers,
@@ -413,13 +438,18 @@
     openInviteModal,
     sendInvite,
     exportAllData,
+    bindLanguageToggle,
   };
 
   // ── Init ──────────────────────────────────────────────────
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', watchForSettingsPage);
+    document.addEventListener('DOMContentLoaded', function () {
+      watchForSettingsPage();
+      bindLanguageToggle();
+    });
   } else {
     watchForSettingsPage();
+    bindLanguageToggle();
   }
 
 })();

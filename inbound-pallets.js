@@ -461,26 +461,28 @@ function plt_cardHtml(p,dept) {
     :`<div class="pallet-card-meta">${pos.length} ${plt_t('PO(s)','OC(s)')}</div>`;
   const action={dock:plt_t('Open →','Abrir →'),receiving:plt_t('Receive →','Recepcionar →'),prep:plt_t('Route →','Enrutar →'),putaway:plt_t('Assign →','Ubicar →')}[dept]||'→';
 
-  // Day color — from date field first, then inferred from label text
+  // Day color — from date field first, then inferred from label text.
+  // Slate-coherent: day color shows as a left accent stripe + title tint,
+  // not a full pastel background. Keeps wayfinding without the visual noise.
   const col = plt_getColor(p);
   const cardStyle = col
-    ? `background:${col.bg};border:2px solid ${col.border};`
+    ? `--day-color:${col.border};--day-tint:${col.bg};`
     : '';
   const dayBadge = col
-    ? `<span class="plt-day-badge" style="background:${col.border}22;color:${col.border};border:1.5px solid ${col.border};">${plt_lang()==='es'?col.es:col.label}</span>`
+    ? `<span class="plt-day-badge" style="background:${col.bg};color:${col.border};border:1px solid ${col.border};">${plt_lang()==='es'?col.es:col.label}</span>`
     : '';
   const dateStr = p.date
     ? `<div class="pallet-card-meta act-dim" style="font-size:0.72rem;">📅 ${p.date}</div>`
     : '';
 
-  return`<div class="pallet-card" data-pid="${p.id}" role="button" tabindex="0" style="${cardStyle}">
-    <div class="pallet-card-num" style="${col?`color:${col.border};`:''}">${ plt_esc(p.label)||'—'}</div>
+  return`<div class="pallet-card${col?' has-day-color':''}" data-pid="${p.id}" role="button" tabindex="0" style="${cardStyle}">
+    <div class="pallet-card-num">${ plt_esc(p.label)||'—'}</div>
     ${dayBadge}
     <span class="pallet-status ${plt_sc(p.status)}">${plt_esc(plt_sl(p.status))}</span>
     ${progress}
     ${dateStr}
     <div class="pallet-card-meta act-dim">${plt_t('Created','Creada')} ${plt_fmtTime(p.createdAt)}</div>
-    <div class="pallet-card-action" style="${col?`color:${col.border};font-weight:700;`:''}"> ${action}</div>
+    <div class="pallet-card-action"> ${action}</div>
   </div>`;
 }
 
