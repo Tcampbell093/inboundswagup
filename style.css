@@ -6928,6 +6928,22 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   grid-template-columns:1.5fr 1fr;
   gap:0;
 }
+/* When the setup sidebar collapses, give the full width back to the hero
+   so the cockpit doesn't sit half-empty. Two selectors: :has() for modern
+   browsers, and an explicit class-on-parent fallback set by the toggle JS. */
+#assemblyPage .asm-cockpit-body:has(.asm-setup.is-collapsed),
+#assemblyPage .asm-cockpit-body.setup-collapsed{
+  grid-template-columns:1fr;
+}
+#assemblyPage .asm-cockpit-body:has(.asm-setup.is-collapsed) .asm-hero,
+#assemblyPage .asm-cockpit-body.setup-collapsed .asm-hero{
+  border-right:none;
+}
+#assemblyPage .asm-cockpit-body:has(.asm-setup.is-collapsed) .asm-setup,
+#assemblyPage .asm-cockpit-body.setup-collapsed .asm-setup{
+  border-top:1px solid #f1f5f9;
+  padding:12px 24px;
+}
 #assemblyPage .asm-hero{
   padding:20px 24px;
   border-right:1px solid #f1f5f9;
@@ -6948,12 +6964,39 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
 #assemblyPage .asm-hero-sub strong{color:#0f172a;font-weight:700;}
 #assemblyPage .asm-hero-bar{
   height:6px;background:#e2e8f0;border-radius:999px;overflow:hidden;
-  margin-bottom:18px;
+  margin-bottom:16px;
 }
 #assemblyPage .asm-hero-bar-fill{
   height:100%;background:#0f172a;border-radius:999px;
   width:0%;transition:width .4s;
 }
+
+/* Trio: Scheduled · Done · Remaining (each holds formatUnitsQtyText output) */
+#assemblyPage .asm-hero-progress-trio{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  gap:10px;margin-bottom:16px;
+}
+#assemblyPage .asm-hero-trio-cell{
+  display:flex;flex-direction:column;gap:3px;
+  padding:10px 12px;
+  background:#fafbfc;border:1px solid #f1f5f9;border-radius:10px;
+  min-width:0;
+}
+#assemblyPage .asm-hero-trio-cell.is-good{
+  background:#f0fdf4;border-color:#bbf7d0;
+}
+#assemblyPage .asm-hero-trio-label{
+  font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  color:#64748b;font-weight:700;
+}
+#assemblyPage .asm-hero-trio-cell.is-good .asm-hero-trio-label{color:#15803d;}
+#assemblyPage .asm-hero-trio-value{
+  font-size:14px;color:#0f172a;font-weight:700;
+  font-variant-numeric:tabular-nums;line-height:1.3;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+#assemblyPage .asm-hero-trio-cell.is-good .asm-hero-trio-value{color:#15803d;}
+
 #assemblyPage .asm-hero-metrics{
   display:grid;grid-template-columns:repeat(4,1fr);gap:14px 18px;
 }

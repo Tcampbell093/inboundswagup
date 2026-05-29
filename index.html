@@ -1757,13 +1757,24 @@
             <div class="asm-hero-label">Today's progress</div>
             <div class="asm-hero-headline">
               <span class="asm-hero-pct" id="assemblyCompletionStat">0%</span>
-              <span class="asm-hero-sub">
-                <strong id="assemblyDoneUnitsStat2">0</strong> of
-                <strong id="assemblyScheduledUnitsStat">0</strong> units
-              </span>
+              <span class="asm-hero-sub">of scheduled units</span>
             </div>
             <div class="asm-hero-bar">
               <div id="assemblyCompletionBar" class="asm-hero-bar-fill"></div>
+            </div>
+            <div class="asm-hero-progress-trio">
+              <div class="asm-hero-trio-cell">
+                <span class="asm-hero-trio-label">Scheduled</span>
+                <span class="asm-hero-trio-value" id="assemblyScheduledUnitsStat">0</span>
+              </div>
+              <div class="asm-hero-trio-cell is-good">
+                <span class="asm-hero-trio-label">Done</span>
+                <span class="asm-hero-trio-value" id="assemblyDoneUnitsStat2">0</span>
+              </div>
+              <div class="asm-hero-trio-cell">
+                <span class="asm-hero-trio-label">Remaining</span>
+                <span class="asm-hero-trio-value" id="assemblyRemainingUnitsStat">0</span>
+              </div>
             </div>
             <div class="asm-hero-metrics">
               <div class="asm-hero-metric">
@@ -1775,12 +1786,12 @@
                 <span class="asm-hero-metric-value"><strong id="assemblyCapacityStat">0</strong></span>
               </div>
               <div class="asm-hero-metric">
-                <span class="asm-hero-metric-label">Remaining</span>
-                <span class="asm-hero-metric-value"><strong id="assemblyRemainingUnitsStat">0</strong></span>
-              </div>
-              <div class="asm-hero-metric">
                 <span class="asm-hero-metric-label">Revenue</span>
                 <span class="asm-hero-metric-value"><strong id="assemblyScheduledRevenueStat">$0</strong></span>
+              </div>
+              <div class="asm-hero-metric">
+                <span class="asm-hero-metric-label">PB rows</span>
+                <span class="asm-hero-metric-value"><strong id="assemblyRowsTodayStat">0</strong></span>
               </div>
             </div>
           </div>
@@ -1833,10 +1844,6 @@
                     <div id="assemblyCapacityBar" class="asm-setup-capbar-fill"></div>
                   </div>
                 </div>
-                <div class="asm-setup-derived-row">
-                  <span class="asm-setup-derived-label">PB rows today</span>
-                  <strong id="assemblyRowsTodayStat">0</strong>
-                </div>
               </div>
             </div>
           </aside>
@@ -1844,13 +1851,17 @@
       </div>
 
       <script>
-        // Setup-sidebar collapse — minimal inline, no module changes
+        // Setup-sidebar collapse — minimal inline, no module changes.
+        // We toggle a class on BOTH the panel (for CSS that targets it)
+        // and the cockpit body (fallback for browsers without :has()).
         (function(){
           var btn = document.getElementById('assemblySetupToggleBtn');
           var panel = document.getElementById('assemblySetupPanel');
           if (!btn || !panel) return;
+          var body = panel.parentNode; // .asm-cockpit-body
           btn.addEventListener('click', function(){
             var collapsed = panel.classList.toggle('is-collapsed');
+            if (body) body.classList.toggle('setup-collapsed', collapsed);
             btn.textContent = collapsed ? 'Show' : 'Hide';
             btn.setAttribute('aria-expanded', String(!collapsed));
           });
