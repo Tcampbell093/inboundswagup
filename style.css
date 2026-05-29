@@ -7161,10 +7161,120 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   #assemblyPage .asm-cockpit-head{flex-direction:column;align-items:stretch;}
   #assemblyPage .asm-cockpit-datenav{width:100%;}
   #assemblyPage .asm-dateinput{flex:1;min-width:0;}
+  #assemblyPage .asm-cockpit-title{font-size:18px;}
+  #assemblyPage .asm-hero{padding:16px;}
   #assemblyPage .asm-hero-pct{font-size:32px;}
+  #assemblyPage .asm-hero-progress-trio{grid-template-columns:1fr;}
+  #assemblyPage .asm-hero-trio-value{white-space:normal;}  /* allow "X units · Y packs" to wrap cleanly */
   #assemblyPage .asm-hero-metrics{grid-template-columns:1fr 1fr;}
+  #assemblyPage .asm-setup{padding:16px;}
   #assemblyPage .asm-setup-grid{grid-template-columns:1fr;}
   #assemblyPage .asm-setup-field-wide{grid-column:auto;}
-  #assemblyPage .asm-stages-grid{grid-template-columns:repeat(2,1fr);}
+  #assemblyPage .asm-stages{padding:12px;}
+  #assemblyPage .asm-stages-grid{grid-template-columns:repeat(3,1fr);gap:6px;}
+  #assemblyPage .asm-stage{padding:8px 4px;}
+  #assemblyPage .asm-stage-val{font-size:16px;}
   #assemblyPage .asm-actions .btn{flex:1;min-width:0;}
+
+  /* Filter chips (All / Overdue / At Risk / On Track / Done) — wrap with smaller pill padding */
+  #assemblyPage .filter-chips,
+  #assemblyPage [class*="filter-chip"]{flex-wrap:wrap;gap:6px;}
+  #assemblyPage .filter-chip,
+  #assemblyPage [class*="filter-chip"] > *{
+    padding:6px 12px !important;font-size:12px !important;
+  }
+
+  /* ── Assembly board: convert <table> rows into stacked cards ──
+     The table is the desktop layout; on phone we let the <tr> become
+     a self-contained card and each <td> stack vertically with a label.
+     Action buttons (last cell) go full-width at the bottom. */
+  #assemblyPage #assemblyBoardBody,
+  #assemblyPage #assemblyBoardBodyCards{
+    display:block;
+  }
+  #assemblyPage #assemblyBoardBody{
+    /* The wrapper table around tbody — let it become a stack of cards */
+  }
+  #assemblyPage table:has(> tbody#assemblyBoardBody),
+  #assemblyPage table:has(> tbody[id*="assemblyBoardBody"]){
+    display:block;width:100%;
+  }
+  #assemblyPage table:has(> tbody#assemblyBoardBody) thead,
+  #assemblyPage table:has(> tbody[id*="assemblyBoardBody"]) thead{
+    display:none;  /* column headers don't translate to card mode */
+  }
+  #assemblyPage table:has(> tbody#assemblyBoardBody) tbody,
+  #assemblyPage table:has(> tbody[id*="assemblyBoardBody"]) tbody{
+    display:flex;flex-direction:column;gap:10px;
+  }
+  /* Fallback for browsers without :has() — target the board body directly */
+  #assemblyBoardBody, #assemblyBoardHead{display:revert;}
+  #assemblyPage tbody#assemblyBoardBody{display:flex;flex-direction:column;gap:10px;}
+  #assemblyPage thead#assemblyBoardHead{display:none;}
+
+  #assemblyPage #assemblyBoardBody > tr{
+    display:flex;flex-direction:column;gap:6px;
+    background:#fff;
+    border:1px solid #e2e8f0;
+    border-radius:12px;
+    padding:14px;
+    box-shadow:0 1px 2px rgba(15,23,42,.04);
+  }
+  #assemblyPage #assemblyBoardBody > tr > td{
+    display:block;
+    padding:0;
+    border:none;
+    font-size:13px;
+    color:#0f172a;
+    line-height:1.4;
+    word-break:break-word;
+  }
+  #assemblyPage #assemblyBoardBody > tr > td:empty{display:none;}
+  /* Inline label for each cell using :nth-child mapping to the JS column order:
+     1=bulk-checkbox, 2=PB, 3=account, 4=units, 5=IHD, 6=subtotal,
+     7=stage-select, 8=status, 9=cb-badge, 10=actions */
+  #assemblyPage #assemblyBoardBody > tr > td:nth-child(2){
+    font-size:15px;font-weight:700;color:#0f172a;letter-spacing:-.005em;
+  }
+  #assemblyPage #assemblyBoardBody > tr > td:nth-child(3){
+    font-size:13px;color:#475569;font-weight:500;margin-bottom:4px;
+  }
+  #assemblyPage #assemblyBoardBody > tr > td:nth-child(4)::before{content:"Units · "; color:#64748b; font-size:11px; font-weight:600;}
+  #assemblyPage #assemblyBoardBody > tr > td:nth-child(5)::before{content:"IHD · "; color:#64748b; font-size:11px; font-weight:600;}
+  #assemblyPage #assemblyBoardBody > tr > td:nth-child(6)::before{content:"Revenue · "; color:#64748b; font-size:11px; font-weight:600;}
+  /* Stage select — give it real iPad-tappable height */
+  #assemblyPage #assemblyBoardBody > tr > td:nth-child(7) select{
+    width:100%;height:40px;padding:0 12px;
+    border:1px solid #e2e8f0;border-radius:8px;
+    background:#fff;font-size:14px;font-weight:600;
+    margin-top:4px;
+  }
+  #assemblyPage #assemblyBoardBody > tr > td:nth-child(7)::before{
+    content:"Stage";display:block;
+    font-size:11px;color:#64748b;font-weight:600;
+  }
+  /* Bulk checkbox: move to top-right corner */
+  #assemblyPage #assemblyBoardBody > tr{position:relative;}
+  #assemblyPage #assemblyBoardBody > tr > td.asm-bulk-cell{
+    position:absolute;top:10px;right:10px;
+    width:auto;padding:0;
+  }
+  /* Comment-badge cell — inline near actions */
+  #assemblyPage #assemblyBoardBody > tr > td.cb-cell{
+    display:inline-block;margin-right:8px;
+  }
+  /* Actions row (last cell) — full-width row of buttons at bottom */
+  #assemblyPage #assemblyBoardBody > tr > td:last-child{
+    margin-top:8px;padding-top:10px;
+    border-top:1px solid #f1f5f9;
+  }
+  #assemblyPage #assemblyBoardBody > tr > td:last-child .row-actions{
+    display:flex;flex-wrap:wrap;gap:6px;
+  }
+  #assemblyPage #assemblyBoardBody > tr > td:last-child .row-actions > *{
+    flex:1 1 calc(50% - 3px);min-height:36px;
+    padding:0 10px;font-size:12px;font-weight:600;
+    display:inline-flex;align-items:center;justify-content:center;
+    border-radius:8px;
+  }
 }
