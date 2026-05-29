@@ -3185,135 +3185,102 @@ font-weight:800
   display:flex;            /* tab bar internally is a row */
 }
 
-/* ── Branded band ───────────────────────────────────────────────── */
+/* ── Slate Professional band ────────────────────────────────────── */
 .workflow-page .inb-band{
-  background:linear-gradient(165deg,#1E70BD 0%,#155A9C 100%);
+  background:linear-gradient(180deg,#fbfcfe 0%,#f1f4f9 100%);
+  border:1px solid #e2e8f0;
+  border-bottom:none;
   border-radius:16px 16px 0 0;
   padding:16px 20px 14px;
-  color:#fff;
+  color:#0f172a;
 }
 .workflow-page .inb-band-top{
   display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
 }
 .workflow-page .inb-eyebrow{
   font-size:9px;letter-spacing:.18em;text-transform:uppercase;
-  color:#BBD7F0;font-weight:700;margin:0;
+  color:#64748b;font-weight:700;margin:0;
 }
 .workflow-page .inb-band-title h1{
-  font-size:24px;font-weight:700;color:#fff;margin:2px 0 0;letter-spacing:-.01em;
+  font-size:24px;font-weight:700;color:#0f172a;margin:2px 0 0;letter-spacing:-.01em;
 }
 .workflow-page .inb-band-identity{
   display:flex;align-items:center;gap:9px;
-  background:rgba(255,255,255,.16);
+  background:#fff;
+  border:1px solid #e2e8f0;
   border-radius:999px;padding:4px 4px 4px 13px;
   flex-shrink:0;
+  box-shadow:0 1px 2px rgba(15,23,42,.04);
 }
-.workflow-page .inb-user-name{font-size:12px;color:#EAF3FB;font-weight:500;white-space:nowrap;}
+.workflow-page .inb-user-name{font-size:12px;color:#475569;font-weight:500;white-space:nowrap;}
 .workflow-page .inb-user-avatar{
-  width:26px;height:26px;border-radius:50%;background:#fff;color:#0C447C;
+  width:26px;height:26px;border-radius:50%;background:#0f172a;color:#fff;
   display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;
 }
 
-/* ── Metrics + tools row ───────────────────────────────────────── */
+/* Metrics row — hairline-divided columns */
 .workflow-page .inb-band-metrics{
-  display:flex;align-items:center;gap:22px;flex-wrap:wrap;
-  margin-top:14px;
+  display:flex;align-items:stretch;gap:0;flex-wrap:wrap;
+  margin-top:14px;padding-top:12px;
+  border-top:1px solid #e2e8f0;
 }
-.workflow-page .inb-metric{display:flex;flex-direction:column;gap:1px;}
+.workflow-page .inb-metric{
+  display:flex;flex-direction:column;gap:1px;
+  padding:0 18px;
+  border-right:1px solid #e2e8f0;
+  justify-content:center;
+}
+.workflow-page .inb-metric:first-child{padding-left:0;}
 .workflow-page .inb-metric-label{
-  font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#BBD7F0;font-weight:700;
+  font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#64748b;font-weight:700;
 }
-.workflow-page .inb-metric-value{font-size:17px;font-weight:700;color:#fff;line-height:1.1;}
-.workflow-page .inb-metric-meta{font-size:10px;color:#9DC0E0;}
-/* UPH state tint on the band */
-.workflow-page #currentDeptUphBadge.uph-state-green .inb-metric-value{color:#7FE9B0;}
-.workflow-page #currentDeptUphBadge.uph-state-yellow .inb-metric-value{color:#FFD680;}
-.workflow-page #currentDeptUphBadge.uph-state-red .inb-metric-value{color:#FFA08F;}
+.workflow-page .inb-metric-value{
+  font-size:18px;font-weight:700;color:#0f172a;line-height:1.1;
+  font-variant-numeric:tabular-nums;
+}
+.workflow-page .inb-metric-meta{font-size:10px;color:#94a3b8;}
+.workflow-page #currentDeptUphBadge.uph-state-green .inb-metric-value{color:#15803d;}
+.workflow-page #currentDeptUphBadge.uph-state-yellow .inb-metric-value{color:#a16207;}
+.workflow-page #currentDeptUphBadge.uph-state-red .inb-metric-value{color:#b91c1c;}
 
 .workflow-page .inb-band-tools{
   margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding-left:18px;border-left:1px solid #e2e8f0;
 }
 
-/* PO lookup inside the band */
+/* PO lookup */
 .workflow-page .inb-po-lookup{position:relative;}
 .workflow-page .inb-po-lookup-inner{
   display:flex;align-items:center;gap:6px;
-  background:rgba(255,255,255,.16);
+  background:#fff;
+  border:1px solid #e2e8f0;
   border-radius:9px;padding:4px 5px 4px 10px;
+  box-shadow:0 1px 2px rgba(15,23,42,.04);
 }
-.workflow-page .inb-po-search-ico{font-style:normal;font-size:14px;color:#BBD7F0;}
+.workflow-page .inb-po-search-ico{font-style:normal;font-size:14px;color:#94a3b8;}
 .workflow-page .inb-po-lookup-inner input{
-  background:none;border:none;outline:none;color:#fff;font-size:12.5px;
+  background:none;border:none;outline:none;color:#0f172a;font-size:12.5px;
   width:150px;font-family:inherit;
 }
-.workflow-page .inb-po-lookup-inner input::placeholder{color:#A8C7E4;}
+.workflow-page .inb-po-lookup-inner input::placeholder{color:#94a3b8;}
 .workflow-page .inb-po-lookup-inner #poLookupBtn{
-  background:#fff;color:#0C447C;border:none;border-radius:6px;
+  background:#0f172a;color:#fff;border:none;border-radius:6px;
   padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;
 }
-.workflow-page .inb-po-lookup-inner #poLookupBtn:hover{background:#E6F1FB;}
+.workflow-page .inb-po-lookup-inner #poLookupBtn:hover{background:#1e293b;}
 .workflow-page .inb-po-lookup-inner #poLookupClear{
-  background:none;border:none;color:#BBD7F0;font-size:12px;cursor:pointer;padding:4px 6px;
+  background:none;border:none;color:#94a3b8;font-size:12px;cursor:pointer;padding:4px 6px;
 }
-.workflow-page .inb-po-lookup-inner #poLookupClear:hover{color:#fff;}
-/* PO Lookup results — centered modal (escapes the band entirely) */
-.po-lookup-modal{
-  position:fixed;inset:0;z-index:10000;
-  background:rgba(15,28,46,.55);
-  display:flex;align-items:flex-start;justify-content:center;
-  padding:6vh 16px 16px;
-  overflow-y:auto;
-}
-.po-lookup-modal[hidden]{display:none;}
-.po-lookup-modal-dialog{
-  background:#fff;color:var(--text,#0f1c2e);
-  width:100%;max-width:760px;
-  border-radius:14px;
-  box-shadow:0 24px 60px -20px rgba(15,28,46,.6);
-  overflow:hidden;
-  display:flex;flex-direction:column;
-  max-height:88vh;
-}
-.po-lookup-modal-header{
-  display:flex;align-items:center;justify-content:space-between;gap:16px;
-  padding:14px 20px;
-  background:linear-gradient(165deg,#1E70BD 0%,#155A9C 100%);
-  color:#fff;flex-shrink:0;
-}
-.po-lookup-modal-eyebrow{
-  font-size:10px;letter-spacing:.18em;text-transform:uppercase;
-  color:#BBD7F0;font-weight:700;
-}
-#poLookupModalTitle{
-  font-size:18px;font-weight:700;margin:2px 0 0;color:#fff;
-}
-.po-lookup-modal-close{
-  background:rgba(255,255,255,.18);border:none;color:#fff;
-  width:32px;height:32px;border-radius:8px;font-size:20px;line-height:1;
-  cursor:pointer;flex-shrink:0;
-}
-.po-lookup-modal-close:hover{background:rgba(255,255,255,.28);}
-.po-lookup-modal-body{
-  padding:0;overflow-y:auto;flex:1;min-height:0;
-  background:var(--bg,#f4f7fb);
-}
-.po-lookup-modal-body:empty::before{
-  content:'';
-}
+.workflow-page .inb-po-lookup-inner #poLookupClear:hover{color:#0f172a;}
 
-@media (max-width:760px){
-  .po-lookup-modal{padding:0;}
-  .po-lookup-modal-dialog{max-height:100vh;border-radius:0;}
-}
-
-/* Pace chip (still opens pulse-check) */
+/* Pace chip */
 .workflow-page .inb-pace{
   display:flex;align-items:center;gap:8px;
-  background:rgba(255,255,255,.16);
-  border:none;border-radius:10px;padding:5px 11px 5px 7px;cursor:pointer;
+  background:#fff;
+  border:1px solid #e2e8f0;border-radius:10px;padding:5px 11px 5px 7px;cursor:pointer;
+  box-shadow:0 1px 2px rgba(15,23,42,.04);
 }
-.workflow-page .inb-pace:hover{background:rgba(255,255,255,.24);}
-/* Beat the global #uphPaceIcon 86px !important rule with id+context + !important */
+.workflow-page .inb-pace:hover{background:#f8fafc;border-color:#cbd5e1;}
 .workflow-page .inb-pace img#uphPaceIcon,
 .workflow-page .inb-pace img{
   width:30px !important;height:30px !important;
@@ -3323,58 +3290,64 @@ font-weight:800
 .workflow-page .inb-pace-meta{display:flex;flex-direction:column;align-items:flex-start;line-height:1.15;max-width:140px;}
 .workflow-page .inb-pace-meta strong,
 .workflow-page .inb-pace-meta strong#uphPaceLabel{
-  font-size:11px !important;color:#fff !important;font-weight:700 !important;margin:0 !important;
+  font-size:11px !important;color:#0f172a !important;font-weight:700 !important;margin:0 !important;
 }
 .workflow-page .inb-pace-meta span,
 .workflow-page .inb-pace-meta span#uphPaceText{
-  font-size:10px !important;color:#BBD7F0 !important;margin:0 !important;
+  font-size:10px !important;color:#64748b !important;margin:0 !important;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;
 }
 
-/* Language toggle on the band */
+/* Language toggle */
 .workflow-page .inb-lang.lang-switch{
-  display:flex;background:rgba(255,255,255,.16);border-radius:8px;overflow:hidden;
+  display:flex;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;
+  box-shadow:0 1px 2px rgba(15,23,42,.04);
 }
 .workflow-page .inb-lang .lang-btn{
-  background:none;border:none;color:#BBD7F0;font-size:11px;font-weight:700;
+  background:none;border:none;color:#64748b;font-size:11px;font-weight:700;
   padding:6px 11px;cursor:pointer;
 }
-.workflow-page .inb-lang .lang-btn.active{background:#fff;color:#0C447C;}
+.workflow-page .inb-lang .lang-btn:hover{color:#0f172a;}
+.workflow-page .inb-lang .lang-btn.active{background:#0f172a;color:#fff;}
 
 .workflow-page .inb-legacy-user{display:none;}
 
-/* ── Attached tab bar ──────────────────────────────────────────── */
+/* Attached tab bar — white surface, ink active underline */
 .workflow-page .inb-tabbar-wrap{
   display:flex;align-items:stretch;
-  background:#0F4F8C;
+  background:#fff;
+  border:1px solid #e2e8f0;
   border-radius:0 0 16px 16px;
   padding:0 8px;
-  box-shadow:0 10px 24px -16px rgba(15,28,46,.5);
+  box-shadow:0 1px 2px rgba(15,23,42,.04);
 }
 .workflow-page .role-tabs.inb-tabbar{
   display:flex;gap:0;flex-wrap:nowrap;overflow-x:auto;flex:1;
   -webkit-overflow-scrolling:touch;scrollbar-width:thin;
 }
 .workflow-page .role-tabs.inb-tabbar::-webkit-scrollbar{height:3px;}
-.workflow-page .role-tabs.inb-tabbar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.25);border-radius:3px;}
+.workflow-page .role-tabs.inb-tabbar::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px;}
 .workflow-page .inb-tabbar .role-tab{
   background:none;border:none;border-radius:0;box-shadow:none;
-  color:#BBD7F0;font-size:13px;font-weight:600;
-  padding:12px 15px;white-space:nowrap;cursor:pointer;
+  color:#64748b;font-size:13px;font-weight:600;
+  padding:13px 15px;white-space:nowrap;cursor:pointer;
   border-bottom:2px solid transparent;
+  margin-bottom:-1px;
+  transition:color .12s;
 }
-.workflow-page .inb-tabbar .role-tab:hover{color:#fff;}
+.workflow-page .inb-tabbar .role-tab:hover{color:#0f172a;}
 .workflow-page .inb-tabbar .role-tab.active{
-  background:none;color:#fff;
-  border-bottom:2px solid #fff;box-shadow:none;
+  background:none;color:#0f172a;
+  border-bottom:2px solid #0f172a;box-shadow:none;
+  font-weight:700;
 }
 .workflow-page .inb-summary-btn{
   flex-shrink:0;align-self:center;margin-left:8px;
-  background:rgba(255,255,255,.16);border:none;color:#EAF3FB;
+  background:#f8fafc;border:1px solid #e2e8f0;color:#475569;
   border-radius:7px;padding:7px 13px;font-size:12px;font-weight:600;cursor:pointer;
   white-space:nowrap;
 }
-.workflow-page .inb-summary-btn:hover{background:rgba(255,255,255,.24);color:#fff;}
+.workflow-page .inb-summary-btn:hover{background:#fff;color:#0f172a;border-color:#cbd5e1;}
 
 /* ── Responsive (tablet) ───────────────────────────────────────── */
 @media (max-width:900px){
