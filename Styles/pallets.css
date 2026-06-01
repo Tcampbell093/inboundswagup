@@ -2009,3 +2009,159 @@
 
 .pallet-routing-summary-row:last-child { border-bottom: none; }
 .pallet-routing-summary-row strong { font-family: monospace; font-size: 0.95rem; }
+
+/* ════════════════════════════════════════════════════════════════════
+   HOLD UI — badge, held-card state, On Hold panel
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Inline hold pill — shows on the PO card head when held */
+.workflow-page .plt-hold-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: #fffbeb;
+  color: #854d0e;
+  border: 1px solid #fde68a;
+  text-transform: uppercase;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Held PO card — subtle amber wash so it's obvious without being shouty */
+.workflow-page .po-card.po-card-held {
+  background: linear-gradient(to right, #fffbeb 0%, #fff 100px);
+  border-color: #fde68a;
+}
+
+/* Tab count pill inside the role-tabs strip */
+.workflow-page .inb-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 5px;
+  background: #fef3c7;
+  color: #854d0e;
+  border: 1px solid #fde68a;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.workflow-page .role-tab.active .inb-tab-count {
+  background: #854d0e;
+  color: #fff;
+  border-color: #854d0e;
+}
+
+/* ── Hold rows in the On Hold panel ──────────────────────────────── */
+.workflow-page .hold-row {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #f59e0b;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  box-shadow: 0 1px 2px rgba(15,23,42,.03);
+}
+.workflow-page .hold-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.workflow-page .hold-row-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.workflow-page .hold-po {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.005em;
+}
+.workflow-page .hold-units {
+  font-size: 13px;
+  color: #475569;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.workflow-page .hold-cat {
+  font-size: 11px;
+  color: #475569;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+}
+.workflow-page .hold-row-age {
+  font-size: 12px;
+  color: #b45309;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+.workflow-page .hold-row-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px 18px;
+  margin-bottom: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #f1f5f9;
+  border-bottom: 1px solid #f1f5f9;
+}
+.workflow-page .hold-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.workflow-page .hold-detail.hold-reason {
+  grid-column: 1 / -1;
+}
+.workflow-page .hold-label {
+  font-size: 10px;
+  color: #64748b;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.workflow-page .hold-detail strong {
+  font-size: 13px;
+  color: #0f172a;
+  font-weight: 600;
+}
+.workflow-page .hold-detail span:not(.hold-label) {
+  font-size: 13px;
+  color: #0f172a;
+  word-break: break-word;
+}
+.workflow-page .hold-stage {
+  color: #64748b;
+  font-weight: 500;
+  font-size: 12px;
+}
+.workflow-page .hold-row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
