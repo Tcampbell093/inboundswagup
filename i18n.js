@@ -172,6 +172,18 @@
       'settings.language.desc':   'Choose the display language. Applies across every module that supports translation.',
       'settings.language.en':     'English',
       'settings.language.es':     'Spanish',
+
+      // ── Hold (PO on-hold workflow) ────────────────────────
+      'hold.onHold':              'On hold',
+      'hold.placeOnHold':         'Place on hold',
+      'hold.releaseHold':         'Release hold',
+      'hold.location':            'Where will it be kept?',
+      'hold.reason':              'Reason',
+      'hold.placedBy':            'Placed by',
+      'hold.releasedBy':          'Released by',
+      'hold.allStages':           'All stages',
+      'hold.allLocations':        'All locations',
+      'hold.allPeople':           'All people',
     },
     es: {
       // ── Status words ─────────────────────────────────────
@@ -320,6 +332,18 @@
       'settings.language.desc':   'Elija el idioma de visualización. Aplica a todos los módulos que admiten traducción.',
       'settings.language.en':     'Inglés',
       'settings.language.es':     'Español',
+
+      // ── Hold ─────────────────────────────────────────────
+      'hold.onHold':              'En espera',
+      'hold.placeOnHold':         'Poner en espera',
+      'hold.releaseHold':         'Liberar retención',
+      'hold.location':            '¿Dónde se guardará?',
+      'hold.reason':              'Motivo',
+      'hold.placedBy':            'Colocada por',
+      'hold.releasedBy':          'Liberada por',
+      'hold.allStages':           'Todas las etapas',
+      'hold.allLocations':        'Todas las ubicaciones',
+      'hold.allPeople':           'Todas las personas',
     }
   };
 

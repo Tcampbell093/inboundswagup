@@ -147,7 +147,19 @@ function plt_advance(id) {
   const p=plt_get(id); if(!p)return;
   const flow=['draft','receiving','prep','done'];
   const i=flow.indexOf(p.status);
-  if(i<flow.length-1){p.status=flow[i+1];plt_log(p,'advanced',plt_sl(p.status));plt_save();}
+  if(i<flow.length-1){
+    // Held POs are "left behind" in the conceptual sense: the pallet advances
+    // but those POs are excluded from stage actions and stay on a hold shelf
+    // until released or transferred. Log them so the audit trail shows what
+    // moved and what didn't.
+    const heldPos = (p.pos||[]).filter(po => plt_isHeld(po));
+    if (heldPos.length) {
+      plt_log(p, 'advance_with_held',
+        `${heldPos.length} ${heldPos.length===1?'PO':'POs'} on hold left behind: ` +
+        heldPos.map(po => `#${po.po}`).join(', '));
+    }
+    p.status=flow[i+1];plt_log(p,'advanced',plt_sl(p.status));plt_save();
+  }
 }
 
 /* Pull back one stage */
@@ -156,6 +168,82 @@ function plt_pullBack(id) {
   const flow=['draft','receiving','prep','done'];
   const i=flow.indexOf(p.status);
   if(i>0){p.status=flow[i-1];plt_log(p,'pulled_back',plt_sl(p.status));plt_save();}
+}
+
+/* ------------------------------------------------------------------
+   HOLD MANAGEMENT
+   A PO can be placed "on hold" independently of any case. Held POs:
+     - Stay on their original pallet
+     - Are visibly badged everywhere they render
+     - Are SKIPPED when a pallet advances stages (left behind in concept;
+       physically the item lives at po.hold.location)
+     - Can be released (returns to normal flow) or transferred elsewhere
+     - Keep a holdHistory[] so releases never destroy the audit trail
+   ------------------------------------------------------------------ */
+function plt_placeHold(palletId, poId, data) {
+  const p = plt_get(palletId); if(!p) return false;
+  const po = (p.pos||[]).find(r=>r.id===poId); if(!po) return false;
+  // If already on hold, this is a no-op (use updateHold for edits)
+  if (po.hold && po.hold.active) return false;
+  const hold = {
+    active: true,
+    location:      String(data?.location || '').trim(),
+    reason:        String(data?.reason || '').trim(),
+    placedBy:      String(data?.placedBy || plt_user() || '').trim(),
+    placedAt:      plt_now(),
+    placedAtStage: p.status,
+    releasedBy: null, releasedAt: null, releaseNote: null,
+  };
+  plt_updatePo(palletId, poId, { hold });
+  plt_log(p, 'po_held',
+    `PO# ${po.po} on hold` + (hold.location?` @ ${hold.location}`:'') + (hold.placedBy?` · by ${hold.placedBy}`:''),
+    po.po);
+  return true;
+}
+
+function plt_updateHold(palletId, poId, data) {
+  const p = plt_get(palletId); if(!p) return false;
+  const po = (p.pos||[]).find(r=>r.id===poId); if(!po || !po.hold || !po.hold.active) return false;
+  const next = { ...po.hold };
+  if (data?.location !== undefined) next.location = String(data.location || '').trim();
+  if (data?.reason   !== undefined) next.reason   = String(data.reason || '').trim();
+  if (data?.placedBy !== undefined) next.placedBy = String(data.placedBy || '').trim();
+  plt_updatePo(palletId, poId, { hold: next });
+  plt_log(p, 'po_hold_updated', `PO# ${po.po} hold updated`, po.po);
+  return true;
+}
+
+function plt_releaseHold(palletId, poId, releaseData) {
+  const p = plt_get(palletId); if(!p) return false;
+  const po = (p.pos||[]).find(r=>r.id===poId); if(!po || !po.hold || !po.hold.active) return false;
+  const closed = {
+    ...po.hold,
+    active: false,
+    releasedBy:  String(releaseData?.releasedBy || plt_user() || '').trim(),
+    releasedAt:  plt_now(),
+    releaseNote: String(releaseData?.releaseNote || '').trim(),
+  };
+  const hist = Array.isArray(po.holdHistory) ? po.holdHistory.slice() : [];
+  hist.push(closed);
+  plt_updatePo(palletId, poId, { hold: null, holdHistory: hist });
+  plt_log(p, 'po_hold_released', `PO# ${po.po} hold released` + (closed.releaseNote?` · ${closed.releaseNote}`:''), po.po);
+  return true;
+}
+
+/* Returns array of {pallet, po, hold} for every currently-active hold across
+   every pallet. Used by the On Hold tab. */
+function plt_findActiveHolds() {
+  const out = [];
+  plt_all().forEach(p => {
+    (p.pos||[]).forEach(po => {
+      if (po.hold && po.hold.active) out.push({ pallet: p, po, hold: po.hold });
+    });
+  });
+  return out;
+}
+
+function plt_isHeld(po) {
+  return !!(po && po.hold && po.hold.active);
 }
 
 /* Delete — available at any stage */
@@ -1770,12 +1858,17 @@ function plt_poCardHtml(pallet,po,dept,otherPallets){
       <button class="pallet-btn-ghost plt-tiny plt-po-edit">${plt_t('View / Edit','Ver / Editar')}</button>
     </div>`}`;
 
-  return `<div class="po-card" data-po-id="${po.id}">
+  const heldBadge = plt_isHeld(po)
+    ? `<span class="plt-hold-pill" title="${plt_esc(plt_t('On hold','En espera') + (po.hold.location?` · ${po.hold.location}`:'') + (po.hold.placedBy?` · ${po.hold.placedBy}`:''))}">🚫 ${plt_t('On hold','En espera')}${po.hold.location?` · ${plt_esc(po.hold.location)}`:''}</span>`
+    : '';
+
+  return `<div class="po-card${plt_isHeld(po)?' po-card-held':''}" data-po-id="${po.id}">
     <div class="po-card-head">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <span class="po-card-number">PO# ${plt_esc(po.po)}</span>
         ${po.category?`<span style="font-size:0.72rem;font-weight:500;padding:2px 8px;border-radius:999px;background:var(--surface-alt,#f3f4f6);color:var(--text-secondary,#666);border:1px solid var(--border,#e5e7eb);">${plt_esc(po.category)}</span>`:''}
         ${hasOrd?`<span style="font-size:0.8rem;font-weight:600;color:var(--text-secondary,#555);">${plt_t('Ordered','Ordenado')}: <strong style="color:var(--text-primary,#111);font-variant-numeric:tabular-nums;">${po.orderedQty}</strong></span>`:''}
+        ${heldBadge}
       </div>
       <span class="po-card-status ${stCls}">${stLbl}</span>
     </div>
@@ -2729,6 +2822,25 @@ function plt_openCaseDetailsModal(palletId, poId){
         <p style="font-size:11px;color:var(--text-secondary,#888);margin:0;">
           ${plt_t('Originally opened','Abierto originalmente')}: ${plt_esc(new Date(existing.openedAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}
         </p>
+
+        <!-- ── Place on Hold (optional, independent of the case fields) ── -->
+        <div class="plt-hold-section" style="margin-top:18px;padding:14px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;">
+          <label style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;color:#854d0e;cursor:pointer;margin:0;">
+            <input id="plt_caseHoldToggle" type="checkbox" style="width:16px;height:16px;cursor:pointer;" ${plt_isHeld(po)?'checked disabled':''} />
+            🚫 ${plt_isHeld(po) ? plt_t('Already on hold','Ya en espera') : plt_t('Also place this PO on hold','Poner esta OC en espera')}
+          </label>
+          <div id="plt_caseHoldFields" style="display:none;margin-top:12px;display:none;">
+            <div class="pallet-form-field" style="margin-bottom:8px;">
+              <label style="font-size:11px;color:#854d0e;font-weight:600;">${plt_t('Where will it be kept?','¿Dónde se guardará?')}</label>
+              <input id="plt_caseHoldLocation" type="text" maxlength="200"
+                placeholder="${plt_t('e.g. Hold shelf 3, back of receiving','p.ej. estante 3, atrás de recepción')}"
+                style="width:100%;padding:8px 10px;border:1px solid #fde68a;border-radius:6px;font-size:13px;background:#fff;font-family:inherit;" />
+            </div>
+            <p style="margin:0;font-size:11px;color:#854d0e;line-height:1.4;">
+              ${plt_t('The PO will stay where you put it. The pallet can advance without it. View and release holds in the On Hold panel.','La OC se quedará donde la pongas. La tarima puede avanzar sin ella. Consulta y libera retenciones en el panel En Espera.')}
+            </p>
+          </div>
+        </div>
       </div>
       <div class="pallet-modal-footer" style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
         <button class="pallet-btn-secondary" id="plt_caseCancel">${plt_t('Cancel','Cancelar')}</button>
@@ -2753,8 +2865,29 @@ function plt_openCaseDetailsModal(palletId, poId){
     plt_updatePo(palletId, poId, {
       case: { ...existing, link, ref, note, openedBy: by || existing.openedBy }
     });
+    // If "Also place on hold" was checked, fire the hold placement using
+    // the case reason+by as defaults. Hold is intentionally INDEPENDENT of
+    // case state — releasing the case won't release the hold and vice versa.
+    const holdToggle = overlay.querySelector('#plt_caseHoldToggle');
+    if (holdToggle && holdToggle.checked && !holdToggle.disabled) {
+      const holdLoc = (overlay.querySelector('#plt_caseHoldLocation').value || '').trim();
+      plt_placeHold(palletId, poId, {
+        location: holdLoc,
+        reason: note,        // reuse the case reason as the hold reason
+        placedBy: by || existing.openedBy || '',
+      });
+    }
     close();
   });
+
+  // Toggle the hold-fields visibility when the checkbox flips
+  const holdToggleEl = overlay.querySelector('#plt_caseHoldToggle');
+  const holdFieldsEl = overlay.querySelector('#plt_caseHoldFields');
+  if (holdToggleEl && holdFieldsEl && !holdToggleEl.disabled) {
+    holdToggleEl.addEventListener('change', () => {
+      holdFieldsEl.style.display = holdToggleEl.checked ? 'block' : 'none';
+    });
+  }
 
   setTimeout(() => { try { overlay.querySelector('#plt_caseLink').focus(); } catch(_){} }, 30);
 }
@@ -2973,12 +3106,226 @@ function plt_openTransferModal(fromPalletId,poId,dept){
 /* ------------------------------------------------------------------
    RENDER ALL
    ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------
+   ON HOLD PANEL — full-page workspace listing all active holds.
+   Lives at #page-onhold, renders into #onHoldPanelBody.
+   ------------------------------------------------------------------ */
+function plt_renderOnHoldPanel(){
+  const body = document.getElementById('onHoldPanelBody');
+  if (!body) return;
+
+  const all = plt_findActiveHolds();
+
+  // Update tab + header counts
+  const tabCount = document.getElementById('onHoldTabCount');
+  const headerCount = document.getElementById('onHoldHeaderCount');
+  if (tabCount)    tabCount.textContent = String(all.length);
+  if (headerCount) headerCount.textContent = `${all.length} ${all.length===1?'active':'active'}`;
+
+  // Populate filter dropdowns (location, placedBy) from current data
+  const locSel = document.getElementById('holdFilterLocation');
+  const bySel  = document.getElementById('holdFilterPlacedBy');
+  if (locSel) {
+    const cur = locSel.value;
+    const locs = [...new Set(all.map(h => h.hold.location).filter(Boolean))].sort();
+    locSel.innerHTML = `<option value="">${plt_t('All locations','Todas las ubicaciones')}</option>` +
+      locs.map(l => `<option value="${plt_esc(l)}">${plt_esc(l)}</option>`).join('');
+    if (locs.includes(cur)) locSel.value = cur;
+  }
+  if (bySel) {
+    const cur = bySel.value;
+    const people = [...new Set(all.map(h => h.hold.placedBy).filter(Boolean))].sort();
+    bySel.innerHTML = `<option value="">${plt_t('All people','Todas las personas')}</option>` +
+      people.map(p => `<option value="${plt_esc(p)}">${plt_esc(p)}</option>`).join('');
+    if (people.includes(cur)) bySel.value = cur;
+  }
+
+  // Read current filter state
+  const q       = (document.getElementById('holdFilterSearch')?.value || '').trim().toLowerCase();
+  const stageF  = document.getElementById('holdFilterStage')?.value || '';
+  const locF    = document.getElementById('holdFilterLocation')?.value || '';
+  const byF     = document.getElementById('holdFilterPlacedBy')?.value || '';
+  const sortBy  = document.getElementById('holdFilterSort')?.value || 'oldest';
+
+  // Filter
+  let rows = all.slice();
+  if (stageF) rows = rows.filter(r => r.hold.placedAtStage === stageF);
+  if (locF)   rows = rows.filter(r => r.hold.location === locF);
+  if (byF)    rows = rows.filter(r => r.hold.placedBy === byF);
+  if (q) {
+    rows = rows.filter(r => {
+      const blob = [r.po.po, r.pallet.label, r.hold.location, r.hold.reason, r.hold.placedBy]
+        .filter(Boolean).join(' ').toLowerCase();
+      return blob.includes(q);
+    });
+  }
+
+  // Sort
+  rows.sort((a,b) => {
+    switch(sortBy){
+      case 'newest':   return (b.hold.placedAt||0) - (a.hold.placedAt||0);
+      case 'po':       return String(a.po.po||'').localeCompare(String(b.po.po||''));
+      case 'location': return String(a.hold.location||'').localeCompare(String(b.hold.location||''));
+      case 'pallet':   return String(a.pallet.label||'').localeCompare(String(b.pallet.label||''));
+      case 'oldest':
+      default:         return (a.hold.placedAt||0) - (b.hold.placedAt||0);
+    }
+  });
+
+  if (!rows.length) {
+    body.innerHTML = `
+      <div class="pallet-empty" style="text-align:center;padding:40px 20px;color:#64748b;">
+        <div style="font-size:32px;margin-bottom:8px;">🚫</div>
+        <div style="font-weight:600;color:#0f172a;margin-bottom:4px;">${plt_t('Nothing on hold','Nada en espera')}</div>
+        <div style="font-size:13px;">${all.length === 0
+          ? plt_t('No POs are currently on hold. Holds appear here automatically when placed from a case or a PO.','Ninguna OC está en espera ahora. Las retenciones aparecen aquí cuando se colocan desde un caso o una OC.')
+          : plt_t('No holds match the current filters.','Ninguna retención coincide con los filtros.')
+        }</div>
+      </div>`;
+    return;
+  }
+
+  const now = Date.now();
+  body.innerHTML = rows.map(r => {
+    const ageMs = now - (r.hold.placedAt || now);
+    const ageDays = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+    const ageHrs  = Math.floor((ageMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+    const ageStr = ageDays > 0
+      ? `${ageDays}d ${ageHrs}h`
+      : ageHrs > 0 ? `${ageHrs}h` : plt_t('just now','recién');
+    const placedDate = new Date(r.hold.placedAt || now);
+    const placedStr = placedDate.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+    const units = plt_hasVal(r.po.orderedQty) ? r.po.orderedQty : (plt_hasVal(r.po.receivedQty) ? r.po.receivedQty : '—');
+    return `
+      <div class="hold-row" data-pallet-id="${r.pallet.id}" data-po-id="${r.po.id}">
+        <div class="hold-row-head">
+          <div class="hold-row-main">
+            <span class="hold-po">PO# ${plt_esc(r.po.po)}</span>
+            <span class="hold-units">${typeof units === 'number' ? units : units} ${plt_t('units','unidades')}</span>
+            ${r.po.category ? `<span class="hold-cat">${plt_esc(r.po.category)}</span>` : ''}
+          </div>
+          <div class="hold-row-age" title="${plt_esc(placedStr)}">${plt_esc(ageStr)}</div>
+        </div>
+        <div class="hold-row-body">
+          <div class="hold-detail"><span class="hold-label">${plt_t('Pallet','Tarima')}</span><strong>${plt_esc(r.pallet.label)}</strong> <span class="hold-stage">· ${plt_esc(plt_sl(r.pallet.status))}</span></div>
+          <div class="hold-detail"><span class="hold-label">${plt_t('Location','Ubicación')}</span><strong>${plt_esc(r.hold.location || '—')}</strong></div>
+          <div class="hold-detail"><span class="hold-label">${plt_t('Placed by','Colocada por')}</span><strong>${plt_esc(r.hold.placedBy || '—')}</strong></div>
+          <div class="hold-detail"><span class="hold-label">${plt_t('Placed','Colocada')}</span><strong>${plt_esc(placedStr)}</strong></div>
+          <div class="hold-detail"><span class="hold-label">${plt_t('Held at stage','En etapa')}</span><strong>${plt_esc(plt_sl(r.hold.placedAtStage || '?'))}</strong></div>
+          ${r.hold.reason ? `<div class="hold-detail hold-reason"><span class="hold-label">${plt_t('Reason','Motivo')}</span><span>${plt_esc(r.hold.reason)}</span></div>` : ''}
+        </div>
+        <div class="hold-row-actions">
+          <button class="pallet-btn-secondary plt-tiny" data-action="open-pallet">📦 ${plt_t('Open pallet','Abrir tarima')}</button>
+          <button class="pallet-btn-secondary plt-tiny" data-action="transfer">⇄ ${plt_t('Transfer','Transferir')}</button>
+          <button class="pallet-btn-primary plt-tiny" data-action="release">✓ ${plt_t('Release hold','Liberar')}</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Bind action buttons
+  body.querySelectorAll('.hold-row').forEach(row => {
+    const palletId = row.getAttribute('data-pallet-id');
+    const poId     = row.getAttribute('data-po-id');
+    row.querySelector('[data-action="open-pallet"]')?.addEventListener('click', () => {
+      const p = plt_get(palletId); if(!p) return;
+      // Open pallet at its current stage so user sees the held PO in context
+      plt_buildPalletModal(p, p.status === 'draft' ? 'dock' : p.status);
+    });
+    row.querySelector('[data-action="transfer"]')?.addEventListener('click', () => {
+      const p = plt_get(palletId); if(!p) return;
+      // Transfer modal uses the pallet's current stage as dept
+      plt_openTransferModal(palletId, poId, p.status === 'draft' ? 'dock' : p.status);
+    });
+    row.querySelector('[data-action="release"]')?.addEventListener('click', () => {
+      plt_openReleaseHoldModal(palletId, poId);
+    });
+  });
+}
+
+/* Release-hold confirmation modal — keeps the audit trail clear */
+function plt_openReleaseHoldModal(palletId, poId){
+  const p = plt_get(palletId); if(!p) return;
+  const po = (p.pos||[]).find(r=>r.id===poId); if(!po || !po.hold || !po.hold.active) return;
+  plt_closeAll();
+  const overlay = plt_overlay('palletReleaseHoldOverlay');
+  overlay.innerHTML = `
+    <div class="pallet-modal" style="max-width:440px;" role="dialog" aria-modal="true">
+      <div class="pallet-modal-header">
+        <div>
+          <h3>✓ ${plt_t('Release hold','Liberar retención')}</h3>
+          <p class="pallet-modal-sub">PO# ${plt_esc(po.po)} · ${plt_esc(p.label)}</p>
+        </div>
+        <button class="pallet-modal-close">✕</button>
+      </div>
+      <div class="pallet-modal-body">
+        <div class="plt-transfer-info">
+          <div class="plt-transfer-detail"><span>${plt_t('On hold at','En espera en')}:</span><strong>${plt_esc(po.hold.location||'—')}</strong></div>
+          <div class="plt-transfer-detail"><span>${plt_t('Placed by','Colocada por')}:</span><strong>${plt_esc(po.hold.placedBy||'—')}</strong></div>
+          ${po.hold.reason?`<div class="plt-transfer-detail"><span>${plt_t('Reason','Motivo')}:</span><strong>${plt_esc(po.hold.reason)}</strong></div>`:''}
+        </div>
+        <div class="pallet-form-field" style="margin-top:14px;">
+          <label>${plt_t('Release note (optional)','Nota de liberación (opcional)')}</label>
+          <textarea id="plt_releaseNote" rows="2" maxlength="300" placeholder="${plt_t('What changed? Where is it going?','¿Qué cambió? ¿A dónde va?')}"></textarea>
+        </div>
+        <div class="pallet-form-field" style="margin-top:10px;">
+          <label>${plt_t('Released by','Liberada por')}</label>
+          <input id="plt_releasedBy" type="text" maxlength="80" value="${plt_esc(plt_user()||'')}" placeholder="${plt_t('Your name','Tu nombre')}" />
+        </div>
+        <p style="font-size:12px;color:#64748b;margin-top:10px;line-height:1.4;">
+          ${plt_t('Releasing keeps the hold in history. The PO returns to the normal workflow on its pallet.','Al liberar, la retención se guarda en el historial. La OC regresa al flujo normal en su tarima.')}
+        </p>
+      </div>
+      <div class="pallet-modal-footer">
+        <button class="pallet-btn-secondary" id="plt_releaseCancel">${plt_t('Cancel','Cancelar')}</button>
+        <button class="pallet-btn-primary" id="plt_releaseConfirm">${plt_t('Release hold','Liberar')}</button>
+      </div>
+    </div>`;
+  plt_push(overlay);
+  const close = ()=>{ plt_closeAll(); plt_renderAllPanels(); };
+  overlay.querySelector('.pallet-modal-close').addEventListener('click', close);
+  overlay.querySelector('#plt_releaseCancel').addEventListener('click', close);
+  overlay.addEventListener('click', e => { if(e.target===overlay) close(); });
+  overlay.querySelector('#plt_releaseConfirm').addEventListener('click', () => {
+    const note = (overlay.querySelector('#plt_releaseNote').value || '').trim();
+    const by   = (overlay.querySelector('#plt_releasedBy').value || '').trim();
+    plt_releaseHold(palletId, poId, { releaseNote: note, releasedBy: by });
+    close();
+  });
+}
+
+/* Bind filters once — they call back into plt_renderOnHoldPanel on change. */
+function plt_bindOnHoldFilters(){
+  const ids = ['holdFilterSearch','holdFilterStage','holdFilterLocation','holdFilterPlacedBy','holdFilterSort'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el || el.dataset.holdBound === '1') return;
+    el.dataset.holdBound = '1';
+    el.addEventListener(id === 'holdFilterSearch' ? 'input' : 'change', plt_renderOnHoldPanel);
+  });
+  const clearBtn = document.getElementById('holdFilterClear');
+  if (clearBtn && clearBtn.dataset.holdBound !== '1') {
+    clearBtn.dataset.holdBound = '1';
+    clearBtn.addEventListener('click', () => {
+      ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (el.tagName === 'SELECT') el.value = el.querySelector('option')?.value || '';
+        else el.value = '';
+      });
+      plt_renderOnHoldPanel();
+    });
+  }
+}
+
 function plt_renderAllPanels(){
   plt_renderDockPanel();
   plt_renderReceivingPanel();
   plt_renderPrepPanel();
   plt_renderPutawayPanel();
   plt_renderAllActivity();
+  plt_bindOnHoldFilters();
+  plt_renderOnHoldPanel();
   if(typeof renderStats==='function') renderStats();
 }
 
