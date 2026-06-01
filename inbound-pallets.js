@@ -1908,6 +1908,20 @@ function plt_bindAddPoForm(formEl,palletId,dept){
 
     plt_addPo(palletId, {po, orderedQty: finalOrderedQty, boxes, category, dockNotes, hasPriorReceipts: !!priorInfo, priorReceiptCount: priorInfo?.hits?.length||0, priorTotalReceived: priorInfo?.totalReceived||0});
 
+    // Mark the newly-added PO as done at the current stage. The user just
+    // filled the form (PO + Qty + Boxes + Category) — that's a completed entry,
+    // so it should land in the collapsed Done strip alongside the others,
+    // not pop open in edit mode. Reopening is one click ("reopen") if needed.
+    const _justAddedPallet = plt_get(palletId);
+    const _justAddedPo = _justAddedPallet && _justAddedPallet.pos && _justAddedPallet.pos[_justAddedPallet.pos.length - 1];
+    if (_justAddedPo) {
+      const doneField = dept === 'prep'      ? { prepVerified: true }
+                      : dept === 'receiving' ? { receivingDone: true }
+                      : dept === 'dock'      ? { dockDone: true }
+                      : null;
+      if (doneField) plt_updatePo(palletId, _justAddedPo.id, doneField);
+    }
+
     // Clear form for fast multi-entry
     poInput.value=''; qtyInput.value=''; if(boxInput) boxInput.value='';
     catSelect.value=''; if(notesInput) notesInput.value='';
