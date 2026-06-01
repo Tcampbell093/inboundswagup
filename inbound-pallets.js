@@ -1841,8 +1841,13 @@ function plt_bindAddPoForm(formEl,palletId,dept){
   // Shows a banner if this PO number was received before on another pallet.
   poInput?.addEventListener('blur', ()=>{
     const poNum = poInput.value.trim();
-    // Remove any existing banner
+    // Remove any existing banner and clear any prior qty-lock state. The lock
+    // belongs to a *specific* PO number; switching to a different PO must
+    // start clean before we decide whether to re-apply.
     formEl.querySelector('.plt-prior-receipt-banner')?.remove();
+    qtyInput.readOnly = false;
+    qtyInput.classList.remove('plt-qty-locked');
+    qtyInput.removeAttribute('title');
     if(!poNum) return;
 
     const info = plt_findPriorReceipts(poNum, palletId);
@@ -1925,6 +1930,14 @@ function plt_bindAddPoForm(formEl,palletId,dept){
     // Clear form for fast multi-entry
     poInput.value=''; qtyInput.value=''; if(boxInput) boxInput.value='';
     catSelect.value=''; if(notesInput) notesInput.value='';
+    // Clear the partial-order UI state — the banner and qty lock belong to
+    // the PO that was just added, not the next one the user is about to enter.
+    // Without this, the next blank PO entry inherits a stale warning and a
+    // disabled Ordered Qty input, and the only fix was closing the modal.
+    formEl.querySelector('.plt-prior-receipt-banner')?.remove();
+    qtyInput.readOnly = false;
+    qtyInput.classList.remove('plt-qty-locked');
+    qtyInput.removeAttribute('title');
     poInput.focus();
 
     // Re-render the PO list in place without closing the modal
