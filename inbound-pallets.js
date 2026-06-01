@@ -2834,11 +2834,35 @@ function plt_openTransferModal(fromPalletId,poId,dept){
   const po=(from.pos||[]).find(r=>r.id===poId); if(!po)return;
   const others=plt_all().filter(p=>p.id!==fromPalletId&&p.status!=='done');
   plt_closeAll();
-  if(!others.length){
-    showToast(plt_t('No other pallets available to transfer to.','No hay otras tarimas disponibles.'), 'error');
-    plt_buildPalletModal(plt_get(fromPalletId),dept); return;
-  }
-  const palletOpts=others.map(p=>`<option value="${p.id}">${plt_esc(p.label)} — ${plt_esc(plt_sl(p.status))}</option>`).join('');
+
+  // Build a sensible default label for the "Create new pallet" path so the
+  // user usually just confirms instead of typing. Convention from existing
+  // pallets: "QA-<DayAbbr> <N>" (e.g. "QA-Mon 8"). Find the largest existing
+  // N for today's day abbrev and offer N+1.
+  const today = new Date();
+  const dayAbbrevs = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const todayAbbrev = dayAbbrevs[today.getDay()];
+  const sameDayPattern = new RegExp('^QA-' + todayAbbrev + '\\s+(\\d+)$', 'i');
+  let nextN = 1;
+  plt_all().forEach(p => {
+    const m = (p.label || '').match(sameDayPattern);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (!isNaN(n) && n >= nextN) nextN = n + 1;
+    }
+  });
+  const suggestedLabel = 'QA-' + todayAbbrev + ' ' + nextN;
+  const todayIso = today.toISOString().slice(0,10);
+
+  // "Create new pallet" is always available as a transfer destination —
+  // even when there are no other existing pallets to transfer to. This is
+  // exactly the case the feature was added for: kick a PO downstream when
+  // the next associate has no pallet yet.
+  const palletOpts = (others.length
+    ? others.map(p=>`<option value="${p.id}">${plt_esc(p.label)} — ${plt_esc(plt_sl(p.status))}</option>`).join('')
+    : ''
+  ) + `<option value="__new__">+ ${plt_t('Create new pallet…','Crear nueva tarima…')}</option>`;
+
   const overlay=plt_overlay('palletTransferOverlay');
   overlay.innerHTML=`
     <div class="pallet-modal" style="max-width:440px;" role="dialog" aria-modal="true">
@@ -2858,7 +2882,20 @@ function plt_openTransferModal(fromPalletId,poId,dept){
           <label>${plt_t('Transfer to pallet:','Transferir a tarima:')}</label>
           <select id="plt_transferTarget" style="width:100%;">${palletOpts}</select>
         </div>
-        <p class="plt-transfer-note">⚠️ ${plt_t('The PO will move out of this pallet immediately.','La OC saldrá de esta tarima de inmediato.')}</p>
+        <div id="plt_newPalletFields" style="display:none;margin-top:12px;padding:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+          <div class="pallet-form-field">
+            <label style="font-size:12px;font-weight:600;color:#475569;">${plt_t('New pallet label','Etiqueta de tarima nueva')} <span style="color:#dc2626;">*</span></label>
+            <input id="plt_newPalletLabel" type="text" value="${plt_esc(suggestedLabel)}" placeholder="QA-${todayAbbrev} 1" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px;font-weight:600;font-family:inherit;" />
+          </div>
+          <div class="pallet-form-field" style="margin-top:8px;">
+            <label style="font-size:12px;font-weight:600;color:#475569;">${plt_t('Date','Fecha')}</label>
+            <input id="plt_newPalletDate" type="date" value="${todayIso}" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px;font-family:inherit;" />
+          </div>
+          <p style="margin:8px 0 0;font-size:11px;color:#64748b;line-height:1.4;">
+            ${plt_t('A new pallet will be created at the current stage','Se creará una nueva tarima en la etapa actual')} (<strong>${plt_esc(plt_sl(dept==='dock'?'draft':dept))}</strong>) ${plt_t('and the PO will move into it.','y la OC se moverá a ella.')}
+          </p>
+        </div>
+        <p class="plt-transfer-note" id="plt_transferNote">⚠️ ${plt_t('The PO will move out of this pallet immediately.','La OC saldrá de esta tarima de inmediato.')}</p>
       </div>
       <div class="pallet-modal-footer">
         <button class="pallet-btn-secondary" id="plt_tCancel">${plt_t('Cancel','Cancelar')}</button>
@@ -2866,12 +2903,67 @@ function plt_openTransferModal(fromPalletId,poId,dept){
       </div>
     </div>`;
   plt_push(overlay);
+
+  // If there are no other pallets, pre-select "Create new pallet" and reveal
+  // the inline form so the user doesn't have to discover it.
+  const selectEl = overlay.querySelector('#plt_transferTarget');
+  const newFieldsEl = overlay.querySelector('#plt_newPalletFields');
+  function syncNewPalletFields(){
+    const isNew = selectEl.value === '__new__';
+    newFieldsEl.style.display = isNew ? 'block' : 'none';
+  }
+  if (!others.length) selectEl.value = '__new__';
+  syncNewPalletFields();
+  selectEl.addEventListener('change', syncNewPalletFields);
+
   const goBack=()=>{plt_closeAll();plt_buildPalletModal(plt_get(fromPalletId),dept);};
   overlay.querySelector('.pallet-modal-close').addEventListener('click',goBack);
   overlay.querySelector('#plt_tCancel').addEventListener('click',goBack);
   overlay.addEventListener('click',e=>{if(e.target===overlay)goBack();});
   overlay.querySelector('#plt_tConfirm').addEventListener('click',()=>{
-    const targetId=overlay.querySelector('#plt_transferTarget').value;
+    let targetId = selectEl.value;
+
+    // Create-new-pallet path: build the pallet first, set its stage to match
+    // the current dept (so it lands where the user expects), then continue
+    // to the normal transfer with the new pallet's id.
+    if (targetId === '__new__') {
+      const labelInput = overlay.querySelector('#plt_newPalletLabel');
+      const dateInput  = overlay.querySelector('#plt_newPalletDate');
+      const newLabel = (labelInput.value || '').trim();
+      if (!newLabel) {
+        labelInput.style.borderColor = '#dc2626';
+        labelInput.focus();
+        return;
+      }
+      // Check the label isn't already in use — pallet labels should be unique
+      // within active (non-done) pallets to avoid confusion.
+      const collision = plt_all().find(p => (p.label || '').trim().toLowerCase() === newLabel.toLowerCase() && p.status !== 'done');
+      if (collision) {
+        labelInput.style.borderColor = '#dc2626';
+        showToast(plt_t('A pallet with that label already exists.','Ya existe una tarima con esa etiqueta.'), 'error');
+        labelInput.focus();
+        return;
+      }
+      const newPallet = plt_create(newLabel, dateInput.value || todayIso);
+      if (!newPallet) {
+        showToast(plt_t('Could not create the new pallet.','No se pudo crear la nueva tarima.'), 'error');
+        return;
+      }
+      // Match the new pallet's status to the current dept so the PO lands at
+      // the same stage it was transferred from — that's the use case: kicking
+      // a priority PO to a fresh pallet at the current stage.
+      const stageStatus = dept === 'dock'      ? 'draft'
+                        : dept === 'receiving' ? 'receiving'
+                        : dept === 'prep'      ? 'prep'
+                        : 'draft';
+      if (newPallet.status !== stageStatus) {
+        newPallet.status = stageStatus;
+        plt_log(newPallet, 'stage_set', `Created at ${stageStatus} via transfer of PO# ${po.po}`);
+        plt_save();
+      }
+      targetId = newPallet.id;
+    }
+
     if(plt_transferPo(fromPalletId,poId,targetId)){
       plt_renderAllPanels(); plt_closeAll(); plt_buildPalletModal(plt_get(fromPalletId),dept);
     }
