@@ -1432,8 +1432,9 @@ function plt_buildPalletModal(pallet,dept){
     const poId  = card.getAttribute('data-po-id');
     const poObj = (pallet.pos || []).find(function(p){ return p.id === poId; });
     if (!poObj) return;
-    const isDone = dept === 'prep' ? poObj.prepVerified
+    const isDone = dept === 'prep'      ? poObj.prepVerified
                  : dept === 'receiving' ? poObj.receivingDone
+                 : dept === 'dock'      ? poObj.dockDone
                  : false;
     if (isDone) collapseToStrip(card, poObj, pallet.id, poId, dept);
   });
@@ -1453,6 +1454,7 @@ function plt_buildPalletModal(pallet,dept){
     // Clear the done flag
     const clearField = stripDept === 'prep'      ? { prepVerified: false }
                      : stripDept === 'receiving' ? { receivingDone: false }
+                     : stripDept === 'dock'      ? { dockDone: false }
                      : {};
     plt_updatePo(palId, poId, clearField);
 
@@ -1922,6 +1924,18 @@ function plt_bindAddPoForm(formEl,palletId,dept){
         : pallet.pos.map(po=>plt_poCardHtml(pallet,po,dept,otherPallets)).join('');
       // Re-bind the new cards
       plt_bindPoCardEvents(document.getElementById('plt_poList'), pallet, dept);
+      // Re-run the collapse pass — without this, previously-Done POs would
+      // pop back open into edit mode every time another PO is added.
+      poListEl.querySelectorAll('.po-card[data-po-id]').forEach(function(card){
+        const poId  = card.getAttribute('data-po-id');
+        const poObj = (pallet.pos || []).find(function(p){ return p.id === poId; });
+        if (!poObj) return;
+        const isDone = dept === 'prep'      ? poObj.prepVerified
+                     : dept === 'receiving' ? poObj.receivingDone
+                     : dept === 'dock'      ? poObj.dockDone
+                     : false;
+        if (isDone) collapseToStrip(card, poObj, pallet.id, poId, dept);
+      });
     }
     plt_renderAllPanels();
   });
@@ -2015,11 +2029,15 @@ function plt_bindPoCardEvents(container, pallet, dept){
       const btn = card.querySelector('.plt-dock-done-btn');
       if (btn?.dataset.done === '1') return;
       if (btn) btn.dataset.done = '1';
-      // Save ordered qty from input
+      // Save ordered qty from input + persist dockDone so it survives re-renders.
+      // Previously this was only a DOM flag, so any re-render (e.g. after
+      // adding another PO) reset every previously-Done PO back to edit mode.
       const dockInput = card.querySelector('.plt-dock-qty');
+      const updates = { dockDone: true };
       if (dockInput && dockInput.value !== '') {
-        plt_updatePo(pallet.id, poId, { orderedQty: Number(dockInput.value) });
+        updates.orderedQty = Number(dockInput.value);
       }
+      plt_updatePo(pallet.id, poId, updates);
       const updatedPallet = plt_get(pallet.id);
       const poObj = (updatedPallet?.pos || []).find(function(p){ return p.id === poId; });
       collapseToStrip(card, poObj, pallet.id, poId, dept);
