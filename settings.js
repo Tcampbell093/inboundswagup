@@ -201,6 +201,13 @@
         <button class="btn secondary" onclick="document.getElementById('settingsUserDrawer').hidden=true" style="flex:1;">Cancel</button>
       </div>
       <div id="drawerStatus" style="margin-top:12px;font-size:13px;text-align:center;min-height:20px;"></div>
+
+      <!-- Danger zone: permanent account removal -->
+      <div style="margin-top:24px;padding-top:16px;border-top:1px solid #fee2e2;">
+        <div style="font-size:11px;font-weight:800;color:#991b1b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Danger zone</div>
+        <button class="btn" id="drawerDeleteBtn" onclick="window.hcSettings.deleteUser()" style="width:100%;background:#fff;color:#991b1b;border:1px solid #fecaca;font-weight:700;">🗑️ Delete Account Permanently</button>
+        <p style="font-size:11px;color:#64748b;margin:8px 0 0;line-height:1.4;">Removes the user from Houston Control entirely. They can no longer sign in. This is recoverable only by re-inviting them.</p>
+      </div>
     `;
 
     drawer.hidden = false;
@@ -234,7 +241,7 @@
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({
-          email:    user.email,
+          targetEmail: user.email,
           role, overrides, suspended, tempAdmin, tempAdminExpiry,
         }),
       });
@@ -253,6 +260,43 @@
       }, 1200);
 
     } catch(e) {
+      if (statusEl) statusEl.innerHTML = `<span style="color:#e55;">Error: ${e.message}</span>`;
+    }
+  }
+
+  // ── Delete user (permanent) ───────────────────────────────
+  // Removes the user's row from hc_users on the backend. They lose access
+  // immediately. Recoverable only by re-inviting them via the invite flow.
+  async function deleteUser() {
+    const user = allUsers.find(u => u.id === selectedUserId);
+    if (!user) return;
+
+    const displayName = user.name || user.email;
+    // Double-confirm — this is destructive and not recoverable without a re-invite
+    if (!confirm(`Delete ${displayName} permanently?\n\nThis removes their access entirely. They can no longer sign in to Houston Control. The only way to restore access is to re-invite them.\n\nProceed?`)) return;
+
+    const statusEl = el('drawerStatus');
+    if (statusEl) statusEl.textContent = 'Deleting…';
+
+    try {
+      const res = await fetch(`${USERS_API}?action=delete`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ targetEmail: user.email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Delete failed');
+
+      if (statusEl) statusEl.innerHTML = `<span style="color:#2ecc71;">✓ Account deleted</span>`;
+
+      // Refresh + close drawer
+      await loadUsers();
+      setTimeout(() => {
+        const drawer = el('settingsUserDrawer');
+        if (drawer) drawer.hidden = true;
+      }, 800);
+
+    } catch (e) {
       if (statusEl) statusEl.innerHTML = `<span style="color:#e55;">Error: ${e.message}</span>`;
     }
   }
@@ -436,6 +480,7 @@
     loadAuditLog,
     openUserDrawer,
     saveUser,
+    deleteUser,
     openInviteModal,
     sendInvite,
     exportAllData,
