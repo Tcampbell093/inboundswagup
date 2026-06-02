@@ -106,20 +106,100 @@
     if (!departments.includes(activeAttendanceDepartment)) {
       activeAttendanceDepartment = departments[0] || 'Receiving';
     }
-    employees = normalizeEmployees((employees || []).map(emp => ({
-      ...emp,
-      department: departments.includes(emp.department) ? emp.department : (departments[0] || 'Receiving')
-    })));
-    saveEmployees();
+    // Note: the legacy `employees` array is no longer the roster source —
+    // accountRoster (from user accounts) is. We don't rewrite employees here.
   }
 
   function getDepartmentRoster(dept){
-    return getActiveEmployees().filter(emp => emp.department === dept).sort((a,b) => a.name.localeCompare(b.name));
+    return effectiveRoster().filter(emp => emp.department === dept).sort((a,b) => a.name.localeCompare(b.name));
   }
 
   function getAllRoster(){
-    return getActiveEmployees().sort((a,b) => a.name.localeCompare(b.name));
+    return effectiveRoster().sort((a,b) => a.name.localeCompare(b.name));
   }
+
+  /* ────────────────────────────────────────────────────────────────
+     USER-ACCOUNT-DERIVED ROSTER
+     The roster is the list of users whose role is manager, l1, or l2.
+     Admins and Externals are excluded. Names come from the user account
+     (data.name) — never re-typed in attendance. Department per user is
+     persisted in localStorage.hcUserDepartments keyed by email so the
+     assignment survives reloads.
+
+     If the fetch hasn't returned yet (cold start), we render with an
+     empty roster rather than the legacy local employees[] array — the
+     old typed-in names are no longer the source of truth.
+     ──────────────────────────────────────────────────────────────── */
+  const USER_DEPT_KEY = 'hcUserDepartments';
+  let accountRoster = []; // [{ name, email, role, suspended }]
+  let accountRosterLoaded = false;
+
+  function loadUserDeptMap(){
+    try { return JSON.parse(localStorage.getItem(USER_DEPT_KEY) || '{}') || {}; } catch(_) { return {}; }
+  }
+  function saveUserDeptMap(map){
+    try { localStorage.setItem(USER_DEPT_KEY, JSON.stringify(map || {})); } catch(_) {}
+  }
+  function setUserDepartment(email, dept){
+    if (!email) return;
+    const map = loadUserDeptMap();
+    map[email.toLowerCase()] = dept;
+    saveUserDeptMap(map);
+  }
+
+  // Build the runtime roster the rest of the module reads from. Each entry:
+  // { name, email, department, active }. Department comes from the local
+  // assignment map; if unset, defaults to the first department.
+  function effectiveRoster(){
+    if (!accountRosterLoaded) return [];
+    const map = loadUserDeptMap();
+    const fallbackDept = departments[0] || 'Receiving';
+    return accountRoster
+      .filter(u => !u.suspended)
+      .map(u => ({
+        name: u.name || u.email,
+        email: u.email,
+        department: map[(u.email || '').toLowerCase()] || fallbackDept,
+        active: true,
+      }));
+  }
+
+  // Fetch the user list from the same API Settings uses, filter to roles
+  // that count for attendance (manager / l1 / l2), then re-render.
+  async function fetchAccountRoster(){
+    try {
+      const token = (function(){
+        try { return JSON.parse(localStorage.getItem('hcAuthUser') || '{}').token || null; } catch(_) { return null; }
+      })();
+      if (!token) { accountRosterLoaded = true; renderRemix(); return; }
+      const res = await fetch('/.netlify/functions/users?action=list', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (!res.ok) { accountRosterLoaded = true; renderRemix(); return; }
+      const data = await res.json();
+      const users = Array.isArray(data?.users) ? data.users : [];
+      const ATTENDANCE_ROLES = new Set(['manager','l1','l2']);
+      accountRoster = users
+        .filter(u => ATTENDANCE_ROLES.has(String(u.role||'').toLowerCase()))
+        .map(u => ({
+          name:      String(u.name || u.displayName || u.email || '').trim(),
+          email:     String(u.email || '').trim().toLowerCase(),
+          role:      u.role,
+          suspended: !!u.suspended,
+        }))
+        .filter(u => u.email);
+      accountRosterLoaded = true;
+      renderRemix();
+    } catch (_) {
+      // On failure, leave the roster empty rather than falling back to the
+      // legacy typed-in list — accounts are the only source of truth now.
+      accountRosterLoaded = true;
+      renderRemix();
+    }
+  }
+
+  // Expose for the (deprecated) employee settings UI to refresh after edits
+  window.attendanceRemixRefreshRoster = fetchAccountRoster;
 
   function getRecord(name, dept, date){
     return attendanceRecords.find(r => r.employeeName === name && r.department === dept && r.date === date) || null;
@@ -405,7 +485,10 @@
      ================================== */
   function openSettings(){
     const settings = loadSettings();
-    settingsDraft = { departments: [...settings.departments], marks: [...settings.marks], markDemerits: {...settings.markDemerits}, employees: clone(employees) };
+    // settingsDraft.employees is no longer used — the roster is read live
+    // from accountRoster (user accounts) in renderSettings. Keep the key
+    // as an empty array so any stray reference doesn't error.
+    settingsDraft = { departments: [...settings.departments], marks: [...settings.marks], markDemerits: {...settings.markDemerits}, employees: [] };
     renderSettings();
     els.settingsBackdrop.classList.add('show');
   }
@@ -430,20 +513,52 @@
       </div>
     `).join('') || '<div class="attendance-remix-empty-state" style="padding:12px;">No marks.</div>';
 
-    els.employeesList.innerHTML = settingsDraft.employees.map((emp, idx) => `
-      <div class="attendance-remix-setting-item attendance-remix-emp-row">
-        <input data-emp-name="${idx}" value="${escapeHtml(emp.name)}" />
-        <input data-emp-adp-name="${idx}" value="${escapeHtml(emp.adpName || '')}" placeholder="ADP name (e.g. Last, First)" title="ADP Name — how this person appears in ADP exports" />
-        <select data-emp-dept="${idx}">
-          ${settingsDraft.departments.map(d => `<option value="${escapeHtml(d)}" ${emp.department===d?'selected':''}>${escapeHtml(d)}</option>`).join('')}
-        </select>
-        <input data-emp-birthday="${idx}" type="date" value="${escapeHtml(emp.birthday || '')}" />
-        <select data-emp-size="${idx}">
-          ${sizeOptions.map(s => `<option value="${escapeHtml(s)}" ${String(emp.size||'')===s?'selected':''}>${escapeHtml(s || 'Size')}</option>`).join('')}
-        </select>
-        <button class="remove-btn" type="button" data-remove-emp="${idx}">✕</button>
+    // ── Employees list ───────────────────────────────────────────
+    // Names come from user accounts (manager/l1/l2). They can't be added,
+    // renamed, or removed from here — that happens in Settings → User
+    // Management. Department is editable per user and persists in
+    // localStorage.hcUserDepartments.
+    const userDeptMap = loadUserDeptMap();
+    const fallbackDept = settingsDraft.departments[0] || 'Receiving';
+    const rosterForEditor = accountRoster
+      .filter(u => !u.suspended)
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const employeesIntro = `
+      <div style="background:#f0f6ff;border:1px solid #cfe0f4;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#0c447c;line-height:1.4;">
+        <strong>Names come from user accounts</strong> with role Manager, Associate L1, or Associate L2.
+        To add an associate, invite them in <em>Settings → User Management</em>.
+        Department assignment below is local to attendance.
       </div>
-    `).join('') || '<div class="attendance-remix-empty-state" style="padding:12px;">No employees.</div>';
+    `;
+
+    if (!accountRosterLoaded) {
+      els.employeesList.innerHTML = employeesIntro +
+        '<div class="attendance-remix-empty-state" style="padding:12px;">Loading roster from user accounts…</div>';
+    } else if (!rosterForEditor.length) {
+      els.employeesList.innerHTML = employeesIntro +
+        '<div class="attendance-remix-empty-state" style="padding:12px;">No users with role Manager, L1, or L2 yet. Invite associates via <em>Settings → User Management</em>.</div>';
+    } else {
+      els.employeesList.innerHTML = employeesIntro + rosterForEditor.map((u, idx) => {
+        const currentDept = userDeptMap[u.email] || fallbackDept;
+        return `
+          <div class="attendance-remix-setting-item attendance-remix-emp-row" style="display:flex;align-items:center;gap:10px;">
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:700;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(u.name)}</div>
+              <div style="font-size:11px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(u.email)}</div>
+            </div>
+            <select data-user-dept="${escapeHtml(u.email)}" style="min-width:160px;height:36px;padding:0 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#0f172a;font-size:13px;">
+              ${settingsDraft.departments.map(d => `<option value="${escapeHtml(d)}" ${currentDept===d?'selected':''}>${escapeHtml(d)}</option>`).join('')}
+            </select>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Hide the legacy "Add employee" row inputs — invites happen in User Management
+    if (els.newEmployeeName)        els.newEmployeeName.closest('.attendance-remix-setting-item, .attendance-remix-emp-row')?.style.setProperty('display','none');
+    if (els.addEmployeeSaveBtn)     els.addEmployeeSaveBtn.style.display = 'none';
 
     bindSettingsEvents();
   }
@@ -456,7 +571,14 @@
         const removed = settingsDraft.departments[idx];
         const fallback = settingsDraft.departments.find((_, i) => i !== idx);
         settingsDraft.departments.splice(idx, 1);
-        settingsDraft.employees = settingsDraft.employees.map(emp => ({ ...emp, department: emp.department === removed ? fallback : emp.department }));
+        // Re-point any user-dept assignment that was on the removed dept
+        // to the fallback dept. This keeps attendance consistent after a
+        // department is deleted.
+        const map = loadUserDeptMap();
+        Object.keys(map).forEach(email => {
+          if (map[email] === removed) map[email] = fallback;
+        });
+        saveUserDeptMap(map);
         renderSettings();
       });
     });
@@ -469,10 +591,13 @@
         renderSettings();
       });
     });
-    els.employeesList.querySelectorAll('[data-remove-emp]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        settingsDraft.employees.splice(Number(btn.getAttribute('data-remove-emp')), 1);
-        renderSettings();
+    // Per-user dept change auto-saves (no need to click Save to commit)
+    els.employeesList.querySelectorAll('[data-user-dept]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const email = (sel.getAttribute('data-user-dept') || '').trim().toLowerCase();
+        if (!email) return;
+        setUserDepartment(email, sel.value);
+        afterRosterChange();
       });
     });
   }
@@ -485,22 +610,22 @@
     markNames.forEach((mark, idx) => { nextMarkDemerits[mark] = safeNum(demeritInputs[idx]?.value); });
     settingsDraft.marks = markNames;
     settingsDraft.markDemerits = nextMarkDemerits;
-    settingsDraft.employees = Array.from(els.employeesList.querySelectorAll('[data-emp-name]')).map((input, idx) => ({
-      name: input.value.trim(),
-      adpName: (els.employeesList.querySelector(`[data-emp-adp-name="${idx}"]`)?.value || '').trim(),
-      department: els.employeesList.querySelector(`[data-emp-dept="${idx}"]`)?.value || settingsDraft.departments[0],
-      birthday: els.employeesList.querySelector(`[data-emp-birthday="${idx}"]`)?.value || '',
-      size: els.employeesList.querySelector(`[data-emp-size="${idx}"]`)?.value || '',
-      active: true
-    })).filter(emp => emp.name);
+    // Per-user department assignments: read each <select data-user-dept="email">
+    // and write into the localStorage hcUserDepartments map. We no longer
+    // touch the legacy settingsDraft.employees array — that field is dead.
+    const deptMap = loadUserDeptMap();
+    els.employeesList.querySelectorAll('[data-user-dept]').forEach(sel => {
+      const email = (sel.getAttribute('data-user-dept') || '').trim().toLowerCase();
+      const dept  = sel.value || (settingsDraft.departments[0] || 'Receiving');
+      if (email) deptMap[email] = dept;
+    });
+    saveUserDeptMap(deptMap);
   }
 
   function saveSettings(){
     captureSettingsInputs();
     if (!settingsDraft.departments.length) { alert('Add at least one department.'); return; }
     if (!settingsDraft.marks.length) { alert('Add at least one mark.'); return; }
-    employees = normalizeEmployees(settingsDraft.employees);
-    saveEmployees();
     persistSettings({ departments: settingsDraft.departments, marks: settingsDraft.marks, markDemerits: settingsDraft.markDemerits });
     applySettingsToGlobals(loadSettings());
     closeSettings();
@@ -528,16 +653,9 @@
   }
 
   function addEmployeeFromSettings(){
-    const name = (els.newEmployeeName.value || '').trim();
-    if (!name) return;
-    if (settingsDraft.employees.some(emp => emp.name.toLowerCase() === name.toLowerCase())) { alert('Employee already exists.'); return; }
-    const adpName = (els.newEmployeeAdpName ? (els.newEmployeeAdpName.value || '').trim() : '');
-    settingsDraft.employees.push({ name, adpName, department: els.newEmployeeDepartment.value || settingsDraft.departments[0], birthday: els.newEmployeeBirthday.value || '', size: els.newEmployeeSize.value || '', active: true });
-    els.newEmployeeName.value = '';
-    if (els.newEmployeeAdpName) els.newEmployeeAdpName.value = '';
-    els.newEmployeeBirthday.value = '';
-    els.newEmployeeSize.value = '';
-    renderSettings();
+    // Manual roster adds are deprecated. Names come from user accounts —
+    // direct people to Settings → User Management to invite a new associate.
+    alert('To add an associate, invite them in Settings → User Management.\n\nUsers with role Manager, Associate L1, or Associate L2 automatically appear in the attendance roster.');
   }
 
   function afterRosterChange(){
@@ -580,8 +698,33 @@
     if (!departments.includes(activeAttendanceDepartment)) activeAttendanceDepartment = departments[0] || 'Receiving';
     activeTab = ALL_TAB; // Default to "All"
     selectedDate = todayString();
+
+    // One-shot migration: the first time this version runs, wipe the legacy
+    // typed-in roster and any attendance records keyed to those old names.
+    // The new source of truth is the user-accounts list; old records would
+    // orphan against new account names.
+    const MIGRATION_FLAG = 'hc_attendance_account_bind_v1';
+    if (!localStorage.getItem(MIGRATION_FLAG)) {
+      try {
+        if (typeof employees !== 'undefined' && Array.isArray(employees)) {
+          employees.length = 0;
+          if (typeof saveEmployees === 'function') saveEmployees();
+        }
+        if (typeof attendanceRecords !== 'undefined' && Array.isArray(attendanceRecords)) {
+          attendanceRecords.length = 0;
+          if (typeof saveJson === 'function' && typeof attendanceStorageKey === 'string') {
+            saveJson(attendanceStorageKey, attendanceRecords);
+          }
+        }
+        localStorage.setItem(MIGRATION_FLAG, '1');
+      } catch (_) {}
+    }
+
     syncDateInputs();
     afterRosterChange();
+
+    // Fetch the user list and re-render once accounts arrive.
+    fetchAccountRoster();
 
     els.dateInput.addEventListener('change', () => { selectedDate = els.dateInput.value || todayString(); renderRemix(); });
     els.todayBtn.addEventListener('click', () => { selectedDate = todayString(); renderRemix(); });
