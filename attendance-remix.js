@@ -166,11 +166,22 @@
 
   // Fetch the user list from the same API Settings uses, filter to roles
   // that count for attendance (manager / l1 / l2), then re-render.
+  // The users API requires admin/manager auth — external/l1/l2 users get
+  // 401. Gate the fetch to avoid noisy console errors for non-managers.
   async function fetchAccountRoster(){
     try {
-      const token = (function(){
-        try { return JSON.parse(localStorage.getItem('hcAuthUser') || '{}').token || null; } catch(_) { return null; }
+      const auth = (function(){
+        try { return JSON.parse(localStorage.getItem('hcAuthUser') || '{}'); } catch(_) { return {}; }
       })();
+      const callerRole = String(auth.role || '').trim().toLowerCase();
+      // Only admin/manager can read the user list. For everyone else, leave
+      // the roster empty — they wouldn't see the Attendance page anyway.
+      if (!['admin','manager'].includes(callerRole)) {
+        accountRosterLoaded = true;
+        renderRemix();
+        return;
+      }
+      const token = auth.token || null;
       if (!token) { accountRosterLoaded = true; renderRemix(); return; }
       const res = await fetch('/.netlify/functions/users?action=list', {
         headers: { 'Authorization': 'Bearer ' + token }

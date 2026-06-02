@@ -81,7 +81,11 @@
 
     // Check per-user overrides first
     if (user.overrides && typeof user.overrides[page] === 'boolean') {
-      return user.overrides[page];
+      const result = user.overrides[page];
+      if (!result) {
+        console.warn('HC Access: page', page, 'DENIED by user override (overrides:', user.overrides, ')');
+      }
+      return result;
     }
 
     // Temp admin gets full access
@@ -89,7 +93,11 @@
 
     const role = normRole(user.role);
     const allowed = ROLE_ACCESS[role] || ROLE_ACCESS['l1'];
-    return allowed.includes('all') || allowed.includes(page);
+    const result = allowed.includes('all') || allowed.includes(page);
+    if (!result) {
+      console.warn('HC Access: page', page, 'DENIED by role', role, '— allowed list:', allowed);
+    }
+    return result;
   }
 
   // ── isReadOnly(page) ───────────────────────────────────────
