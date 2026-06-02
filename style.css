@@ -7545,3 +7545,75 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
     padding:0 8px; font-size:12px;
   }
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   ASSEMBLY FOCUS LIST — PHONE RESPONSIVE
+   The .asm-focus-row uses inline `display:flex;align-items:center` styles
+   that cause everything to cram into one row on phone. These !important
+   rules reflow into a card with content-wraps-naturally.
+   ════════════════════════════════════════════════════════════════════ */
+@media (max-width:560px){
+  /* The row itself: become a stacked card */
+  #assemblyPage .asm-focus-row{
+    display:grid !important;
+    grid-template-columns: 28px 32px 1fr;
+    grid-template-areas:
+      "chk  av   info"
+      "act  act  act";
+    gap:8px 10px !important;
+    align-items:start !important;
+    padding:12px !important;
+    border-radius:12px !important;
+  }
+  #assemblyPage .asm-focus-row > input.asm-bulk-cb,
+  #assemblyPage .asm-focus-row > span[style*="width:16px"]{
+    grid-area:chk;
+    align-self:center;
+  }
+  /* Avatar circle (the 2-letter initial bubble) */
+  #assemblyPage .asm-focus-row > div[style*="border-radius:50%"]{
+    grid-area:av;
+    align-self:center;
+    width:32px !important;
+    height:32px !important;
+  }
+  /* The middle info block (PB name + meta line) */
+  #assemblyPage .asm-focus-row > div[style*="flex:1"]{
+    grid-area:info;
+    min-width:0;
+  }
+  #assemblyPage .asm-focus-row > div[style*="flex:1"] > div[style*="display:flex"]{
+    flex-wrap:wrap !important;
+  }
+  #assemblyPage .asm-focus-row > div[style*="flex:1"] > span{
+    font-size:11px !important;
+    line-height:1.5 !important;
+  }
+  /* The trailing action group (cb-badge, stage chip, stage select, buttons) */
+  #assemblyPage .asm-focus-row > div[style*="flex-shrink:0"]:last-child{
+    grid-area:act;
+    display:flex !important;
+    flex-wrap:wrap !important;
+    gap:6px !important;
+    align-items:center !important;
+    width:100%;
+    padding-top:6px;
+    border-top:1px solid #f1f5f9;
+    margin-top:2px;
+  }
+  /* Make the stage <select> a real tap target */
+  #assemblyPage .asm-focus-row select{
+    height:36px !important;
+    padding:0 10px !important;
+    font-size:13px !important;
+    flex:0 0 auto;
+    min-width:90px;
+  }
+  /* Buttons in the action row keep readable size */
+  #assemblyPage .asm-focus-row .btn{
+    height:32px;
+    padding:0 12px !important;
+    font-size:12px !important;
+    border-radius:7px;
+  }
+}
