@@ -119,19 +119,22 @@
 
     const moduleOverrides = [
       { key: 'workflowInboundPage', label: 'QA Inbound' },
+      { key: 'inboundFlightTrackerPage', label: 'Inbound Flight Tracker' },
       { key: 'fulfillmentScanPage', label: 'Fulfillment Scan-Out' },
       { key: 'returnsPage', label: 'Returns' },
       { key: 'cycleCountPage', label: 'Cycle Count' },
       { key: 'assemblyPage', label: 'Assembly Planner' },
-      { key: 'assemblyFlightTrackerPage', label: 'Flight Tracker' },
+      { key: 'assemblyFlightTrackerPage', label: 'Assembly Flight Tracker' },
+      { key: 'queuePage', label: 'Pack Builder Queue' },
       { key: 'calendarPage', label: 'Calendar' },
       { key: 'policyPage', label: 'Policy & SOPs' },
       { key: 'attendancePage', label: 'Attendance' },
-      { key: 'queuePage', label: 'Pack Builder Queue' },
       { key: 'errorsPage', label: 'Error Log' },
       { key: 'sordPage', label: 'Daily Tools Dossier' },
       { key: 'productivityPage', label: 'Productivity' },
       { key: 'importHubPage', label: 'Import Hub' },
+      { key: 'historyPage', label: 'History Log' },
+      { key: 'helpPage', label: 'Help & Guide' },
     ];
 
     content.innerHTML = `
@@ -157,17 +160,34 @@
 
       <!-- Module overrides -->
       <div style="margin-bottom:20px;">
-        <label style="font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:8px;">Module Overrides <span style="font-weight:400;text-transform:none;">(overrides base role)</span></label>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;">
+          <label style="font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Module Overrides <span style="font-weight:400;text-transform:none;">(overrides base role)</span></label>
+          ${Object.keys(user.overrides || {}).length > 0 ? `
+            <button type="button" onclick="window.hcSettings.clearAllOverrides()" style="font-size:11px;font-weight:700;padding:5px 10px;border-radius:6px;border:1px solid #fecaca;background:#fff;color:#991b1b;cursor:pointer;">Clear all overrides</button>
+          ` : ''}
+        </div>
+        ${(() => {
+          // Detect stale overrides — keys saved in the DB that don't appear in
+          // our moduleOverrides UI list. These are usually leftover from a
+          // previous version. Surface them so the user knows they exist.
+          const knownKeys = new Set(moduleOverrides.map(m => m.key));
+          const staleKeys = Object.keys(user.overrides || {}).filter(k => !knownKeys.has(k));
+          if (staleKeys.length === 0) return '';
+          return `
+            <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#854d0e;">
+              <strong>⚠️ Stale overrides found:</strong> ${staleKeys.map(k => `<code style="background:#fef3c7;padding:1px 5px;border-radius:4px;">${k}: ${user.overrides[k]}</code>`).join(' ')}
+              <br><span style="font-size:11px;">These keys aren't in the current UI. Click "Clear all overrides" to remove them, or save the drawer to keep them as-is.</span>
+            </div>
+          `;
+        })()}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           ${moduleOverrides.map(m => {
             const override = user.overrides?.[m.key];
-            const checked = override === true ? 'checked' : '';
-            const denied  = override === false ? 'checked' : '';
             return `
               <div style="background:var(--blue1);border:1px solid var(--blue2);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
                 <span style="font-size:13px;font-weight:600;">${m.label}</span>
                 <select data-override="${m.key}" style="font-size:12px;padding:4px 6px;border-radius:6px;border:1px solid var(--blue2);background:var(--bg);">
-                  <option value="" ${!override && override!==false?'selected':''}>Default</option>
+                  <option value="" ${override!==true && override!==false?'selected':''}>Default</option>
                   <option value="true" ${override===true?'selected':''}>✓ Allow</option>
                   <option value="false" ${override===false?'selected':''}>✕ Deny</option>
                 </select>
@@ -262,6 +282,15 @@
     } catch(e) {
       if (statusEl) statusEl.innerHTML = `<span style="color:#e55;">Error: ${e.message}</span>`;
     }
+  }
+
+  // ── Clear all module overrides ────────────────────────────
+  // Sets every override <select> to "Default" so the next saveUser writes
+  // an empty overrides object, removing any stale or unwanted denials.
+  function clearAllOverrides() {
+    document.querySelectorAll('[data-override]').forEach(sel => { sel.value = ''; });
+    const statusEl = el('drawerStatus');
+    if (statusEl) statusEl.innerHTML = '<span style="color:#64748b;font-size:12px;">All overrides cleared. Click <strong>Save Changes</strong> to commit.</span>';
   }
 
   // ── Delete user (permanent) ───────────────────────────────
@@ -481,6 +510,7 @@
     openUserDrawer,
     saveUser,
     deleteUser,
+    clearAllOverrides,
     openInviteModal,
     sendInvite,
     exportAllData,
