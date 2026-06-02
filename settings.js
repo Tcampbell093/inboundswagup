@@ -23,7 +23,7 @@
   }
 
   function roleLabel(role) {
-    return { admin: 'Admin', manager: 'Manager', l2: 'Associate L2', l1: 'Associate L1' }[role] || role;
+    return { admin: 'Admin', manager: 'Manager', l2: 'Associate L2', l1: 'Associate L1', external: 'External' }[role] || role;
   }
 
   function formatDate(iso) {
@@ -146,11 +146,12 @@
       <!-- Role -->
       <div style="margin-bottom:20px;">
         <label style="font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:8px;">Base Role</label>
-        <select id="drawerRole" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--blue2);background:var(--blue1);font-size:14px;font-weight:700;">
+        <select id="drawerRole" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--blue2);background:#fff;color:#0f172a;font-size:14px;font-weight:700;">
           <option value="l1" ${user.role==='l1'?'selected':''}>Associate L1</option>
           <option value="l2" ${user.role==='l2'?'selected':''}>Associate L2</option>
           <option value="manager" ${user.role==='manager'?'selected':''}>Manager</option>
           <option value="admin" ${user.role==='admin'?'selected':''}>Admin</option>
+          <option value="external" ${user.role==='external'?'selected':''}>External</option>
         </select>
       </div>
 
