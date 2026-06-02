@@ -14,7 +14,11 @@
   var QCC_COLLAPSED = {};
   var QCC_SELECTED  = new Set();
   var QCC_FILTER    = 'all';
-  var QCC_PAGE      = 1;
+  // Per-section page tracking. Each section paginates independently so the
+  // 25/50/100/All selector applies per-section, not across the full list.
+  // Keys match _qStatus values plus 'urgent' (which is split out of
+  // ready/pending in renderPage).
+  var QCC_PAGES     = { ready:1, urgent:1, hold:1, pending:1, scheduled:1 };
   var QCC_FILTERED  = [];
 
   function esc(v) {
@@ -139,7 +143,8 @@
     });
 
     QCC_FILTERED = sortRows(QCC_FILTERED);
-    QCC_PAGE = 1;
+    // Reset every section to page 1 on filter/search change
+    QCC_PAGES = { ready:1, urgent:1, hold:1, pending:1, scheduled:1 };
     QCC_SELECTED.clear();
 
     var matchEl = el('qccMatchCount');
@@ -159,75 +164,86 @@
   }
 
   // ── Page render ──────────────────────────────────────────────
+  // Each section paginates independently. The page-size selector is applied
+  // PER SECTION, not globally. Urgent rows are split out from ready/pending
+  // into their own bucket. Section order: ready → urgent → hold → pending →
+  // scheduled. Filter pills still hide entire sections; the urgent pill
+  // shows only the urgent section.
   function renderPage() {
     var psRaw = (el('qccPageSize') || {}).value || '25';
-    var ps    = psRaw === 'all' ? QCC_FILTERED.length : parseInt(psRaw);
-    var total = QCC_FILTERED.length;
-    var totalPages = Math.max(1, Math.ceil(total / ps));
-    if (QCC_PAGE > totalPages) QCC_PAGE = 1;
-    var start = (QCC_PAGE - 1) * ps;
-    var end   = Math.min(start + ps, total);
-    var slice = QCC_FILTERED.slice(start, end);
 
-    // Group both the slice (for row display) and the full filtered set
-    // (for accurate per-group totals). Section headers must reflect the
-    // TOTAL in each group regardless of pagination — otherwise "All" + 25/pg
-    // would show "Ready [2]" while the Ready tab shows "[4]" purely because
-    // only 2 ready rows fit in the first 25 sorted-by-IHD rows.
-    var groups = { scheduled:[], hold:[], ready:[], pending:[] };
-    slice.forEach(function(r) { if (groups[r._qStatus]) groups[r._qStatus].push(r); });
-    var totalGroups = { scheduled:[], hold:[], ready:[], pending:[] };
-    QCC_FILTERED.forEach(function(r) { if (totalGroups[r._qStatus]) totalGroups[r._qStatus].push(r); });
-    var order = QCC_FILTER !== 'all' ? [QCC_FILTER] : ['scheduled','hold','ready','pending'];
+    // Group the FULL filtered set by section. A ready/pending row with
+    // isUrgent() === true is reclassified into the 'urgent' bucket so it
+    // doesn't appear in both Ready and Urgent sections.
+    var totalGroups = { ready:[], urgent:[], hold:[], pending:[], scheduled:[] };
+    QCC_FILTERED.forEach(function(r) {
+      var key = r._qStatus;
+      if ((key === 'ready' || key === 'pending') && isUrgent(r)) key = 'urgent';
+      if (totalGroups[key]) totalGroups[key].push(r);
+    });
 
-    var STATUS_LABEL = { scheduled:'Scheduled', hold:'On hold', ready:'Ready to schedule', pending:'Pending / incomplete' };
-    var STATUS_COLOR = { scheduled:'#0C447C', hold:'#A32D2D', ready:'#27500A', pending:'#633806' };
-    var STATUS_REV_COLOR = { scheduled:'#185FA5', hold:'#A32D2D', ready:'#0F6E56', pending:'#854F0B' };
+    // Filter pill controls which sections render at all.
+    var order;
+    if (QCC_FILTER === 'all') {
+      order = ['ready','urgent','hold','pending','scheduled'];
+    } else if (QCC_FILTER === 'urgent') {
+      order = ['urgent'];
+    } else {
+      order = [QCC_FILTER];
+    }
+
+    var STATUS_LABEL = { scheduled:'Scheduled', hold:'On hold', ready:'Ready to schedule', pending:'Pending / incomplete', urgent:'Urgent (IHD ≤ 2 days)' };
+    var STATUS_COLOR = { scheduled:'#0C447C', hold:'#A32D2D', ready:'#27500A', pending:'#633806', urgent:'#A32D2D' };
+    var STATUS_REV_COLOR = { scheduled:'#185FA5', hold:'#A32D2D', ready:'#0F6E56', pending:'#854F0B', urgent:'#A32D2D' };
+    // Urgent rows get the badge of their original status (ready or pending),
+    // not 'urgent' — the section header is enough to communicate urgency.
     var BADGE_CLS   = { ready:'qcc-b-r', hold:'qcc-b-h', scheduled:'qcc-b-s', pending:'qcc-b-p' };
     var BADGE_LABEL = { ready:'Ready', hold:'Hold', scheduled:'Sched', pending:'Pending' };
-    var ACTION_LBL  = { ready:'Schedule', hold:'Resolve', scheduled:'View', pending:'Details' };
 
+    var totalShownAcrossAll = 0;
     var html = '';
-    // Render a section for every group that has rows EITHER on this page OR
-    // in the full filtered set. This way a section with rows that landed on
-    // later pages still gets a header (collapsed, with the total count) so
-    // the user knows it exists and can navigate to it.
     order.forEach(function(st) {
-      var rowsOnPage = groups[st] || [];
-      var rowsTotal  = totalGroups[st] || [];
+      var rowsTotal = totalGroups[st] || [];
       if (!rowsTotal.length) return;
+
+      // Per-section page math
+      var ps = psRaw === 'all' ? rowsTotal.length : parseInt(psRaw);
+      if (!ps || ps < 1) ps = 25;
+      var totalInGroup = rowsTotal.length;
+      var totalPages = Math.max(1, Math.ceil(totalInGroup / ps));
+      var page = QCC_PAGES[st] || 1;
+      if (page > totalPages) { page = 1; QCC_PAGES[st] = 1; }
+      var start = (page - 1) * ps;
+      var end   = Math.min(start + ps, totalInGroup);
+      var rowsOnPage = rowsTotal.slice(start, end);
+      totalShownAcrossAll += rowsOnPage.length;
+
       var collapsed = QCC_COLLAPSED[st];
-      // Group revenue is computed from the FULL group total, not just the
-      // visible page slice — so the section's $ matches its count.
       var groupRev  = rowsTotal.reduce(function(s,r){ return s + rowRevenue(r); }, 0);
       var col       = STATUS_COLOR[st] || 'var(--muted)';
       var revCol    = STATUS_REV_COLOR[st] || 'var(--muted)';
 
+      // ── Section header ─────────────────────────────────────────
       html += '<div class="qcc-section-head" onclick="window.qcc.toggleSection(\'' + st + '\')">';
       html += '<span class="qcc-chevron' + (collapsed?' closed':'') + '" id="qcc-ch-' + st + '">&#9660;</span>';
       html += '<span class="qcc-section-label" style="color:' + col + '">' + STATUS_LABEL[st] + '</span>';
-      // Count badge: show the total in the group. If pagination has hidden
-      // some, also show "X of Y" so it's clear there are more elsewhere.
-      var countText = String(rowsTotal.length);
-      if (rowsOnPage.length < rowsTotal.length) {
-        countText = rowsOnPage.length + ' of ' + rowsTotal.length;
-      }
+      // Show "X of Y" only if a page is hiding some rows in this section.
+      var countText = (rowsOnPage.length < totalInGroup)
+        ? (start + 1) + '–' + end + ' of ' + totalInGroup
+        : String(totalInGroup);
       html += '<span class="qcc-section-count">' + countText + '</span>';
       if (groupRev > 0) html += '<span class="qcc-section-rev" style="color:' + revCol + '">' + fmtRevTotal(groupRev) + '</span>';
       html += '</div>';
 
+      // ── Rows + per-section pager ───────────────────────────────
       if (!collapsed) {
-        // If this group has zero rows on the current page but exists elsewhere,
-        // render a small "rest on other pages" placeholder instead of nothing.
-        if (!rowsOnPage.length) {
-          html += '<div class="qcc-section-elsewhere" style="padding:10px 14px;font-size:12px;color:var(--muted);font-style:italic;">'
-               +  (rowsTotal.length - rowsOnPage.length) + ' on other pages — switch to ' + STATUS_LABEL[st].toLowerCase() + ' filter or change page size to view'
-               +  '</div>';
-        }
         rowsOnPage.forEach(function(r) {
           var sid  = String(r.id);
-          var urg  = isUrgent(r);
-          var rowCls = 'qcc-row' + (urg?' qcc-urgent':r._qStatus==='hold'?' qcc-hold-r':r._qStatus==='pending'?' qcc-warn':'') + (QCC_SELECTED.has(sid)?' qcc-sel':'');
+          // Urgent rows are still styled with their underlying severity
+          var rowCls = 'qcc-row' + (st === 'urgent' ? ' qcc-urgent' :
+                                    r._qStatus==='hold' ? ' qcc-hold-r' :
+                                    r._qStatus==='pending' ? ' qcc-warn' : '')
+                                 + (QCC_SELECTED.has(sid)?' qcc-sel':'');
           var initials = getInitials(r);
           var rev = rowRevenue(r);
           var cbKey = esc(r.pbId || r.so || '');
@@ -246,7 +262,9 @@
           html += '</div>';
           html += '<div style="min-width:60px;text-align:right;font-size:11px;">' + fmtIhd(r) + '</div>';
           html += '<div style="min-width:48px;text-align:right;font-size:11px;color:var(--muted);">' + fmtRev(rev) + '</div>';
-          html += '<span class="qcc-badge ' + (BADGE_CLS[r._qStatus]||'qcc-b-p') + '">' + (BADGE_LABEL[r._qStatus]||r._qStatus) + '</span>';
+          // Badge reflects the underlying status, not 'urgent'
+          var badgeKey = r._qStatus;
+          html += '<span class="qcc-badge ' + (BADGE_CLS[badgeKey]||'qcc-b-p') + '">' + (BADGE_LABEL[badgeKey]||badgeKey) + '</span>';
 
           // Action buttons
           var link = typeof buildSalesforcePbLink === 'function' ? buildSalesforcePbLink(r.pbId, r.pdfUrl) : '';
@@ -272,6 +290,22 @@
 
           html += '</div>';
         });
+
+        // Per-section pager — only render when this section has multiple pages
+        if (totalPages > 1 && psRaw !== 'all') {
+          html += '<div class="qcc-section-pager" style="display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:8px 14px 14px;border-bottom:1px solid var(--border);">';
+          html += '<span style="font-size:11px;color:var(--muted);margin-right:6px;">Page ' + page + ' of ' + totalPages + '</span>';
+          html += '<button class="qcc-pager-btn" onclick="window.qcc.goPage(\'' + st + '\',' + (page-1) + ')"' + (page<=1?' disabled':'') + '>&#8592;</button>';
+          for (var p = 1; p <= totalPages; p++) {
+            if (totalPages > 7 && p > 3 && p < totalPages - 2 && Math.abs(p - page) > 1) {
+              if (p === 4 || p === totalPages - 3) html += '<span style="padding:0 4px;color:var(--muted)">…</span>';
+              continue;
+            }
+            html += '<button class="qcc-pager-btn' + (p===page?' on':'') + '" onclick="window.qcc.goPage(\'' + st + '\',' + p + ')">' + p + '</button>';
+          }
+          html += '<button class="qcc-pager-btn" onclick="window.qcc.goPage(\'' + st + '\',' + (page+1) + ')"' + (page>=totalPages?' disabled':'') + '>&#8594;</button>';
+          html += '</div>';
+        }
       }
     });
 
@@ -283,25 +317,12 @@
       setTimeout(renderAssemblyCommentBadges, 100);
     }
 
-    // Pager
+    // The global pager at the bottom is no longer used — clear it. Per-section
+    // pagers live inside each section now.
     var infoEl = el('qccPagerInfo');
-    if (infoEl) infoEl.textContent = total ? 'Showing ' + (start+1) + '–' + end + ' of ' + total.toLocaleString() + ' builders' : '';
-
+    if (infoEl) infoEl.textContent = '';
     var btnsEl = el('qccPagerBtns');
-    if (btnsEl && psRaw !== 'all') {
-      var btns = '<button class="qcc-pager-btn" onclick="window.qcc.goPage(' + (QCC_PAGE-1) + ')"' + (QCC_PAGE<=1?' disabled':'') + '>&#8592;</button>';
-      for (var p = 1; p <= totalPages; p++) {
-        if (totalPages > 7 && p > 3 && p < totalPages - 2 && Math.abs(p - QCC_PAGE) > 1) {
-          if (p === 4 || p === totalPages - 3) btns += '<span style="padding:0 4px;color:var(--muted)">…</span>';
-          continue;
-        }
-        btns += '<button class="qcc-pager-btn' + (p===QCC_PAGE?' on':'') + '" onclick="window.qcc.goPage(' + p + ')">' + p + '</button>';
-      }
-      btns += '<button class="qcc-pager-btn" onclick="window.qcc.goPage(' + (QCC_PAGE+1) + ')"' + (QCC_PAGE>=totalPages?' disabled':'') + '>&#8594;</button>';
-      btnsEl.innerHTML = btns;
-    } else if (btnsEl) {
-      btnsEl.innerHTML = '';
-    }
+    if (btnsEl) btnsEl.innerHTML = '';
   }
 
   // ── Stats bar ────────────────────────────────────────────────
@@ -431,17 +452,16 @@
     renderPage();
   }
 
-  // ── Pagination ───────────────────────────────────────────────
-  function goPage(p) {
-    var psRaw = (el('qccPageSize')||{}).value || '25';
-    var ps    = psRaw==='all' ? QCC_FILTERED.length : parseInt(psRaw);
-    var total = QCC_FILTERED.length;
-    var totalPages = Math.max(1, Math.ceil(total/ps));
-    if (p < 1 || p > totalPages) return;
-    QCC_PAGE = p;
+  // ── Pagination (per section) ─────────────────────────────────
+  function goPage(section, p) {
+    if (!section || typeof section !== 'string') return;
+    if (!QCC_PAGES.hasOwnProperty(section)) return;
+    p = parseInt(p, 10);
+    if (!p || p < 1) return;
+    QCC_PAGES[section] = p;
     renderPage();
-    var listEl = el('qccList');
-    if (listEl) listEl.scrollIntoView({behavior:'smooth', block:'start'});
+    // Don't auto-scroll on pagination — staying in context is more useful
+    // than jumping to the top of the list when paging mid-screen.
   }
 
   // ── Legacy toggle ────────────────────────────────────────────
