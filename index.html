@@ -5,22 +5,69 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Warehouse Operations Hub</title>
 <script>
-  /* Synchronous auth pre-check — runs before any visible HTML paints, so
-     authenticated users never see the login overlay flash on refresh.
-     Reads localStorage (synchronous, no network), and if a valid token
-     exists, hides the overlay via injected CSS BEFORE the browser renders
-     anything. auth.js runs later to do the proper async validation. */
+  /* Synchronous auth + nav pre-check — runs before any visible HTML paints.
+     Two jobs: (1) hide the login overlay for authenticated users, and (2)
+     hide sidebar nav items the saved role can't access, so the user never
+     sees a "full nav then collapse" flash on login. auth.js and access.js
+     do the proper async validation later. */
   (function() {
     try {
       var raw = localStorage.getItem('hcAuthUser');
       if (!raw) return;
       var data = JSON.parse(raw);
-      // Treat as authenticated if there's a token and not explicitly suspended
-      if (data && data.token && !data.suspended) {
-        var style = document.createElement('style');
-        style.textContent = '#hcLoginOverlay{display:none!important;}';
-        document.head.appendChild(style);
-        document.documentElement.classList.add('hc-prerender-auth');
+      if (!data || !data.token || data.suspended) return;
+
+      // 1. Hide login overlay
+      var style = document.createElement('style');
+      style.textContent = '#hcLoginOverlay{display:none!important;}';
+      document.head.appendChild(style);
+      document.documentElement.classList.add('hc-prerender-auth');
+
+      // 2. Hide nav items the saved role can't access. This MUST stay in
+      //    sync with ROLE_ACCESS in access.js — if access lists change there,
+      //    update them here too. Casing-normalized to match access.js.
+      var role = String(data.role || '').trim().toLowerCase();
+      if (!role || role === 'admin') return; // admin sees everything
+
+      var ROLE_ACCESS_PRE = {
+        manager: ['homePage','attendancePage','workflowInboundPage','fulfillmentScanPage','returnsPage','cycleCountPage','errorsPage','assemblyPage','queuePage','assemblyFlightTrackerPage','inboundFlightTrackerPage','sordPage','calendarPage','productivityPage','policyPage','helpPage','importHubPage','historyPage','settingsPage'],
+        l2:      ['homePage','workflowInboundPage','fulfillmentScanPage','returnsPage','cycleCountPage','assemblyPage','assemblyFlightTrackerPage','inboundFlightTrackerPage','calendarPage','policyPage','helpPage'],
+        l1:      ['homePage','workflowInboundPage','fulfillmentScanPage','returnsPage','cycleCountPage','assemblyPage','assemblyFlightTrackerPage','inboundFlightTrackerPage','calendarPage','policyPage','helpPage'],
+        external:['assemblyFlightTrackerPage','inboundFlightTrackerPage']
+      };
+      var allowed = ROLE_ACCESS_PRE[role] || ROLE_ACCESS_PRE.l1;
+
+      // All pages that exist as nav buttons — anything in this list NOT
+      // in the role's allowed list gets hidden via injected CSS.
+      var ALL_NAV_PAGES = ['homePage','importHubPage','attendancePage','workflowInboundPage','inboundFlightTrackerPage','fulfillmentScanPage','returnsPage','cycleCountPage','errorsPage','assemblyPage','queuePage','assemblyFlightTrackerPage','sordPage','calendarPage','productivityPage','policyPage','historyPage','helpPage','settingsPage'];
+      var hideRules = ALL_NAV_PAGES
+        .filter(function(p){ return allowed.indexOf(p) === -1; })
+        .map(function(p){ return '.nav-btn[data-page="'+p+'"]'; })
+        .join(',');
+      if (hideRules) {
+        var navStyle = document.createElement('style');
+        navStyle.textContent = hideRules + '{display:none!important;}';
+        document.head.appendChild(navStyle);
+      }
+
+      // Also pre-hide nav groups that would have no visible buttons under
+      // this role. Without this, you see empty group headers (e.g. an
+      // "OVERVIEW" label with no buttons under it) until applyGuards runs.
+      var GROUPS_TO_PAGES = {
+        overview: ['homePage','importHubPage'],
+        floor:    ['attendancePage','workflowInboundPage','inboundFlightTrackerPage','fulfillmentScanPage','returnsPage','cycleCountPage','errorsPage'],
+        assembly: ['assemblyPage','queuePage','assemblyFlightTrackerPage'],
+        ops:      ['sordPage','calendarPage','productivityPage','policyPage','historyPage']
+      };
+      var emptyGroups = Object.keys(GROUPS_TO_PAGES).filter(function(g){
+        return !GROUPS_TO_PAGES[g].some(function(p){ return allowed.indexOf(p) !== -1; });
+      });
+      if (emptyGroups.length) {
+        var groupStyle = document.createElement('style');
+        groupStyle.textContent = emptyGroups
+          .map(function(g){ return '.nav-group[data-group="'+g+'"]'; })
+          .join(',') + '{display:none!important;}';
+        document.head.appendChild(groupStyle);
       }
     } catch (e) { /* parse error → fall through, let auth.js handle */ }
   })();
