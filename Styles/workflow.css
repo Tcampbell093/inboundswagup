@@ -3360,4 +3360,59 @@ font-weight:800
   .workflow-page .inb-pace-meta{display:none;}
   .workflow-page .inb-po-lookup{flex:1;}
   .workflow-page .inb-po-lookup-inner input{width:100%;}
+
+  /* Stack the header band vertically so each row gets full width on phone
+     instead of fighting for space horizontally. */
+  .workflow-page .inb-band-metrics{
+    flex-wrap:wrap; gap:12px;
+  }
+  .workflow-page .inb-band-tools{
+    width:100%; margin-left:0; margin-top:8px;
+    flex-wrap:wrap; gap:8px;
+  }
+  .workflow-page .inb-po-lookup-inner{
+    display:flex; gap:6px; width:100%;
+  }
+
+  /* Tabbar overrides — force horizontal scroll with visible gaps so labels
+     don't overlap. The previous fix set gap:0 which made labels appear to
+     run together visually. */
+  .workflow-page .role-tabs.inb-tabbar{
+    flex-wrap:nowrap !important;
+    overflow-x:auto !important;
+    gap:4px !important;
+    padding:0 8px !important;
+    scroll-snap-type:x proximity;
+  }
+  .workflow-page .inb-tabbar .role-tab{
+    flex-shrink:0 !important;
+    flex-grow:0 !important;
+    padding:11px 14px !important;
+    font-size:12px !important;
+    white-space:nowrap !important;
+    scroll-snap-align:start;
+    min-width:max-content;
+  }
+  /* Stack the Show Summary button below the scroll strip instead of next
+     to it — there isn't room on phone for both side-by-side. */
+  .workflow-page .inb-tabbar-wrap{
+    flex-direction:column;
+    align-items:stretch;
+    padding:0;
+  }
+  .workflow-page .inb-summary-btn{
+    margin:8px 12px;
+    align-self:flex-end;
+  }
+}
+
+/* The legacy @media (max-width:760px) rule sets `.role-tabs { flex-wrap: wrap }`
+   for compact mobile. That breaks the Slate tabbar's horizontal-scroll design.
+   This higher-specificity override restores nowrap for the Slate tabbar only,
+   without disturbing the legacy hero-tabs treatment elsewhere. */
+@media (max-width:760px){
+  .workflow-page .role-tabs.inb-tabbar{
+    flex-wrap:nowrap !important;
+    overflow-x:auto !important;
+  }
 }
