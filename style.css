@@ -7403,3 +7403,145 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
     max-width: 100%;
   }
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   PACK BUILDER QUEUE — PHONE RESPONSIVE
+   At ≤560px, the single-row layout of .qcc-row becomes a stacked card:
+     row 1: checkbox + avatar + PB number + status badge
+     row 2: account · units · SORD (wraps freely)
+     row 3: IHD + revenue + action buttons (Schedule / Hold / SF↗)
+   This way the row stays inside the viewport and stays tap-friendly.
+   ════════════════════════════════════════════════════════════════════ */
+@media (max-width:560px){
+  /* Filter pills row scrolls horizontally instead of overflowing the page */
+  #queuePage #qccFilters{
+    flex-wrap:wrap !important;
+    gap:6px !important;
+  }
+  #queuePage .qcc-pill{
+    font-size:11px; padding:5px 10px;
+  }
+
+  /* Stats row stacks two-up */
+  #queuePage .qcc-stat{padding:10px;}
+  #queuePage .qcc-stat-n{font-size:18px;}
+  #queuePage .qcc-stat-l{font-size:10px;}
+
+  /* THE ROW — restructure into a stacked card */
+  #queuePage .qcc-row{
+    display:grid;
+    grid-template-columns: 28px 28px 1fr auto;
+    grid-template-areas:
+      "chk  av   pb    badge"
+      "info info info info"
+      "acts acts acts  acts";
+    gap:6px 8px;
+    padding:10px 12px;
+  }
+  #queuePage .qcc-row > .qcc-chk{grid-area:chk; align-self:center;}
+  #queuePage .qcc-row > .qcc-av{grid-area:av; align-self:center;}
+
+  /* The "flex:1 min-width:0" wrapper containing PB name + info line —
+     it's the 3rd child after chk+av. Span it from pb across info. */
+  #queuePage .qcc-row > div[style*="flex:1"]{
+    grid-area: pb / pb / info / info;
+    min-width:0;
+  }
+  #queuePage .qcc-pb{font-size:13px;}
+  #queuePage .qcc-info{font-size:11px; line-height:1.4;}
+
+  /* IHD + revenue: don't reserve fixed min-width on phone, let them sit
+     inline with info via inline-flex via auto-flow. Move them into the
+     info area visually by hiding their fixed-min-width spacers. */
+  #queuePage .qcc-row > div[style*="min-width:60px"],
+  #queuePage .qcc-row > div[style*="min-width:48px"]{
+    display:none;
+  }
+
+  /* Status badge in the top-right corner */
+  #queuePage .qcc-row > .qcc-badge{
+    grid-area: badge;
+    align-self:center;
+    justify-self:end;
+    font-size:10px;
+    padding:2px 8px;
+  }
+
+  /* Action buttons + SF link + comment badge row at the bottom.
+     There's no single wrapper so we target the .qcc-act buttons by
+     auto-flow positioning: anything after .qcc-badge goes into `acts`. */
+  #queuePage .qcc-row > .qcc-act,
+  #queuePage .qcc-row > a.qcc-act,
+  #queuePage .qcc-row > .cb-cell{
+    grid-area: acts;
+    display:inline-flex;
+    margin-right:6px;
+  }
+  /* Compress action buttons so they fit on one line at phone width */
+  #queuePage .qcc-act{
+    font-size:11px; padding:5px 10px;
+    height:32px;
+    border-radius:6px;
+  }
+  /* The grid-area: acts trick puts ALL action buttons in the same cell
+     but they'd all stack at position (1,1). Use flex on a pseudo wrapper:
+     actually CSS grid stacks them. Switch to a different approach below. */
+}
+
+/* Better approach: at phone width, override .qcc-row from grid back to
+   flex-wrap so the action buttons flow naturally onto a second line. */
+@media (max-width:560px){
+  #queuePage .qcc-row{
+    display:flex !important;
+    flex-wrap:wrap;
+    grid-template-areas:none;
+    align-items:center;
+    gap:8px;
+    padding:10px 12px;
+  }
+  #queuePage .qcc-row > .qcc-chk,
+  #queuePage .qcc-row > .qcc-av{flex-shrink:0;}
+  /* The middle "flex:1" wrapper gets full width minus checkbox+avatar */
+  #queuePage .qcc-row > div[style*="flex:1"]{
+    flex:1 1 calc(100% - 110px);
+    min-width:0;
+  }
+  /* Status badge sits next to the PB block on the top line */
+  #queuePage .qcc-row > .qcc-badge{
+    flex-shrink:0;
+    margin-left:auto;
+  }
+  /* IHD + revenue inline mini-pills below the PB info */
+  #queuePage .qcc-row > div[style*="min-width:60px"],
+  #queuePage .qcc-row > div[style*="min-width:48px"]{
+    display:inline-flex !important;
+    min-width:0 !important;
+    flex:0 0 auto;
+    font-size:10px !important;
+    background:#f1f5f9;
+    border-radius:6px;
+    padding:3px 8px;
+    margin-right:4px;
+  }
+  /* Action buttons + SF link wrap to a new line under the row */
+  #queuePage .qcc-row > .qcc-act,
+  #queuePage .qcc-row > a.qcc-act{
+    flex:0 0 auto;
+    font-size:11px;
+    padding:6px 12px;
+    height:32px;
+    border-radius:6px;
+  }
+  #queuePage .qcc-row > .cb-cell{flex:0 0 auto;}
+
+  /* Section header — keep tappable on phone */
+  #queuePage .qcc-section-head{padding:10px 4px;}
+  #queuePage .qcc-section-label{font-size:11px;}
+
+  /* Per-section pager: smaller, still tap-friendly */
+  #queuePage .qcc-section-pager{padding:8px 0 12px;}
+  #queuePage .qcc-pager-btn{
+    min-width:32px; height:32px;
+    padding:0 8px; font-size:12px;
+  }
+}
