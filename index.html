@@ -66,9 +66,6 @@
   </div>
 </div>
 
-<!-- ── User display chip (shown when logged in) ─────────────── -->
-<div id="hcUserDisplay" class="hc-user-chip" hidden role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="false"></div>
-
 <!-- ── Profile popover (opened by clicking the chip) ────────── -->
 <div id="hcProfilePopover" hidden role="dialog" aria-modal="false" aria-labelledby="hcProfileTitle">
   <p class="profile-eyebrow" id="hcProfileTitle">Your profile</p>
@@ -250,6 +247,9 @@
     <!-- Footer -->
     <div class="sidebar-footer">
       <div class="sidebar-footer-label">Houston Control</div>
+      <!-- User display chip — shown when logged in. Positioned via CSS to
+           fit the sidebar's dark theme; opens the profile popover. -->
+      <div id="hcUserDisplay" class="hc-user-chip" hidden role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="false"></div>
       <button id="hcLogoutBtn" class="hc-logout-btn" type="button" data-i18n="action.signOut" onclick="(function(){localStorage.removeItem('hcAuthUser');localStorage.removeItem('qaWorkflowCurrentUserV2');window.location.href='login.html';})()">Sign Out</button>
     </div>
 

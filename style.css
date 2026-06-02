@@ -4817,22 +4817,46 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   margin:0;font-size:12px;color:rgba(255,255,255,.35);
   text-align:center;line-height:1.6;
 }
+/* User chip — sits in the sidebar footer above Sign Out. Uses the sidebar's
+   dark navy palette so it integrates with the surrounding nav. */
 .hc-user-chip{
-  position:fixed;top:12px;right:16px;z-index:9000;
-  background:rgba(255,255,255,.1);
-  border:1px solid rgba(255,255,255,.15);
-  color:#fff;border-radius:999px;
-  padding:6px 14px;font-size:12px;font-weight:700;
-  backdrop-filter:blur(8px);
+  display:flex; align-items:center; gap:8px;
+  width:100%;
+  margin:8px 0 6px;
+  padding:8px 10px;
+  background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.10);
+  color:#e6f1fb;
+  border-radius:10px;
+  font-size:12px; font-weight:600;
   cursor:pointer;
-  transition:background .15s,border-color .15s;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  transition:background .15s, border-color .15s;
 }
-.hc-user-chip:hover{ background:rgba(255,255,255,.18); border-color:rgba(255,255,255,.28); }
-.hc-user-chip[aria-expanded="true"]{ background:rgba(255,255,255,.22); }
+.hc-user-chip[hidden]{ display:none; }
+.hc-user-chip:hover{
+  background:rgba(255,255,255,.10);
+  border-color:rgba(255,255,255,.18);
+}
+.hc-user-chip[aria-expanded="true"]{
+  background:rgba(255,255,255,.14);
+  border-color:rgba(255,255,255,.22);
+}
+/* When the sidebar collapses to rail mode, shrink the chip to just an avatar
+   dot so it doesn't push content off-screen. */
+.sidebar-collapsed .hc-user-chip{
+  padding:6px; justify-content:center; font-size:0;
+}
+.sidebar-collapsed .hc-user-chip::before{
+  content:""; width:8px; height:8px; border-radius:50%;
+  background:#7fc098; flex-shrink:0;
+}
 
-/* Profile popover anchored under the chip */
+/* Profile popover — opens up-and-right from the sidebar bottom corner */
 #hcProfilePopover{
-  position:fixed; top:48px; right:16px; z-index:9001;
+  position:fixed; bottom:60px; left:16px; z-index:9001;
   width:300px; background:#fff;
   border:1px solid var(--line,#e5e7eb);
   border-radius:14px;
@@ -4840,6 +4864,14 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
   padding:18px;
   display:flex; flex-direction:column; gap:12px;
   color:#0f1c2e;
+}
+@media (max-width: 768px){
+  /* On mobile the sidebar slides out as an overlay, so the popover
+     centers in the viewport instead of anchoring to the rail. */
+  #hcProfilePopover{
+    bottom:auto; left:50%; top:50%;
+    transform:translate(-50%, -50%);
+  }
 }
 #hcProfilePopover[hidden]{ display:none; }
 #hcProfilePopover .profile-eyebrow{
