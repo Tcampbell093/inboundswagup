@@ -181,6 +181,42 @@ exports.handler = async function(event) {
     return json(200, { ok: true });
   }
 
+  // ── POST /users?action=delete ──────────────────────────────
+  // Removes the user's row from hc_users. Without an hc_users row they
+  // can't pass the upsert gate on login, so this fully revokes access.
+  // We deliberately do NOT delete the underlying Netlify Identity user —
+  // re-inviting them is the recovery path if this was a mistake.
+  if (method === 'POST' && action === 'delete') {
+    const caller = await verifyAdmin(event);
+    if (!caller) return json(401, { error: 'Unauthorized' });
+
+    let body;
+    try { body = JSON.parse(event.body || '{}'); } catch { return json(400, { error: 'Invalid JSON' }); }
+    const { targetEmail, userId } = body;
+    const email = targetEmail || userId;
+    if (!email) return json(400, { error: 'targetEmail required' });
+
+    // Don't let an admin delete their own account — they'd lock themselves
+    // out instantly. Use suspend if you really want to disable yourself.
+    if (String(email).toLowerCase() === String(caller.user.email).toLowerCase()) {
+      return json(400, { error: 'You cannot delete your own account. Suspend it instead, or have another admin remove it.' });
+    }
+
+    // Look up the user first so we can audit-log what role they had
+    const existing = await pool.query('SELECT * FROM hc_users WHERE email=$1 OR id=$1', [email]);
+    if (!existing.rows.length) return json(404, { error: 'User not found' });
+    const before = existing.rows[0];
+
+    await pool.query('DELETE FROM hc_users WHERE email=$1', [before.email]);
+
+    await writeAudit(caller.user.email, before.email, 'delete', {
+      role: before.role,
+      suspended: before.suspended,
+    });
+
+    return json(200, { ok: true });
+  }
+
   // ── POST /users?action=update ──────────────────────────────
   if (method === 'POST' && action === 'update') {
     const caller = await verifyAdmin(event);
