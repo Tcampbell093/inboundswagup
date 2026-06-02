@@ -4,6 +4,27 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Warehouse Operations Hub</title>
+<script>
+  /* Synchronous auth pre-check — runs before any visible HTML paints, so
+     authenticated users never see the login overlay flash on refresh.
+     Reads localStorage (synchronous, no network), and if a valid token
+     exists, hides the overlay via injected CSS BEFORE the browser renders
+     anything. auth.js runs later to do the proper async validation. */
+  (function() {
+    try {
+      var raw = localStorage.getItem('hcAuthUser');
+      if (!raw) return;
+      var data = JSON.parse(raw);
+      // Treat as authenticated if there's a token and not explicitly suspended
+      if (data && data.token && !data.suspended) {
+        var style = document.createElement('style');
+        style.textContent = '#hcLoginOverlay{display:none!important;}';
+        document.head.appendChild(style);
+        document.documentElement.classList.add('hc-prerender-auth');
+      }
+    } catch (e) { /* parse error → fall through, let auth.js handle */ }
+  })();
+</script>
 <link rel="stylesheet" href="Styles/base.css">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="Styles/layout.css">
