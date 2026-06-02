@@ -40,6 +40,9 @@
       'calendarPage', 'policyPage', 'helpPage'
     ],
     external: [
+      // External users land directly on a flight tracker — they don't
+      // need (or have access to) the home page. The first item in this
+      // list is treated as their default landing page.
       'assemblyFlightTrackerPage',
       'inboundFlightTrackerPage'
     ],
@@ -52,6 +55,23 @@
     l2: [],
     l1: [],
   };
+
+  // Normalize role to lowercase + trimmed so 'External', 'external ', etc.
+  // all map to the same allowlist. Without this, an unexpected casing would
+  // silently fall through to `l1` access which is very wrong.
+  function normRole(r) {
+    return String(r || '').trim().toLowerCase();
+  }
+
+  // The first allowed page in a role's list is treated as the default
+  // landing page. For external, that's the assembly flight tracker.
+  function defaultPageForRole(role) {
+    const r = normRole(role);
+    const list = ROLE_ACCESS[r];
+    if (!list || !list.length) return 'homePage';
+    if (list[0] === 'all') return 'homePage';
+    return list[0];
+  }
 
   // ── canAccess(page) ─────────────────────────────────────────
   // Returns true if the current user can access the given page.
@@ -67,7 +87,8 @@
     // Temp admin gets full access
     if (user.tempAdmin) return true;
 
-    const allowed = ROLE_ACCESS[user.role] || ROLE_ACCESS['l1'];
+    const role = normRole(user.role);
+    const allowed = ROLE_ACCESS[role] || ROLE_ACCESS['l1'];
     return allowed.includes('all') || allowed.includes(page);
   }
 
@@ -76,7 +97,7 @@
     const user = window.hcCurrentUser;
     if (!user) return false;
     if (user.tempAdmin) return false;
-    const ro = READ_ONLY[user.role] || [];
+    const ro = READ_ONLY[normRole(user.role)] || [];
     return ro.includes(page);
   }
 
@@ -120,24 +141,64 @@
   }
 
   // ── Page-level guard ───────────────────────────────────────
-  // If someone navigates directly to a restricted page via hash,
-  // redirect them to homePage.
+  // If the user lands on a page they can't access (via hash, click, or
+  // saved-state restore), redirect them to their role's default landing
+  // page — NOT always 'homePage'. External users have no homePage access,
+  // so falling back to 'homePage' would leave them stranded.
   function guardCurrentPage() {
+    const user = window.hcCurrentUser;
+    if (!user) return;
     const hash = window.location.hash.replace('#', '');
-    if (!hash || hash === 'homePage') return;
-    if (!canAccess(hash)) {
-      console.warn('HC Access: blocked direct navigation to', hash);
-      window.location.hash = 'homePage';
+    if (!hash) return; // empty hash: let the app's default-load logic decide
+    if (canAccess(hash)) return; // allowed — nothing to do
+
+    const dest = defaultPageForRole(user.role);
+    console.warn('HC Access: blocked', hash, '→ redirecting to', dest);
+    // Use activatePage if available so the click/saved state stays in sync;
+    // fall back to hash mutation otherwise.
+    if (typeof window.goToPage === 'function') {
+      window.goToPage(dest);
+    } else {
+      window.location.hash = dest;
     }
   }
 
   // ── Expose publicly ────────────────────────────────────────
   window.hcAccess = {
-    canAccess:    canAccess,
-    isReadOnly:   isReadOnly,
-    applyGuards:  applyGuards,
-    ROLE_ACCESS:  ROLE_ACCESS,
+    canAccess:          canAccess,
+    isReadOnly:         isReadOnly,
+    applyGuards:        applyGuards,
+    guardCurrentPage:   guardCurrentPage,
+    defaultPageForRole: defaultPageForRole,
+    ROLE_ACCESS:        ROLE_ACCESS,
   };
+
+  // ── Re-guard on every navigation event ────────────────────
+  // The original code only guarded once at startup. That left a window
+  // where (a) saved state could restore a forbidden page, or (b) a nav
+  // button click could land somewhere unallowed if hidden buttons remained
+  // clickable somehow. Re-guarding on hashchange catches both.
+  window.addEventListener('hashchange', function() {
+    if (window.hcCurrentUser) guardCurrentPage();
+  });
+
+  // Also intercept nav-button clicks BEFORE the page activates, so a
+  // forbidden destination never even briefly renders. Capture phase
+  // ensures we run before navigation.js's listener.
+  document.addEventListener('click', function(e) {
+    const btn = e.target && e.target.closest && e.target.closest('.nav-btn[data-page]');
+    if (!btn) return;
+    const page = btn.getAttribute('data-page');
+    if (!page) return;
+    if (!canAccess(page)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      console.warn('HC Access: blocked click to', page);
+      const dest = defaultPageForRole((window.hcCurrentUser||{}).role);
+      if (typeof window.goToPage === 'function') window.goToPage(dest);
+    }
+  }, true); // capture phase
 
   // ── Auto-apply when user is ready ─────────────────────────
   // auth.js sets hcCurrentUser — we poll briefly for it since

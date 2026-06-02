@@ -43,7 +43,7 @@
       hideLogin();
 
       if (userDisplay) {
-        const label = { admin:'Admin', manager:'Manager', l2:'Associate L2', l1:'Associate L1' }[data.role] || 'Associate';
+        const label = { admin:'Admin', manager:'Manager', l2:'Associate L2', l1:'Associate L1', external:'External' }[data.role] || 'Associate';
         userDisplay.textContent = `${data.name} · ${label}`;
         userDisplay.hidden = false;
       }
