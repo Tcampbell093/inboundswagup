@@ -169,9 +169,15 @@
     var end   = Math.min(start + ps, total);
     var slice = QCC_FILTERED.slice(start, end);
 
-    // Group by status — section order: scheduled, hold, ready, pending
+    // Group both the slice (for row display) and the full filtered set
+    // (for accurate per-group totals). Section headers must reflect the
+    // TOTAL in each group regardless of pagination — otherwise "All" + 25/pg
+    // would show "Ready [2]" while the Ready tab shows "[4]" purely because
+    // only 2 ready rows fit in the first 25 sorted-by-IHD rows.
     var groups = { scheduled:[], hold:[], ready:[], pending:[] };
     slice.forEach(function(r) { if (groups[r._qStatus]) groups[r._qStatus].push(r); });
+    var totalGroups = { scheduled:[], hold:[], ready:[], pending:[] };
+    QCC_FILTERED.forEach(function(r) { if (totalGroups[r._qStatus]) totalGroups[r._qStatus].push(r); });
     var order = QCC_FILTER !== 'all' ? [QCC_FILTER] : ['scheduled','hold','ready','pending'];
 
     var STATUS_LABEL = { scheduled:'Scheduled', hold:'On hold', ready:'Ready to schedule', pending:'Pending / incomplete' };
@@ -182,23 +188,43 @@
     var ACTION_LBL  = { ready:'Schedule', hold:'Resolve', scheduled:'View', pending:'Details' };
 
     var html = '';
+    // Render a section for every group that has rows EITHER on this page OR
+    // in the full filtered set. This way a section with rows that landed on
+    // later pages still gets a header (collapsed, with the total count) so
+    // the user knows it exists and can navigate to it.
     order.forEach(function(st) {
-      var rows = groups[st];
-      if (!rows || !rows.length) return;
+      var rowsOnPage = groups[st] || [];
+      var rowsTotal  = totalGroups[st] || [];
+      if (!rowsTotal.length) return;
       var collapsed = QCC_COLLAPSED[st];
-      var groupRev  = rows.reduce(function(s,r){ return s + rowRevenue(r); }, 0);
+      // Group revenue is computed from the FULL group total, not just the
+      // visible page slice — so the section's $ matches its count.
+      var groupRev  = rowsTotal.reduce(function(s,r){ return s + rowRevenue(r); }, 0);
       var col       = STATUS_COLOR[st] || 'var(--muted)';
       var revCol    = STATUS_REV_COLOR[st] || 'var(--muted)';
 
       html += '<div class="qcc-section-head" onclick="window.qcc.toggleSection(\'' + st + '\')">';
       html += '<span class="qcc-chevron' + (collapsed?' closed':'') + '" id="qcc-ch-' + st + '">&#9660;</span>';
       html += '<span class="qcc-section-label" style="color:' + col + '">' + STATUS_LABEL[st] + '</span>';
-      html += '<span class="qcc-section-count">' + rows.length + '</span>';
+      // Count badge: show the total in the group. If pagination has hidden
+      // some, also show "X of Y" so it's clear there are more elsewhere.
+      var countText = String(rowsTotal.length);
+      if (rowsOnPage.length < rowsTotal.length) {
+        countText = rowsOnPage.length + ' of ' + rowsTotal.length;
+      }
+      html += '<span class="qcc-section-count">' + countText + '</span>';
       if (groupRev > 0) html += '<span class="qcc-section-rev" style="color:' + revCol + '">' + fmtRevTotal(groupRev) + '</span>';
       html += '</div>';
 
       if (!collapsed) {
-        rows.forEach(function(r) {
+        // If this group has zero rows on the current page but exists elsewhere,
+        // render a small "rest on other pages" placeholder instead of nothing.
+        if (!rowsOnPage.length) {
+          html += '<div class="qcc-section-elsewhere" style="padding:10px 14px;font-size:12px;color:var(--muted);font-style:italic;">'
+               +  (rowsTotal.length - rowsOnPage.length) + ' on other pages — switch to ' + STATUS_LABEL[st].toLowerCase() + ' filter or change page size to view'
+               +  '</div>';
+        }
+        rowsOnPage.forEach(function(r) {
           var sid  = String(r.id);
           var urg  = isUrgent(r);
           var rowCls = 'qcc-row' + (urg?' qcc-urgent':r._qStatus==='hold'?' qcc-hold-r':r._qStatus==='pending'?' qcc-warn':'') + (QCC_SELECTED.has(sid)?' qcc-sel':'');
