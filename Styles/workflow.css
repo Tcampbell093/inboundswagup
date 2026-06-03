@@ -3841,3 +3841,70 @@ font-weight:800
   border-color:#fca5a5;
   color:#7f1d1d;
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   STOCK INTAKE EDIT-IN-PLACE + AUDIT EDIT QTY
+   ════════════════════════════════════════════════════════════════════ */
+.si-recent-edit{
+  min-width:36px; min-height:36px;
+  border:1px solid #cbd5e1;
+  background:#fff; color:#475569;
+  border-radius:8px;
+  font-size:16px; line-height:1; font-weight:700;
+  cursor:pointer;
+  transition:background .12s, border-color .12s, color .12s;
+}
+.si-recent-edit:hover{
+  background:#f1f5f9;
+  border-color:#185fa5;
+  color:#185fa5;
+}
+.si-recent-qty-input{
+  width:80px;
+  height:34px;
+  padding:4px 8px;
+  font-size:14px; font-weight:700;
+  border:1.5px solid #185fa5;
+  border-radius:7px;
+  background:#fff;
+  color:#0f172a;
+  font-family:inherit;
+}
+.si-recent-qty-input:focus{
+  outline:none;
+  box-shadow:0 0 0 3px rgba(24,95,165,.15);
+}
+.si-recent-save,
+.si-recent-cancel{
+  min-height:34px;
+  padding:0 12px;
+  border-radius:7px;
+  font-size:12px; font-weight:700;
+  cursor:pointer;
+  border:1.5px solid;
+}
+.si-recent-save{
+  background:#185fa5; color:#fff; border-color:#185fa5;
+}
+.si-recent-save:hover{ background:#0c447c; border-color:#0c447c; }
+.si-recent-cancel{
+  background:#fff; color:#475569; border-color:#cbd5e1;
+}
+.si-recent-cancel:hover{ background:#f1f5f9; border-color:#94a3b8; }
+
+/* Audit modal edit-qty button */
+.os-audit-btn-edit{
+  background:#fff;
+  color:#185fa5;
+  border:1px solid #cfe0f4;
+}
+.os-audit-btn-edit:hover{
+  background:#f0f6ff;
+  border-color:#185fa5;
+}
+
+/* Location map: visual hint for locations occupied by empty boxes */
+.os-loc.os-loc-empty-bx{
+  background:linear-gradient(180deg, #fffbeb 0%, #fef3c7 100%);
+  border-color:#fde68a;
+}
