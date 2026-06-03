@@ -4369,10 +4369,151 @@ function osOpenAudit(loc, containerId) {
   osOpenModal('osMdAudit');
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   OVERSTOCK CONSISTENCY REPAIR — auto-runs on every overstock render.
+   --------------------------------------------------------------------
+   The overstock log (entries) and the location map (containers) are two
+   separate arrays that occasionally drift apart — usually because the
+   sync race wiped a container's currentLocation while the entry's own
+   location field stayed correct. This function reconciles them so the
+   map shows what the log says.
+
+   Rules:
+   - Idempotent. Safe to call repeatedly; second run is a no-op.
+   - "Most recent entry wins" — the entry with the largest updatedAt
+     decides the container's currentLocation if they disagree.
+   - Open/On-Cart containers with location data get bumped to 'Stored'.
+   - Entries whose containerId points to nothing get a placeholder
+     container created so they appear on the map.
+   - Closed containers are skipped (historical, intentional state).
+   - Logs every change to localStorage.hc_overstock_repair_log_v1.
+
+   Returns: number of fixes applied. 0 means everything was already
+   consistent.
+   ════════════════════════════════════════════════════════════════════ */
+function repairOverstockConsistency() {
+  if (!Array.isArray(state.data.overstockEntries))   state.data.overstockEntries   = [];
+  if (!Array.isArray(state.data.overstockContainers)) state.data.overstockContainers = [];
+
+  const entries    = state.data.overstockEntries;
+  const containers = state.data.overstockContainers;
+  const containerById = new Map(containers.map(c => [String(c.id), c]));
+
+  const changes = []; // collected here; flushed to log + persistData at end
+
+  // Pass 1: For each entry, ensure its container exists + has correct location/status.
+  // Group entries by containerId so we apply "most recent entry wins" cleanly.
+  const entriesByContainer = new Map();
+  for (const e of entries) {
+    if (!e || !e.containerId) continue;
+    const key = String(e.containerId);
+    if (!entriesByContainer.has(key)) entriesByContainer.set(key, []);
+    entriesByContainer.get(key).push(e);
+  }
+
+  for (const [containerId, containerEntries] of entriesByContainer) {
+    // Determine which location is "truth" — the entry with the largest
+    // updatedAt (fall back to createdAt) wins.
+    const sorted = containerEntries.slice().sort((a, b) =>
+      (Number(b.updatedAt || b.createdAt || 0)) - (Number(a.updatedAt || a.createdAt || 0))
+    );
+    const winning = sorted[0];
+    const winningLocation = String(winning.location || '').trim();
+    const winningCode     = String(winning.containerCode || '').trim();
+    if (!winningLocation) continue; // no location to repair to; skip
+
+    let container = containerById.get(containerId);
+
+    if (!container) {
+      // Orphan entry — container was deleted but entry survived. Create a
+      // placeholder so the entry shows up on the map. The placeholder uses
+      // the entry's containerCode (if any) or generates a new OSC code.
+      const newCode = winningCode || (typeof getNextOverstockContainerCode === 'function' ? getNextOverstockContainerCode() : `OSC-RESC-${containerId.slice(0,6)}`);
+      const newContainer = {
+        id: containerId, // reuse the orphaned ID so existing entries link correctly
+        code: newCode,
+        barcode: '',
+        status: 'Stored',
+        currentLocation: winningLocation,
+        notes: '[Recovered] container was missing; rebuilt from entries.',
+        createdBy: (window.hcCurrentUser?.name || state.currentUser || 'system'),
+        createdAt: Number(winning.createdAt || Date.now()),
+        updatedAt: Date.now(),
+      };
+      containers.push(newContainer);
+      containerById.set(containerId, newContainer);
+      container = newContainer;
+      changes.push({ kind: 'created_placeholder', containerId, code: newCode, location: winningLocation, fromEntryId: winning.id });
+      continue;
+    }
+
+    // Closed containers are historical — never touch them
+    if (container.status === 'Closed') continue;
+
+    // Repair: missing or differing currentLocation
+    if (!container.currentLocation || container.currentLocation !== winningLocation) {
+      const fromLocation = container.currentLocation || '(empty)';
+      container.currentLocation = winningLocation;
+      container.updatedAt = Date.now();
+      changes.push({ kind: 'fixed_location', containerId, code: container.code, from: fromLocation, to: winningLocation, fromEntryId: winning.id });
+    }
+
+    // Repair: container at a location but still in 'Open' / 'On Cart' status
+    if ((container.status === 'Open' || container.status === 'On Cart') && container.currentLocation) {
+      const fromStatus = container.status;
+      container.status = 'Stored';
+      container.updatedAt = Date.now();
+      changes.push({ kind: 'fixed_status', containerId, code: container.code, from: fromStatus, to: 'Stored' });
+    }
+
+    // Repair: entry's containerCode out of sync with the container's actual code.
+    // This happens when an associate typed a custom code but the container
+    // was already storing a system-generated one. Update each entry to
+    // reflect the canonical container.code.
+    for (const e of containerEntries) {
+      if (e.containerCode && container.code && e.containerCode !== container.code) {
+        const fromCode = e.containerCode;
+        e.containerCode = container.code;
+        e.updatedAt = Date.now();
+        changes.push({ kind: 'fixed_entry_code', entryId: e.id, po: e.po, from: fromCode, to: container.code });
+      }
+    }
+  }
+
+  // Pass 2: containers with location data but no entries and no createdAt
+  // newer than a day — leave them. They might be intentionally empty boxes.
+  // (Skipping this pass; it would be too aggressive without more signal.)
+
+  // If nothing changed, skip the log + persist
+  if (!changes.length) return 0;
+
+  // Append summary to the repair log
+  try {
+    const KEY = 'hc_overstock_repair_log_v1';
+    const log = JSON.parse(localStorage.getItem(KEY) || '[]');
+    log.unshift({
+      ts: Date.now(),
+      by: (window.hcCurrentUser?.name || window.hcCurrentUser?.email || state.currentUser || 'auto'),
+      changeCount: changes.length,
+      changes: changes.slice(0, 50), // cap detail per entry
+    });
+    localStorage.setItem(KEY, JSON.stringify(log.slice(0, 200)));
+  } catch (_) {}
+
+  persistData();
+  return changes.length;
+}
+window.repairOverstockConsistency = repairOverstockConsistency;
+
 function renderOverstockPage() {
   if (!Array.isArray(state.data.overstockEntries)) state.data.overstockEntries = [];
   if (!state.data.overstockFilters) state.data.overstockFilters = { date: '', associate: 'All', location: 'All', status: 'All', search: '', mineOnly: false };
   if (!Array.isArray(state.data.overstockContainers)) state.data.overstockContainers = [];
+
+  // Auto-repair before render. The function is idempotent and a no-op when
+  // everything is already consistent, so this is cheap on healthy data and
+  // self-healing on drifted data.
+  try { repairOverstockConsistency(); } catch (e) { console.warn('Overstock repair failed:', e); }
 
   const containers = state.data.overstockContainers;
   // "On cart" = any non-closed box without a location yet — regardless of status label.
