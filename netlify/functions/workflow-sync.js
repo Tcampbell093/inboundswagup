@@ -114,6 +114,96 @@ exports.handler = async function handler(event) {
       const body = JSON.parse(event.body || '{}');
       const data = body && typeof body.data === 'object' && body.data ? body.data : {};
       const masters = body && typeof body.masters === 'object' && body.masters ? body.masters : {};
+
+      // ── OVERSTOCK MERGE (concurrent multi-tablet write protection) ──
+      // The default sync behavior is full-state overwrite — whoever POSTs last
+      // wins, which causes data loss when multiple tablets write concurrently.
+      // For overstock specifically, we merge by entry/container ID instead:
+      //
+      //   - Adds (IDs present in incoming, not in server): added to server
+      //   - Edits (same ID in both): newer updatedAt wins
+      //   - Deletes (server-side ID not in incoming): KEPT, unless the client
+      //     explicitly tombstoned it via __deletedOverstockEntryIds /
+      //     __deletedOverstockContainerIds. Missing-from-POST is NOT enough
+      //     to delete, because another tablet might have added it after this
+      //     client's last GET.
+      //
+      // After applying tombstones, we clear them from the merged result so
+      // they don't grow unbounded over time. Clients clear their own local
+      // tombstones based on the response.
+      try {
+        const currentResult = await pool.query(
+          `SELECT data_json FROM workflow_sync_state WHERE state_key='default' LIMIT 1;`
+        );
+        const serverData = currentResult.rows[0]?.data_json || {};
+
+        // Merge overstockEntries
+        const incomingEntries = Array.isArray(data.overstockEntries) ? data.overstockEntries : [];
+        const serverEntries   = Array.isArray(serverData.overstockEntries) ? serverData.overstockEntries : [];
+        const deletedEntryIds = new Set(
+          (Array.isArray(data.__deletedOverstockEntryIds) ? data.__deletedOverstockEntryIds : [])
+            .concat(Array.isArray(serverData.__deletedOverstockEntryIds) ? serverData.__deletedOverstockEntryIds : [])
+            .map(String)
+        );
+        const entryMap = new Map();
+        // Start with server entries
+        for (const e of serverEntries) {
+          if (e && e.id && !deletedEntryIds.has(String(e.id))) entryMap.set(String(e.id), e);
+        }
+        // Merge incoming
+        for (const e of incomingEntries) {
+          if (!e || !e.id) continue;
+          const id = String(e.id);
+          if (deletedEntryIds.has(id)) continue; // explicit delete wins
+          const existing = entryMap.get(id);
+          if (!existing) {
+            entryMap.set(id, e);
+          } else {
+            // Newer updatedAt wins; fallback to createdAt; fallback to incoming.
+            const incomingTs = Number(e.updatedAt || e.createdAt || 0);
+            const existingTs = Number(existing.updatedAt || existing.createdAt || 0);
+            entryMap.set(id, incomingTs >= existingTs ? e : existing);
+          }
+        }
+        data.overstockEntries = [...entryMap.values()];
+
+        // Merge overstockContainers (same pattern)
+        const incomingContainers = Array.isArray(data.overstockContainers) ? data.overstockContainers : [];
+        const serverContainers   = Array.isArray(serverData.overstockContainers) ? serverData.overstockContainers : [];
+        const deletedContainerIds = new Set(
+          (Array.isArray(data.__deletedOverstockContainerIds) ? data.__deletedOverstockContainerIds : [])
+            .concat(Array.isArray(serverData.__deletedOverstockContainerIds) ? serverData.__deletedOverstockContainerIds : [])
+            .map(String)
+        );
+        const containerMap = new Map();
+        for (const c of serverContainers) {
+          if (c && c.id && !deletedContainerIds.has(String(c.id))) containerMap.set(String(c.id), c);
+        }
+        for (const c of incomingContainers) {
+          if (!c || !c.id) continue;
+          const id = String(c.id);
+          if (deletedContainerIds.has(id)) continue;
+          const existing = containerMap.get(id);
+          if (!existing) {
+            containerMap.set(id, c);
+          } else {
+            const incomingTs = Number(c.updatedAt || c.createdAt || 0);
+            const existingTs = Number(existing.updatedAt || existing.createdAt || 0);
+            containerMap.set(id, incomingTs >= existingTs ? c : existing);
+          }
+        }
+        data.overstockContainers = [...containerMap.values()];
+
+        // Clear tombstones from the merged result. The client clears its own
+        // local tombstones based on the response.
+        delete data.__deletedOverstockEntryIds;
+        delete data.__deletedOverstockContainerIds;
+      } catch (mergeErr) {
+        // If merge fails for any reason, fall back to the original full-state
+        // overwrite behavior — don't break sync entirely. Log for debugging.
+        console.warn('Overstock merge failed, falling back to overwrite:', mergeErr.message);
+      }
+
       const result = await pool.query(
         `INSERT INTO workflow_sync_state (state_key, data_json, masters_json, active_editors, updated_at)
          VALUES ('default', $1::jsonb, $2::jsonb, '{}'::jsonb, NOW())
