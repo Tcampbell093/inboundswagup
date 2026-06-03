@@ -2884,6 +2884,60 @@ function bindOverstockEvents() {
     renderOverstockPage();
   });
 
+  // Renormalize container codes — one-time cleanup. Hidden by default;
+  // only revealed for admin/manager. Confirms before running, shows a
+  // detailed summary alert after, including any conflicts that were skipped.
+  const renormBtn = document.getElementById("overstockRenormalizeBtn");
+  if (renormBtn) {
+    // Reveal only for admin/manager. Reads role through the same helper the
+    // delete buttons use — works in both index.html and workflow.html contexts.
+    const canSee = (typeof osCanDeleteContainer === 'function') ? osCanDeleteContainer() : false;
+    if (canSee) renormBtn.style.display = '';
+
+    renormBtn.addEventListener('click', () => {
+      const ok = confirm(
+        `One-time cleanup: rename all OSC-#### codes to OSC-### format ` +
+        `to match your physical box labels (OSC-001 through OSC-200).\n\n` +
+        `This will:\n` +
+        `  • Rename containers like OSC-0042 → OSC-042\n` +
+        `  • Update every PO entry that references those codes\n` +
+        `  • Skip any rename that would cause a duplicate (and report it)\n\n` +
+        `Make sure no associates are mid-intake right now.\n\n` +
+        `Continue?`
+      );
+      if (!ok) return;
+
+      let result;
+      try {
+        result = renormalizeOverstockContainerCodes();
+      } catch (e) {
+        alert('Renormalize failed: ' + (e.message || e));
+        console.error('Renormalize error:', e);
+        return;
+      }
+
+      // Build a user-readable summary
+      const lines = [];
+      lines.push(`Done.`);
+      lines.push(``);
+      lines.push(`Renamed: ${result.renamed} container${result.renamed === 1 ? '' : 's'}`);
+      lines.push(`Updated entries: ${result.updatedEntries}`);
+      lines.push(`Skipped (conflicts): ${result.skipped.length}`);
+      if (result.skipped.length) {
+        lines.push(``);
+        lines.push(`Conflicts that need manual review:`);
+        for (const s of result.skipped.slice(0, 10)) {
+          lines.push(`  • ${s.fromCode} → ${s.toCode}: ${s.reason}`);
+        }
+        if (result.skipped.length > 10) {
+          lines.push(`  …and ${result.skipped.length - 10} more (see localStorage hc_overstock_renormalize_log_v1)`);
+        }
+      }
+      alert(lines.join('\n'));
+      renderOverstockPage();
+    });
+  }
+
   const overstockPoSelect = document.getElementById("overstockEntryPo");
 
   // ── #3 Auto-qty warning + delta signal ──────────────────────────────────
@@ -3402,7 +3456,7 @@ function getNextOverstockContainerCode() {
     const m = String(container.code || '').match(/OSC-(\d+)/i);
     if (m) maxNum = Math.max(maxNum, Number(m[1] || 0));
   });
-  return `OSC-${String(maxNum + 1).padStart(4, '0')}`;
+  return `OSC-${String(maxNum + 1).padStart(3, '0')}`;
 }
 
 function getOverstockContainerItems(containerId) {
@@ -3648,9 +3702,9 @@ function normalizeOverstockContainerScan(value) {
   const raw = String(value || "").trim().toUpperCase().replace(/\s+/g, "");
   if (!raw) return "";
   const oscMatch = raw.match(/^OSC-?0*(\d+)$/);
-  if (oscMatch) return `OSC-${String(Number(oscMatch[1] || 0)).padStart(4, "0")}`;
+  if (oscMatch) return `OSC-${String(Number(oscMatch[1] || 0)).padStart(3, "0")}`;
   const digitMatch = raw.match(/^0*(\d+)$/);
-  if (digitMatch) return `OSC-${String(Number(digitMatch[1] || 0)).padStart(4, "0")}`;
+  if (digitMatch) return `OSC-${String(Number(digitMatch[1] || 0)).padStart(3, "0")}`;
   return raw;
 }
 
@@ -4504,6 +4558,125 @@ function repairOverstockConsistency() {
   return changes.length;
 }
 window.repairOverstockConsistency = repairOverstockConsistency;
+
+/* ════════════════════════════════════════════════════════════════════
+   OVERSTOCK RENORMALIZE — one-time cleanup to convert OSC-#### codes
+   to OSC-### format so system labels match physical box labels.
+   --------------------------------------------------------------------
+   Background: an earlier version of the code normalized typed inputs
+   like "OSC-001" up to "OSC-0001" via .padStart(4,'0'). The physical
+   boxes in the warehouse are labeled OSC-001 through OSC-200 (3-digit
+   padding). This function renames the system codes to match.
+
+   Behavior:
+   - Manual trigger only (button click), not auto-run.
+   - Only renames OSC-#### → OSC-### patterns. Custom barcodes untouched.
+   - Updates every entry's containerCode field that referenced the
+     renamed container, so nothing gets orphaned.
+   - On conflict (e.g., trying to rename OSC-0042 to OSC-042 but
+     another container already has OSC-042), the rename is SKIPPED
+     and reported. The conflicting container retains its current code.
+   - Logs the full session to localStorage.hc_overstock_renormalize_log_v1.
+
+   Returns: { renamed: N, skipped: [{from, to, reason}], total: N }
+   ════════════════════════════════════════════════════════════════════ */
+function renormalizeOverstockContainerCodes() {
+  if (!Array.isArray(state.data.overstockContainers)) state.data.overstockContainers = [];
+  if (!Array.isArray(state.data.overstockEntries))    state.data.overstockEntries   = [];
+
+  const containers = state.data.overstockContainers;
+  const entries    = state.data.overstockEntries;
+
+  // Build the set of codes that already exist so we can detect conflicts.
+  // We track the canonical form (case-insensitive trim) so case differences
+  // don't cause false positives.
+  const existingCodes = new Set(
+    containers.map(c => String(c.code || '').trim().toUpperCase()).filter(Boolean)
+  );
+
+  // Compute the proposed rename for each container, but apply only those
+  // that won't cause a conflict.
+  const renames = []; // [{ container, fromCode, toCode }]
+  const skipped = []; // [{ fromCode, toCode, reason }]
+
+  for (const c of containers) {
+    const currentCode = String(c.code || '').trim().toUpperCase();
+    if (!currentCode) continue;
+    // Only target OSC-N or OSC-NN or OSC-NNNN style codes — anything that
+    // doesn't match this exact pattern is left alone (custom barcodes etc.)
+    const m = currentCode.match(/^OSC-(\d+)$/);
+    if (!m) continue;
+    const num = Number(m[1] || 0);
+    if (!num) continue;
+    const targetCode = `OSC-${String(num).padStart(3, '0')}`;
+    if (targetCode === currentCode) continue; // already in correct format
+
+    // Conflict check: another container already has the target code (and it's
+    // not THIS container — we're checking by id)
+    const conflict = containers.find(other =>
+      other.id !== c.id &&
+      String(other.code || '').trim().toUpperCase() === targetCode
+    );
+    if (conflict) {
+      skipped.push({
+        fromCode: currentCode,
+        toCode: targetCode,
+        reason: `Another container (id=${conflict.id}) already has code "${targetCode}". Skipped to avoid duplicate codes.`
+      });
+      continue;
+    }
+    // Stage the rename
+    renames.push({ container: c, fromCode: currentCode, toCode: targetCode });
+  }
+
+  // Apply renames in two phases to avoid mid-loop conflicts:
+  // Phase 1: rename containers + remember the mapping
+  const codeMapping = new Map(); // oldCode → newCode
+  for (const r of renames) {
+    r.container.code = r.toCode;
+    r.container.updatedAt = Date.now();
+    codeMapping.set(r.fromCode, r.toCode);
+  }
+  // Phase 2: update all entries whose containerCode matches an old code
+  let updatedEntries = 0;
+  for (const e of entries) {
+    if (!e || !e.containerCode) continue;
+    const cur = String(e.containerCode).trim().toUpperCase();
+    if (codeMapping.has(cur)) {
+      e.containerCode = codeMapping.get(cur);
+      e.updatedAt = Date.now();
+      updatedEntries += 1;
+    }
+  }
+
+  const renamedCount = renames.length;
+
+  // Log the session
+  try {
+    const KEY = 'hc_overstock_renormalize_log_v1';
+    const log = JSON.parse(localStorage.getItem(KEY) || '[]');
+    log.unshift({
+      ts: Date.now(),
+      by: (window.hcCurrentUser?.name || window.hcCurrentUser?.email || state.currentUser || 'unknown'),
+      renamedCount,
+      updatedEntries,
+      skippedCount: skipped.length,
+      renames: renames.slice(0, 250).map(r => ({ id: r.container.id, from: r.fromCode, to: r.toCode })),
+      skipped: skipped.slice(0, 50),
+    });
+    localStorage.setItem(KEY, JSON.stringify(log.slice(0, 50)));
+  } catch (_) {}
+
+  if (renamedCount || updatedEntries) persistData();
+
+  return {
+    renamed: renamedCount,
+    updatedEntries,
+    skipped,
+    total: containers.length,
+  };
+}
+window.renormalizeOverstockContainerCodes = renormalizeOverstockContainerCodes;
 
 function renderOverstockPage() {
   if (!Array.isArray(state.data.overstockEntries)) state.data.overstockEntries = [];
