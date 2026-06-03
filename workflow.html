@@ -272,7 +272,10 @@
             <div class="os-panel-title">+ Log Overstock Entry</div>
             <div class="os-panel-sub">POs come directly from Prep — no manual typing needed. Select a PO and the quantity auto-fills.</div>
           </div>
-          <button id="overstockSeedBtn" class="os-ghost-btn" type="button">Load Demo Data</button>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button id="overstockStockIntakeBtn" class="os-action-btn" type="button" style="padding:10px 16px;font-weight:700;">📦 Stock Intake</button>
+            <button id="overstockSeedBtn" class="os-ghost-btn" type="button">Load Demo Data</button>
+          </div>
         </div>
         <div class="os-panel-body">
           <form id="overstockEntryForm" class="os-entry-form">
@@ -413,6 +416,110 @@
           </table>
         </div>
       </section>
+
+      <!-- ════════════════════════════════════════════════════════════════
+           STOCK INTAKE MODAL — Container-first fast intake for tablets.
+           Triggered by #overstockStockIntakeBtn. Two-step flow:
+             Step 1: Container code → load or create
+             Step 2: Rapid item entry (PO + qty + category) inside container
+           Logic in stock-intake.js. iPad-optimized: large tap targets.
+           ════════════════════════════════════════════════════════════════ -->
+      <div id="stockIntakeOverlay" class="si-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="stockIntakeTitle">
+        <div class="si-modal">
+
+          <!-- Header ──────────────────────────────────────────────────── -->
+          <div class="si-modal-header">
+            <div class="si-header-text">
+              <div class="si-eyebrow">📦 Stock Intake</div>
+              <h2 class="si-title" id="stockIntakeTitle">Stock Intake</h2>
+              <p class="si-subtitle" id="stockIntakeSubtitle">Catalog what's already on the shelf — container by container.</p>
+            </div>
+            <button type="button" class="si-end-btn" id="stockIntakeEndBtn">End Session</button>
+          </div>
+
+          <!-- Session stats banner ─────────────────────────────────────── -->
+          <div class="si-session-stats" id="stockIntakeStats">
+            <div class="si-stat"><span class="si-stat-num" id="siStatItems">0</span><span class="si-stat-lbl">items added</span></div>
+            <div class="si-stat"><span class="si-stat-num" id="siStatContainers">0</span><span class="si-stat-lbl">containers touched</span></div>
+            <div class="si-stat"><span class="si-stat-num" id="siStatStartedAt">—</span><span class="si-stat-lbl">started</span></div>
+          </div>
+
+          <!-- STEP 1: container selection ──────────────────────────────── -->
+          <section class="si-step si-step-container" id="stockIntakeStepContainer">
+            <div class="si-step-header">
+              <span class="si-step-num">1</span>
+              <h3 class="si-step-title">Pick a container</h3>
+            </div>
+            <p class="si-step-help">Enter the container code on the box. If it doesn't exist, we'll create it.</p>
+            <form id="stockIntakeContainerForm" class="si-container-form">
+              <div class="si-field">
+                <label class="si-field-lbl" for="stockIntakeContainerInput">Container code</label>
+                <input id="stockIntakeContainerInput" type="text" class="si-input si-input-xl" placeholder="OSC-0042" autocomplete="off" inputmode="text" autocapitalize="characters" />
+              </div>
+              <div class="si-field">
+                <label class="si-field-lbl" for="stockIntakeContainerLocation">Location</label>
+                <input id="stockIntakeContainerLocation" type="text" class="si-input si-input-xl" list="stockIntakeLocationList" placeholder="e.g., Aisle 4 — Bay 12" autocomplete="off" />
+                <datalist id="stockIntakeLocationList"></datalist>
+              </div>
+              <div class="si-container-info" id="stockIntakeContainerInfo" hidden></div>
+              <button type="submit" class="si-primary-btn" id="stockIntakeContainerSubmit">Open Container →</button>
+            </form>
+          </section>
+
+          <!-- STEP 2: item entry ───────────────────────────────────────── -->
+          <section class="si-step si-step-items" id="stockIntakeStepItems" hidden>
+            <div class="si-active-container-banner" id="stockIntakeActiveBanner"></div>
+
+            <div class="si-step-header">
+              <span class="si-step-num">2</span>
+              <h3 class="si-step-title">Add items</h3>
+              <button type="button" class="si-switch-btn" id="stockIntakeSwitchContainerBtn">↺ Switch container</button>
+            </div>
+
+            <form id="stockIntakeItemForm" class="si-item-form">
+              <div class="si-item-row">
+                <div class="si-field si-field-po">
+                  <label class="si-field-lbl" for="stockIntakeItemPo">PO #</label>
+                  <input id="stockIntakeItemPo" type="text" class="si-input" required autocomplete="off" inputmode="numeric" />
+                </div>
+                <div class="si-field si-field-qty">
+                  <label class="si-field-lbl" for="stockIntakeItemQty">Qty</label>
+                  <input id="stockIntakeItemQty" type="number" class="si-input" min="1" step="1" required inputmode="numeric" />
+                </div>
+                <div class="si-field si-field-cat">
+                  <label class="si-field-lbl" for="stockIntakeItemCategory">Category</label>
+                  <select id="stockIntakeItemCategory" class="si-input"></select>
+                </div>
+                <button type="submit" class="si-add-btn" id="stockIntakeItemSubmit">+ Add Item</button>
+              </div>
+
+              <!-- Apparel sizes (shown only when category = Apparel) -->
+              <div class="si-sizes-row" id="stockIntakeItemSizesRow" hidden>
+                <label class="si-field-lbl">Size breakdown <span style="font-weight:400;opacity:.7;">(optional, totals must equal qty)</span></label>
+                <div class="si-sizes-grid">
+                  <div class="si-size-cell"><span class="si-size-lbl">XS</span><input type="number" min="0" data-si-size="XS" placeholder="0" class="si-input si-size-input" inputmode="numeric"/></div>
+                  <div class="si-size-cell"><span class="si-size-lbl">S</span><input type="number" min="0" data-si-size="S" placeholder="0" class="si-input si-size-input" inputmode="numeric"/></div>
+                  <div class="si-size-cell"><span class="si-size-lbl">M</span><input type="number" min="0" data-si-size="M" placeholder="0" class="si-input si-size-input" inputmode="numeric"/></div>
+                  <div class="si-size-cell"><span class="si-size-lbl">L</span><input type="number" min="0" data-si-size="L" placeholder="0" class="si-input si-size-input" inputmode="numeric"/></div>
+                  <div class="si-size-cell"><span class="si-size-lbl">XL</span><input type="number" min="0" data-si-size="XL" placeholder="0" class="si-input si-size-input" inputmode="numeric"/></div>
+                  <div class="si-size-cell"><span class="si-size-lbl">2XL</span><input type="number" min="0" data-si-size="2XL" placeholder="0" class="si-input si-size-input" inputmode="numeric"/></div>
+                  <div class="si-size-cell"><span class="si-size-lbl">3XL</span><input type="number" min="0" data-si-size="3XL" placeholder="0" class="si-input si-size-input" inputmode="numeric"/></div>
+                </div>
+              </div>
+            </form>
+
+            <!-- Last-10 entries this session ─────────────────────────── -->
+            <div class="si-recent-section">
+              <div class="si-recent-header">
+                <h4 class="si-recent-title">Recent entries (this session)</h4>
+                <span class="si-recent-hint">Tap × to remove</span>
+              </div>
+              <ul class="si-recent-list" id="stockIntakeRecentList"></ul>
+            </div>
+          </section>
+
+        </div>
+      </div>
 
     </section>
 
@@ -633,6 +740,7 @@
   <script src="app.js"></script>
   <script src="inbound-pallets.js"></script>
   <script src="po-lookup.js"></script>
+  <script src="stock-intake.js"></script>
   <script>
   // ── Put-Away auto-container creation hook ─────────────────────────────
   // Patches plt_advance so that when a pallet moves to 'done',
