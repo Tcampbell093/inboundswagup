@@ -4453,6 +4453,21 @@ function repairOverstockConsistency() {
   const containers = state.data.overstockContainers;
   const containerById = new Map(containers.map(c => [String(c.id), c]));
 
+  // Respect tombstones — a container ID that has been explicitly deleted
+  // must NOT be resurrected as a placeholder. If we find orphan entries
+  // pointing to a tombstoned container, we tombstone the entries too
+  // (rather than reviving the dead container).
+  const deletedContainerIds = new Set(
+    (Array.isArray(state.data.__deletedOverstockContainerIds) ? state.data.__deletedOverstockContainerIds : [])
+      .map(String)
+  );
+  // The deleted-entry tombstones too — don't operate on rows that are
+  // already marked for removal.
+  const deletedEntryIds = new Set(
+    (Array.isArray(state.data.__deletedOverstockEntryIds) ? state.data.__deletedOverstockEntryIds : [])
+      .map(String)
+  );
+
   const changes = []; // collected here; flushed to log + persistData at end
 
   // Pass 1: For each entry, ensure its container exists + has correct location/status.
@@ -4460,6 +4475,7 @@ function repairOverstockConsistency() {
   const entriesByContainer = new Map();
   for (const e of entries) {
     if (!e || !e.containerId) continue;
+    if (deletedEntryIds.has(String(e.id))) continue; // tombstoned entry — skip
     const key = String(e.containerId);
     if (!entriesByContainer.has(key)) entriesByContainer.set(key, []);
     entriesByContainer.get(key).push(e);
@@ -4474,9 +4490,33 @@ function repairOverstockConsistency() {
     const winning = sorted[0];
     const winningLocation = String(winning.location || '').trim();
     const winningCode     = String(winning.containerCode || '').trim();
-    if (!winningLocation) continue; // no location to repair to; skip
 
     let container = containerById.get(containerId);
+
+    // CRITICAL: if the container is tombstoned (an admin/associate deleted it),
+    // we must NOT resurrect it as a placeholder. Instead, tombstone the
+    // orphan entries that point to it — they were supposed to die with the
+    // container but somehow survived (probably a sync timing issue).
+    if (deletedContainerIds.has(String(containerId))) {
+      if (!Array.isArray(state.data.__deletedOverstockEntryIds)) {
+        state.data.__deletedOverstockEntryIds = [];
+      }
+      // Remove from the visible array AND add to tombstones so the next
+      // sync propagates the removal server-side too.
+      const orphanIds = containerEntries.map(e => String(e.id));
+      state.data.overstockEntries = state.data.overstockEntries.filter(
+        r => !orphanIds.includes(String(r.id))
+      );
+      for (const id of orphanIds) {
+        if (!state.data.__deletedOverstockEntryIds.includes(id)) {
+          state.data.__deletedOverstockEntryIds.push(id);
+        }
+        changes.push({ kind: 'tombstoned_orphan_entry', entryId: id, containerId, reason: 'container was deleted' });
+      }
+      continue; // do not create placeholder for this tombstoned container
+    }
+
+    if (!winningLocation) continue; // no location to repair to; skip
 
     if (!container) {
       // Orphan entry — container was deleted but entry survived. Create a

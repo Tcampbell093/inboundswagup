@@ -521,16 +521,85 @@
         return;
       }
     } else {
-      // Existing container — sync location if user provided a different one,
-      // and ensure status is 'Stored' so it counts in the location map's
-      // used-locations badge and behaves like a properly-placed box.
-      const updates = {};
-      if (rawLoc && container.currentLocation !== rawLoc) updates.currentLocation = rawLoc;
-      if (container.status !== 'Stored' && container.status !== 'Full' && container.status !== 'Closed') {
-        updates.status = 'Stored';
-      }
-      if (Object.keys(updates).length && typeof window.updateOverstockContainer === 'function') {
-        window.updateOverstockContainer(container.id, updates);
+      // Existing container — count what's actually in it. If the count looks
+      // suspicious (e.g., associate is trying to "redo" a known-bad container),
+      // give them an explicit "wipe and restart" option. This avoids the
+      // confusing situation where deleting + recreating doesn't work due to
+      // tombstone/sync drift.
+      const existingEntries = (window.state?.data?.overstockEntries || [])
+        .filter(r => r.containerId === container.id);
+      const existingCount = existingEntries.length;
+
+      if (existingCount > 0) {
+        const choice = confirm(
+          `Container "${container.code}" already exists with ${existingCount} ` +
+          `PO entr${existingCount === 1 ? 'y' : 'ies'} at ${container.currentLocation || 'no location'}.\n\n` +
+          `Click OK to ADD to the existing container.\n` +
+          `Click Cancel to back out and decide what to do.`
+        );
+        if (!choice) {
+          // Offer the wipe option as a separate explicit step
+          const reset = confirm(
+            `Do you want to WIPE this container and start fresh?\n\n` +
+            `This will permanently delete all ${existingCount} existing PO entr${existingCount === 1 ? 'y' : 'ies'} ` +
+            `in "${container.code}" so you can re-enter them from scratch.\n\n` +
+            `OK = Wipe and start fresh\n` +
+            `Cancel = Back out, don't touch anything`
+          );
+          if (!reset) return;
+
+          // Cascade-delete every entry tied to this container, then recreate
+          // the container under the same code/location. This uses the existing
+          // delete helper which tombstones properly so the next sync removes
+          // the entries server-side too.
+          if (typeof window.deleteOverstockContainer === 'function') {
+            const result = window.deleteOverstockContainer(container.id, { force: true });
+            if (!result.ok) {
+              showToast('Failed to wipe: ' + (result.reason || 'unknown'), 'error');
+              return;
+            }
+          } else {
+            showToast('Wipe failed: delete helper unavailable.', 'error');
+            return;
+          }
+          // Now create a fresh container under the same code + location
+          try {
+            container = window.createOverstockContainer({ status: 'Stored' });
+            const freshUpdates = { currentLocation: rawLoc, status: 'Stored' };
+            if (/^OSC-\d+$/i.test(normalized)) {
+              freshUpdates.code = normalized;
+            } else {
+              freshUpdates.barcode = normalized;
+            }
+            if (typeof window.updateOverstockContainer === 'function') {
+              window.updateOverstockContainer(container.id, freshUpdates);
+            }
+            showToast(`Wiped "${normalized}" — start fresh.`, 'success');
+          } catch (e) {
+            showToast('Failed to recreate container: ' + e.message, 'error');
+            return;
+          }
+        } else {
+          // User chose ADD — keep container as-is, ensure status/location are fresh
+          const updates = {};
+          if (rawLoc && container.currentLocation !== rawLoc) updates.currentLocation = rawLoc;
+          if (container.status !== 'Stored' && container.status !== 'Full' && container.status !== 'Closed') {
+            updates.status = 'Stored';
+          }
+          if (Object.keys(updates).length && typeof window.updateOverstockContainer === 'function') {
+            window.updateOverstockContainer(container.id, updates);
+          }
+        }
+      } else {
+        // Empty container — just open it. Update location/status if needed.
+        const updates = {};
+        if (rawLoc && container.currentLocation !== rawLoc) updates.currentLocation = rawLoc;
+        if (container.status !== 'Stored' && container.status !== 'Full' && container.status !== 'Closed') {
+          updates.status = 'Stored';
+        }
+        if (Object.keys(updates).length && typeof window.updateOverstockContainer === 'function') {
+          window.updateOverstockContainer(container.id, updates);
+        }
       }
     }
 
