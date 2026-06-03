@@ -3441,6 +3441,110 @@ function addPalletCandidateToOverstockContainer(candidate, containerId) {
   return { ok: true };
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   DELETE OVERSTOCK — containers + entries
+   --------------------------------------------------------------------
+   Two functions:
+     deleteOverstockContainer(id, {force}) — removes a container. By
+       default refuses if the container still has PO entries; pass
+       {force:true} to cascade-delete those entries too.
+     deleteOverstockEntry(id) — removes a single PO entry. No role
+       gating here (UI gates the button visibility).
+
+   Both log to the audit trail when a logger is available, and to
+   the inbound-pallets log when applicable so the historical record
+   doesn't disappear when the row does.
+   ════════════════════════════════════════════════════════════════════ */
+function osCurrentUserRole() {
+  try {
+    const u = window.hcCurrentUser;
+    if (u && u.role) return String(u.role).trim().toLowerCase();
+  } catch (_) {}
+  return '';
+}
+function osCanDeleteContainer() {
+  const r = osCurrentUserRole();
+  // Managers + admins can delete containers. Everyone else can't.
+  return r === 'admin' || r === 'manager';
+}
+function osLogDelete(kind, payload) {
+  // Append to a lightweight in-app delete log for audit. Survives across
+  // reloads via localStorage. Backend audit (Netlify access_audit table)
+  // is separate and only fires for user-management actions.
+  try {
+    const KEY = 'hc_overstock_delete_log_v1';
+    const arr = JSON.parse(localStorage.getItem(KEY) || '[]');
+    arr.unshift({
+      ts: Date.now(),
+      by: (window.hcCurrentUser?.name || window.hcCurrentUser?.email || state.currentUser || 'unknown'),
+      kind,
+      payload,
+    });
+    // Cap at 500 entries
+    localStorage.setItem(KEY, JSON.stringify(arr.slice(0, 500)));
+  } catch (_) {}
+}
+
+function deleteOverstockContainer(containerId, opts = {}) {
+  const containers = state.data.overstockContainers || [];
+  const idx = containers.findIndex(c => c.id === containerId);
+  if (idx === -1) return { ok: false, reason: 'not_found' };
+  const container = containers[idx];
+
+  const entries = Array.isArray(state.data.overstockEntries) ? state.data.overstockEntries : [];
+  const containedEntries = entries.filter(r => r.containerId === containerId);
+
+  if (containedEntries.length && !opts.force) {
+    return { ok: false, reason: 'not_empty', itemCount: containedEntries.length };
+  }
+
+  // Optional cascade — remove every entry tied to this container
+  if (opts.force && containedEntries.length) {
+    state.data.overstockEntries = entries.filter(r => r.containerId !== containerId);
+  }
+
+  // Remove the container itself
+  containers.splice(idx, 1);
+
+  // Reset selection if this container was selected
+  if (state.data.overstockContainerUi?.selectedId === containerId) {
+    state.data.overstockContainerUi.selectedId = '';
+  }
+
+  persistData();
+  osLogDelete('container', {
+    id: containerId,
+    code: container.code,
+    location: container.currentLocation,
+    cascade: !!opts.force,
+    cascadedItemCount: opts.force ? containedEntries.length : 0,
+  });
+  return { ok: true, deleted: 1, cascadedItemCount: opts.force ? containedEntries.length : 0 };
+}
+
+function deleteOverstockEntry(entryId) {
+  const entries = Array.isArray(state.data.overstockEntries) ? state.data.overstockEntries : [];
+  const idx = entries.findIndex(r => r.id === entryId);
+  if (idx === -1) return { ok: false, reason: 'not_found' };
+  const row = entries[idx];
+  state.data.overstockEntries = entries.filter(r => r.id !== entryId);
+  persistData();
+  osLogDelete('entry', {
+    id: entryId,
+    po: row.po,
+    quantity: row.quantity,
+    containerCode: row.containerCode,
+    location: row.location,
+    sourceType: row.sourceType,
+  });
+  return { ok: true };
+}
+
+// Expose for stock-intake.js and external callers
+window.deleteOverstockContainer = deleteOverstockContainer;
+window.deleteOverstockEntry     = deleteOverstockEntry;
+window.osCanDeleteContainer     = osCanDeleteContainer;
+
 function getOverstockContainerSearchResults(query) {
   const q = String(query || "").trim().toLowerCase();
   if (!q) return [];
@@ -3706,6 +3810,50 @@ function osCloseModal(id) {
   if (bd) bd.classList.remove('os-modal-open');
 }
 
+/* Heavy-confirm container delete.
+   - Refuses non-empty containers unless the user explicitly confirms cascade.
+   - Two-step UX: first confirm warns about contents, second confirm requires
+     the user to type the container code to proceed.
+   Returns true if a delete happened (or was at least attempted), false if
+   the user cancelled at any step. */
+function osConfirmAndDeleteContainer(containerId, afterDelete) {
+  if (!osCanDeleteContainer()) {
+    alert('Only managers and admins can delete containers.');
+    return false;
+  }
+  const container = (state.data.overstockContainers || []).find(c => c.id === containerId);
+  if (!container) return false;
+
+  const containedItems = (state.data.overstockEntries || []).filter(r => r.containerId === containerId);
+  const code = container.code || 'this container';
+
+  let proceedWithCascade = false;
+  if (containedItems.length) {
+    const msg = `${code} contains ${containedItems.length} PO ${containedItems.length === 1 ? 'entry' : 'entries'}.\n\n` +
+      `Deleting will also remove every PO entry inside it.\n\n` +
+      `Click OK to continue, or Cancel and remove the entries first.`;
+    if (!confirm(msg)) return false;
+    proceedWithCascade = true;
+  }
+
+  // Heavy confirm — require typing the code
+  const typed = prompt(`Type "${code}" to confirm permanent deletion:`);
+  if (typed === null) return false; // cancel
+  if (String(typed).trim().toUpperCase() !== String(code).trim().toUpperCase()) {
+    alert('Confirmation text did not match. Container was NOT deleted.');
+    return false;
+  }
+
+  const result = deleteOverstockContainer(containerId, { force: proceedWithCascade });
+  if (!result.ok) {
+    alert('Could not delete: ' + (result.reason || 'unknown error'));
+    return false;
+  }
+  if (typeof afterDelete === 'function') afterDelete(result);
+  return true;
+}
+window.osConfirmAndDeleteContainer = osConfirmAndDeleteContainer;
+
 function osBindModalClose() {
   document.querySelectorAll('[data-close]').forEach(btn => {
     btn.addEventListener('click', () => osCloseModal(btn.dataset.close));
@@ -3783,6 +3931,7 @@ function osOpenLocation(loc) {
       const cats = [...new Set(items.map(r => r.category).filter(Boolean))].join(', ') || '—';
       const pos = items.slice(0, 3).map(r => `PO# ${escapeHtml(r.po)}`).join(' · ') + (items.length > 3 ? ` +${items.length - 3} more` : '');
       const statusBadge = { 'Open': 'os-badge-blue', 'On Cart': 'os-badge-amber', 'Stored': 'os-badge-green', 'Full': 'os-badge-gray' }[c.status] || 'os-badge-gray';
+      const canDel = osCanDeleteContainer();
       return `<div class="os-loc-detail-row">
         <div>
           <div style="font-size:15px;font-weight:700;font-family:monospace;color:var(--navy);">${escapeHtml(c.code)}</div>
@@ -3793,6 +3942,7 @@ function osOpenLocation(loc) {
           <span class="os-badge ${statusBadge}">${escapeHtml(c.status)}</span>
           <button class="os-ghost-btn" data-audit-container="${escapeAttribute(c.id)}" data-audit-loc="${escapeAttribute(loc)}" type="button" style="font-size:11px;padding:5px 10px;">Audit box</button>
           <button class="os-ghost-btn" data-merge-id="${escapeAttribute(c.id)}" type="button" style="font-size:11px;padding:5px 10px;">Merge</button>
+          ${canDel ? `<button class="os-ghost-btn os-danger-btn" data-del-container-loc="${escapeAttribute(c.id)}" data-source-loc="${escapeAttribute(loc)}" type="button" style="font-size:11px;padding:5px 10px;" title="Delete container">🗑️ Delete</button>` : ''}
         </div>
       </div>`;
     }).join('') +
@@ -3819,6 +3969,21 @@ function osOpenLocation(loc) {
     });
     body.querySelectorAll('[data-merge-id]').forEach(btn => {
       btn.addEventListener('click', () => { osCloseModal('osMdLocation'); osOpenMerge(btn.dataset.mergeId); });
+    });
+    body.querySelectorAll('[data-del-container-loc]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sourceLoc = btn.dataset.sourceLoc;
+        osConfirmAndDeleteContainer(btn.dataset.delContainerLoc, () => {
+          osCloseModal('osMdLocation');
+          renderOverstockPage();
+          // If there are still containers at this location, reopen the modal
+          // so the user can keep working there. Otherwise just close.
+          const remaining = (state.data.overstockContainers || []).filter(c => c.currentLocation === sourceLoc && c.status !== 'Closed');
+          if (remaining.length) {
+            setTimeout(() => osOpenLocation(sourceLoc), 100);
+          }
+        });
+      });
     });
   }
   osOpenModal('osMdLocation');
@@ -4119,10 +4284,14 @@ function renderOverstockPage() {
                 const units = items.reduce((s,r)=>s+Number(r.quantity||0),0);
                 const cats = [...new Set(items.map(r=>r.category).filter(Boolean))].slice(0,2).join(', ') || '—';
                 const pos = items.slice(0,2).map(r=>`PO# ${escapeHtml(r.po)}`).join(', ') + (items.length > 2 ? ` +${items.length-2}` : '');
+                const canDel = osCanDeleteContainer();
                 return `<div class="os-box-card" data-putaway-id="${escapeAttribute(c.id)}" role="button" tabindex="0">
-                  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:6px;">
                     <div class="os-cc-code">${escapeHtml(c.code)}</div>
-                    <span class="os-badge os-badge-amber">On cart</span>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                      <span class="os-badge os-badge-amber">On cart</span>
+                      ${canDel ? `<button type="button" class="os-trash-btn" data-del-container="${escapeAttribute(c.id)}" title="Delete container" aria-label="Delete container">🗑️</button>` : ''}
+                    </div>
                   </div>
                   <div class="os-cc-meta">${units} units · ${cats}</div>
                   <div class="os-cc-loc" style="margin-top:3px;font-size:11px;color:var(--muted);">${pos}</div>
@@ -4139,6 +4308,17 @@ function renderOverstockPage() {
     });
     hub.querySelectorAll('[data-putaway-id]').forEach(card => {
       card.addEventListener('click', () => osOpenPutaway(card.dataset.putawayId));
+    });
+    // Delete buttons on cart container cards. stopPropagation so the parent
+    // card's click handler doesn't also fire (which would open the putaway modal).
+    hub.querySelectorAll('[data-del-container]').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+        osConfirmAndDeleteContainer(btn.dataset.delContainer, () => {
+          renderOverstockPage();
+        });
+      });
     });
   }
 
