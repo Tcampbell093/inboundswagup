@@ -72,14 +72,27 @@
     return ['Drinkware', 'Apparel', 'Electronics', 'Kitchen', 'Toys', 'Misc'];
   }
 
-  // Pull location list (master list of warehouse locations) so the datalist
-  // can autocomplete. Falls back to extracting unique existing locations.
+  // Pull the same E-1 through E-24 list used by the regular overstock form.
+  // We read it from the DOM rather than from a global so we stay in sync if
+  // the canonical list ever changes — the regular form's #overstockEntryLocation
+  // <select> is populated by app.js with the official list.
   function getLocationSuggestions() {
+    // Primary source: scrape from the existing overstock form's location select
+    try {
+      const select = document.getElementById('overstockEntryLocation');
+      if (select) {
+        const opts = Array.from(select.options)
+          .map(o => o.value)
+          .filter(v => v && v.trim()); // drop the placeholder empty option
+        if (opts.length) return opts;
+      }
+    } catch (_) {}
+    // Secondary: master list (in case overstock form hasn't been touched yet)
     try {
       const fromMaster = window.state?.masters?.locations;
       if (Array.isArray(fromMaster) && fromMaster.length) return fromMaster;
     } catch (_) {}
-    // Fall back: scrape unique locations from existing containers + entries
+    // Last-resort fallback — scrape what exists today
     const set = new Set();
     try {
       (window.state?.data?.overstockContainers || []).forEach(c => {
@@ -423,6 +436,17 @@
     const overlay = el('stockIntakeOverlay');
     if (!overlay) return;
 
+    // Make sure the regular overstock form is populated first, so when we
+    // scrape its location select for the canonical E-1..E-24 list, the
+    // options actually exist. If the user opens the intake modal before
+    // ever scrolling to the overstock entry form, the dropdown could be
+    // empty otherwise.
+    try {
+      if (typeof window.renderOverstockPage === 'function') {
+        window.renderOverstockPage();
+      }
+    } catch (_) {}
+
     // Reset session
     session = {
       activeContainerId: null,
@@ -440,10 +464,11 @@
       catSel.innerHTML = '<option value="">— Category (optional) —</option>' +
         getCategories().map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
     }
-    const locList = el('stockIntakeLocationList');
-    if (locList) {
-      locList.innerHTML = getLocationSuggestions()
-        .map(l => `<option value="${escapeHtml(l)}"></option>`).join('');
+    const locSel = el('stockIntakeContainerLocation');
+    if (locSel) {
+      const locs = getLocationSuggestions();
+      locSel.innerHTML = '<option value="">— Select location —</option>' +
+        locs.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join('');
     }
 
     // Reset form fields

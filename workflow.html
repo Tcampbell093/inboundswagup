@@ -458,8 +458,9 @@
               </div>
               <div class="si-field">
                 <label class="si-field-lbl" for="stockIntakeContainerLocation">Location</label>
-                <input id="stockIntakeContainerLocation" type="text" class="si-input si-input-xl" list="stockIntakeLocationList" placeholder="e.g., Aisle 4 — Bay 12" autocomplete="off" />
-                <datalist id="stockIntakeLocationList"></datalist>
+                <select id="stockIntakeContainerLocation" class="si-input si-input-xl">
+                  <option value="">— Select location —</option>
+                </select>
               </div>
               <div class="si-container-info" id="stockIntakeContainerInfo" hidden></div>
               <button type="submit" class="si-primary-btn" id="stockIntakeContainerSubmit">Open Container →</button>
@@ -490,7 +491,6 @@
                   <label class="si-field-lbl" for="stockIntakeItemCategory">Category</label>
                   <select id="stockIntakeItemCategory" class="si-input"></select>
                 </div>
-                <button type="submit" class="si-add-btn" id="stockIntakeItemSubmit">+ Add Item</button>
               </div>
 
               <!-- Apparel sizes (shown only when category = Apparel) -->
@@ -506,6 +506,8 @@
                   <div class="si-size-cell"><span class="si-size-lbl">3XL</span><input type="number" min="0" data-si-size="3XL" placeholder="0" class="si-input si-size-input" inputmode="numeric"/></div>
                 </div>
               </div>
+
+              <button type="submit" class="si-add-btn" id="stockIntakeItemSubmit">+ Add Item to Container</button>
             </form>
 
             <!-- Last-10 entries this session ─────────────────────────── -->
