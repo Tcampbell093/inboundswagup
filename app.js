@@ -165,11 +165,35 @@ function applyWorkflowSyncPayload(payload={}){
     const defaults = getDefaultData();
     const parsed = payload.data;
     // Preserve any tombstones that may have been added locally between the
-    // moment we sent our POST and now (the server strips tombstones from
-    // the response after applying them, but new local deletes since the
-    // POST started must survive to be applied on the NEXT sync).
+    // moment we sent our POST and now (the server may strip or persist
+    // tombstones; either way, new local deletes since the POST started
+    // must survive to be applied on the NEXT sync).
     const pendingDeletedEntries    = Array.isArray(state.data?.__deletedOverstockEntryIds)    ? state.data.__deletedOverstockEntryIds.slice()    : [];
     const pendingDeletedContainers = Array.isArray(state.data?.__deletedOverstockContainerIds) ? state.data.__deletedOverstockContainerIds.slice() : [];
+
+    // Tombstone arrays may contain bare IDs (from local deletes that haven't
+    // been to the server yet) OR { id, ts } objects (from server-returned
+    // persistent tombstones). This helper extracts a clean string id from either.
+    function tombId(t) {
+      if (t == null) return '';
+      if (typeof t === 'object') return String(t.id || '');
+      return String(t);
+    }
+
+    // Combine server-returned tombstones with the pending local ones so the
+    // resulting state.data has everything we know about. Server-returned wins
+    // when present because it carries the timestamp.
+    const serverEntryTombs    = Array.isArray(parsed.__deletedOverstockEntryIds)    ? parsed.__deletedOverstockEntryIds    : [];
+    const serverContainerTombs = Array.isArray(parsed.__deletedOverstockContainerIds) ? parsed.__deletedOverstockContainerIds : [];
+    const mergedEntryTombs = [
+      ...serverEntryTombs,
+      ...pendingDeletedEntries.filter(p => !serverEntryTombs.some(s => tombId(s) === tombId(p))),
+    ];
+    const mergedContainerTombs = [
+      ...serverContainerTombs,
+      ...pendingDeletedContainers.filter(p => !serverContainerTombs.some(s => tombId(s) === tombId(p))),
+    ];
+
     state.data = {
       ...defaults,
       ...parsed,
@@ -189,21 +213,19 @@ function applyWorkflowSyncPayload(payload={}){
       putawayAuditSessions: Array.isArray(parsed.putawayAuditSessions) ? parsed.putawayAuditSessions : defaults.putawayAuditSessions,
       putawayAuditUi: { ...defaults.putawayAuditUi, ...(parsed.putawayAuditUi || {}) },
       workflowUi: { ...defaults.workflowUi, ...(parsed.workflowUi || {}) },
-      // Restore tombstones added since the POST went out
-      __deletedOverstockEntryIds:    pendingDeletedEntries,
-      __deletedOverstockContainerIds: pendingDeletedContainers,
+      __deletedOverstockEntryIds:    mergedEntryTombs,
+      __deletedOverstockContainerIds: mergedContainerTombs,
     };
-    // Apply any pending tombstones to the freshly-pulled arrays so a deleted
-    // entry doesn't reappear in the UI while waiting for the next sync to
-    // confirm it on the server.
-    if (pendingDeletedEntries.length) {
-      const skipE = new Set(pendingDeletedEntries.map(String));
-      state.data.overstockEntries = state.data.overstockEntries.filter(r => !skipE.has(String(r.id)));
-    }
-    if (pendingDeletedContainers.length) {
-      const skipC = new Set(pendingDeletedContainers.map(String));
-      state.data.overstockContainers = state.data.overstockContainers.filter(c => !skipC.has(String(c.id)));
-    }
+
+    // Defense in depth — also locally filter overstockContainers/Entries
+    // against any tombstones we know about. The server should already have
+    // filtered, but doing it here too means a momentary UI glitch is
+    // impossible.
+    const skipE = new Set(mergedEntryTombs.map(tombId).filter(Boolean));
+    const skipC = new Set(mergedContainerTombs.map(tombId).filter(Boolean));
+    if (skipE.size) state.data.overstockEntries    = state.data.overstockEntries.filter(r => !skipE.has(String(r.id)));
+    if (skipC.size) state.data.overstockContainers = state.data.overstockContainers.filter(c => !skipC.has(String(c.id)));
+
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
   }
   if (payload && typeof payload.masters === 'object') {
@@ -235,27 +257,16 @@ async function syncWorkflowState() {
   if (workflowSyncInFlight) { workflowSyncQueued = true; return; }
   workflowSyncInFlight = true;
 
-  // Snapshot tombstones being sent so we can clear EXACTLY these IDs after
-  // the POST succeeds. Anything added to the tombstone list during the
-  // POST flight is preserved for the next sync.
-  const sentDeletedEntryIds    = Array.isArray(state.data?.__deletedOverstockEntryIds)    ? state.data.__deletedOverstockEntryIds.slice()    : [];
-  const sentDeletedContainerIds = Array.isArray(state.data?.__deletedOverstockContainerIds) ? state.data.__deletedOverstockContainerIds.slice() : [];
-
   try {
     const data = await workflowApiRequest('POST', { data: state.data, masters: state.masters });
     if (data) applyWorkflowSyncPayload(data);
 
-    // Clear ONLY the tombstones we just sent. Any new ones added during the
-    // request flight (i.e., now back in state.data after applyWorkflowSyncPayload
-    // restored them) stay for the next sync.
-    if (sentDeletedEntryIds.length && Array.isArray(state.data.__deletedOverstockEntryIds)) {
-      const sent = new Set(sentDeletedEntryIds.map(String));
-      state.data.__deletedOverstockEntryIds = state.data.__deletedOverstockEntryIds.filter(id => !sent.has(String(id)));
-    }
-    if (sentDeletedContainerIds.length && Array.isArray(state.data.__deletedOverstockContainerIds)) {
-      const sent = new Set(sentDeletedContainerIds.map(String));
-      state.data.__deletedOverstockContainerIds = state.data.__deletedOverstockContainerIds.filter(id => !sent.has(String(id)));
-    }
+    // Note: we deliberately do NOT clear local tombstones after a successful
+    // POST. With the persistent-tombstone server design, tombstones live on
+    // the server for 24h and are returned in every response. applyWorkflowSyncPayload
+    // syncs the local list to match. If we cleared locally here, we'd briefly
+    // lose protection against stale re-adds between syncs. Tombstones expire
+    // server-side after the TTL automatically.
   } catch (err) {
     console.warn('Workflow sync save failed; keeping local copy.', err);
     workflowSyncEnabled = false;
@@ -3988,6 +3999,111 @@ function osConfirmAndDeleteContainer(containerId, afterDelete) {
 }
 window.osConfirmAndDeleteContainer = osConfirmAndDeleteContainer;
 
+/* Move a container to a different physical location.
+   Uses the same dropdown source as the regular overstock form so the
+   destination matches the canonical E-1..E-24 list. Updates the container's
+   currentLocation AND every contained PO entry's location field so the
+   data layer stays consistent (the consistency repair would do the same,
+   but doing it inline here saves a round trip). */
+function osMoveContainer(containerId, sourceLoc) {
+  const container = (state.data.overstockContainers || []).find(c => c.id === containerId);
+  if (!container) { alert('Container not found.'); return; }
+
+  // Pull the canonical location list from the regular overstock form's
+  // select element — same source the intake modal uses.
+  let locations = [];
+  try {
+    const sel = document.getElementById('overstockEntryLocation');
+    if (sel) {
+      locations = Array.from(sel.options)
+        .map(o => o.value)
+        .filter(v => v && v.trim());
+    }
+  } catch (_) {}
+  if (!locations.length) {
+    // Fallback to scraping from existing data
+    const set = new Set();
+    (state.data.overstockContainers || []).forEach(c => { if (c.currentLocation) set.add(c.currentLocation); });
+    locations = [...set].sort();
+  }
+  if (!locations.length) {
+    alert('No locations available. Open the Overstock tab once to populate the locations list, then try again.');
+    return;
+  }
+
+  // Prompt user. Native prompt isn't ideal for a list, but it's a
+  // single-step, no-CSS solution that works on iPad. The list of valid
+  // locations is shown in the message body.
+  const promptLines = [
+    `Move container ${container.code || containerId}`,
+    `from ${sourceLoc || container.currentLocation || 'no location'}`,
+    `to which location?`,
+    ``,
+    `Valid locations:`,
+    locations.join(', '),
+  ];
+  const newLoc = prompt(promptLines.join('\n'), container.currentLocation || '');
+  if (newLoc === null) return; // user cancelled
+
+  const cleanLoc = String(newLoc || '').trim().toUpperCase();
+  if (!cleanLoc) { alert('No location entered. Move cancelled.'); return; }
+  if (!locations.map(l => l.toUpperCase()).includes(cleanLoc)) {
+    alert(`"${cleanLoc}" is not a valid location.\n\nValid locations: ${locations.join(', ')}`);
+    return;
+  }
+
+  // Find the actual location string (preserve original casing)
+  const canonicalLoc = locations.find(l => l.toUpperCase() === cleanLoc) || cleanLoc;
+  if (canonicalLoc === container.currentLocation) {
+    alert('Container is already at that location. Nothing to do.');
+    return;
+  }
+
+  // Confirm
+  if (!confirm(`Move ${container.code} from "${container.currentLocation || 'no location'}" → "${canonicalLoc}"?\n\nThis updates the container and all PO entries inside it.`)) {
+    return;
+  }
+
+  // Apply: container + all entries
+  const fromLoc = container.currentLocation || '';
+  if (typeof updateOverstockContainer === 'function') {
+    updateOverstockContainer(containerId, { currentLocation: canonicalLoc });
+  } else {
+    container.currentLocation = canonicalLoc;
+    container.updatedAt = Date.now();
+  }
+  const entries = state.data.overstockEntries || [];
+  let updatedCount = 0;
+  for (const e of entries) {
+    if (e && e.containerId === containerId) {
+      e.location = canonicalLoc;
+      e.updatedAt = Date.now();
+      updatedCount += 1;
+    }
+  }
+
+  // Audit log
+  try {
+    const KEY = 'hc_overstock_move_log_v1';
+    const log = JSON.parse(localStorage.getItem(KEY) || '[]');
+    log.unshift({
+      ts: Date.now(),
+      by: (window.hcCurrentUser?.name || window.hcCurrentUser?.email || state.currentUser || 'unknown'),
+      containerId, code: container.code,
+      from: fromLoc, to: canonicalLoc,
+      entriesUpdated: updatedCount,
+    });
+    localStorage.setItem(KEY, JSON.stringify(log.slice(0, 500)));
+  } catch (_) {}
+
+  persistData();
+  osCloseModal('osMdLocation');
+  renderOverstockPage();
+  // Reopen the destination location so the user can see the box landed
+  setTimeout(() => osOpenLocation(canonicalLoc), 100);
+}
+window.osMoveContainer = osMoveContainer;
+
 function osBindModalClose() {
   document.querySelectorAll('[data-close]').forEach(btn => {
     btn.addEventListener('click', () => osCloseModal(btn.dataset.close));
@@ -4075,6 +4191,7 @@ function osOpenLocation(loc) {
         <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;">
           <span class="os-badge ${statusBadge}">${escapeHtml(c.status)}</span>
           <button class="os-ghost-btn" data-audit-container="${escapeAttribute(c.id)}" data-audit-loc="${escapeAttribute(loc)}" type="button" style="font-size:11px;padding:5px 10px;">Audit box</button>
+          <button class="os-ghost-btn" data-move-container="${escapeAttribute(c.id)}" data-source-loc="${escapeAttribute(loc)}" type="button" style="font-size:11px;padding:5px 10px;" title="Move container to a different location">↗ Move</button>
           <button class="os-ghost-btn" data-merge-id="${escapeAttribute(c.id)}" type="button" style="font-size:11px;padding:5px 10px;">Merge</button>
           ${canDel ? `<button class="os-ghost-btn os-danger-btn" data-del-container-loc="${escapeAttribute(c.id)}" data-source-loc="${escapeAttribute(loc)}" type="button" style="font-size:11px;padding:5px 10px;" title="Delete container">🗑️ Delete</button>` : ''}
         </div>
@@ -4103,6 +4220,13 @@ function osOpenLocation(loc) {
     });
     body.querySelectorAll('[data-merge-id]').forEach(btn => {
       btn.addEventListener('click', () => { osCloseModal('osMdLocation'); osOpenMerge(btn.dataset.mergeId); });
+    });
+    body.querySelectorAll('[data-move-container]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const containerId = btn.dataset.moveContainer;
+        const sourceLoc   = btn.dataset.sourceLoc;
+        osMoveContainer(containerId, sourceLoc);
+      });
     });
     body.querySelectorAll('[data-del-container-loc]').forEach(btn => {
       btn.addEventListener('click', () => {
