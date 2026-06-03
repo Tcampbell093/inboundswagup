@@ -99,6 +99,12 @@ function stopWorkflowPoll() {
   if (workflowPollTimer) { clearInterval(workflowPollTimer); workflowPollTimer = null; }
 }
 
+// Expose so other modules (stock-intake) can pause polling during sensitive
+// sequences like the intake modal, where a poll could overwrite local edits
+// before the debounced sync flushes upstream.
+window.startWorkflowPoll = startWorkflowPoll;
+window.stopWorkflowPoll  = stopWorkflowPoll;
+
 const ATTENDANCE_EMPLOYEE_KEY = "ops_hub_employees_v1";
 
 function readAttendanceEmployees() {
@@ -219,6 +225,9 @@ async function syncWorkflowState() {
     if (workflowSyncQueued) { workflowSyncQueued = false; syncWorkflowState(); }
   }
 }
+// Exposed for force-flushing the sync queue from caller code that just made
+// a critical local mutation and doesn't want to wait for the 250ms debounce.
+window.syncWorkflowState = syncWorkflowState;
 
 
 const defaultMasters = {

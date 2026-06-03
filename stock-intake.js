@@ -408,30 +408,56 @@
         return;
       }
       try {
-        container = window.createOverstockContainer({ status: 'Open' });
-        // Override the auto-generated code with what the user typed, if it
-        // looks like a custom non-OSC barcode. Otherwise leave the OSC code
-        // the system generated and store the typed value as the barcode.
+        // Create with default values. createOverstockContainer fires its own
+        // persistData() which schedules a backend sync.
+        container = window.createOverstockContainer({ status: 'Stored' });
+
+        // Build the update object — code, barcode, currentLocation in a single
+        // pass. Going through updateOverstockContainer is critical because:
+        //   1. It uses Object.assign so the mutations apply atomically
+        //   2. It bumps updatedAt
+        //   3. It fires its own persistData() — meaning the backend sync that
+        //      gets scheduled INCLUDES these mutations. Previously we mutated
+        //      `container.code` and `container.currentLocation` directly after
+        //      createOverstockContainer's persist had already fired, leaving
+        //      a window where a poll could re-fetch the pre-mutation state
+        //      and wipe our changes. This caused the "PO is in the log but
+        //      not in the map" bug.
+        const updates = { currentLocation: rawLoc, status: 'Stored' };
         if (/^OSC-\d+$/i.test(normalized)) {
-          container.code = normalized;
+          updates.code = normalized;
         } else {
-          container.barcode = normalized;
+          updates.barcode = normalized;
         }
-        container.currentLocation = rawLoc;
-        container.updatedAt = Date.now();
-        if (typeof window.persistData === 'function') window.persistData();
+        if (typeof window.updateOverstockContainer === 'function') {
+          window.updateOverstockContainer(container.id, updates);
+        } else {
+          // Fallback if helper missing — direct mutate + persist
+          Object.assign(container, updates, { updatedAt: Date.now() });
+          if (typeof window.persistData === 'function') window.persistData();
+        }
       } catch (e) {
         showToast('Failed to create container: ' + e.message, 'error');
         return;
       }
     } else {
-      // Existing — sync location if user provided a different one
-      if (rawLoc && container.currentLocation !== rawLoc) {
-        if (typeof window.updateOverstockContainer === 'function') {
-          window.updateOverstockContainer(container.id, { currentLocation: rawLoc });
-        }
+      // Existing container — sync location if user provided a different one,
+      // and ensure status is 'Stored' so it counts in the location map's
+      // used-locations badge and behaves like a properly-placed box.
+      const updates = {};
+      if (rawLoc && container.currentLocation !== rawLoc) updates.currentLocation = rawLoc;
+      if (container.status !== 'Stored' && container.status !== 'Full' && container.status !== 'Closed') {
+        updates.status = 'Stored';
+      }
+      if (Object.keys(updates).length && typeof window.updateOverstockContainer === 'function') {
+        window.updateOverstockContainer(container.id, updates);
       }
     }
+
+    // Re-read the container from state in case updateOverstockContainer
+    // changed properties we care about (it does mutate in-place, but reading
+    // fresh from state guarantees we have the canonical version).
+    container = (window.state?.data?.overstockContainers || []).find(c => c.id === container.id) || container;
 
     // Activate this container in the session
     session.activeContainerId = container.id;
@@ -681,6 +707,13 @@
 
     overlay.hidden = false;
     document.body.style.overflow = 'hidden';
+
+    // Pause the workflow poll while the intake modal is open. The 20s poll
+    // can pull down server state and overwrite a freshly-added container or
+    // its entries before the debounced upstream sync flushes. Pausing
+    // eliminates the race; closeIntakeModal resumes polling.
+    try { if (typeof window.stopWorkflowPoll === 'function') window.stopWorkflowPoll(); } catch (_) {}
+
     setTimeout(() => el('stockIntakeContainerInput')?.focus(), 80);
   }
 
@@ -693,11 +726,23 @@
     closeIntakeModal();
   }
 
-  function closeIntakeModal() {
+  async function closeIntakeModal() {
     const overlay = el('stockIntakeOverlay');
     if (!overlay) return;
     overlay.hidden = true;
     document.body.style.overflow = '';
+    // Force a final upstream sync of any locally-buffered changes BEFORE
+    // resuming the poll. We AWAIT the sync (not fire-and-forget) because
+    // resuming the poll while the POST is in flight could result in the
+    // poll's first GET racing the POST and pulling stale state.
+    try {
+      if (typeof window.syncWorkflowState === 'function') {
+        await window.syncWorkflowState();
+      }
+    } catch (_) {}
+    try {
+      if (typeof window.startWorkflowPoll === 'function') window.startWorkflowPoll();
+    } catch (_) {}
   }
 
   // ── Wire events ────────────────────────────────────────────────────────
