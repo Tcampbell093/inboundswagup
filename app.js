@@ -3456,9 +3456,21 @@ function addPalletCandidateToOverstockContainer(candidate, containerId) {
    doesn't disappear when the row does.
    ════════════════════════════════════════════════════════════════════ */
 function osCurrentUserRole() {
+  // Primary: window.hcCurrentUser set by auth.js. Available on index.html.
   try {
     const u = window.hcCurrentUser;
     if (u && u.role) return String(u.role).trim().toLowerCase();
+  } catch (_) {}
+  // Fallback: read directly from localStorage. workflow.html doesn't load
+  // auth.js, so window.hcCurrentUser is never set in that context — but
+  // hcAuthUser is written by auth.js to localStorage at login and stays
+  // accessible to any same-origin page.
+  try {
+    const raw = localStorage.getItem('hcAuthUser');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.role) return String(parsed.role).trim().toLowerCase();
+    }
   } catch (_) {}
   return '';
 }
@@ -3474,12 +3486,17 @@ function osLogDelete(kind, payload) {
   try {
     const KEY = 'hc_overstock_delete_log_v1';
     const arr = JSON.parse(localStorage.getItem(KEY) || '[]');
-    arr.unshift({
-      ts: Date.now(),
-      by: (window.hcCurrentUser?.name || window.hcCurrentUser?.email || state.currentUser || 'unknown'),
-      kind,
-      payload,
-    });
+    // Resolve actor across contexts — workflow.html doesn't have hcCurrentUser
+    let actor = state.currentUser || 'unknown';
+    try {
+      if (window.hcCurrentUser?.name || window.hcCurrentUser?.email) {
+        actor = window.hcCurrentUser.name || window.hcCurrentUser.email;
+      } else {
+        const auth = JSON.parse(localStorage.getItem('hcAuthUser') || '{}');
+        if (auth.name || auth.email) actor = auth.name || auth.email;
+      }
+    } catch (_) {}
+    arr.unshift({ ts: Date.now(), by: actor, kind, payload });
     // Cap at 500 entries
     localStorage.setItem(KEY, JSON.stringify(arr.slice(0, 500)));
   } catch (_) {}
@@ -4432,7 +4449,13 @@ function renderOverstockPage() {
 
   entries.forEach(row => {
     const isAutoRow = row.sourceType === 'auto' || (!!row.po && !row.manualPo);
-    const ownerLocked = isAutoRow || !!(state.currentUser && state.currentUser !== LEADERSHIP_USER && row.associate && row.associate !== state.currentUser);
+    // Admins and managers can edit/delete any row regardless of who created
+    // it — they need this to clean up mistakes from floor staff. Everyone
+    // else can only act on their own rows. osCanDeleteContainer reads role
+    // from window.hcCurrentUser OR falls back to localStorage hcAuthUser,
+    // so this works in both index.html and workflow.html contexts.
+    const isElevated = (typeof osCanDeleteContainer === 'function') ? osCanDeleteContainer() : false;
+    const ownerLocked = isAutoRow || (!isElevated && !!(state.currentUser && state.currentUser !== LEADERSHIP_USER && row.associate && row.associate !== state.currentUser));
     const tr = document.createElement('tr');
     const batchCount = getPoHistoryCount('overstock', row.po);
     const batchBtn = batchCount >= 1
@@ -4463,8 +4486,18 @@ function renderOverstockPage() {
     if (histBtn) histBtn.addEventListener('click', () => openBatchHistoryModal('overstock', row.po));
     if (!ownerLocked) {
       tr.querySelector('.overstock-delete-btn').addEventListener('click', () => {
-        state.data.overstockEntries = state.data.overstockEntries.filter(i => i.id !== row.id);
-        persistData(); renderOverstockPage();
+        // Light confirm — single PO entry, low stakes, but tablets fat-finger.
+        const label = row.containerCode ? `${row.containerCode} · PO# ${row.po}` : `PO# ${row.po}`;
+        if (!confirm(`Remove ${label}?`)) return;
+        if (typeof window.deleteOverstockEntry === 'function') {
+          window.deleteOverstockEntry(row.id);
+        } else {
+          // Fallback (shouldn't happen, but keeps the button working if the
+          // helper wasn't loaded for any reason)
+          state.data.overstockEntries = state.data.overstockEntries.filter(i => i.id !== row.id);
+          persistData();
+        }
+        renderOverstockPage();
       });
       tr.querySelector('.overstock-edit-btn').addEventListener('click', () => toggleOverstockEditRow(tr, row.id));
     }
