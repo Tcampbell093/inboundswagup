@@ -434,7 +434,14 @@
               <h2 class="si-title" id="stockIntakeTitle">Stock Intake</h2>
               <p class="si-subtitle" id="stockIntakeSubtitle">Catalog what's already on the shelf — container by container.</p>
             </div>
-            <button type="button" class="si-end-btn" id="stockIntakeEndBtn">End Session</button>
+            <div class="si-header-actions">
+              <div class="si-active-user" id="stockIntakeActiveUser" hidden>
+                <span class="si-active-user-lbl">Logged in as</span>
+                <strong class="si-active-user-name" id="stockIntakeActiveUserName">—</strong>
+                <button type="button" class="si-switch-user-btn" id="stockIntakeSwitchUserBtn">Switch</button>
+              </div>
+              <button type="button" class="si-end-btn" id="stockIntakeEndBtn">End Session</button>
+            </div>
           </div>
 
           <!-- Session stats banner ─────────────────────────────────────── -->
@@ -443,6 +450,23 @@
             <div class="si-stat"><span class="si-stat-num" id="siStatContainers">0</span><span class="si-stat-lbl">containers touched</span></div>
             <div class="si-stat"><span class="si-stat-num" id="siStatStartedAt">—</span><span class="si-stat-lbl">started</span></div>
           </div>
+
+          <!-- STEP 0: identity picker ──────────────────────────────────── -->
+          <!-- Shown when the tablet doesn't yet have an identity picked, OR
+               when the associate explicitly switches users. Each entry this
+               tablet creates will be tagged with the picked name. -->
+          <section class="si-step si-step-identity" id="stockIntakeStepIdentity" hidden>
+            <div class="si-step-header">
+              <span class="si-step-num">0</span>
+              <h3 class="si-step-title">Who's using this tablet?</h3>
+            </div>
+            <p class="si-step-help">Pick your name so every entry you log is tagged to you. This stays on this tablet until someone switches.</p>
+            <div class="si-identity-grid" id="stockIntakeIdentityGrid"></div>
+            <div class="si-identity-custom-row">
+              <input id="stockIntakeIdentityCustom" type="text" class="si-input" placeholder="Or type a name…" autocomplete="off" />
+              <button type="button" class="si-primary-btn" id="stockIntakeIdentityCustomBtn">Use this name</button>
+            </div>
+          </section>
 
           <!-- STEP 1: container selection ──────────────────────────────── -->
           <section class="si-step si-step-container" id="stockIntakeStepContainer">

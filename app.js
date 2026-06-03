@@ -164,6 +164,12 @@ function applyWorkflowSyncPayload(payload={}){
   if (payload && typeof payload.data === 'object') {
     const defaults = getDefaultData();
     const parsed = payload.data;
+    // Preserve any tombstones that may have been added locally between the
+    // moment we sent our POST and now (the server strips tombstones from
+    // the response after applying them, but new local deletes since the
+    // POST started must survive to be applied on the NEXT sync).
+    const pendingDeletedEntries    = Array.isArray(state.data?.__deletedOverstockEntryIds)    ? state.data.__deletedOverstockEntryIds.slice()    : [];
+    const pendingDeletedContainers = Array.isArray(state.data?.__deletedOverstockContainerIds) ? state.data.__deletedOverstockContainerIds.slice() : [];
     state.data = {
       ...defaults,
       ...parsed,
@@ -183,7 +189,21 @@ function applyWorkflowSyncPayload(payload={}){
       putawayAuditSessions: Array.isArray(parsed.putawayAuditSessions) ? parsed.putawayAuditSessions : defaults.putawayAuditSessions,
       putawayAuditUi: { ...defaults.putawayAuditUi, ...(parsed.putawayAuditUi || {}) },
       workflowUi: { ...defaults.workflowUi, ...(parsed.workflowUi || {}) },
+      // Restore tombstones added since the POST went out
+      __deletedOverstockEntryIds:    pendingDeletedEntries,
+      __deletedOverstockContainerIds: pendingDeletedContainers,
     };
+    // Apply any pending tombstones to the freshly-pulled arrays so a deleted
+    // entry doesn't reappear in the UI while waiting for the next sync to
+    // confirm it on the server.
+    if (pendingDeletedEntries.length) {
+      const skipE = new Set(pendingDeletedEntries.map(String));
+      state.data.overstockEntries = state.data.overstockEntries.filter(r => !skipE.has(String(r.id)));
+    }
+    if (pendingDeletedContainers.length) {
+      const skipC = new Set(pendingDeletedContainers.map(String));
+      state.data.overstockContainers = state.data.overstockContainers.filter(c => !skipC.has(String(c.id)));
+    }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
   }
   if (payload && typeof payload.masters === 'object') {
@@ -214,9 +234,28 @@ async function syncWorkflowState() {
   if (!workflowSyncEnabled || !workflowSyncLoaded) return;
   if (workflowSyncInFlight) { workflowSyncQueued = true; return; }
   workflowSyncInFlight = true;
+
+  // Snapshot tombstones being sent so we can clear EXACTLY these IDs after
+  // the POST succeeds. Anything added to the tombstone list during the
+  // POST flight is preserved for the next sync.
+  const sentDeletedEntryIds    = Array.isArray(state.data?.__deletedOverstockEntryIds)    ? state.data.__deletedOverstockEntryIds.slice()    : [];
+  const sentDeletedContainerIds = Array.isArray(state.data?.__deletedOverstockContainerIds) ? state.data.__deletedOverstockContainerIds.slice() : [];
+
   try {
     const data = await workflowApiRequest('POST', { data: state.data, masters: state.masters });
     if (data) applyWorkflowSyncPayload(data);
+
+    // Clear ONLY the tombstones we just sent. Any new ones added during the
+    // request flight (i.e., now back in state.data after applyWorkflowSyncPayload
+    // restored them) stay for the next sync.
+    if (sentDeletedEntryIds.length && Array.isArray(state.data.__deletedOverstockEntryIds)) {
+      const sent = new Set(sentDeletedEntryIds.map(String));
+      state.data.__deletedOverstockEntryIds = state.data.__deletedOverstockEntryIds.filter(id => !sent.has(String(id)));
+    }
+    if (sentDeletedContainerIds.length && Array.isArray(state.data.__deletedOverstockContainerIds)) {
+      const sent = new Set(sentDeletedContainerIds.map(String));
+      state.data.__deletedOverstockContainerIds = state.data.__deletedOverstockContainerIds.filter(id => !sent.has(String(id)));
+    }
   } catch (err) {
     console.warn('Workflow sync save failed; keeping local copy.', err);
     workflowSyncEnabled = false;
@@ -3527,10 +3566,22 @@ function deleteOverstockContainer(containerId, opts = {}) {
   // Optional cascade — remove every entry tied to this container
   if (opts.force && containedEntries.length) {
     state.data.overstockEntries = entries.filter(r => r.containerId !== containerId);
+    // Tombstone each cascaded entry so the server merge removes them too,
+    // rather than re-resurrecting them from any other tablet's stale copy.
+    if (!Array.isArray(state.data.__deletedOverstockEntryIds)) state.data.__deletedOverstockEntryIds = [];
+    for (const ce of containedEntries) {
+      state.data.__deletedOverstockEntryIds.push(String(ce.id));
+    }
   }
 
   // Remove the container itself
   containers.splice(idx, 1);
+
+  // Tombstone the container ID so the server merge removes it from the
+  // canonical state too. Without this, a stale tablet still holding the
+  // container in memory would POST it back and resurrect it.
+  if (!Array.isArray(state.data.__deletedOverstockContainerIds)) state.data.__deletedOverstockContainerIds = [];
+  state.data.__deletedOverstockContainerIds.push(String(containerId));
 
   // Reset selection if this container was selected
   if (state.data.overstockContainerUi?.selectedId === containerId) {
@@ -3554,6 +3605,9 @@ function deleteOverstockEntry(entryId) {
   if (idx === -1) return { ok: false, reason: 'not_found' };
   const row = entries[idx];
   state.data.overstockEntries = entries.filter(r => r.id !== entryId);
+  // Tombstone so the merge removes it server-side
+  if (!Array.isArray(state.data.__deletedOverstockEntryIds)) state.data.__deletedOverstockEntryIds = [];
+  state.data.__deletedOverstockEntryIds.push(String(entryId));
   persistData();
   osLogDelete('entry', {
     id: entryId,

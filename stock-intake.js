@@ -106,9 +106,81 @@
   }
 
   function getCurrentUser() {
+    // For Stock Intake we prefer the per-tablet temp identity if set —
+    // that's the name the associate picked when they started using the
+    // tablet. Falls back to the authenticated user.
+    try {
+      const temp = localStorage.getItem(TEMP_IDENTITY_KEY);
+      if (temp && temp.trim()) return temp.trim();
+    } catch (_) {}
     try {
       return window.state?.currentUser || JSON.parse(localStorage.getItem('hcAuthUser') || '{}').name || '';
     } catch (_) { return ''; }
+  }
+
+  // ── Temp identity (per-tablet) ─────────────────────────────────────────
+  // The intake push uses one shared login across many tablets. Each tablet
+  // picks a "who am I today" identity that gets tagged on every entry, so
+  // we know which associate actually logged each PO.
+  const TEMP_IDENTITY_KEY = 'hc_stock_intake_temp_identity_v1';
+  function getTempIdentity() {
+    try { return (localStorage.getItem(TEMP_IDENTITY_KEY) || '').trim(); }
+    catch (_) { return ''; }
+  }
+  function setTempIdentity(name) {
+    const clean = String(name || '').trim();
+    if (!clean) return;
+    try { localStorage.setItem(TEMP_IDENTITY_KEY, clean); } catch (_) {}
+  }
+  function clearTempIdentity() {
+    try { localStorage.removeItem(TEMP_IDENTITY_KEY); } catch (_) {}
+  }
+  // Pull the master associate list (same source the attendance / regular
+  // overstock form uses), with a fallback.
+  function getIdentityCandidates() {
+    try {
+      const fromMaster = window.state?.masters?.associates;
+      if (Array.isArray(fromMaster) && fromMaster.length) return fromMaster;
+    } catch (_) {}
+    return [];
+  }
+  function renderIdentityGrid() {
+    const grid = el('stockIntakeIdentityGrid');
+    if (!grid) return;
+    const names = getIdentityCandidates();
+    if (!names.length) {
+      grid.innerHTML = `<div class="si-identity-empty">No names in the roster. Type one below.</div>`;
+      return;
+    }
+    grid.innerHTML = names.map(n => `
+      <button type="button" class="si-identity-btn" data-identity="${escapeHtml(n)}">${escapeHtml(n)}</button>
+    `).join('');
+    grid.querySelectorAll('[data-identity]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const name = btn.getAttribute('data-identity');
+        applyIdentity(name);
+      });
+    });
+  }
+  function applyIdentity(name) {
+    const clean = String(name || '').trim();
+    if (!clean) { showToast('Please enter a name.', 'error'); return; }
+    setTempIdentity(clean);
+    updateActiveUserChip();
+    showStep('container');
+    setTimeout(() => el('stockIntakeContainerInput')?.focus(), 80);
+  }
+  function updateActiveUserChip() {
+    const chip = el('stockIntakeActiveUser');
+    const nameEl = el('stockIntakeActiveUserName');
+    const name = getTempIdentity();
+    if (!chip || !nameEl) return;
+    if (name) {
+      nameEl.textContent = name;
+      chip.hidden = false;
+    } else {
+      chip.hidden = true;
+    }
   }
 
   // ── Session ledger persistence ──────────────────────────────────────────
@@ -168,14 +240,22 @@
 
   // ── Step transitions ───────────────────────────────────────────────────
   function showStep(which) {
-    const stepC = el('stockIntakeStepContainer');
-    const stepI = el('stockIntakeStepItems');
+    const stepId = el('stockIntakeStepIdentity');
+    const stepC  = el('stockIntakeStepContainer');
+    const stepI  = el('stockIntakeStepItems');
     if (!stepC || !stepI) return;
-    if (which === 'items') {
+    if (which === 'identity') {
+      if (stepId) stepId.hidden = false;
+      stepC.hidden = true;
+      stepI.hidden = true;
+      setTimeout(() => el('stockIntakeIdentityCustom')?.focus({ preventScroll: true }), 50);
+    } else if (which === 'items') {
+      if (stepId) stepId.hidden = true;
       stepC.hidden = true;
       stepI.hidden = false;
       setTimeout(() => el('stockIntakeItemPo')?.focus(), 50);
     } else {
+      if (stepId) stepId.hidden = true;
       stepC.hidden = false;
       stepI.hidden = true;
       setTimeout(() => el('stockIntakeContainerInput')?.focus(), 50);
@@ -704,6 +784,15 @@
     showStep('container');
     renderStats();
     renderRecentList();
+    updateActiveUserChip();
+    renderIdentityGrid();
+
+    // If no temp identity has been picked yet on this tablet, gate the user
+    // to the identity step first. They MUST pick a name before they can add
+    // entries — this is what powers accountability for the bulk intake push.
+    if (!getTempIdentity()) {
+      showStep('identity');
+    }
 
     overlay.hidden = false;
     document.body.style.overflow = 'hidden';
@@ -756,6 +845,36 @@
 
     // End-session button
     el('stockIntakeEndBtn')?.addEventListener('click', endSession);
+
+    // Identity: custom name entry
+    el('stockIntakeIdentityCustomBtn')?.addEventListener('click', () => {
+      const input = el('stockIntakeIdentityCustom');
+      applyIdentity(input?.value || '');
+    });
+    el('stockIntakeIdentityCustom')?.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        applyIdentity(ev.target.value || '');
+      }
+    });
+
+    // Switch user — clears the tablet's temp identity and returns to Step 0.
+    // Use case: associate hands the tablet off to a colleague.
+    el('stockIntakeSwitchUserBtn')?.addEventListener('click', () => {
+      if (!confirm('Switch the tablet to a different associate?\n\nThis will end your current session and the next person will pick their own name.')) return;
+      clearTempIdentity();
+      // Treat this like an End Session — flush + clear ledger, then re-show identity
+      clearSessionLedger();
+      session = {
+        activeContainerId: null, activeContainerCode: '', activeContainerLocation: '',
+        recentEntries: [], itemsAdded: 0, containersTouched: new Set(), startedAt: null,
+      };
+      updateActiveUserChip();
+      renderStats();
+      renderRecentList();
+      renderIdentityGrid();
+      showStep('identity');
+    });
 
     // Switch container — return to Step 1 (session stays intact)
     el('stockIntakeSwitchContainerBtn')?.addEventListener('click', () => {
