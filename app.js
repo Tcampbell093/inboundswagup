@@ -171,6 +171,16 @@ function applyWorkflowSyncPayload(payload={}){
     const pendingDeletedEntries    = Array.isArray(state.data?.__deletedOverstockEntryIds)    ? state.data.__deletedOverstockEntryIds.slice()    : [];
     const pendingDeletedContainers = Array.isArray(state.data?.__deletedOverstockContainerIds) ? state.data.__deletedOverstockContainerIds.slice() : [];
 
+    // Snapshot the current local overstock rows BEFORE we overwrite state.data
+    // with the incoming payload. These are needed to recover any rows that
+    // were added locally during the in-flight window of a sync POST: the POST
+    // body was serialized before those rows existed, so the server echo (and
+    // a concurrent GET poll) won't contain them. Blindly replacing the arrays
+    // would silently drop those just-added entries (the "entered 6, count
+    // says 5" bug). We merge them back in below.
+    const localOverstockEntries    = Array.isArray(state.data?.overstockEntries)    ? state.data.overstockEntries.slice()    : [];
+    const localOverstockContainers = Array.isArray(state.data?.overstockContainers) ? state.data.overstockContainers.slice() : [];
+
     // Tombstone arrays may contain bare IDs (from local deletes that haven't
     // been to the server yet) OR { id, ts } objects (from server-returned
     // persistent tombstones). This helper extracts a clean string id from either.
@@ -225,6 +235,35 @@ function applyWorkflowSyncPayload(payload={}){
     const skipC = new Set(mergedContainerTombs.map(tombId).filter(Boolean));
     if (skipE.size) state.data.overstockEntries    = state.data.overstockEntries.filter(r => !skipE.has(String(r.id)));
     if (skipC.size) state.data.overstockContainers = state.data.overstockContainers.filter(c => !skipC.has(String(c.id)));
+
+    // Merge local-only overstock rows back in. A sync response (the echo of
+    // our own POST, or a GET poll) can be missing rows that were added locally
+    // after that request's body was serialized — the in-flight window. Without
+    // this, those rows are wiped from state.data and, because the next sync
+    // POSTs the shrunken list, they never reach the server either. We union by
+    // id: re-add any local row the incoming payload omits, and keep the newer
+    // of the two (by updatedAt/createdAt) when both have it — never resurrect a
+    // tombstoned id. The server already does an equivalent merge across
+    // tablets; this closes the same gap on the client for its own writes.
+    const mergeLocalOverstockRows = (incoming, local, skip) => {
+      const byId = new Map();
+      (Array.isArray(incoming) ? incoming : []).forEach(r => {
+        if (r && r.id != null) byId.set(String(r.id), r);
+      });
+      (Array.isArray(local) ? local : []).forEach(r => {
+        if (!r || r.id == null) return;
+        const id = String(r.id);
+        if (skip.has(id)) return; // tombstoned — don't resurrect
+        const inc = byId.get(id);
+        if (!inc) { byId.set(id, r); return; } // local-only add the payload missed
+        const localTs = Number(r.updatedAt || r.createdAt || 0);
+        const incTs   = Number(inc.updatedAt || inc.createdAt || 0);
+        if (localTs > incTs) byId.set(id, r); // local edit not yet synced
+      });
+      return [...byId.values()];
+    };
+    state.data.overstockEntries    = mergeLocalOverstockRows(state.data.overstockEntries, localOverstockEntries, skipE);
+    state.data.overstockContainers = mergeLocalOverstockRows(state.data.overstockContainers, localOverstockContainers, skipC);
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
   }
