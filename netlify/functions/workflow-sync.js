@@ -122,44 +122,72 @@ exports.handler = async function handler(event) {
       //
       //   - Adds (IDs present in incoming, not in server): added to server
       //   - Edits (same ID in both): newer updatedAt wins
-      //   - Deletes (server-side ID not in incoming): KEPT, unless the client
-      //     explicitly tombstoned it via __deletedOverstockEntryIds /
-      //     __deletedOverstockContainerIds. Missing-from-POST is NOT enough
-      //     to delete, because another tablet might have added it after this
-      //     client's last GET.
+      //   - Deletes are PERSISTED on the server as timestamped tombstones
+      //     (not stripped after one apply), so that ANY client POSTing a
+      //     stale copy of a deleted item will have that item filtered out.
+      //     Tombstones expire after 24 hours so the list doesn't grow.
       //
-      // After applying tombstones, we clear them from the merged result so
-      // they don't grow unbounded over time. Clients clear their own local
-      // tombstones based on the response.
+      // Tombstone shape stored on server: { id, ts } where ts is epoch ms.
+      // Incoming tombstones from clients are normalized to this shape on
+      // the way in, then merged with existing server-side tombstones.
       try {
         const currentResult = await pool.query(
           `SELECT data_json FROM workflow_sync_state WHERE state_key='default' LIMIT 1;`
         );
         const serverData = currentResult.rows[0]?.data_json || {};
 
+        const TOMBSTONE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+        const now = Date.now();
+
+        // Normalize tombstone arrays to { id, ts } shape. Accepts both legacy
+        // bare-id arrays (from older clients) and the new objects.
+        function normalizeTombstones(arr) {
+          if (!Array.isArray(arr)) return [];
+          return arr.map(t => {
+            if (t && typeof t === 'object' && t.id) return { id: String(t.id), ts: Number(t.ts || now) };
+            if (t) return { id: String(t), ts: now }; // bare id from legacy client
+            return null;
+          }).filter(Boolean);
+        }
+        // Merge two tombstone arrays, keeping the newest ts per id and
+        // dropping anything past TTL.
+        function mergeTombstones(a, b) {
+          const map = new Map();
+          for (const t of [...a, ...b]) {
+            if (!t || !t.id) continue;
+            if (now - t.ts > TOMBSTONE_TTL_MS) continue; // expired
+            const prev = map.get(t.id);
+            if (!prev || t.ts > prev.ts) map.set(t.id, t);
+          }
+          return [...map.values()];
+        }
+
+        // Compute merged tombstones for entries + containers
+        const incomingEntryTombs    = normalizeTombstones(data.__deletedOverstockEntryIds);
+        const serverEntryTombs      = normalizeTombstones(serverData.__deletedOverstockEntryIds);
+        const mergedEntryTombs      = mergeTombstones(incomingEntryTombs, serverEntryTombs);
+        const deletedEntryIds       = new Set(mergedEntryTombs.map(t => t.id));
+
+        const incomingContainerTombs = normalizeTombstones(data.__deletedOverstockContainerIds);
+        const serverContainerTombs   = normalizeTombstones(serverData.__deletedOverstockContainerIds);
+        const mergedContainerTombs   = mergeTombstones(incomingContainerTombs, serverContainerTombs);
+        const deletedContainerIds    = new Set(mergedContainerTombs.map(t => t.id));
+
         // Merge overstockEntries
         const incomingEntries = Array.isArray(data.overstockEntries) ? data.overstockEntries : [];
         const serverEntries   = Array.isArray(serverData.overstockEntries) ? serverData.overstockEntries : [];
-        const deletedEntryIds = new Set(
-          (Array.isArray(data.__deletedOverstockEntryIds) ? data.__deletedOverstockEntryIds : [])
-            .concat(Array.isArray(serverData.__deletedOverstockEntryIds) ? serverData.__deletedOverstockEntryIds : [])
-            .map(String)
-        );
         const entryMap = new Map();
-        // Start with server entries
         for (const e of serverEntries) {
           if (e && e.id && !deletedEntryIds.has(String(e.id))) entryMap.set(String(e.id), e);
         }
-        // Merge incoming
         for (const e of incomingEntries) {
           if (!e || !e.id) continue;
           const id = String(e.id);
-          if (deletedEntryIds.has(id)) continue; // explicit delete wins
+          if (deletedEntryIds.has(id)) continue; // tombstoned — block resurrection
           const existing = entryMap.get(id);
           if (!existing) {
             entryMap.set(id, e);
           } else {
-            // Newer updatedAt wins; fallback to createdAt; fallback to incoming.
             const incomingTs = Number(e.updatedAt || e.createdAt || 0);
             const existingTs = Number(existing.updatedAt || existing.createdAt || 0);
             entryMap.set(id, incomingTs >= existingTs ? e : existing);
@@ -167,14 +195,9 @@ exports.handler = async function handler(event) {
         }
         data.overstockEntries = [...entryMap.values()];
 
-        // Merge overstockContainers (same pattern)
+        // Merge overstockContainers
         const incomingContainers = Array.isArray(data.overstockContainers) ? data.overstockContainers : [];
         const serverContainers   = Array.isArray(serverData.overstockContainers) ? serverData.overstockContainers : [];
-        const deletedContainerIds = new Set(
-          (Array.isArray(data.__deletedOverstockContainerIds) ? data.__deletedOverstockContainerIds : [])
-            .concat(Array.isArray(serverData.__deletedOverstockContainerIds) ? serverData.__deletedOverstockContainerIds : [])
-            .map(String)
-        );
         const containerMap = new Map();
         for (const c of serverContainers) {
           if (c && c.id && !deletedContainerIds.has(String(c.id))) containerMap.set(String(c.id), c);
@@ -194,10 +217,12 @@ exports.handler = async function handler(event) {
         }
         data.overstockContainers = [...containerMap.values()];
 
-        // Clear tombstones from the merged result. The client clears its own
-        // local tombstones based on the response.
-        delete data.__deletedOverstockEntryIds;
-        delete data.__deletedOverstockContainerIds;
+        // Persist merged tombstones on the server (24h rolling window). This is
+        // the key change from the previous version — we no longer strip them
+        // after applying. They stay around to block resurrection by stale
+        // clients that haven't seen the delete yet.
+        data.__deletedOverstockEntryIds     = mergedEntryTombs;
+        data.__deletedOverstockContainerIds = mergedContainerTombs;
       } catch (mergeErr) {
         // If merge fails for any reason, fall back to the original full-state
         // overwrite behavior — don't break sync entirely. Log for debugging.
