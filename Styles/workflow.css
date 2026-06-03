@@ -3807,3 +3807,37 @@ font-weight:800
   }
   .si-active-count{align-self:flex-end;}
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   OVERSTOCK DELETE BUTTONS — trash icon on container cards + danger
+   variant on the inline buttons inside the location modal.
+   ════════════════════════════════════════════════════════════════════ */
+.os-trash-btn{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:30px; height:30px;
+  background:#fff; color:#991b1b;
+  border:1px solid #fecaca; border-radius:7px;
+  font-size:13px; line-height:1;
+  cursor:pointer;
+  padding:0;
+  transition:background .14s, border-color .14s, color .14s;
+  flex-shrink:0;
+}
+.os-trash-btn:hover{
+  background:#fef2f2;
+  border-color:#fca5a5;
+}
+.os-trash-btn:active{
+  background:#fee2e2;
+}
+
+/* Inline danger button (e.g., "Delete" inside the location modal) */
+.os-ghost-btn.os-danger-btn{
+  background:#fff; color:#991b1b;
+  border:1px solid #fecaca;
+}
+.os-ghost-btn.os-danger-btn:hover{
+  background:#fef2f2;
+  border-color:#fca5a5;
+  color:#7f1d1d;
+}
