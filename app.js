@@ -4094,12 +4094,13 @@ function osOpenAudit(loc, containerId) {
       return `<div class="os-audit-row" id="osAuRow_${escapeAttribute(r.id)}">
         <div class="os-audit-info">
           <div class="os-audit-code">PO# ${escapeHtml(r.po)}</div>
-          <div class="os-audit-meta">${Number(r.quantity || 0)} units · ${escapeHtml(r.category || '—')}${containerLabel}</div>
+          <div class="os-audit-meta" id="osAuMeta_${escapeAttribute(r.id)}">${Number(r.quantity || 0)} units · ${escapeHtml(r.category || '—')}${containerLabel}</div>
           ${r.sourcePalletLabel ? `<div class="os-audit-pos">${escapeHtml(r.sourcePalletLabel)}</div>` : ''}
         </div>
         <div class="os-audit-actions">
           <button class="os-audit-btn os-audit-btn-ok" data-audit-confirm="${escapeAttribute(r.id)}" type="button">Still here</button>
           <button class="os-audit-btn os-audit-btn-missing" data-audit-remove="${escapeAttribute(r.id)}" type="button">Not here</button>
+          <button class="os-audit-btn os-audit-btn-edit" data-audit-edit-qty="${escapeAttribute(r.id)}" type="button" title="Edit quantity" aria-label="Edit quantity">✎ Edit qty</button>
         </div>
       </div>
       <!-- Removal reason panel — hidden by default -->
@@ -4145,6 +4146,71 @@ function osOpenAudit(loc, containerId) {
         if (panel) panel.style.display = 'block';
         btn.closest('.os-audit-actions').innerHTML =
           `<div class="os-audit-status-label" style="color:#991b1b;">Select reason ↓</div>`;
+      });
+    });
+
+    // Wire "edit qty" — inline editor for the quantity. Common correction
+    // when the associate later realizes they miscounted ("5 not 4").
+    body.querySelectorAll('[data-audit-edit-qty]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const entryId = btn.dataset.auditEditQty;
+        const entry = (state.data.overstockEntries || []).find(r => r.id === entryId);
+        if (!entry) return;
+        const meta = document.getElementById(`osAuMeta_${entryId}`);
+        const actions = btn.closest('.os-audit-actions');
+        if (!meta || !actions) return;
+        const originalMeta = meta.innerHTML;
+        const originalActions = actions.innerHTML;
+        meta.innerHTML = `
+          <span style="font-size:12px;color:#475569;">New qty:</span>
+          <input type="number" min="1" step="1" inputmode="numeric" value="${entry.quantity}" class="os-input" style="width:84px;height:34px;padding:4px 8px;font-size:14px;font-weight:700;display:inline-block;margin:0 6px;" id="osAuEditInput_${escapeAttribute(entryId)}" />
+          <span style="font-size:12px;color:var(--muted);">(was ${entry.quantity})</span>
+        `;
+        actions.innerHTML = `
+          <button class="os-audit-btn os-audit-btn-ok" data-audit-save-qty="${escapeAttribute(entryId)}" type="button">Save</button>
+          <button class="os-audit-btn" data-audit-cancel-edit="${escapeAttribute(entryId)}" type="button" style="background:#fff;color:#475569;border:1px solid #cbd5e1;">Cancel</button>
+        `;
+        const input = document.getElementById(`osAuEditInput_${entryId}`);
+        if (input) { input.focus(); input.select(); }
+
+        actions.querySelector('[data-audit-save-qty]').addEventListener('click', () => {
+          const newQty = Math.max(1, Math.floor(Number(input?.value || 0)));
+          if (!newQty) { alert('Quantity must be at least 1.'); return; }
+          const oldQty = entry.quantity;
+          if (newQty === oldQty) {
+            meta.innerHTML = originalMeta;
+            actions.innerHTML = originalActions;
+            renderAuditBody(); // rebind handlers
+            return;
+          }
+          entry.quantity = newQty;
+          entry.updatedAt = Date.now();
+          // Clear sizeBreakdown if it no longer matches qty
+          if (entry.sizeBreakdown && Object.keys(entry.sizeBreakdown).length) {
+            const total = Object.values(entry.sizeBreakdown).reduce((s,n)=>s+Number(n||0),0);
+            if (total !== newQty) entry.sizeBreakdown = undefined;
+          }
+          // Log the edit
+          try {
+            const KEY = 'hc_overstock_delete_log_v1';
+            const log = JSON.parse(localStorage.getItem(KEY) || '[]');
+            log.unshift({
+              ts: Date.now(),
+              by: (window.hcCurrentUser?.name || window.hcCurrentUser?.email || state.currentUser || 'unknown'),
+              kind: 'edit-qty',
+              payload: { id: entryId, po: entry.po, containerCode: entry.containerCode, from: oldQty, to: newQty, where: 'audit' },
+            });
+            localStorage.setItem(KEY, JSON.stringify(log.slice(0, 500)));
+          } catch (_) {}
+          persistData();
+          renderOverstockPage();
+          renderAuditBody(); // re-render the audit list to reflect new qty + restore actions
+        });
+        actions.querySelector('[data-audit-cancel-edit]').addEventListener('click', () => {
+          meta.innerHTML = originalMeta;
+          actions.innerHTML = originalActions;
+          renderAuditBody();
+        });
       });
     });
 
@@ -4351,10 +4417,15 @@ function renderOverstockPage() {
       const boxes = locBoxMap[loc] || [];
       const units = boxes.flatMap(c => getOverstockContainerItems(c.id)).reduce((s,r)=>s+Number(r.quantity||0),0);
       const isEmpty = boxes.length === 0;
-      return `<div class="os-loc${isEmpty ? ' os-loc-empty' : ' os-loc-occ'}" data-loc="${escapeAttribute(loc)}" role="button" tabindex="0">
+      // A location can be "occupied by empty containers" — a box is there but
+      // no POs are logged inside it. Surface this so the warehouse team can
+      // either fill it or delete the empty box.
+      const hasOnlyEmptyBoxes = boxes.length > 0 && units === 0;
+      return `<div class="os-loc${isEmpty ? ' os-loc-empty' : ' os-loc-occ'}${hasOnlyEmptyBoxes ? ' os-loc-empty-bx' : ''}" data-loc="${escapeAttribute(loc)}" role="button" tabindex="0">
         <div class="os-loc-name">${loc}</div>
         <div class="os-loc-count">${boxes.length ? boxes.length+'bx' : 'free'}</div>
         ${units ? `<div style="font-size:9px;color:var(--muted);">${units}u</div>` : ''}
+        ${hasOnlyEmptyBoxes ? `<div style="font-size:9px;color:#92400e;font-weight:700;">empty</div>` : ''}
       </div>`;
     }).join('');
 

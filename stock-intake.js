@@ -111,6 +111,50 @@
     } catch (_) { return ''; }
   }
 
+  // ── Session ledger persistence ──────────────────────────────────────────
+  // The session lives in module-local memory by default, which means
+  // refreshing the tablet wipes the "Recent entries" list. For a long
+  // intake day, that's annoying — associates want to verify what they've
+  // done. Persist to localStorage so the ledger survives reload.
+  // Each tablet has its own ledger (keyed by current user) so two tablets
+  // don't show each other's session counts.
+  const SESSION_KEY_PREFIX = 'hc_stock_intake_session_v1::';
+  function sessionKey() {
+    const u = getCurrentUser() || 'anon';
+    return SESSION_KEY_PREFIX + u;
+  }
+  function persistSessionLedger() {
+    try {
+      const data = {
+        startedAt: session.startedAt,
+        itemsAdded: session.itemsAdded,
+        containersTouched: Array.from(session.containersTouched),
+        recentEntries: session.recentEntries,
+        activeContainerId: session.activeContainerId,
+        activeContainerCode: session.activeContainerCode,
+        activeContainerLocation: session.activeContainerLocation,
+      };
+      localStorage.setItem(sessionKey(), JSON.stringify(data));
+    } catch (_) {}
+  }
+  function loadSessionLedger() {
+    try {
+      const raw = localStorage.getItem(sessionKey());
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      // Stale-session guard — if the saved session is older than 12 hours,
+      // discard it. Probably yesterday's work.
+      if (parsed.startedAt && Date.now() - parsed.startedAt > 12 * 60 * 60 * 1000) {
+        return null;
+      }
+      return parsed;
+    } catch (_) { return null; }
+  }
+  function clearSessionLedger() {
+    try { localStorage.removeItem(sessionKey()); } catch (_) {}
+  }
+
   // ── Container resolution ───────────────────────────────────────────────
   // Look up a container by normalized code. Returns null if not found.
   function findContainerByCode(code) {
@@ -206,12 +250,13 @@
       <li class="si-recent-item" data-entry-id="${escapeHtml(e.id)}">
         <div class="si-recent-main">
           <span class="si-recent-po">PO# ${escapeHtml(e.po)}</span>
-          <span class="si-recent-qty">${e.qty} ${e.qty === 1 ? 'unit' : 'units'}</span>
+          <span class="si-recent-qty" data-qty-display="${escapeHtml(e.id)}">${e.qty} ${e.qty === 1 ? 'unit' : 'units'}</span>
           ${e.category ? `<span class="si-recent-cat">${escapeHtml(e.category)}</span>` : ''}
         </div>
         <div class="si-recent-meta">
           <span class="si-recent-cont">${escapeHtml(e.containerCode)}</span>
           <span class="si-recent-time">${fmtTimeShort(e.ts)}</span>
+          <button type="button" class="si-recent-edit" data-edit-id="${escapeHtml(e.id)}" aria-label="Edit quantity" title="Edit quantity">✎</button>
           <button type="button" class="si-recent-del" data-del-id="${escapeHtml(e.id)}" aria-label="Remove this entry">×</button>
         </div>
       </li>
@@ -223,6 +268,101 @@
         const id = btn.getAttribute('data-del-id');
         deleteEntry(id);
       });
+    });
+    // Wire edit buttons (inline qty edit — most common correction)
+    list.querySelectorAll('[data-edit-id]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-edit-id');
+        startInlineEdit(id);
+      });
+    });
+  }
+
+  // ── Inline edit a recent entry (qty only — the most common correction) ─
+  // Replaces the qty display with an input + Save/Cancel. Updates both the
+  // session list and state.data.overstockEntries on save.
+  function startInlineEdit(entryId) {
+    if (!entryId) return;
+    const sessionEntry = session.recentEntries.find(e => e.id === entryId);
+    if (!sessionEntry) return;
+
+    const li = document.querySelector(`.si-recent-item[data-entry-id="${entryId}"]`);
+    if (!li) return;
+
+    // Build an editor inside the row
+    const main = li.querySelector('.si-recent-main');
+    if (!main) return;
+    const originalHTML = main.innerHTML;
+
+    main.innerHTML = `
+      <span class="si-recent-po">PO# ${escapeHtml(sessionEntry.po)}</span>
+      <input type="number" class="si-recent-qty-input" inputmode="numeric" min="1" step="1" value="${escapeHtml(sessionEntry.qty)}" aria-label="New quantity" />
+      <button type="button" class="si-recent-save">Save</button>
+      <button type="button" class="si-recent-cancel">Cancel</button>
+    `;
+    const input  = main.querySelector('.si-recent-qty-input');
+    const save   = main.querySelector('.si-recent-save');
+    const cancel = main.querySelector('.si-recent-cancel');
+    if (input) { input.focus(); input.select(); }
+
+    function commit() {
+      const newQty = Math.max(0, Math.floor(Number(input?.value || 0)));
+      if (!newQty) { showToast('Quantity must be at least 1.', 'error'); input?.focus(); return; }
+      if (newQty === sessionEntry.qty) { main.innerHTML = originalHTML; return; }
+
+      // Update state.data.overstockEntries
+      try {
+        const arr = window.state?.data?.overstockEntries || [];
+        const row = arr.find(r => r.id === entryId);
+        if (row) {
+          const oldQty = row.quantity;
+          row.quantity = newQty;
+          row.updatedAt = Date.now();
+          // If sizes were set previously, they may no longer match — clear them
+          // since a manual qty edit invalidates the breakdown.
+          if (row.sizeBreakdown && Object.keys(row.sizeBreakdown).length) {
+            const total = Object.values(row.sizeBreakdown).reduce((s, n) => s + Number(n || 0), 0);
+            if (total !== newQty) {
+              row.sizeBreakdown = undefined;
+            }
+          }
+          // Log the edit for audit
+          if (typeof window.osLogDelete === 'function') {
+            // Reuse the existing audit log writer for edits too
+          }
+          try {
+            const KEY = 'hc_overstock_delete_log_v1';
+            const log = JSON.parse(localStorage.getItem(KEY) || '[]');
+            log.unshift({
+              ts: Date.now(),
+              by: getCurrentUser() || 'unknown',
+              kind: 'edit-qty',
+              payload: { id: entryId, po: row.po, containerCode: row.containerCode, from: oldQty, to: newQty },
+            });
+            localStorage.setItem(KEY, JSON.stringify(log.slice(0, 500)));
+          } catch (_) {}
+
+          if (typeof window.persistData === 'function') window.persistData();
+        }
+      } catch (_) {}
+
+      // Update session
+      sessionEntry.qty = newQty;
+      persistSessionLedger();
+
+      // Refresh UI
+      renderActiveBanner();
+      renderRecentList();
+      if (typeof window.renderOverstockPage === 'function') {
+        try { window.renderOverstockPage(); } catch (_) {}
+      }
+    }
+
+    save?.addEventListener('click', commit);
+    cancel?.addEventListener('click', () => { main.innerHTML = originalHTML; renderRecentList(); });
+    input?.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter')  { ev.preventDefault(); commit(); }
+      if (ev.key === 'Escape') { ev.preventDefault(); main.innerHTML = originalHTML; renderRecentList(); }
     });
   }
 
@@ -299,6 +439,7 @@
     session.activeContainerLocation = container.currentLocation || rawLoc;
     session.containersTouched.add(container.id);
     if (!session.startedAt) session.startedAt = Date.now();
+    persistSessionLedger();
 
     renderActiveBanner();
     renderStats();
@@ -324,6 +465,26 @@
 
     if (!po) { showToast('Enter a PO number.', 'error'); poInput?.focus(); return; }
     if (!qty) { showToast('Enter a quantity.', 'error'); qtyInput?.focus(); return; }
+
+    // Duplicate-in-container check. Warn (don't block) if this PO already
+    // exists in the active container — protects against accidental double-Add
+    // taps and the "did I already do this one?" mistake. Looks at the live
+    // data layer, not just the session, so it works across reloads too.
+    try {
+      const existing = (window.state?.data?.overstockEntries || []).find(r =>
+        r.containerId === session.activeContainerId &&
+        String(r.po).trim().toUpperCase() === po.toUpperCase()
+      );
+      if (existing) {
+        const proceed = confirm(
+          `PO# ${po} is already in this container with ${existing.quantity} units.\n\n` +
+          `Click OK to add another ${qty}-unit entry anyway (will become a separate line),\n` +
+          `or Cancel to back out.\n\n` +
+          `If you meant to CHANGE the quantity, cancel and use the pencil icon ✎ on the existing entry instead.`
+        );
+        if (!proceed) { poInput?.focus(); poInput?.select(); return; }
+      }
+    } catch (_) {}
 
     // Build size breakdown if Apparel
     let sizeBreakdown;
@@ -380,6 +541,7 @@
       containerCode: session.activeContainerCode,
       ts: Date.now(),
     });
+    persistSessionLedger();
     renderActiveBanner();
     renderStats();
     renderRecentList();
@@ -423,6 +585,7 @@
       session.recentEntries.splice(sIdx, 1);
       session.itemsAdded = Math.max(0, session.itemsAdded - 1);
     }
+    persistSessionLedger();
     renderActiveBanner();
     renderStats();
     renderRecentList();
@@ -447,7 +610,7 @@
       }
     } catch (_) {}
 
-    // Reset session
+    // Reset session, then try to resume from a saved ledger
     session = {
       activeContainerId: null,
       activeContainerCode: '',
@@ -457,6 +620,38 @@
       containersTouched: new Set(),
       startedAt: null,
     };
+
+    // If a saved session exists (same user, within 12 hours), offer to resume.
+    // This solves: the tablet got refreshed mid-day, the team wants to keep
+    // their running totals + recent entries visible.
+    const saved = loadSessionLedger();
+    if (saved && Array.isArray(saved.recentEntries) && saved.recentEntries.length) {
+      const startedTxt = saved.startedAt ? fmtTimeShort(saved.startedAt) : 'earlier';
+      const resume = confirm(
+        `Resume your in-progress session?\n\n` +
+        `You have ${saved.itemsAdded || 0} item${saved.itemsAdded === 1 ? '' : 's'} added across ` +
+        `${(saved.containersTouched || []).length} container${(saved.containersTouched || []).length === 1 ? '' : 's'} ` +
+        `since ${startedTxt}.\n\n` +
+        `OK = Resume.  Cancel = Start fresh.`
+      );
+      if (resume) {
+        session.startedAt = saved.startedAt || Date.now();
+        session.itemsAdded = saved.itemsAdded || 0;
+        session.containersTouched = new Set(saved.containersTouched || []);
+        // Filter the recent entries to only those that still exist in the data
+        // layer — protects against showing zombie entries that were removed.
+        const liveIds = new Set((window.state?.data?.overstockEntries || []).map(r => r.id));
+        session.recentEntries = (saved.recentEntries || []).filter(e => liveIds.has(e.id));
+        // If we lost some entries to filtering, inform the user honestly
+        const lost = (saved.recentEntries || []).length - session.recentEntries.length;
+        if (lost > 0) {
+          setTimeout(() => alert(`Note: ${lost} entr${lost === 1 ? 'y' : 'ies'} from your saved session ${lost === 1 ? 'is' : 'are'} no longer in the system (deleted elsewhere or lost in sync). Your stats have been corrected.`), 100);
+          session.itemsAdded = Math.max(0, session.itemsAdded - lost);
+        }
+      } else {
+        clearSessionLedger();
+      }
+    }
 
     // Populate dropdowns (categories + location suggestions)
     const catSel = el('stockIntakeItemCategory');
@@ -491,9 +686,10 @@
 
   function endSession() {
     if (session.itemsAdded > 0) {
-      if (!confirm(`End session?\n\nYou added ${session.itemsAdded} item${session.itemsAdded === 1 ? '' : 's'} across ${session.containersTouched.size} container${session.containersTouched.size === 1 ? '' : 's'}.`)) return;
+      if (!confirm(`End session?\n\nYou added ${session.itemsAdded} item${session.itemsAdded === 1 ? '' : 's'} across ${session.containersTouched.size} container${session.containersTouched.size === 1 ? '' : 's'}.\n\nThis will clear your "Recent entries" ledger. Your data stays saved.`)) return;
       showToast(`Session ended — ${session.itemsAdded} items saved.`, 'success');
     }
+    clearSessionLedger();
     closeIntakeModal();
   }
 
