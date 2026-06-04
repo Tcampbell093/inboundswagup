@@ -488,34 +488,18 @@
         return;
       }
       try {
-        // Create with default values. createOverstockContainer fires its own
-        // persistData() which schedules a backend sync.
-        container = window.createOverstockContainer({ status: 'Stored' });
-
-        // Build the update object — code, barcode, currentLocation in a single
-        // pass. Going through updateOverstockContainer is critical because:
-        //   1. It uses Object.assign so the mutations apply atomically
-        //   2. It bumps updatedAt
-        //   3. It fires its own persistData() — meaning the backend sync that
-        //      gets scheduled INCLUDES these mutations. Previously we mutated
-        //      `container.code` and `container.currentLocation` directly after
-        //      createOverstockContainer's persist had already fired, leaving
-        //      a window where a poll could re-fetch the pre-mutation state
-        //      and wipe our changes. This caused the "PO is in the log but
-        //      not in the map" bug.
-        const updates = { currentLocation: rawLoc, status: 'Stored' };
-        if (/^OSC-\d+$/i.test(normalized)) {
-          updates.code = normalized;
-        } else {
-          updates.barcode = normalized;
-        }
-        if (typeof window.updateOverstockContainer === 'function') {
-          window.updateOverstockContainer(container.id, updates);
-        } else {
-          // Fallback if helper missing — direct mutate + persist
-          Object.assign(container, updates, { updatedAt: Date.now() });
-          if (typeof window.persistData === 'function') window.persistData();
-        }
+        // Create the container WITH its final code/barcode/location in one
+        // step. Passing the typed code straight to createOverstockContainer
+        // (rather than creating with an auto code and renaming afterward)
+        // removes the window where the auto code could persist/sync and stick —
+        // the bug where a box typed as OSC-001 showed a different code.
+        const isOsc = /^OSC-\d+$/i.test(normalized);
+        container = window.createOverstockContainer({
+          status: 'Stored',
+          currentLocation: rawLoc,
+          code:    isOsc ? normalized : '',
+          barcode: isOsc ? '' : normalized,
+        });
       } catch (e) {
         showToast('Failed to create container: ' + e.message, 'error');
         return;
@@ -562,18 +546,16 @@
             showToast('Wipe failed: delete helper unavailable.', 'error');
             return;
           }
-          // Now create a fresh container under the same code + location
+          // Now create a fresh container under the same code + location — again
+          // with the final code up front (no create-then-rename).
           try {
-            container = window.createOverstockContainer({ status: 'Stored' });
-            const freshUpdates = { currentLocation: rawLoc, status: 'Stored' };
-            if (/^OSC-\d+$/i.test(normalized)) {
-              freshUpdates.code = normalized;
-            } else {
-              freshUpdates.barcode = normalized;
-            }
-            if (typeof window.updateOverstockContainer === 'function') {
-              window.updateOverstockContainer(container.id, freshUpdates);
-            }
+            const isOsc = /^OSC-\d+$/i.test(normalized);
+            container = window.createOverstockContainer({
+              status: 'Stored',
+              currentLocation: rawLoc,
+              code:    isOsc ? normalized : '',
+              barcode: isOsc ? '' : normalized,
+            });
             showToast(`Wiped "${normalized}" — start fresh.`, 'success');
           } catch (e) {
             showToast('Failed to recreate container: ' + e.message, 'error');

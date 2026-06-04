@@ -3620,15 +3620,25 @@ function getSelectedOverstockContainer() {
   return (state.data.overstockContainers || []).find((c) => c.id === id) || null;
 }
 
-function createOverstockContainer({ status = "Open", notes = "" } = {}) {
+function createOverstockContainer({ status = "Open", notes = "", code = "", barcode = "", currentLocation = "" } = {}) {
   if (!Array.isArray(state.data.overstockContainers)) state.data.overstockContainers = [];
   if (!state.data.overstockContainerUi) state.data.overstockContainerUi = { selectedId: "", search: "" };
+  // Honor a caller-provided OSC code (e.g. the box label the associate typed in
+  // Stock Intake) by creating the container with that code UP FRONT. The old
+  // flow created with an auto code and renamed afterward — that two-step left a
+  // window where the auto code could persist/sync and stick, so a box typed as
+  // OSC-001 could end up showing a different code. Falls back to the next
+  // sequential auto code if none is given or it's already taken.
+  const wanted = String(code || "").trim().toUpperCase();
+  const isValidOsc = /^OSC-\d+$/.test(wanted);
+  const taken = isValidOsc && state.data.overstockContainers.some(c => String(c.code || '').toUpperCase() === wanted);
+  const finalCode = (isValidOsc && !taken) ? wanted : getNextOverstockContainerCode();
   const container = {
     id: makeId(),
-    code: getNextOverstockContainerCode(),
-    barcode: "",
+    code: finalCode,
+    barcode: barcode || "",
     status,
-    currentLocation: "",
+    currentLocation: currentLocation || "",
     notes: notes || "",
     createdBy: state.currentUser || "",
     createdAt: Date.now(),
