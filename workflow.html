@@ -75,6 +75,7 @@
           <button class="role-tab" data-page="putaway" data-i18n="tabPutaway">Putaway</button>
           <button class="role-tab" data-page="onhold">🚫 On Hold <span class="inb-tab-count" id="onHoldTabCount">0</span></button>
           <button class="role-tab" data-page="performance">Performance</button>
+          <button class="role-tab" data-page="stats">📈 Trends</button>
           <button class="role-tab" data-page="settings" data-i18n="tabSettings">Settings</button>
         </div>
         <button id="toggleSummaryBtn" class="inb-summary-btn" type="button">Show Summary</button>
@@ -705,6 +706,65 @@
       </section>
     </section>
 
+    <section class="page" id="page-stats">
+      <section class="panel performance-dept-shell">
+        <div class="panel-header panel-header-split">
+          <div>
+            <div class="eyebrow">Operations Trends</div>
+            <h2>Trends &amp; History</h2>
+            <p>How the warehouse is moving over time. Newer areas fill in as the daily snapshot accumulates history.</p>
+          </div>
+          <div class="performance-dept-switch" style="align-items:center;">
+            <select id="statsRange" class="os-filter-select" aria-label="Time range">
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="180" selected>Last 180 days</option>
+            </select>
+            <button class="secondary-btn" id="statsRefresh" type="button">Refresh</button>
+          </div>
+        </div>
+        <div id="statsStatus" class="os-panel-sub" style="padding:0 0 4px 2px;"></div>
+      </section>
+
+      <!-- Snapshot cards — latest captured values -->
+      <section class="panel">
+        <div class="stats-grid">
+          <article class="stat-card"><span class="stat-label">Overstock Units</span><strong id="statsCardOverstock">—</strong><p>Active units on the shelf (latest)</p></article>
+          <article class="stat-card"><span class="stat-label">Pallets Tracked</span><strong id="statsCardPallets">—</strong><p>In the workflow (latest)</p></article>
+          <article class="stat-card"><span class="stat-label">Headcount</span><strong id="statsCardHeadcount">—</strong><p>Marked present (latest day)</p></article>
+          <article class="stat-card"><span class="stat-label">Pipeline Units</span><strong id="statsCardPipelineUnits">—</strong><p>Open order units (latest)</p></article>
+          <article class="stat-card"><span class="stat-label">Pipeline Value</span><strong id="statsCardPipelineValue">—</strong><p>Open order $ (latest)</p></article>
+        </div>
+      </section>
+
+      <section class="performance-grid two-up">
+        <section class="panel">
+          <div class="panel-header"><div><div class="eyebrow">Order pipeline</div><h3>Units &amp; value over time</h3></div></div>
+          <div class="stats-chart-box"><canvas id="statsChartPipeline"></canvas><div class="stats-chart-note" id="statsNotePipeline"></div></div>
+        </section>
+        <section class="panel">
+          <div class="panel-header"><div><div class="eyebrow">Inbound activity</div><h3>Pallet events per day</h3></div></div>
+          <div class="stats-chart-box"><canvas id="statsChartInbound"></canvas><div class="stats-chart-note" id="statsNoteInbound"></div></div>
+        </section>
+      </section>
+
+      <section class="performance-grid two-up">
+        <section class="panel">
+          <div class="panel-header"><div><div class="eyebrow">Productivity</div><h3>Units touched &amp; cost per unit</h3></div></div>
+          <div class="stats-chart-box"><canvas id="statsChartProductivity"></canvas><div class="stats-chart-note" id="statsNoteProductivity"></div></div>
+        </section>
+        <section class="panel">
+          <div class="panel-header"><div><div class="eyebrow">Overstock</div><h3>Active units on shelf over time</h3></div></div>
+          <div class="stats-chart-box"><canvas id="statsChartOverstock"></canvas><div class="stats-chart-note" id="statsNoteOverstock"></div></div>
+        </section>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header"><div><div class="eyebrow">Staffing</div><h3>Headcount over time</h3></div></div>
+        <div class="stats-chart-box"><canvas id="statsChartHeadcount"></canvas><div class="stats-chart-note" id="statsNoteHeadcount"></div></div>
+      </section>
+    </section>
+
     <section class="page" id="page-settings">
       <section class="panel"><div class="panel-header"><div><h2 data-i18n="settingsMasterLists">Settings / Master Lists</h2><p data-i18n="settingsHelp">Associate names now come from Attendance. Manage categories and locations here so the rest of the workflow can use dropdowns.</p></div></div><div class="performance-grid three-up"><div class="settings-card"><div class="settings-card-header"><h3 data-i18n="categories">Categories</h3><form id="categoryForm" class="inline-master-form"><input id="categoryInput" type="text" /><button class="tiny-btn" type="submit" data-i18n="add">Add</button></form></div><div id="categoriesList" class="master-list"></div></div><div class="settings-card"><div class="settings-card-header"><h3 data-i18n="locations">Locations</h3><form id="locationForm" class="inline-master-form"><input id="locationInput" type="text" /><button class="tiny-btn" type="submit" data-i18n="add">Add</button></form></div><div id="locationsList" class="master-list"></div></div><div class="settings-card"><div class="settings-card-header"><h3>Putaway Locations</h3><form id="putawayLocationForm" class="inline-master-form"><input id="putawayLocationInput" type="text" placeholder="QA5-C1" /><button class="tiny-btn" type="submit">Add</button></form></div><div class="uph-pace-settings-copy" style="margin-bottom:10px;">Format: QA-QZ rows, bays 1-10, levels A-D, halves 1-2.</div><div id="putawayLocationsList" class="master-list"></div></div><div class="settings-card"><div class="settings-card-header"><h3>UPH Pace Images</h3></div>
         <div class="uph-pace-settings-copy">Upload custom images for the 4 UPH stages. These replace the default pace icons for this browser.</div>
@@ -784,6 +844,8 @@
 </div>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Chart.js powers the Trends tab (loaded from CDN like xlsx above). -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <!-- Authentication gate. Standalone (e.g. opening /workflow directly via a
        shared link or QR code) requires a signed-in session and redirects to
        login otherwise. When embedded in the portal it stays passive and just
@@ -791,6 +853,7 @@
   <script src="auth.js"></script>
   <script src="i18n.js"></script>
   <script src="app.js"></script>
+  <script src="stats-module.js"></script>
   <script src="inbound-pallets.js"></script>
   <script src="po-lookup.js"></script>
   <script src="stock-intake.js"></script>

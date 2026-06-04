@@ -9,3 +9,9 @@
 
 [functions."temp-admin-check"]
   schedule = "0 8 * * *"
+
+# Daily operations history capture — appends a dated summary row per metric
+# into daily_metrics so the stats page can draw real trend lines. 23:00 UTC
+# (~6–7pm ET) captures near the end of the warehouse day. Safe to re-run.
+[functions."ops-metrics-capture"]
+  schedule = "0 23 * * *"

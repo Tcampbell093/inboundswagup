@@ -5420,6 +5420,7 @@ function bindRoleTabs() {
     if (state.currentPage === "performance") renderPerformancePage();
     if (state.currentPage === "overstock") renderOverstockPage();
     if (state.currentPage === "putaway") renderPutawayPage();
+    if (state.currentPage === "stats" && typeof window.renderStatsPage === "function") window.renderStatsPage();
     // Re-render pallet panels whenever a tab is clicked (they are lazy-rendered)
     if (typeof plt_renderAllPanels === "function") plt_renderAllPanels();
     renderStats();
