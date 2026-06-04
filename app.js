@@ -3858,6 +3858,17 @@ function normalizeOverstockContainerScan(value) {
   return raw;
 }
 
+// Pull an OSC-### code out of arbitrary scanned text. The printed QR codes may
+// encode the bare code ("OSC-014"), or wrap it in a URL/extra characters — this
+// finds the code wherever it sits, then normalizes it. Falls back to the plain
+// normalizer for hand-typed input.
+function extractOscCode(text) {
+  const raw = String(text || "");
+  const m = raw.toUpperCase().match(/OSC-?0*\d+/);
+  if (m) return normalizeOverstockContainerScan(m[0]);
+  return normalizeOverstockContainerScan(raw);
+}
+
 function getOverstockContainerScanKeys(container) {
   const values = [container?.code, container?.barcode, container?.id].filter(Boolean);
   return values.flatMap((value) => {
@@ -3920,6 +3931,134 @@ function openOverstockAuditByContainerScan(value) {
   return true;
 }
 
+// ── Scan → choice (Add items vs Audit) ──────────────────────────────────
+// Entry point for every box-code resolution path (typed, hardware scanner,
+// camera). Instead of jumping straight into audit, it presents a choice so the
+// associate can either log items into the box or audit it. Works for codes
+// that don't exist yet too — boxes are pre-labeled OSC-001..300, so a fresh
+// box naturally routes to "Add items" (which creates it on first entry).
+function openOverstockScanChoice(value) {
+  const code = extractOscCode(value);
+  if (!code) {
+    setOverstockContainerLookupStatus("Scan or type a container code first.", "warning");
+    document.getElementById("overstockContainerLookupInput")?.focus();
+    return false;
+  }
+
+  const container = findOverstockContainerByScan(code);
+  const displayCode = container?.code || code;
+  const itemCount = container
+    ? (typeof getOverstockContainerItems === "function" ? getOverstockContainerItems(container.id).length : 0)
+    : 0;
+
+  const titleEl = document.getElementById("osScanChoiceTitle");
+  const subEl   = document.getElementById("osScanChoiceSub");
+  const addBtn  = document.getElementById("osScanChoiceAdd");
+  const auditBtn = document.getElementById("osScanChoiceAudit");
+  if (!titleEl || !addBtn || !auditBtn) {
+    // Modal markup missing — fall back to the old direct-audit behavior.
+    return openOverstockAuditByContainerScan(code);
+  }
+
+  titleEl.textContent = displayCode;
+  if (subEl) {
+    subEl.textContent = container
+      ? `${itemCount} item${itemCount === 1 ? "" : "s"}${container.currentLocation ? ` · ${container.currentLocation}` : " · on the cart"}`
+      : "New box — nothing logged here yet";
+  }
+
+  // Audit only makes sense if the box exists with contents; otherwise nudge
+  // toward Add items rather than opening an empty audit.
+  auditBtn.classList.toggle("os-scan-choice-disabled", !container);
+
+  addBtn.onclick = () => { osCloseModal("osMdScanChoice"); openOverstockAddItems(displayCode); };
+  auditBtn.onclick = () => {
+    if (!container) {
+      showToast(`No items logged in ${displayCode} yet — use "Add items".`, "info");
+      return;
+    }
+    osCloseModal("osMdScanChoice");
+    openOverstockAuditByContainerScan(displayCode);
+  };
+
+  setOverstockContainerLookupStatus(`Found ${displayCode}.`, "success");
+  osOpenModal("osMdScanChoice");
+  return true;
+}
+
+// Open the Stock Intake flow targeted at a specific box. Prefills the code
+// (and location, if the box already exists) so the associate lands ready to
+// log POs. A not-yet-used code is passed through; intake creates it on submit.
+function openOverstockAddItems(code) {
+  const normalized = extractOscCode(code);
+  const container = findOverstockContainerByScan(normalized);
+  const prefill = {
+    code: container?.code || normalized,
+    location: container?.currentLocation || "",
+  };
+  if (window.hcStockIntake && typeof window.hcStockIntake.open === "function") {
+    window.hcStockIntake.open(prefill);
+  } else {
+    showToast("Stock intake is unavailable in this build.", "error");
+  }
+}
+
+// ── Camera QR/barcode scanning (html5-qrcode) ───────────────────────────
+let osCamScanner = null;
+function openOverstockCamera() {
+  osOpenModal("osMdScanCamera");
+  const statusEl = document.getElementById("osScanCamStatus");
+  const region = document.getElementById("osScanCamRegion");
+  if (typeof Html5Qrcode === "undefined" || !region) {
+    if (statusEl) statusEl.textContent = "Camera scanner didn't load. Type the code instead.";
+    return;
+  }
+  region.innerHTML = "";
+  if (statusEl) statusEl.textContent = "Starting camera…";
+  osCamScanner = new Html5Qrcode("osScanCamRegion", { verbose: false });
+  osCamScanner.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: { width: 240, height: 240 } },
+    (decodedText) => {
+      // html5-qrcode can fire this again before stop() resolves; osCamScanner
+      // is nulled synchronously in closeOverstockCamera, so this blocks the echo.
+      if (!osCamScanner) return;
+      const code = extractOscCode(decodedText);
+      closeOverstockCamera();
+      openOverstockScanChoice(code || decodedText);
+    },
+    () => { /* per-frame decode miss — ignore */ }
+  )
+    .then(() => { if (statusEl) statusEl.textContent = "Point at the QR or barcode on the box."; })
+    .catch((err) => {
+      if (statusEl) statusEl.textContent = "Couldn't open the camera (" + (err?.message || err) + "). Type the code instead.";
+    });
+}
+function closeOverstockCamera() {
+  const finish = () => osCloseModal("osMdScanCamera");
+  if (osCamScanner) {
+    const s = osCamScanner;
+    osCamScanner = null;
+    s.stop().then(() => { try { s.clear(); } catch (_) {} finish(); }).catch(() => finish());
+  } else {
+    finish();
+  }
+}
+
+// Wire the scan-card camera button + camera modal controls. Bound once.
+function bindOverstockScanUI() {
+  if (window.__osScanUIBound) return;
+  window.__osScanUIBound = true;
+  document.getElementById("overstockContainerCameraBtn")?.addEventListener("click", openOverstockCamera);
+  document.getElementById("osScanCamClose")?.addEventListener("click", closeOverstockCamera);
+  document.getElementById("osScanCamCancel")?.addEventListener("click", closeOverstockCamera);
+  // Backdrop click on the camera modal must also stop the camera.
+  const camBackdrop = document.getElementById("osMdScanCamera");
+  if (camBackdrop) {
+    camBackdrop.addEventListener("click", (e) => { if (e.target === camBackdrop) closeOverstockCamera(); });
+  }
+}
+
 let overstockScannerBuffer = "";
 let overstockScannerTimer = null;
 
@@ -3948,7 +4087,7 @@ function bindOverstockScannerCapture() {
       if (!scanned) return;
       if (/^(OSC-?\d+|\d+)$/i.test(scanned)) {
         event.preventDefault();
-        openOverstockAuditByContainerScan(scanned);
+        openOverstockScanChoice(scanned);
       }
       return;
     }
@@ -3966,9 +4105,10 @@ function bindOverstockContainerLookup() {
   const input = document.getElementById("overstockContainerLookupInput");
   if (!form || !input) return;
   bindOverstockScannerCapture();
+  bindOverstockScanUI();
   form.onsubmit = (event) => {
     event.preventDefault();
-    openOverstockAuditByContainerScan(input.value);
+    openOverstockScanChoice(input.value);
   };
   input.oninput = () => {
     if (!input.value.trim()) setOverstockContainerLookupStatus("");

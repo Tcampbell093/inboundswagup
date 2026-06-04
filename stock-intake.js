@@ -770,7 +770,10 @@
   }
 
   // ── Modal open / close ─────────────────────────────────────────────────
-  function openIntakeModal() {
+  // prefill (optional): { code, location } — used when launched from the Scan
+  // card's "Add items" choice so the box is pre-loaded. Note the open trigger
+  // passes a click Event here; the typeof/.code guard below ignores that.
+  function openIntakeModal(prefill) {
     const overlay = el('stockIntakeOverlay');
     if (!overlay) return;
 
@@ -849,6 +852,12 @@
     document.querySelectorAll('[data-si-size]').forEach(i => { i.value = ''; });
     el('stockIntakeItemSizesRow')?.setAttribute('hidden', '');
     el('stockIntakeContainerInfo')?.setAttribute('hidden', '');
+
+    // Optional prefill from the Scan card's "Add items" choice.
+    if (prefill && typeof prefill === 'object' && typeof prefill.code === 'string' && prefill.code) {
+      const ci = el('stockIntakeContainerInput'); if (ci) ci.value = prefill.code;
+      const li = el('stockIntakeContainerLocation'); if (li && prefill.location) li.value = prefill.location;
+    }
 
     showStep('container');
     renderStats();

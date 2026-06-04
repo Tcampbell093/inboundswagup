@@ -141,13 +141,14 @@
         <div class="os-panel-head">
           <div>
             <div class="os-panel-title">🔎 Scan or type box code</div>
-            <div class="os-panel-sub">Enter a container code like OSC-003 and press Enter to open its audit modal.</div>
+            <div class="os-panel-sub">Scan the QR/barcode or type a code like OSC-003, then choose <strong>Add items</strong> or <strong>Audit</strong>.</div>
           </div>
         </div>
         <div class="os-panel-body">
           <form id="overstockContainerLookupForm" class="os-container-lookup-form">
             <input id="overstockContainerLookupInput" type="text" class="os-input os-container-lookup-input" placeholder="OSC-003" autocomplete="off" inputmode="text" />
-            <button id="overstockContainerLookupBtn" class="os-action-btn" type="submit">Open audit</button>
+            <button id="overstockContainerCameraBtn" class="os-ghost-btn os-scan-camera-btn" type="button" title="Scan QR with the camera">📷 Scan</button>
+            <button id="overstockContainerLookupBtn" class="os-action-btn" type="submit">Go</button>
           </form>
           <div id="overstockContainerLookupStatus" class="os-scan-status" aria-live="polite"></div>
         </div>
@@ -265,6 +266,54 @@
           </div>
         </div>
       </div>
+
+      <!-- Scan choice modal — shown after a box code is scanned/typed -->
+      <div class="os-modal-backdrop" id="osMdScanChoice">
+        <div class="os-modal os-modal-sm" role="dialog" aria-modal="true">
+          <div class="os-modal-head">
+            <div>
+              <div class="os-modal-title" id="osScanChoiceTitle">OSC-000</div>
+              <div class="os-modal-sub" id="osScanChoiceSub">What do you want to do?</div>
+            </div>
+            <button class="os-modal-close" data-close="osMdScanChoice">✕</button>
+          </div>
+          <div class="os-modal-body">
+            <div class="os-scan-choice-grid">
+              <button class="os-scan-choice-btn" id="osScanChoiceAdd" type="button">
+                <span class="os-scan-choice-icon">📥</span>
+                <span class="os-scan-choice-label">Add items</span>
+                <span class="os-scan-choice-desc">Log POs into this box</span>
+              </button>
+              <button class="os-scan-choice-btn" id="osScanChoiceAudit" type="button">
+                <span class="os-scan-choice-icon">✅</span>
+                <span class="os-scan-choice-label">Audit</span>
+                <span class="os-scan-choice-desc">Verify what's inside</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Camera scan modal — opens the device camera to read the QR/barcode -->
+      <div class="os-modal-backdrop" id="osMdScanCamera">
+        <div class="os-modal os-modal-sm" role="dialog" aria-modal="true">
+          <div class="os-modal-head">
+            <div>
+              <div class="os-modal-title">📷 Scan box code</div>
+              <div class="os-modal-sub">Point the camera at the QR or barcode on the box.</div>
+            </div>
+            <button class="os-modal-close" id="osScanCamClose" type="button">✕</button>
+          </div>
+          <div class="os-modal-body">
+            <div id="osScanCamRegion" class="os-scan-cam-region"></div>
+            <div id="osScanCamStatus" class="os-scan-status os-scan-status-muted" aria-live="polite"></div>
+          </div>
+          <div class="os-modal-foot">
+            <button class="os-ghost-btn" id="osScanCamCancel" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+
 
       <!-- ── Log Entry form ── -->
       <section class="os-panel">
@@ -846,6 +895,8 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <!-- Chart.js powers the Trends tab (loaded from CDN like xlsx above). -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- html5-qrcode powers camera scanning of box QR/barcodes (cross-device, incl. iOS Safari). -->
+  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <!-- Authentication gate. Standalone (e.g. opening /workflow directly via a
        shared link or QR code) requires a signed-in session and redirects to
        login otherwise. When embedded in the portal it stays passive and just

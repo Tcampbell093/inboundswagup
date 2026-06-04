@@ -2674,9 +2674,15 @@ font-weight:800
 }
 .workflow-page .os-container-lookup-form {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto;
+  grid-template-columns: minmax(160px, 1fr) auto auto;
   gap: 10px;
   align-items: center;
+}
+@media (max-width: 560px) {
+  .workflow-page .os-container-lookup-form {
+    grid-template-columns: 1fr auto;
+  }
+  .workflow-page .os-container-lookup-input { grid-column: 1 / -1; }
 }
 .workflow-page .os-container-lookup-input {
   font-family: monospace;
@@ -3465,3 +3471,56 @@ font-weight:800
   border-radius: 14px;
   background: linear-gradient(180deg, #fbfeff 0%, #f5fbff 100%);
 }
+
+/* ── Scan card camera button ── */
+.workflow-page .os-scan-camera-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+/* ── Scan choice modal (Add items vs Audit) ── */
+.workflow-page .os-modal-sm { max-width: 420px; }
+.workflow-page .os-scan-choice-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.workflow-page .os-scan-choice-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 22px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fbfeff 0%, #f1f8fe 100%);
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color .15s, box-shadow .15s, transform .05s;
+}
+.workflow-page .os-scan-choice-btn:hover {
+  border-color: var(--blue4);
+  box-shadow: 0 4px 14px rgba(106,174,220,.22);
+}
+.workflow-page .os-scan-choice-btn:active { transform: translateY(1px); }
+.workflow-page .os-scan-choice-icon { font-size: 30px; line-height: 1; }
+.workflow-page .os-scan-choice-label { font-size: 15px; font-weight: 800; color: var(--navy); }
+.workflow-page .os-scan-choice-desc { font-size: 11px; color: var(--muted); text-align: center; }
+.workflow-page .os-scan-choice-disabled {
+  opacity: .5;
+}
+@media (max-width: 480px) {
+  .workflow-page .os-scan-choice-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Camera scan modal ── */
+.workflow-page .os-scan-cam-region {
+  width: 100%;
+  min-height: 260px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #0b1622;
+}
+.workflow-page .os-scan-cam-region video { width: 100% !important; border-radius: 14px; }
+.workflow-page .os-scan-status-muted { color: var(--muted); }
