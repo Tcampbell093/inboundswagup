@@ -527,6 +527,34 @@ function sortOverstockLog(rows, sortKey) {
   return arr;
 }
 
+// ── Boxes grid view state (session-only) ────────────────────────────────
+const osBoxesUi = { sort: "updated" };
+
+function sortBoxes(boxes, key) {
+  const arr = boxes.slice();
+  const ts = (c) => (c.updatedAt || c.createdAt || 0);
+  const cmp = (a, b) => String(a || "").localeCompare(String(b || ""), undefined, { numeric: true, sensitivity: "base" });
+  switch (key) {
+    case "name":
+      arr.sort((a, b) => cmp(a.code, b.code));
+      break;
+    case "location":
+      arr.sort((a, b) => {
+        const la = (a.currentLocation || "").trim(), lb = (b.currentLocation || "").trim();
+        if (!la && lb) return 1;            // boxes with no location sink to the bottom
+        if (la && !lb) return -1;
+        const c = cmp(la, lb);
+        return c !== 0 ? c : cmp(a.code, b.code);
+      });
+      break;
+    case "updated":
+    default:
+      arr.sort((a, b) => ts(b) - ts(a));
+      break;
+  }
+  return arr;
+}
+
 // Open the audit modal scoped to a single log entry: its box if it's
 // container-tracked, otherwise its whole location.
 function osOpenAuditForEntry(row) {
@@ -5431,9 +5459,10 @@ function renderOverstockPage() {
   // ── Boxes (manage any box: audit / add / edit / merge / move) ────────────
   const conEl = document.getElementById('overstockConsolidate');
   if (conEl) {
-    const boxes = containers
-      .filter(c => c.status !== 'Closed')
-      .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+    const boxes = sortBoxes(
+      containers.filter(c => c.status !== 'Closed'),
+      osBoxesUi.sort
+    );
 
     conEl.innerHTML = `
       <section class="os-panel">
@@ -5442,28 +5471,47 @@ function renderOverstockPage() {
             <div class="os-panel-title">📦 Boxes</div>
             <div class="os-panel-sub">Tap a box for options — audit, add a PO, edit, merge, or move.</div>
           </div>
-          <span class="os-badge os-badge-purple">${boxes.length} box${boxes.length !== 1 ? 'es' : ''}</span>
+          <div class="os-boxes-tools">
+            <select id="osBoxesSort" class="os-filter-select" aria-label="Sort boxes">
+              <option value="updated">Last updated</option>
+              <option value="name">Name (OSC #)</option>
+              <option value="location">Location</option>
+            </select>
+            <span class="os-badge os-badge-purple">${boxes.length} box${boxes.length !== 1 ? 'es' : ''}</span>
+          </div>
         </div>
         <div class="os-panel-body">
           ${boxes.length
-            ? `<div class="os-card-grid">${boxes.map(c => {
+            ? `<div class="os-card-grid os-boxes-grid">${boxes.map(c => {
                 const items = getOverstockContainerItems(c.id);
                 const units = items.reduce((s,r)=>s+Number(r.quantity||0),0);
+                const statusKey = {'Open':'open','On Cart':'oncart','Stored':'stored','Full':'full'}[c.status]||'other';
                 const statusBadge = {'Open':'os-badge-blue','On Cart':'os-badge-amber','Stored':'os-badge-green','Full':'os-badge-gray'}[c.status]||'os-badge-gray';
-                return `<div class="os-box-card" data-box-actions="${escapeAttribute(c.id)}" role="button" tabindex="0">
-                  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
-                    <div class="os-cc-code">${escapeHtml(c.code)}</div>
-                    <span class="os-badge ${statusBadge}">${escapeHtml(c.status)}</span>
+                return `<div class="os-box-card os-box-lux os-box-lux--${statusKey}" data-box-actions="${escapeAttribute(c.id)}" role="button" tabindex="0">
+                  <div class="os-box-lux-top">
+                    <span class="os-box-lux-code">${escapeHtml(c.code)}</span>
+                    <span class="os-badge ${statusBadge} os-box-lux-badge">${escapeHtml(c.status)}</span>
                   </div>
-                  <div class="os-cc-meta">${items.length} PO${items.length===1?'':'s'} · ${units} units</div>
-                  <div class="os-cc-loc">${c.currentLocation ? escapeHtml(c.currentLocation) : 'No location'}</div>
-                  <div class="os-cc-updated">Updated ${escapeHtml(formatDateTimeShort(c.updatedAt || c.createdAt))}</div>
+                  <div class="os-box-lux-stats">
+                    <span><strong>${items.length}</strong> PO${items.length===1?'':'s'}</span>
+                    <span class="os-box-lux-sep">·</span>
+                    <span><strong>${units}</strong> units</span>
+                  </div>
+                  <div class="os-box-lux-foot">
+                    <span class="os-box-lux-loc">${c.currentLocation ? `📍 ${escapeHtml(c.currentLocation)}` : '— no location'}</span>
+                    <span class="os-box-lux-time">${escapeHtml(formatDateTimeShort(c.updatedAt || c.createdAt))}</span>
+                  </div>
                 </div>`;
               }).join('')}</div>`
             : `<div class="os-empty-state"><div class="os-empty-icon">📦</div>No boxes yet.</div>`}
         </div>
       </section>`;
 
+    const sortSel = document.getElementById('osBoxesSort');
+    if (sortSel) {
+      sortSel.value = osBoxesUi.sort;
+      sortSel.onchange = () => { osBoxesUi.sort = sortSel.value; renderOverstockPage(); };
+    }
     conEl.querySelectorAll('[data-box-actions]').forEach(card => {
       const open = () => osOpenBoxActions(card.dataset.boxActions);
       card.addEventListener('click', open);
