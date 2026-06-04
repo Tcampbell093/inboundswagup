@@ -4609,8 +4609,12 @@ function osOpenAudit(loc, containerId) {
       return;
     }
 
+    // Who can hard-delete an entry from within the audit (for mistakes):
+    // managers/admins, or the associate who logged it.
+    const auditElevated = (typeof osCanDeleteContainer === 'function') ? osCanDeleteContainer() : false;
     body.innerHTML = entries.map(r => {
       const containerLabel = r.containerCode ? ` · ${escapeHtml(r.containerCode)}` : '';
+      const canDel = auditElevated || (!!state.currentUser && r.associate === state.currentUser);
       return `<div class="os-audit-row" id="osAuRow_${escapeAttribute(r.id)}">
         <div class="os-audit-info">
           <div class="os-audit-code">PO# ${escapeHtml(r.po)}</div>
@@ -4621,6 +4625,7 @@ function osOpenAudit(loc, containerId) {
           <button class="os-audit-btn os-audit-btn-ok" data-audit-confirm="${escapeAttribute(r.id)}" type="button">Still here</button>
           <button class="os-audit-btn os-audit-btn-missing" data-audit-remove="${escapeAttribute(r.id)}" type="button">Not here</button>
           <button class="os-audit-btn os-audit-btn-edit" data-audit-edit-qty="${escapeAttribute(r.id)}" type="button" title="Edit quantity" aria-label="Edit quantity">✎ Edit qty</button>
+          ${canDel ? `<button class="os-audit-btn os-audit-btn-del" data-audit-delete="${escapeAttribute(r.id)}" type="button" title="Delete this entry — logged by mistake">🗑 Delete</button>` : ''}
         </div>
       </div>
       <!-- Removal reason panel — hidden by default -->
@@ -4653,6 +4658,27 @@ function osOpenAudit(loc, containerId) {
         row.classList.add('au-ok');
         row.querySelector('.os-audit-actions').innerHTML =
           `<div class="os-audit-status-label">✓ Confirmed</div>`;
+      });
+    });
+
+    // Wire hard-delete — removes a mis-logged entry entirely. Distinct from
+    // "Not here" (which records WHY a physically-present item left). Use this
+    // only for data-entry mistakes.
+    body.querySelectorAll('[data-audit-delete]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const entryId = btn.dataset.auditDelete;
+        const entry = (state.data.overstockEntries || []).find(x => x.id === entryId);
+        if (!entry) return;
+        const label = entry.containerCode ? `${entry.containerCode} · PO# ${entry.po}` : `PO# ${entry.po}`;
+        if (!confirm(`Delete ${label} entirely?\n\nUse this only if it was logged by mistake. If the item was physically pulled, donated, or moved, use "Not here" instead so it's recorded properly.`)) return;
+        if (typeof window.deleteOverstockEntry === 'function') {
+          window.deleteOverstockEntry(entryId);
+        } else {
+          state.data.overstockEntries = (state.data.overstockEntries || []).filter(i => i.id !== entryId);
+          persistData();
+        }
+        if (typeof renderOverstockPage === 'function') renderOverstockPage();
+        renderAuditBody(); // refresh the audit list (shows empty state if it was the last one)
       });
     });
 
@@ -5363,14 +5389,19 @@ function renderOverstockPage() {
   }
 
   visibleEntries.forEach(row => {
-    const isAutoRow = row.sourceType === 'auto' || (!!row.po && !row.manualPo);
+    // "Auto" = quantity was derived from Prep, not hand-entered. Only genuine
+    // prep-driven rows qualify. (The old check flagged EVERY row with a PO,
+    // which wrongly locked stock-intake entries out of Edit/Delete.)
+    const isAutoRow = row.sourceType === 'auto' || row.sourceType === 'prep-extra';
     // Admins and managers can edit/delete any row regardless of who created
     // it — they need this to clean up mistakes from floor staff. Everyone
     // else can only act on their own rows. osCanDeleteContainer reads role
     // from window.hcCurrentUser OR falls back to localStorage hcAuthUser,
     // so this works in both index.html and workflow.html contexts.
     const isElevated = (typeof osCanDeleteContainer === 'function') ? osCanDeleteContainer() : false;
-    const ownerLocked = isAutoRow || (!isElevated && !!(state.currentUser && state.currentUser !== LEADERSHIP_USER && row.associate && row.associate !== state.currentUser));
+    // Edit/Delete are governed by ownership, not by how the row was created:
+    // managers/admins can act on anything; associates only on their own rows.
+    const ownerLocked = (!isElevated && !!(state.currentUser && state.currentUser !== LEADERSHIP_USER && row.associate && row.associate !== state.currentUser));
     const tr = document.createElement('tr');
     const batchCount = getPoHistoryCount('overstock', row.po);
     const batchBtn = batchCount >= 1

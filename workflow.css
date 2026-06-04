@@ -3121,6 +3121,13 @@ font-weight:800
   border: 1.5px solid #d97706 !important;
 }
 .workflow-page .os-audit-btn-wrong:hover { background: #fef9c3 !important; }
+.workflow-page .os-audit-btn-del {
+  background: #fff !important; color: #6b7280 !important;
+  border: 1.5px solid #d1d5db !important;
+}
+.workflow-page .os-audit-btn-del:hover {
+  background: #fee2e2 !important; color: #991b1b !important; border-color: #ef4444 !important;
+}
 
 /* Flagged state — subtle tint on the whole row */
 .workflow-page .os-audit-row.au-ok      { background: #f0fdf4; border-radius: 10px; padding: 10px 12px; }
