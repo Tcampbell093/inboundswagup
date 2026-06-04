@@ -15,3 +15,9 @@
 # (~6–7pm ET) captures near the end of the warehouse day. Safe to re-run.
 [functions."ops-metrics-capture"]
   schedule = "0 23 * * *"
+
+# Nightly off-site backup — emails a complete zip of the database to the owner
+# (BACKUP_EMAIL). Runs at 23:30 UTC, just after the metrics capture so the
+# snapshot includes the day's final numbers. Read-only.
+[functions."daily-backup"]
+  schedule = "30 23 * * *"
