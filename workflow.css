@@ -3531,3 +3531,28 @@ font-weight:800
 }
 .workflow-page .os-scan-cam-region video { width: 100% !important; border-radius: 14px; }
 .workflow-page .os-scan-status-muted { color: var(--muted); }
+
+/* ── Boxes grid: "updated" line + box actions modal ── */
+.workflow-page .os-cc-updated { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+.workflow-page .os-box-act-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.workflow-page .os-box-act-btn {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 14px;
+  border: 1.5px solid var(--line); border-radius: 14px;
+  background: linear-gradient(180deg, #fbfeff 0%, #f1f8fe 100%);
+  font-family: inherit; font-size: 14px; font-weight: 700; color: var(--navy);
+  cursor: pointer; text-align: left;
+  transition: border-color .15s, box-shadow .15s, transform .05s;
+}
+.workflow-page .os-box-act-btn:hover { border-color: var(--blue4); box-shadow: 0 4px 14px rgba(106,174,220,.2); }
+.workflow-page .os-box-act-btn:active { transform: translateY(1px); }
+.workflow-page .os-box-act-ic { font-size: 20px; line-height: 1; }
+.workflow-page .os-box-act-disabled { opacity: .45; pointer-events: none; }
+@media (max-width: 480px) {
+  .workflow-page .os-box-act-grid { grid-template-columns: 1fr; }
+}
