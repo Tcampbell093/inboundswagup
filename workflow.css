@@ -3442,3 +3442,26 @@ font-weight:800
   .workflow-page .inb-po-lookup{flex:1;}
   .workflow-page .inb-po-lookup-inner input{width:100%;}
 }
+
+/* ── Trends tab: chart containers ── */
+.workflow-page .stats-chart-box {
+  position: relative;
+  height: 300px;
+  width: 100%;
+  margin-top: 6px;
+}
+.workflow-page .stats-chart-box canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+.workflow-page .stats-chart-note {
+  display: none;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+  padding: 40px 24px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fbfeff 0%, #f5fbff 100%);
+}
