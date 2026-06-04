@@ -5485,21 +5485,16 @@ function renderOverstockPage() {
             ? `<div class="os-card-grid os-boxes-grid">${boxes.map(c => {
                 const items = getOverstockContainerItems(c.id);
                 const units = items.reduce((s,r)=>s+Number(r.quantity||0),0);
-                const statusKey = {'Open':'open','On Cart':'oncart','Stored':'stored','Full':'full'}[c.status]||'other';
-                const statusBadge = {'Open':'os-badge-blue','On Cart':'os-badge-amber','Stored':'os-badge-green','Full':'os-badge-gray'}[c.status]||'os-badge-gray';
-                return `<div class="os-box-card os-box-lux os-box-lux--${statusKey}" data-box-actions="${escapeAttribute(c.id)}" role="button" tabindex="0">
-                  <div class="os-box-lux-top">
-                    <span class="os-box-lux-code">${escapeHtml(c.code)}</span>
-                    <span class="os-badge ${statusBadge} os-box-lux-badge">${escapeHtml(c.status)}</span>
+                const statusDot = {'Open':'os-box-dot-blue','On Cart':'os-box-dot-amber','Stored':'os-box-dot-green','Full':'os-box-dot-gray'}[c.status]||'os-box-dot-gray';
+                return `<div class="os-box-card os-box-calm" data-box-actions="${escapeAttribute(c.id)}" role="button" tabindex="0">
+                  <div class="os-box-calm-top">
+                    <span class="os-box-dot ${statusDot}" title="${escapeAttribute(c.status)}"></span>
+                    <span class="os-box-calm-code">${escapeHtml(c.code)}</span>
                   </div>
-                  <div class="os-box-lux-stats">
-                    <span><strong>${items.length}</strong> PO${items.length===1?'':'s'}</span>
-                    <span class="os-box-lux-sep">·</span>
-                    <span><strong>${units}</strong> units</span>
-                  </div>
-                  <div class="os-box-lux-foot">
-                    <span class="os-box-lux-loc">${c.currentLocation ? `📍 ${escapeHtml(c.currentLocation)}` : '— no location'}</span>
-                    <span class="os-box-lux-time">${escapeHtml(formatDateTimeShort(c.updatedAt || c.createdAt))}</span>
+                  <div class="os-box-calm-nums"><b>${items.length}</b> PO${items.length===1?'':'s'} · <b>${units}</b> units</div>
+                  <div class="os-box-calm-foot">
+                    <span class="os-box-calm-loc">${c.currentLocation ? escapeHtml(c.currentLocation) : '—'}</span>
+                    <span class="os-box-calm-time">${escapeHtml(formatDateTimeShort(c.updatedAt || c.createdAt))}</span>
                   </div>
                 </div>`;
               }).join('')}</div>`

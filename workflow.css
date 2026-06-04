@@ -3562,57 +3562,47 @@ font-weight:800
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
 }
 .workflow-page .os-boxes-grid {
-  grid-template-columns: repeat(auto-fill, minmax(184px, 1fr));
-  gap: 13px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
 }
 
-.workflow-page .os-box-lux {
-  position: relative;
-  border: 1px solid #e6eef6;
-  border-radius: 16px;
-  padding: 14px 16px 12px;
-  background: linear-gradient(180deg, #ffffff 0%, #fafdff 100%);
-  box-shadow: 0 1px 2px rgba(16,50,74,.04), 0 10px 26px -18px rgba(16,50,74,.20);
-  overflow: hidden;
-  --box-accent: #c9d7e6;
-  transition: transform .16s cubic-bezier(.22,.9,.36,1), box-shadow .16s, border-color .16s;
+/* Calm Cards — minimal, de-noised: a single status dot, no accent bar or
+   gradient, generous spacing. */
+.workflow-page .os-box-calm {
+  border: 1px solid #e8eff6;
+  border-radius: 14px;
+  padding: 15px 16px;
+  background: #fff;
+  box-shadow: none;
+  transition: transform .15s, box-shadow .15s, border-color .15s;
 }
-.workflow-page .os-box-lux::before {
-  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-  background: var(--box-accent);
-}
-.workflow-page .os-box-lux--stored { --box-accent: #2bb887; }
-.workflow-page .os-box-lux--oncart { --box-accent: #efb01c; }
-.workflow-page .os-box-lux--open   { --box-accent: #4f8ef0; }
-.workflow-page .os-box-lux--full   { --box-accent: #9aa9bd; }
-.workflow-page .os-box-lux:hover {
+.workflow-page .os-box-calm:hover {
   border-color: var(--blue4);
-  transform: translateY(-3px);
-  box-shadow: 0 2px 4px rgba(16,50,74,.06), 0 20px 38px -20px rgba(16,50,74,.34);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 26px -18px rgba(16,50,74,.40);
 }
-.workflow-page .os-box-lux:active { transform: translateY(-1px); }
+.workflow-page .os-box-calm:active { transform: translateY(0); }
 
-.workflow-page .os-box-lux-top {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 8px; margin-bottom: 11px;
+.workflow-page .os-box-calm-top {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
 }
-.workflow-page .os-box-lux-code {
+.workflow-page .os-box-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.workflow-page .os-box-dot-green { background: #2bb887; }
+.workflow-page .os-box-dot-amber { background: #efb01c; }
+.workflow-page .os-box-dot-blue  { background: #4f8ef0; }
+.workflow-page .os-box-dot-gray  { background: #9aa9bd; }
+.workflow-page .os-box-calm-code {
   font-family: ui-monospace, SFMono-Regular, monospace;
   font-size: 16px; font-weight: 800; letter-spacing: .02em; color: var(--navy);
 }
-.workflow-page .os-box-lux-badge { font-size: 9px; }
-.workflow-page .os-box-lux-stats {
-  display: flex; align-items: baseline; gap: 8px;
-  color: var(--muted); font-size: 12px;
-}
-.workflow-page .os-box-lux-stats strong { font-size: 17px; font-weight: 800; color: var(--navy); }
-.workflow-page .os-box-lux-sep { color: #cdd9e6; font-weight: 700; }
-.workflow-page .os-box-lux-foot {
+.workflow-page .os-box-calm-nums { font-size: 13px; color: #46627d; }
+.workflow-page .os-box-calm-nums b { font-size: 15px; font-weight: 800; color: var(--navy); }
+.workflow-page .os-box-calm-foot {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 8px; margin-top: 13px; padding-top: 10px; border-top: 1px solid #eef4fa;
+  gap: 8px; margin-top: 10px;
 }
-.workflow-page .os-box-lux-loc {
+.workflow-page .os-box-calm-loc {
   font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 12px; font-weight: 700; color: #46627d;
+  font-size: 11px; font-weight: 700; color: #5a7a96;
 }
-.workflow-page .os-box-lux-time { font-size: 10.5px; color: #94a7ba; white-space: nowrap; }
+.workflow-page .os-box-calm-time { font-size: 11px; color: #90a4b8; white-space: nowrap; }
