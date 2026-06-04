@@ -398,15 +398,27 @@
       </section>
 
       <!-- ── Overstock Log ── -->
-      <section class="os-panel">
-        <div class="os-panel-head">
+      <section class="os-panel os-log-panel">
+        <div class="os-panel-head os-log-head">
           <div>
             <div class="os-panel-title">📋 Overstock Log</div>
-            <div class="os-panel-sub">Everything logged — what's there, what can be donated, what still needs to stay.</div>
+            <div class="os-panel-sub">Tap any <strong>PO#</strong> to audit its location.</div>
+          </div>
+          <div class="os-log-tools">
+            <input id="osLogSearch" type="text" class="os-filter-input os-log-search" placeholder="🔎 Search this log…" autocomplete="off" />
+            <select id="osLogSort" class="os-filter-select os-log-sort" aria-label="Sort log">
+              <option value="recent">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="po">PO# (A–Z)</option>
+              <option value="qty-desc">Qty (high → low)</option>
+              <option value="qty-asc">Qty (low → high)</option>
+              <option value="location">Location</option>
+              <option value="associate">Associate</option>
+            </select>
           </div>
         </div>
         <div class="os-table-wrap">
-          <table class="os-table">
+          <table class="os-table os-log-table">
             <thead>
               <tr>
                 <th>Date</th><th>PO#</th><th>Category</th><th>Qty</th>
@@ -415,6 +427,15 @@
             </thead>
             <tbody id="overstockTableBody"></tbody>
           </table>
+        </div>
+        <div class="os-log-foot">
+          <span class="os-log-count" id="osLogCount"></span>
+          <div class="os-log-pagesize">
+            <span class="os-log-pagesize-lbl">Show</span>
+            <button type="button" class="os-log-size-btn" data-size="25">25</button>
+            <button type="button" class="os-log-size-btn" data-size="50">50</button>
+            <button type="button" class="os-log-size-btn" data-size="100">100</button>
+          </div>
         </div>
       </section>
 

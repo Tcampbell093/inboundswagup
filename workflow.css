@@ -2819,6 +2819,60 @@ font-weight:800
   font-size: 14px; color: #b45309;
 }
 
+/* ── Overstock Log: toolbar, compact rows, footer pagination ── */
+.workflow-page .os-log-head { align-items: center; }
+.workflow-page .os-log-tools {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.workflow-page .os-log-search { min-width: 210px; }
+.workflow-page .os-log-sort { cursor: pointer; }
+
+/* Compress the log table — tighter rows, smaller action buttons. Scoped to
+   .os-log-table so other workflow tables keep their roomier spacing. */
+.workflow-page .os-log-table th { padding: 8px 12px; }
+.workflow-page .os-log-table td { padding: 7px 12px; font-size: 12.5px; }
+.workflow-page .os-log-table .action-stack { gap: 5px; }
+.workflow-page .os-log-table .tiny-btn { padding: 4px 9px; font-size: 11px; border-radius: 8px; }
+
+/* Clickable PO — looks like the mono code but signals it's actionable. */
+.workflow-page .os-po-link {
+  font-family: monospace; font-weight: 700; font-size: 13px;
+  color: var(--blue1, #1a56db); background: none; border: none;
+  padding: 0; cursor: pointer; text-decoration: underline;
+  text-decoration-color: rgba(26,86,219,.35); text-underline-offset: 2px;
+}
+.workflow-page .os-po-link:hover { color: #0a3d8f; text-decoration-color: currentColor; }
+.workflow-page .os-po-link:focus-visible { outline: 2px solid var(--blue4); outline-offset: 2px; border-radius: 4px; }
+
+/* Footer: count + page-size pills */
+.workflow-page .os-log-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  padding: 10px 20px; border-top: 1px solid var(--line); background: #fbfdff;
+}
+.workflow-page .os-log-count { font-size: 12px; font-weight: 700; color: var(--muted); }
+.workflow-page .os-log-pagesize { display: flex; align-items: center; gap: 6px; }
+.workflow-page .os-log-pagesize-lbl {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--muted); margin-right: 2px;
+}
+.workflow-page .os-log-size-btn {
+  min-width: 40px; padding: 5px 11px; border-radius: 999px;
+  border: 1.5px solid var(--line); background: #fff; color: #2a658f;
+  font-size: 12px; font-weight: 800; cursor: pointer; font-family: inherit;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.workflow-page .os-log-size-btn:hover { border-color: var(--blue4); background: #f4faff; }
+.workflow-page .os-log-size-btn.is-active {
+  background: var(--navy); border-color: var(--navy); color: #fff;
+}
+
+@media (max-width: 700px) {
+  .workflow-page .os-log-head { align-items: flex-start; }
+  .workflow-page .os-log-tools { width: 100%; }
+  .workflow-page .os-log-search { flex: 1 1 100%; min-width: 0; }
+}
+
 /* ── Responsive ── */
 @media (max-width: 1100px) {
   .workflow-page .os-hub-layout { grid-template-columns: 1fr; }

@@ -504,6 +504,43 @@ const overstockStatusOptions = ["Donation", "Not Donation", "Pending PB", "Donat
 const overstockActionOptions = ["Donated", "Required", "Replaced", "Missing from Box", "Lost"];
 const overstockLocations = Array.from({length:24}, (_,i)=>`E-${i+1}`);
 
+// ── Overstock Log view state (session-only, not synced) ───────────────────
+// Drives the log's own search box, sort order, and how many rows show at once.
+// Kept separate from state.data.overstockFilters (the global filter bar) so the
+// log can be searched/sorted/paginated without touching the shared dataset.
+const osLogUi = { search: "", sort: "recent", pageSize: 25 };
+
+function sortOverstockLog(rows, sortKey) {
+  const arr = rows.slice();
+  const ts = (r) => (r.updatedAt || r.createdAt || 0);
+  const cmpStr = (a, b) => String(a || "").localeCompare(String(b || ""), undefined, { numeric: true, sensitivity: "base" });
+  switch (sortKey) {
+    case "oldest":    arr.sort((a, b) => ts(a) - ts(b)); break;
+    case "po":        arr.sort((a, b) => cmpStr(a.po, b.po)); break;
+    case "qty-desc":  arr.sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0)); break;
+    case "qty-asc":   arr.sort((a, b) => Number(a.quantity || 0) - Number(b.quantity || 0)); break;
+    case "location":  arr.sort((a, b) => cmpStr(a.location, b.location)); break;
+    case "associate": arr.sort((a, b) => cmpStr(a.associate, b.associate)); break;
+    case "recent":
+    default:          arr.sort((a, b) => ts(b) - ts(a)); break;
+  }
+  return arr;
+}
+
+// Open the audit modal scoped to a single log entry: its box if it's
+// container-tracked, otherwise its whole location.
+function osOpenAuditForEntry(row) {
+  if (!row) return;
+  if (typeof osOpenAudit !== "function") return;
+  if (row.containerId) {
+    osOpenAudit(row.location || "", row.containerId);
+  } else if (row.location) {
+    osOpenAudit(row.location, null);
+  } else if (typeof showToast === "function") {
+    showToast("This entry has no location yet — nothing to audit.", "error");
+  }
+}
+
 const pageConfig = {
   dock: {
     sectionKey: "dockSections",
@@ -2962,6 +2999,25 @@ function bindOverstockEvents() {
   statusFilter.addEventListener("change", (e) => { state.data.overstockFilters.status = e.target.value; renderOverstockPage(); });
   searchInput.addEventListener("input", (e) => { state.data.overstockFilters.search = e.target.value.trim().toLowerCase(); renderOverstockPage(); });
 
+  // ── Overstock Log toolbar: search, sort, page size ──────────────────────
+  // These elements are static in workflow.html, so binding once is safe — the
+  // table re-render only replaces the <tbody>, never the controls.
+  const logSearch = document.getElementById("osLogSearch");
+  if (logSearch) {
+    logSearch.addEventListener("input", (e) => { osLogUi.search = e.target.value; renderOverstockPage(); });
+  }
+  const logSort = document.getElementById("osLogSort");
+  if (logSort) {
+    logSort.value = osLogUi.sort;
+    logSort.addEventListener("change", (e) => { osLogUi.sort = e.target.value; renderOverstockPage(); });
+  }
+  document.querySelectorAll(".os-log-size-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      osLogUi.pageSize = Number(btn.dataset.size) || 25;
+      renderOverstockPage();
+    });
+  });
+
   document.getElementById("overstockMyItemsBtn").addEventListener("click", () => {
     state.data.overstockFilters.mineOnly = !state.data.overstockFilters.mineOnly;
     renderOverstockPage();
@@ -5129,20 +5185,44 @@ function renderOverstockPage() {
   if (entryDateEl2 && !entryDateEl2.value) entryDateEl2.value = new Date().toISOString().slice(0, 10);
   overstockRestoreDraft();
 
-  const entries = getFilteredOverstockEntries();
+  // Start from the globally-filtered set, then apply the log's own
+  // search → sort → pagination (the toolbar in the Overstock Log panel).
+  const baseEntries = getFilteredOverstockEntries();
+  const logQuery = (osLogUi.search || '').trim().toLowerCase();
+  let logEntries = logQuery
+    ? baseEntries.filter(r => [r.date, r.po, r.category, r.status, r.action, r.location, r.containerCode, r.associate]
+        .filter(Boolean).join(' ').toLowerCase().includes(logQuery))
+    : baseEntries.slice();
+  logEntries = sortOverstockLog(logEntries, osLogUi.sort);
+
+  const totalCount = logEntries.length;
+  const pageSize = osLogUi.pageSize || 25;
+  const visibleEntries = logEntries.slice(0, pageSize);
+
+  // Footer: "Showing X of Y" + highlight the active page-size button.
+  const logFootCount = document.getElementById('osLogCount');
+  if (logFootCount) {
+    logFootCount.textContent = totalCount === 0
+      ? (logQuery ? 'No matches' : 'No entries yet')
+      : `Showing ${visibleEntries.length} of ${totalCount}`;
+  }
+  document.querySelectorAll('.os-log-size-btn').forEach(b => {
+    b.classList.toggle('is-active', Number(b.dataset.size) === pageSize);
+  });
+
   // Note: stat card IDs repurposed above — log count goes to a separate element if present
   const logCountEl = document.getElementById('overstockLogCount');
-  if (logCountEl) logCountEl.textContent = entries.length;
+  if (logCountEl) logCountEl.textContent = totalCount;
 
   const tbody = document.getElementById('overstockTableBody');
   if (!tbody) return;
   tbody.innerHTML = '';
-  if (!entries.length) {
-    tbody.innerHTML = `<tr><td colspan="9" class="empty-state-cell">${t('noRows')}</td></tr>`;
+  if (!visibleEntries.length) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state-cell">${logQuery ? 'No entries match your search.' : t('noRows')}</td></tr>`;
     return;
   }
 
-  entries.forEach(row => {
+  visibleEntries.forEach(row => {
     const isAutoRow = row.sourceType === 'auto' || (!!row.po && !row.manualPo);
     // Admins and managers can edit/delete any row regardless of who created
     // it — they need this to clean up mistakes from floor staff. Everyone
@@ -5164,7 +5244,7 @@ function renderOverstockPage() {
     const actionClass = row.action === 'Required' ? 'os-badge-amber' : row.action === 'Donated' ? 'os-badge-green' : 'os-badge-blue';
     tr.innerHTML = `
       <td><span class="day-pill ${getDayClass(formatDayCode(row.date))}">${formatDate(row.date)}</span></td>
-      <td><span class="os-mono">${escapeHtml(row.po)}</span>${isAutoRow ? ' <span class="lock-note">Auto</span>' : ''}</td>
+      <td><button type="button" class="os-po-link" title="Audit this PO's location">${escapeHtml(row.po)}</button>${isAutoRow ? ' <span class="lock-note">Auto</span>' : ''}</td>
       <td>${escapeHtml(row.category || '—')}</td>
       <td><span class="os-qty-badge">+${Number(row.quantity || 0)}</span>${sizesHtml}${adjBadge}</td>
       <td><span class="os-badge ${statusClass}">${translateStatus(row.status)}</span></td>
@@ -5179,6 +5259,8 @@ function renderOverstockPage() {
     `;
     const histBtn = tr.querySelector('.history-row');
     if (histBtn) histBtn.addEventListener('click', () => openBatchHistoryModal('overstock', row.po));
+    const poLink = tr.querySelector('.os-po-link');
+    if (poLink) poLink.addEventListener('click', () => osOpenAuditForEntry(row));
     if (!ownerLocked) {
       tr.querySelector('.overstock-delete-btn').addEventListener('click', () => {
         // Light confirm — single PO entry, low stakes, but tablets fat-finger.
