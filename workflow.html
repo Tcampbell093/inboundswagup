@@ -314,6 +314,81 @@
         </div>
       </div>
 
+      <!-- Box actions modal — opened by tapping a box in the Boxes grid -->
+      <div class="os-modal-backdrop" id="osMdBoxActions">
+        <div class="os-modal os-modal-sm" role="dialog" aria-modal="true">
+          <div class="os-modal-head">
+            <div>
+              <div class="os-modal-title" id="osBoxActTitle">OSC-000</div>
+              <div class="os-modal-sub" id="osBoxActSub"></div>
+            </div>
+            <button class="os-modal-close" data-close="osMdBoxActions">✕</button>
+          </div>
+          <div class="os-modal-body">
+            <div class="os-box-act-grid">
+              <button class="os-box-act-btn" id="osBoxActAudit" type="button"><span class="os-box-act-ic">🔍</span>Audit</button>
+              <button class="os-box-act-btn" id="osBoxActAdd" type="button"><span class="os-box-act-ic">➕</span>Add a PO</button>
+              <button class="os-box-act-btn" id="osBoxActEdit" type="button"><span class="os-box-act-ic">✏️</span>Edit</button>
+              <button class="os-box-act-btn" id="osBoxActMerge" type="button"><span class="os-box-act-ic">🔀</span>Merge</button>
+              <button class="os-box-act-btn" id="osBoxActMoveLoc" type="button"><span class="os-box-act-ic">↗</span>Move location</button>
+              <button class="os-box-act-btn" id="osBoxActMovePo" type="button"><span class="os-box-act-ic">📦</span>Move a PO</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Box edit modal -->
+      <div class="os-modal-backdrop" id="osMdBoxEdit">
+        <div class="os-modal os-modal-sm" role="dialog" aria-modal="true">
+          <div class="os-modal-head">
+            <div>
+              <div class="os-modal-title">Edit box</div>
+              <div class="os-modal-sub" id="osBoxEditSub"></div>
+            </div>
+            <button class="os-modal-close" data-close="osMdBoxEdit">✕</button>
+          </div>
+          <div class="os-modal-body">
+            <label class="os-field-lbl" for="osBoxEditCode">Box code</label>
+            <input id="osBoxEditCode" class="os-input" type="text" placeholder="OSC-001" autocomplete="off" />
+            <label class="os-field-lbl" for="osBoxEditLoc" style="margin-top:10px;">Location</label>
+            <select id="osBoxEditLoc" class="os-input"></select>
+            <label class="os-field-lbl" for="osBoxEditStatus" style="margin-top:10px;">Status</label>
+            <select id="osBoxEditStatus" class="os-input"></select>
+            <label class="os-field-lbl" for="osBoxEditNotes" style="margin-top:10px;">Notes</label>
+            <input id="osBoxEditNotes" class="os-input" type="text" autocomplete="off" />
+            <div id="osBoxEditWarn" class="os-scan-status os-scan-status-warning" style="margin-top:8px;"></div>
+          </div>
+          <div class="os-modal-foot">
+            <button class="os-submit-btn" id="osBoxEditSave" type="button">Save changes</button>
+            <button class="os-ghost-btn" data-close="osMdBoxEdit" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Move-a-PO modal — move one PO into another box -->
+      <div class="os-modal-backdrop" id="osMdMovePo">
+        <div class="os-modal os-modal-sm" role="dialog" aria-modal="true">
+          <div class="os-modal-head">
+            <div>
+              <div class="os-modal-title">Move a PO</div>
+              <div class="os-modal-sub" id="osMovePoSub"></div>
+            </div>
+            <button class="os-modal-close" data-close="osMdMovePo">✕</button>
+          </div>
+          <div class="os-modal-body">
+            <label class="os-field-lbl" for="osMovePoSel">Which PO?</label>
+            <select id="osMovePoSel" class="os-input"></select>
+            <label class="os-field-lbl" for="osMovePoDest" style="margin-top:10px;">Into which box?</label>
+            <select id="osMovePoDest" class="os-input"></select>
+            <div id="osMovePoWarn" class="os-scan-status os-scan-status-warning" style="margin-top:8px;"></div>
+          </div>
+          <div class="os-modal-foot">
+            <button class="os-submit-btn" id="osMovePoConfirm" type="button">Move PO</button>
+            <button class="os-ghost-btn" data-close="osMdMovePo" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+
 
       <!-- ── Log Entry form ── -->
       <section class="os-panel">

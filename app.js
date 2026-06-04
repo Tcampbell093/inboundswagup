@@ -4591,6 +4591,130 @@ function osOpenMerge(containerId) {
   osOpenModal('osMdMerge');
 }
 
+// ── Box actions menu (Boxes grid → tap a box) ───────────────────────────
+// One entry point that offers every box operation: audit, add a PO, edit,
+// merge, move the whole box, or move a single PO into another box.
+function osOpenBoxActions(containerId) {
+  const c = (state.data.overstockContainers || []).find(x => x.id === containerId);
+  if (!c) return;
+  const items = getOverstockContainerItems(containerId);
+  const units = items.reduce((s, r) => s + Number(r.quantity || 0), 0);
+
+  document.getElementById('osBoxActTitle').textContent = c.code;
+  document.getElementById('osBoxActSub').textContent =
+    `${items.length} PO${items.length === 1 ? '' : 's'} · ${units} units${c.currentLocation ? ` · ${c.currentLocation}` : ' · no location'}`;
+
+  const wire = (id, fn) => { const b = document.getElementById(id); if (b) b.onclick = fn; };
+  wire('osBoxActAudit',   () => { osCloseModal('osMdBoxActions'); osOpenAudit(c.currentLocation || '', c.id); });
+  wire('osBoxActAdd',     () => { osCloseModal('osMdBoxActions'); openOverstockAddItems(c.code); });
+  wire('osBoxActEdit',    () => { osCloseModal('osMdBoxActions'); osOpenBoxEdit(c.id); });
+  wire('osBoxActMerge',   () => { osCloseModal('osMdBoxActions'); osOpenMerge(c.id); });
+  wire('osBoxActMoveLoc', () => { osCloseModal('osMdBoxActions'); osMoveContainer(c.id, c.currentLocation || ''); });
+  wire('osBoxActMovePo',  () => { osCloseModal('osMdBoxActions'); osOpenMovePo(c.id); });
+
+  // "Move a PO" needs at least one PO and another box to move into.
+  const others = (state.data.overstockContainers || []).filter(x => x.id !== c.id && x.status !== 'Closed');
+  const movePoBtn = document.getElementById('osBoxActMovePo');
+  if (movePoBtn) movePoBtn.classList.toggle('os-box-act-disabled', items.length === 0 || others.length === 0);
+  const auditBtn = document.getElementById('osBoxActAudit');
+  if (auditBtn) auditBtn.classList.toggle('os-box-act-disabled', items.length === 0);
+
+  osOpenModal('osMdBoxActions');
+}
+
+// Edit a box's code / location / status / notes. Renaming the code cascades to
+// every PO inside it (via updateOverstockContainer's location pass).
+function osOpenBoxEdit(containerId) {
+  const c = (state.data.overstockContainers || []).find(x => x.id === containerId);
+  if (!c) return;
+  const codeEl = document.getElementById('osBoxEditCode');
+  const locEl = document.getElementById('osBoxEditLoc');
+  const statusEl = document.getElementById('osBoxEditStatus');
+  const notesEl = document.getElementById('osBoxEditNotes');
+  const warnEl = document.getElementById('osBoxEditWarn');
+  document.getElementById('osBoxEditSub').textContent = `Editing ${c.code}`;
+
+  codeEl.value = c.code || '';
+  locEl.innerHTML = '<option value="">— No location —</option>' +
+    overstockLocations.map(l => `<option value="${escapeAttribute(l)}">${escapeHtml(l)}</option>`).join('');
+  locEl.value = c.currentLocation || '';
+  const statuses = ['Open', 'On Cart', 'Stored', 'Full', 'Closed'];
+  statusEl.innerHTML = statuses.map(s => `<option value="${s}">${s}</option>`).join('');
+  statusEl.value = statuses.includes(c.status) ? c.status : 'Stored';
+  notesEl.value = c.notes || '';
+  warnEl.textContent = '';
+
+  document.getElementById('osBoxEditSave').onclick = () => {
+    let newCode = (codeEl.value || '').trim().toUpperCase();
+    if (/^OSC/i.test(newCode) && typeof normalizeOverstockContainerScan === 'function') {
+      const n = normalizeOverstockContainerScan(newCode);
+      if (n) newCode = n;
+    }
+    if (!newCode) { warnEl.textContent = 'Box code cannot be empty.'; return; }
+    const dup = (state.data.overstockContainers || [])
+      .some(x => x.id !== c.id && String(x.code || '').toUpperCase() === newCode.toUpperCase());
+    if (dup) { warnEl.textContent = `Another box already uses ${newCode}.`; return; }
+
+    if (typeof updateOverstockContainer === 'function') {
+      // Always pass currentLocation so the entry-cascade runs and entries pick
+      // up the (possibly renamed) code and location.
+      updateOverstockContainer(c.id, {
+        code: newCode,
+        currentLocation: locEl.value,
+        status: statusEl.value,
+        notes: notesEl.value,
+      });
+    }
+    osCloseModal('osMdBoxEdit');
+    renderOverstockPage();
+    showToast(`Saved ${newCode}.`, 'success');
+  };
+
+  osOpenModal('osMdBoxEdit');
+}
+
+// Move a single PO out of this box and into another existing box.
+function osOpenMovePo(containerId) {
+  const c = (state.data.overstockContainers || []).find(x => x.id === containerId);
+  if (!c) return;
+  const items = getOverstockContainerItems(containerId);
+  if (!items.length) { showToast('This box has no POs to move.', 'info'); return; }
+  const others = (state.data.overstockContainers || [])
+    .filter(x => x.id !== containerId && x.status !== 'Closed')
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  if (!others.length) { showToast('No other box to move a PO into.', 'info'); return; }
+
+  const sel = document.getElementById('osMovePoSel');
+  sel.innerHTML = items.map(r =>
+    `<option value="${escapeAttribute(r.id)}">PO# ${escapeHtml(r.po)} · ${Number(r.quantity || 0)} units${r.category ? ` · ${escapeHtml(r.category)}` : ''}</option>`
+  ).join('');
+  const dest = document.getElementById('osMovePoDest');
+  dest.innerHTML = '<option value="">— Select destination box —</option>' +
+    others.map(x => `<option value="${escapeAttribute(x.id)}">${escapeHtml(x.code)}${x.currentLocation ? ` · ${escapeHtml(x.currentLocation)}` : ''}</option>`).join('');
+  document.getElementById('osMovePoSub').textContent = `From ${c.code}`;
+  document.getElementById('osMovePoWarn').textContent = '';
+
+  document.getElementById('osMovePoConfirm').onclick = () => {
+    const entryId = sel.value;
+    const destId = dest.value;
+    const warnEl = document.getElementById('osMovePoWarn');
+    if (!destId) { warnEl.textContent = 'Pick a destination box.'; return; }
+    const entry = (state.data.overstockEntries || []).find(r => r.id === entryId);
+    const destBox = (state.data.overstockContainers || []).find(x => x.id === destId);
+    if (!entry || !destBox) { warnEl.textContent = 'Could not move — try again.'; return; }
+    entry.containerId = destBox.id;
+    entry.containerCode = destBox.code;
+    entry.location = destBox.currentLocation || '';
+    entry.updatedAt = Date.now();
+    persistData();
+    osCloseModal('osMdMovePo');
+    renderOverstockPage();
+    showToast(`Moved PO# ${entry.po} → ${destBox.code}.`, 'success');
+  };
+
+  osOpenModal('osMdMovePo');
+}
+
 function osOpenAudit(loc, containerId) {
   // containerId: audit just that box. null/undefined: audit all POs at location.
   const container = containerId
@@ -5304,48 +5428,46 @@ function renderOverstockPage() {
     });
   }
 
-  // ── Consolidate ─────────────────────────────────────────────────────────
+  // ── Boxes (manage any box: audit / add / edit / merge / move) ────────────
   const conEl = document.getElementById('overstockConsolidate');
   if (conEl) {
-    const partialBoxes = containers.filter(c => {
-      if (c.status === 'Closed') return false;
-      const items = getOverstockContainerItems(c.id);
-      const units = items.reduce((s,r)=>s+Number(r.quantity||0),0);
-      return units > 0 && units < 40; // flag boxes with fewer than 40 units as potential consolidation candidates
-    }).sort((a,b)=>(a.updatedAt||0)-(b.updatedAt||0));
+    const boxes = containers
+      .filter(c => c.status !== 'Closed')
+      .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
 
     conEl.innerHTML = `
       <section class="os-panel">
         <div class="os-panel-head">
           <div>
-            <div class="os-panel-title">🔀 Consolidate boxes</div>
-            <div class="os-panel-sub">Merge two partial boxes into one to free up space. Tap any box to merge it.</div>
+            <div class="os-panel-title">📦 Boxes</div>
+            <div class="os-panel-sub">Tap a box for options — audit, add a PO, edit, merge, or move.</div>
           </div>
-          <span class="os-badge os-badge-purple">${partialBoxes.length} partial box${partialBoxes.length !== 1 ? 'es' : ''}</span>
+          <span class="os-badge os-badge-purple">${boxes.length} box${boxes.length !== 1 ? 'es' : ''}</span>
         </div>
         <div class="os-panel-body">
-          ${partialBoxes.length
-            ? `<div class="os-card-grid">${partialBoxes.map(c => {
+          ${boxes.length
+            ? `<div class="os-card-grid">${boxes.map(c => {
                 const items = getOverstockContainerItems(c.id);
                 const units = items.reduce((s,r)=>s+Number(r.quantity||0),0);
-                const cats = [...new Set(items.map(r=>r.category).filter(Boolean))].join(', ') || '—';
-                const statusBadge = {'Open':'os-badge-blue','On Cart':'os-badge-amber','Stored':'os-badge-green'}[c.status]||'os-badge-gray';
-                return `<div class="os-box-card" data-merge-id="${escapeAttribute(c.id)}" role="button" tabindex="0">
+                const statusBadge = {'Open':'os-badge-blue','On Cart':'os-badge-amber','Stored':'os-badge-green','Full':'os-badge-gray'}[c.status]||'os-badge-gray';
+                return `<div class="os-box-card" data-box-actions="${escapeAttribute(c.id)}" role="button" tabindex="0">
                   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
                     <div class="os-cc-code">${escapeHtml(c.code)}</div>
                     <span class="os-badge ${statusBadge}">${escapeHtml(c.status)}</span>
                   </div>
-                  <div class="os-cc-meta">${units} units · ${cats}</div>
-                  ${c.currentLocation ? `<div class="os-cc-loc">${escapeHtml(c.currentLocation)}</div>` : ''}
-                  <div class="os-cc-cta" style="color:#6d28d9;">Merge →</div>
+                  <div class="os-cc-meta">${items.length} PO${items.length===1?'':'s'} · ${units} units</div>
+                  <div class="os-cc-loc">${c.currentLocation ? escapeHtml(c.currentLocation) : 'No location'}</div>
+                  <div class="os-cc-updated">Updated ${escapeHtml(formatDateTimeShort(c.updatedAt || c.createdAt))}</div>
                 </div>`;
               }).join('')}</div>`
-            : `<div class="os-empty-state"><div class="os-empty-icon">✓</div>No partial boxes to consolidate right now.</div>`}
+            : `<div class="os-empty-state"><div class="os-empty-icon">📦</div>No boxes yet.</div>`}
         </div>
       </section>`;
 
-    conEl.querySelectorAll('[data-merge-id]').forEach(card => {
-      card.addEventListener('click', () => osOpenMerge(card.dataset.mergeId));
+    conEl.querySelectorAll('[data-box-actions]').forEach(card => {
+      const open = () => osOpenBoxActions(card.dataset.boxActions);
+      card.addEventListener('click', open);
+      card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
     });
   }
 
