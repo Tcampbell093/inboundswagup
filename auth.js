@@ -11,12 +11,98 @@
 
   window.hcCurrentUser = null;
 
+  // Are we running inside an iframe (e.g. the inbound module embedded in the
+  // portal)? If so, the TOP-LEVEL document owns authentication: it already
+  // verified the session and it owns background token renewal. The embedded
+  // copy must NOT redirect to login or refresh independently — two refreshers
+  // sharing one rotating refresh token would invalidate each other. The embed
+  // just hydrates the in-memory user from shared localStorage so app.js can
+  // attach the (top-level-kept-fresh) token to its sync requests.
+  let isEmbedded = false;
+  try { isEmbedded = (window.self !== window.top); } catch (_) { isEmbedded = true; }
+
+  // ── Background token renewal ───────────────────────────────────────────
+  // Netlify Identity access tokens expire (~1h). Without renewal, a tablet
+  // left open all day would start failing authenticated sync once the backend
+  // enforces auth. We refresh shortly before expiry using the stored refresh
+  // token and write the fresh token back to localStorage so every same-origin
+  // context (including the embedded inbound iframe) picks it up.
+  let refreshTimer = null;
+  function readSession() {
+    try { return JSON.parse(localStorage.getItem(HC_USER_KEY) || 'null'); } catch (_) { return null; }
+  }
+  function scheduleTokenRefresh() {
+    if (isEmbedded) return; // top-level window owns renewal
+    if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
+    const s = readSession();
+    if (!s || !s.refreshToken || !s.expiresAt) return; // pre-refresh-era session
+    const lead = 5 * 60 * 1000; // renew 5 min before expiry
+    const delay = Math.max(15 * 1000, s.expiresAt - Date.now() - lead);
+    refreshTimer = setTimeout(doTokenRefresh, delay);
+  }
+  function doTokenRefresh() {
+    const s = readSession();
+    if (!s || !s.refreshToken) return;
+    fetch(API_URL + '/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(s.refreshToken),
+    })
+      .then(function (r) { if (!r.ok) throw new Error('refresh ' + r.status); return r.json(); })
+      .then(function (tok) {
+        if (!tok || !tok.access_token) throw new Error('no access_token in refresh response');
+        const cur = readSession() || s;
+        cur.token = tok.access_token;
+        if (tok.refresh_token) cur.refreshToken = tok.refresh_token;
+        if (tok.expires_in)    cur.expiresAt    = Date.now() + tok.expires_in * 1000;
+        localStorage.setItem(HC_USER_KEY, JSON.stringify(cur));
+        if (window.hcCurrentUser) window.hcCurrentUser.token = cur.token;
+        scheduleTokenRefresh();
+      })
+      .catch(function (err) {
+        console.warn('HC Auth: token refresh failed:', err.message);
+        // Retry once in a minute; if the refresh token is truly dead, the next
+        // authenticated request will 401 and app.js will route to re-login.
+        if (refreshTimer) clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(doTokenRefresh, 60 * 1000);
+      });
+  }
+  // Exposed so app.js can force a renewal after a 401 before retrying.
+  window.hcRefreshToken = function () {
+    return new Promise(function (resolve) {
+      const s = readSession();
+      if (!s || !s.refreshToken) { resolve(null); return; }
+      fetch(API_URL + '/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(s.refreshToken),
+      })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (tok) {
+          if (!tok || !tok.access_token) { resolve(null); return; }
+          const cur = readSession() || s;
+          cur.token = tok.access_token;
+          if (tok.refresh_token) cur.refreshToken = tok.refresh_token;
+          if (tok.expires_in)    cur.expiresAt    = Date.now() + tok.expires_in * 1000;
+          localStorage.setItem(HC_USER_KEY, JSON.stringify(cur));
+          if (window.hcCurrentUser) window.hcCurrentUser.token = cur.token;
+          resolve(cur.token);
+        })
+        .catch(function () { resolve(null); });
+    });
+  };
+
   function init() {
     const overlay     = document.getElementById('hcLoginOverlay');
     const logoutBtn   = document.getElementById('hcLogoutBtn');
     const userDisplay = document.getElementById('hcUserDisplay');
 
     function showLogin() {
+      // When embedded (inbound module inside the portal), never redirect the
+      // iframe to the login page — the top-level portal owns auth and will
+      // handle an expired/absent session. Redirecting here would just render a
+      // login card inside the iframe.
+      if (isEmbedded) return;
       // Redirect to dedicated login page
       window.location.href = 'login.html';
     }
@@ -52,6 +138,9 @@
 
       // Apply role guards immediately
       if (window.hcAccess) window.hcAccess.applyGuards();
+
+      // Keep the session token fresh in the background (top-level only).
+      scheduleTokenRefresh();
     }
 
     // ── Logout button — always attach regardless of session ───
@@ -70,6 +159,29 @@
           window.location.href = 'login.html';
         }
       });
+    }
+
+    // ── Embedded (iframe) short-circuit ────────────────────────
+    // The portal already authenticated and owns token renewal. Here we only
+    // hydrate the in-memory user from shared localStorage so app.js can attach
+    // the token to sync requests. No network verification, no redirect, no
+    // independent refresh — those belong to the top-level window.
+    if (isEmbedded) {
+      const s = readSession();
+      if (s && s.token) {
+        window.hcCurrentUser = {
+          id: s.id, email: s.email, name: s.name,
+          role: s.role || 'l1', overrides: s.overrides || {},
+          tempAdmin: s.tempAdmin || false, token: s.token,
+        };
+        if (userDisplay) {
+          const label = { admin:'Admin', manager:'Manager', l2:'Associate L2', l1:'Associate L1', external:'External' }[s.role] || 'Associate';
+          userDisplay.textContent = `${s.name} · ${label}`;
+          userDisplay.hidden = false;
+        }
+        if (window.hcAccess) window.hcAccess.applyGuards();
+      }
+      return; // never redirect from inside the iframe
     }
 
     // ── Check for saved session ────────────────────────────────
@@ -114,7 +226,10 @@
                 overrides: dbUser.overrides || {},
                 tempAdmin: dbUser.tempAdmin || false,
                 suspended: dbUser.suspended || false,
-                token:     data.token
+                token:     data.token,
+                // Carry renewal fields forward so background refresh keeps working.
+                refreshToken: data.refreshToken || '',
+                expiresAt:    data.expiresAt || 0
               };
               localStorage.setItem(HC_USER_KEY, JSON.stringify(refreshed));
               applyUser(refreshed);

@@ -16,6 +16,50 @@ function json(statusCode, body) {
 }
 const EDITOR_TTL_MS = 3 * 60 * 1000; // 3 minutes — stale editor entries auto-expire
 
+// ── Authentication gate (staged rollout) ─────────────────────────────────
+// When WORKFLOW_SYNC_REQUIRE_AUTH is "true", every request must carry a valid
+// Netlify Identity token belonging to an invited, non-suspended hc_users
+// account. When the flag is unset/false (the default), the function behaves
+// exactly as before — no auth required. This lets the client-side token
+// plumbing ship and be verified on a real tablet BEFORE enforcement is
+// switched on, so a misconfiguration can't lock the whole warehouse out.
+const REQUIRE_AUTH = String(process.env.WORKFLOW_SYNC_REQUIRE_AUTH || '').toLowerCase() === 'true';
+const IDENTITY_USER_URL = 'https://inboundswagup.netlify.app/.netlify/identity/user';
+
+// Verify the caller's Identity token and confirm they're a known, allowed
+// user. Returns the Identity user object on success, or null on any failure.
+// Mirrors the verifyAdmin pattern used in users.js / system-reset.js.
+async function verifyUser(event) {
+  const auth = event.headers['authorization'] || event.headers['Authorization'] || '';
+  const token = auth.replace('Bearer ', '').trim();
+  if (!token) return null;
+  try {
+    const res = await fetch(IDENTITY_USER_URL, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return null;
+    const user = await res.json();
+    if (!user || !user.email) return null;
+    // Confirm the account is invited and not suspended. hc_users is the source
+    // of truth used everywhere else. If the DB is briefly unreachable we accept
+    // a validly-signed Identity token rather than hard-failing all sync.
+    try {
+      const db = await pool.query('SELECT suspended, invited FROM hc_users WHERE email=$1', [user.email]);
+      if (db.rows.length) {
+        const u = db.rows[0];
+        if (u.suspended) return null;
+        if (u.invited === false) return null;
+      } else {
+        return null; // valid Google login, but not invited into this system
+      }
+    } catch (dbErr) {
+      console.warn('workflow-sync: hc_users check failed, accepting valid token:', dbErr.message);
+    }
+    return user;
+  } catch (err) {
+    console.warn('workflow-sync: token verification error:', err.message);
+    return null;
+  }
+}
+
 async function ensureSchema() {
   if (schemaReady) return;
   await pool.query(`
@@ -96,6 +140,13 @@ exports.handler = async function handler(event) {
   if (!process.env.DATABASE_URL) return json(500, { error: 'DATABASE_URL is not configured' });
   try {
     await ensureSchema();
+
+    // Enforce authentication when the rollout switch is on. Off by default so
+    // the client token plumbing can be validated before flipping it.
+    if (REQUIRE_AUTH) {
+      const caller = await verifyUser(event);
+      if (!caller) return json(401, { error: 'Authentication required' });
+    }
 
     if (event.httpMethod === 'GET') {
       const result = await pool.query(

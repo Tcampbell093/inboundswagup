@@ -81,6 +81,12 @@
 
     const params = new URLSearchParams(hash.replace(/^#/, ''));
     const token  = params.get('access_token');
+    // Also capture the refresh token + lifetime so the app can renew the
+    // session in the background instead of expiring after ~1 hour. The
+    // implicit OAuth redirect returns these alongside access_token.
+    const refreshToken = params.get('refresh_token') || '';
+    const expiresIn    = parseInt(params.get('expires_in') || '0', 10);
+    const expiresAt    = expiresIn ? (Date.now() + expiresIn * 1000) : 0;
 
     fetch(API_URL + '/user', {
       headers: { 'Authorization': 'Bearer ' + token }
@@ -114,7 +120,9 @@
           role:      dbUser.role || 'l1',
           overrides: dbUser.overrides || {},
           tempAdmin: dbUser.tempAdmin || false,
-          token: token
+          token: token,
+          refreshToken: refreshToken,
+          expiresAt: expiresAt
         }));
 
         setStatus('Signed in as ' + name + '. Redirecting…');

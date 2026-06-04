@@ -142,13 +142,57 @@ function scheduleWorkflowSync() {
   if (workflowSyncTimer) clearTimeout(workflowSyncTimer);
   workflowSyncTimer = setTimeout(() => { workflowSyncTimer = null; syncWorkflowState(); }, 250);
 }
-async function workflowApiRequest(method='GET', body){
-  const options = { method, headers: { 'Accept': 'application/json' } };
+// Read the current Identity token from the shared session. auth.js (in the
+// top-level window) keeps this fresh; we re-read per request so a renewed
+// token is picked up immediately, including inside the embedded inbound iframe.
+function getStoredAuthToken() {
+  try {
+    const s = JSON.parse(localStorage.getItem('hcAuthUser') || 'null');
+    return (s && s.token) || null;
+  } catch (_) { return null; }
+}
+// Prefer the top-level window's refresher so a single owner rotates the
+// refresh token (avoids two contexts invalidating each other's token).
+function getTokenRefresher() {
+  try {
+    if (window.top && window.top !== window && typeof window.top.hcRefreshToken === 'function') {
+      return window.top.hcRefreshToken;
+    }
+  } catch (_) { /* cross-origin guard — shouldn't happen, same origin */ }
+  return (typeof window.hcRefreshToken === 'function') ? window.hcRefreshToken : null;
+}
+let _workflowAuthExpiredHandled = false;
+function handleWorkflowAuthExpired() {
+  if (_workflowAuthExpiredHandled) return;
+  _workflowAuthExpiredHandled = true;
+  try { if (typeof showToast === 'function') showToast('Session expired — please sign in again.', 'error'); } catch (_) {}
+  try {
+    const top = window.top || window;
+    top.location.href = 'login.html';
+  } catch (_) { window.location.href = 'login.html'; }
+}
+async function workflowApiRequest(method='GET', body, _retried){
+  const token = getStoredAuthToken();
+  const headers = { 'Accept': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const options = { method, headers };
   if (body !== undefined) {
-    options.headers['Content-Type'] = 'application/json';
+    headers['Content-Type'] = 'application/json';
     options.body = JSON.stringify(body);
   }
   const response = await fetch(WORKFLOW_API_BASE, options);
+  // Session expired/invalid (only possible once backend enforcement is on):
+  // try a single silent token refresh, then retry the request once. If that
+  // can't recover the session, route the user to re-login rather than silently
+  // dropping their data into a local-only island.
+  if (response.status === 401 && !_retried) {
+    const refresher = getTokenRefresher();
+    let fresh = null;
+    if (refresher) { try { fresh = await refresher(); } catch (_) {} }
+    if (fresh) return workflowApiRequest(method, body, true);
+    handleWorkflowAuthExpired();
+    throw new Error('Workflow sync unauthorized (session expired)');
+  }
   const raw = await response.text();
   let data = {};
   try { data = raw ? JSON.parse(raw) : {}; } catch { data = { raw }; }
