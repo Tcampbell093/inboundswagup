@@ -20,6 +20,32 @@ function json(code, body) {
   };
 }
 
+// Create the user in Netlify Identity so an invited person can sign in with
+// Google immediately — no separate trip to the Netlify dashboard. Netlify
+// injects an admin token into authenticated function calls via
+// context.clientContext.identity ({ url, token }); we use it to hit GoTrue's
+// admin/users endpoint. Non-fatal: if it fails we keep the hc_users row and
+// just report a warning so the admin can fall back to the dashboard.
+async function ensureNetlifyIdentityUser(context, email) {
+  try {
+    const idc = context && context.clientContext && context.clientContext.identity;
+    if (!idc || !idc.url || !idc.token) return { ok: false, warning: 'no_identity_context' };
+    const res = await fetch(`${idc.url}/admin/users`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${idc.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, email_confirm: true }),
+    });
+    if (res.ok) return { ok: true, created: true };
+    if (res.status === 422) return { ok: true, already: true }; // already registered — fine
+    const txt = await res.text().catch(() => '');
+    console.warn('Netlify Identity create failed:', res.status, txt);
+    return { ok: false, warning: `identity_${res.status}` };
+  } catch (e) {
+    console.warn('Netlify Identity create error:', e.message);
+    return { ok: false, warning: 'identity_error' };
+  }
+}
+
 // ── Verify caller is admin or manager ────────────────────────
 async function verifyAdmin(event) {
   const auth = event.headers['authorization'] || event.headers['Authorization'] || '';
@@ -87,7 +113,7 @@ async function writeAudit(actor, target, action, detail) {
   }
 }
 
-exports.handler = async function(event) {
+exports.handler = async function(event, context) {
   const method = event.httpMethod;
   const params = event.queryStringParameters || {};
   const action = params.action;
@@ -181,8 +207,16 @@ exports.handler = async function(event) {
       }).catch(() => {});
     }
 
-    await writeAudit(caller.user.email, email, 'invite', { role });
-    return json(200, { ok: true });
+    // Also create them in Netlify Identity so they can sign in with Google
+    // right away — no manual Netlify dashboard step.
+    const identity = await ensureNetlifyIdentityUser(context, email);
+
+    await writeAudit(caller.user.email, email, 'invite', { role, identity: identity.ok ? (identity.already ? 'exists' : 'created') : identity.warning });
+    return json(200, {
+      ok: true,
+      identityCreated: identity.ok,
+      identityWarning: identity.ok ? null : identity.warning,
+    });
   }
 
   // ── POST /users?action=delete ──────────────────────────────

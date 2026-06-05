@@ -357,7 +357,15 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Invite failed');
 
-      if (statusEl) statusEl.innerHTML = '<span style="color:#2ecc71;">✓ Invite sent!</span>';
+      // identityCreated === false means the in-app (hc_users) invite saved but
+      // auto-adding them to Netlify Identity didn't complete — surface it so the
+      // admin can do the one-off Netlify invite as a fallback.
+      const identityFailed = data.identityCreated === false;
+      if (statusEl) {
+        statusEl.innerHTML = identityFailed
+          ? `<span style="color:#e0a020;">✓ Invited in-app — but couldn't auto-add to Netlify Identity (${data.identityWarning || 'unknown'}). They may need a manual Netlify invite.</span>`
+          : '<span style="color:#2ecc71;">✓ Invited — they can sign in with Google.</span>';
+      }
       if (el('inviteEmail')) el('inviteEmail').value = '';
 
       await loadUsers();
@@ -365,7 +373,7 @@
         const modal = el('settingsInviteModal');
         if (modal) modal.hidden = true;
         if (statusEl) statusEl.textContent = '';
-      }, 1500);
+      }, identityFailed ? 5000 : 1800);
 
     } catch(e) {
       if (statusEl) statusEl.innerHTML = `<span style="color:#e55;">Error: ${e.message}</span>`;
