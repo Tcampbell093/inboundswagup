@@ -39,6 +39,7 @@
     recentEntries: [],         // [{id, po, qty, category, containerCode, ts}]
     itemsAdded: 0,
     containersTouched: new Set(),
+    containersCreated: new Set(), // boxes NEWLY created this session (for empty cleanup)
     startedAt: null,
   };
 
@@ -496,6 +497,7 @@
           currentLocation: rawLoc,
           code: normalized,
         });
+        if (container && container.id) session.containersCreated.add(container.id);
       } catch (e) {
         showToast('Failed to create container: ' + e.message, 'error');
         return;
@@ -550,6 +552,7 @@
               currentLocation: rawLoc,
               code: normalized,
             });
+            if (container && container.id) session.containersCreated.add(container.id);
             showToast(`Wiped "${normalized}" — start fresh.`, 'success');
           } catch (e) {
             showToast('Failed to recreate container: ' + e.message, 'error');
@@ -780,6 +783,7 @@
       recentEntries: [],
       itemsAdded: 0,
       containersTouched: new Set(),
+      containersCreated: new Set(),
       startedAt: null,
     };
 
@@ -868,12 +872,57 @@
     setTimeout(() => el('stockIntakeContainerInput')?.focus(), 80);
   }
 
-  function endSession() {
+  // Delete any box CREATED this session that ended up with zero POs — an
+  // abandoned code+location shouldn't leave a ghost container behind.
+  function cleanupEmptyCreatedContainers() {
+    let removed = 0;
+    const entries = window.state?.data?.overstockEntries || [];
+    session.containersCreated.forEach(cid => {
+      const hasPos = entries.some(r => r.containerId === cid);
+      if (!hasPos && typeof window.deleteOverstockContainer === 'function') {
+        const res = window.deleteOverstockContainer(cid, { force: true });
+        if (res && res.ok) removed++;
+      }
+    });
+    return removed;
+  }
+
+  // Complete — finish and keep everything added; tidy up empty boxes.
+  function completeSession() {
+    const removed = cleanupEmptyCreatedContainers();
     if (session.itemsAdded > 0) {
-      if (!confirm(`End session?\n\nYou added ${session.itemsAdded} item${session.itemsAdded === 1 ? '' : 's'} across ${session.containersTouched.size} container${session.containersTouched.size === 1 ? '' : 's'}.\n\nThis will clear your "Recent entries" ledger. Your data stays saved.`)) return;
-      showToast(`Session ended — ${session.itemsAdded} items saved.`, 'success');
+      showToast(`Done — ${session.itemsAdded} item${session.itemsAdded === 1 ? '' : 's'} saved${removed ? `, ${removed} empty box${removed === 1 ? '' : 'es'} removed` : ''}.`, 'success');
+    } else if (removed) {
+      showToast('Empty box removed — nothing was logged.', 'success');
     }
     clearSessionLedger();
+    if (typeof window.renderOverstockPage === 'function') { try { window.renderOverstockPage(); } catch (_) {} }
+    closeIntakeModal();
+  }
+
+  // Cancel — discard this session. Removes empty boxes created this session;
+  // if POs were added this session, confirm before throwing that work away.
+  function cancelSession() {
+    if (session.itemsAdded > 0) {
+      const ok = confirm(
+        `Cancel this session?\n\n` +
+        `This DELETES the ${session.itemsAdded} item${session.itemsAdded === 1 ? '' : 's'} you added this session and any boxes you created.\n\n` +
+        `OK = discard everything from this session\nCancel = keep working`
+      );
+      if (!ok) return;
+      // Delete the entries added this session, then the now-empty created boxes.
+      const ids = new Set((session.recentEntries || []).map(e => e.id));
+      try {
+        (window.state?.data?.overstockEntries || []).slice().forEach(r => {
+          if (ids.has(r.id) && typeof window.deleteOverstockEntry === 'function') {
+            window.deleteOverstockEntry(r.id);
+          }
+        });
+      } catch (_) {}
+    }
+    cleanupEmptyCreatedContainers();
+    clearSessionLedger();
+    if (typeof window.renderOverstockPage === 'function') { try { window.renderOverstockPage(); } catch (_) {} }
     closeIntakeModal();
   }
 
@@ -905,8 +954,9 @@
       openBtn.addEventListener('click', openIntakeModal);
     }
 
-    // End-session button
-    el('stockIntakeEndBtn')?.addEventListener('click', endSession);
+    // Cancel / Complete buttons
+    el('stockIntakeCancelBtn')?.addEventListener('click', cancelSession);
+    el('stockIntakeCompleteBtn')?.addEventListener('click', completeSession);
 
     // Identity: custom name entry
     el('stockIntakeIdentityCustomBtn')?.addEventListener('click', () => {
@@ -929,7 +979,7 @@
       clearSessionLedger();
       session = {
         activeContainerId: null, activeContainerCode: '', activeContainerLocation: '',
-        recentEntries: [], itemsAdded: 0, containersTouched: new Set(), startedAt: null,
+        recentEntries: [], itemsAdded: 0, containersTouched: new Set(), containersCreated: new Set(), startedAt: null,
       };
       updateActiveUserChip();
       renderStats();
@@ -988,12 +1038,12 @@
       else sizesRow.hidden = true;
     });
 
-    // Escape closes modal (but confirms if entries added)
+    // Escape = Cancel (backs out; cleans up empty boxes, confirms if work exists)
     document.addEventListener('keydown', (ev) => {
       if (ev.key !== 'Escape') return;
       const overlay = el('stockIntakeOverlay');
       if (!overlay || overlay.hidden) return;
-      endSession();
+      cancelSession();
     });
   }
 
