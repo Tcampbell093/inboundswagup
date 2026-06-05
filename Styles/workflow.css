@@ -3472,6 +3472,16 @@ font-weight:800
   flex-shrink:0;
 }
 .si-end-btn:hover{background:#fef2f2; border-color:#fca5a5;}
+.si-complete-btn{
+  min-height:48px; padding:0 22px;
+  background:#0a7c4e; color:#fff;
+  border:1.5px solid #0a7c4e; border-radius:10px;
+  font-size:14px; font-weight:800;
+  cursor:pointer;
+  transition:background .14s, border-color .14s;
+  flex-shrink:0;
+}
+.si-complete-btn:hover{background:#0b8a57; border-color:#0b8a57;}
 
 /* Session stats row */
 .si-session-stats{
