@@ -5,7 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>QA Inbound Workflow</title>
   <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="Styles/workflow.css" />
+  <!-- ?v=... cache-bust forces browsers to re-fetch workflow.css after Option C
+       redesign was added. The iframe in index.html aggressively caches CSS;
+       without this, the new toolbar / map / feed styles look unstyled. Bump
+       the version on any future CSS-only change that needs immediate effect. -->
+  <link rel="stylesheet" href="Styles/workflow.css?v=20260605-opt-c" />
   <link rel="stylesheet" href="Styles/pallets.css" />
 </head>
 <body class="workflow-page">
