@@ -10,7 +10,7 @@
 const workflowApiBase = '/.netlify/functions/workflow-sync';
 const priorityApiBase = '/.netlify/functions/inbound-po-priorities';
 const commentsApiBase = '/.netlify/functions/inbound-po-comments';
-const REFRESH_MS      = 60000;
+const REFRESH_MS      = 120000;
 const WATCHLIST_KEY   = 'ipt_watchlist_v1';
 const AUTHOR_KEY      = 'ipt_author_name';
 
@@ -488,14 +488,30 @@ function loadLocalPallets() {
 }
 
 // ── Fetch from backend ─────────────────────────────────────────────────────
+// Change-detection: a tiny meta call tells us the server's updated_at; we only
+// re-download the full pallet blob when it has actually changed. Keeps an
+// always-on board from re-transferring the whole state every refresh.
+let _ftLastUpdatedAt = null;
+let _ftCachedPallets = null;
 async function getInboundState() {
   try {
+    let remoteTs = null;
+    try {
+      const m = await fetch(workflowApiBase + '?meta=1', { headers: { Accept: 'application/json' } });
+      if (m.ok) { const mj = await m.json(); remoteTs = mj && mj.updated_at ? new Date(mj.updated_at).getTime() : null; }
+    } catch (_) { /* fall through to full fetch */ }
+    if (remoteTs && _ftLastUpdatedAt && remoteTs <= _ftLastUpdatedAt && Array.isArray(_ftCachedPallets)) {
+      return { pallets: _ftCachedPallets, updated_at: new Date(_ftLastUpdatedAt).toISOString(), source: 'cache' };
+    }
+
     const res  = await fetch(workflowApiBase, { headers: { Accept: 'application/json' } });
     const text = await res.text();
     let data = {};
     try { data = text ? JSON.parse(text) : {}; } catch { data = {}; }
     if (!res.ok) throw new Error((data && data.error) || ('Inbound load failed (' + res.status + ')'));
     const pallets = (data && data.data && Array.isArray(data.data.pallets)) ? data.data.pallets : [];
+    _ftCachedPallets = pallets;
+    if (data.updated_at) { const t = new Date(data.updated_at).getTime(); if (!Number.isNaN(t)) _ftLastUpdatedAt = t; }
     return { pallets, updated_at: data.updated_at || null, source: 'backend' };
   } catch (err) {
     const localPallets = loadLocalPallets();

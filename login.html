@@ -147,7 +147,10 @@
       setStatus('Redirecting to Google…');
       loginBtn.disabled = true;
       const redirectTo = encodeURIComponent(window.location.origin + '/login.html');
-      window.location.href = API_URL + '/authorize?provider=google&redirect_to=' + redirectTo;
+      // prompt=select_account forces Google to show the account chooser instead
+      // of silently reusing whichever Google account is already signed in — so
+      // you can log in as a different (e.g. newly invited) user.
+      window.location.href = API_URL + '/authorize?provider=google&prompt=select_account&redirect_to=' + redirectTo;
     });
   }
 })();

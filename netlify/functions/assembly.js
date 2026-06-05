@@ -44,6 +44,14 @@ exports.handler = async function handler(event) {
     await ensureSchema();
 
     if (event.httpMethod === 'GET') {
+      // Lightweight meta mode (?meta=1): return only updated_at so an always-on
+      // board can skip re-downloading the full state when nothing changed.
+      const meta = event.queryStringParameters &&
+        (event.queryStringParameters.meta === '1' || event.queryStringParameters.meta === 'true');
+      if (meta) {
+        const r = await pool.query(`SELECT updated_at FROM assembly_sync_state WHERE state_key = 'default' LIMIT 1;`);
+        return json(200, { meta: true, updated_at: (r.rows[0] && r.rows[0].updated_at) || null });
+      }
       const result = await pool.query(
         `SELECT state_json, updated_at FROM assembly_sync_state WHERE state_key = 'default' LIMIT 1;`
       );
