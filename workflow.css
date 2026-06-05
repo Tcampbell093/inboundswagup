@@ -2674,15 +2674,9 @@ font-weight:800
 }
 .workflow-page .os-container-lookup-form {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) auto auto;
+  grid-template-columns: minmax(180px, 1fr) auto;
   gap: 10px;
   align-items: center;
-}
-@media (max-width: 560px) {
-  .workflow-page .os-container-lookup-form {
-    grid-template-columns: 1fr auto;
-  }
-  .workflow-page .os-container-lookup-input { grid-column: 1 / -1; }
 }
 .workflow-page .os-container-lookup-input {
   font-family: monospace;
@@ -2823,60 +2817,6 @@ font-weight:800
 .workflow-page .os-qty-badge {
   display: inline-block; font-family: monospace; font-weight: 800;
   font-size: 14px; color: #b45309;
-}
-
-/* ── Overstock Log: toolbar, compact rows, footer pagination ── */
-.workflow-page .os-log-head { align-items: center; }
-.workflow-page .os-log-tools {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-}
-.workflow-page .os-log-search { min-width: 210px; }
-.workflow-page .os-log-sort { cursor: pointer; }
-
-/* Compress the log table — tighter rows, smaller action buttons. Scoped to
-   .os-log-table so other workflow tables keep their roomier spacing. */
-.workflow-page .os-log-table th { padding: 8px 12px; }
-.workflow-page .os-log-table td { padding: 7px 12px; font-size: 12.5px; }
-.workflow-page .os-log-table .action-stack { gap: 5px; }
-.workflow-page .os-log-table .tiny-btn { padding: 4px 9px; font-size: 11px; border-radius: 8px; }
-
-/* Clickable PO — looks like the mono code but signals it's actionable. */
-.workflow-page .os-po-link {
-  font-family: monospace; font-weight: 700; font-size: 13px;
-  color: var(--blue1, #1a56db); background: none; border: none;
-  padding: 0; cursor: pointer; text-decoration: underline;
-  text-decoration-color: rgba(26,86,219,.35); text-underline-offset: 2px;
-}
-.workflow-page .os-po-link:hover { color: #0a3d8f; text-decoration-color: currentColor; }
-.workflow-page .os-po-link:focus-visible { outline: 2px solid var(--blue4); outline-offset: 2px; border-radius: 4px; }
-
-/* Footer: count + page-size pills */
-.workflow-page .os-log-foot {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; flex-wrap: wrap;
-  padding: 10px 20px; border-top: 1px solid var(--line); background: #fbfdff;
-}
-.workflow-page .os-log-count { font-size: 12px; font-weight: 700; color: var(--muted); }
-.workflow-page .os-log-pagesize { display: flex; align-items: center; gap: 6px; }
-.workflow-page .os-log-pagesize-lbl {
-  font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .06em; color: var(--muted); margin-right: 2px;
-}
-.workflow-page .os-log-size-btn {
-  min-width: 40px; padding: 5px 11px; border-radius: 999px;
-  border: 1.5px solid var(--line); background: #fff; color: #2a658f;
-  font-size: 12px; font-weight: 800; cursor: pointer; font-family: inherit;
-  transition: background .15s, border-color .15s, color .15s;
-}
-.workflow-page .os-log-size-btn:hover { border-color: var(--blue4); background: #f4faff; }
-.workflow-page .os-log-size-btn.is-active {
-  background: var(--navy); border-color: var(--navy); color: #fff;
-}
-
-@media (max-width: 700px) {
-  .workflow-page .os-log-head { align-items: flex-start; }
-  .workflow-page .os-log-tools { width: 100%; }
-  .workflow-page .os-log-search { flex: 1 1 100%; min-width: 0; }
 }
 
 /* ── Responsive ── */
@@ -3121,13 +3061,6 @@ font-weight:800
   border: 1.5px solid #d97706 !important;
 }
 .workflow-page .os-audit-btn-wrong:hover { background: #fef9c3 !important; }
-.workflow-page .os-audit-btn-del {
-  background: #fff !important; color: #6b7280 !important;
-  border: 1.5px solid #d1d5db !important;
-}
-.workflow-page .os-audit-btn-del:hover {
-  background: #fee2e2 !important; color: #991b1b !important; border-color: #ef4444 !important;
-}
 
 /* Flagged state — subtle tint on the whole row */
 .workflow-page .os-audit-row.au-ok      { background: #f0fdf4; border-radius: 10px; padding: 10px 12px; }
@@ -3252,135 +3185,102 @@ font-weight:800
   display:flex;            /* tab bar internally is a row */
 }
 
-/* ── Branded band ───────────────────────────────────────────────── */
+/* ── Slate Professional band ────────────────────────────────────── */
 .workflow-page .inb-band{
-  background:linear-gradient(165deg,#1E70BD 0%,#155A9C 100%);
+  background:linear-gradient(180deg,#fbfcfe 0%,#f1f4f9 100%);
+  border:1px solid #e2e8f0;
+  border-bottom:none;
   border-radius:16px 16px 0 0;
   padding:16px 20px 14px;
-  color:#fff;
+  color:#0f172a;
 }
 .workflow-page .inb-band-top{
   display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
 }
 .workflow-page .inb-eyebrow{
   font-size:9px;letter-spacing:.18em;text-transform:uppercase;
-  color:#BBD7F0;font-weight:700;margin:0;
+  color:#64748b;font-weight:700;margin:0;
 }
 .workflow-page .inb-band-title h1{
-  font-size:24px;font-weight:700;color:#fff;margin:2px 0 0;letter-spacing:-.01em;
+  font-size:24px;font-weight:700;color:#0f172a;margin:2px 0 0;letter-spacing:-.01em;
 }
 .workflow-page .inb-band-identity{
   display:flex;align-items:center;gap:9px;
-  background:rgba(255,255,255,.16);
+  background:#fff;
+  border:1px solid #e2e8f0;
   border-radius:999px;padding:4px 4px 4px 13px;
   flex-shrink:0;
+  box-shadow:0 1px 2px rgba(15,23,42,.04);
 }
-.workflow-page .inb-user-name{font-size:12px;color:#EAF3FB;font-weight:500;white-space:nowrap;}
+.workflow-page .inb-user-name{font-size:12px;color:#475569;font-weight:500;white-space:nowrap;}
 .workflow-page .inb-user-avatar{
-  width:26px;height:26px;border-radius:50%;background:#fff;color:#0C447C;
+  width:26px;height:26px;border-radius:50%;background:#0f172a;color:#fff;
   display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;
 }
 
-/* ── Metrics + tools row ───────────────────────────────────────── */
+/* Metrics row — hairline-divided columns */
 .workflow-page .inb-band-metrics{
-  display:flex;align-items:center;gap:22px;flex-wrap:wrap;
-  margin-top:14px;
+  display:flex;align-items:stretch;gap:0;flex-wrap:wrap;
+  margin-top:14px;padding-top:12px;
+  border-top:1px solid #e2e8f0;
 }
-.workflow-page .inb-metric{display:flex;flex-direction:column;gap:1px;}
+.workflow-page .inb-metric{
+  display:flex;flex-direction:column;gap:1px;
+  padding:0 18px;
+  border-right:1px solid #e2e8f0;
+  justify-content:center;
+}
+.workflow-page .inb-metric:first-child{padding-left:0;}
 .workflow-page .inb-metric-label{
-  font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#BBD7F0;font-weight:700;
+  font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#64748b;font-weight:700;
 }
-.workflow-page .inb-metric-value{font-size:17px;font-weight:700;color:#fff;line-height:1.1;}
-.workflow-page .inb-metric-meta{font-size:10px;color:#9DC0E0;}
-/* UPH state tint on the band */
-.workflow-page #currentDeptUphBadge.uph-state-green .inb-metric-value{color:#7FE9B0;}
-.workflow-page #currentDeptUphBadge.uph-state-yellow .inb-metric-value{color:#FFD680;}
-.workflow-page #currentDeptUphBadge.uph-state-red .inb-metric-value{color:#FFA08F;}
+.workflow-page .inb-metric-value{
+  font-size:18px;font-weight:700;color:#0f172a;line-height:1.1;
+  font-variant-numeric:tabular-nums;
+}
+.workflow-page .inb-metric-meta{font-size:10px;color:#94a3b8;}
+.workflow-page #currentDeptUphBadge.uph-state-green .inb-metric-value{color:#15803d;}
+.workflow-page #currentDeptUphBadge.uph-state-yellow .inb-metric-value{color:#a16207;}
+.workflow-page #currentDeptUphBadge.uph-state-red .inb-metric-value{color:#b91c1c;}
 
 .workflow-page .inb-band-tools{
   margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding-left:18px;border-left:1px solid #e2e8f0;
 }
 
-/* PO lookup inside the band */
+/* PO lookup */
 .workflow-page .inb-po-lookup{position:relative;}
 .workflow-page .inb-po-lookup-inner{
   display:flex;align-items:center;gap:6px;
-  background:rgba(255,255,255,.16);
+  background:#fff;
+  border:1px solid #e2e8f0;
   border-radius:9px;padding:4px 5px 4px 10px;
+  box-shadow:0 1px 2px rgba(15,23,42,.04);
 }
-.workflow-page .inb-po-search-ico{font-style:normal;font-size:14px;color:#BBD7F0;}
+.workflow-page .inb-po-search-ico{font-style:normal;font-size:14px;color:#94a3b8;}
 .workflow-page .inb-po-lookup-inner input{
-  background:none;border:none;outline:none;color:#fff;font-size:12.5px;
+  background:none;border:none;outline:none;color:#0f172a;font-size:12.5px;
   width:150px;font-family:inherit;
 }
-.workflow-page .inb-po-lookup-inner input::placeholder{color:#A8C7E4;}
+.workflow-page .inb-po-lookup-inner input::placeholder{color:#94a3b8;}
 .workflow-page .inb-po-lookup-inner #poLookupBtn{
-  background:#fff;color:#0C447C;border:none;border-radius:6px;
+  background:#0f172a;color:#fff;border:none;border-radius:6px;
   padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;
 }
-.workflow-page .inb-po-lookup-inner #poLookupBtn:hover{background:#E6F1FB;}
+.workflow-page .inb-po-lookup-inner #poLookupBtn:hover{background:#1e293b;}
 .workflow-page .inb-po-lookup-inner #poLookupClear{
-  background:none;border:none;color:#BBD7F0;font-size:12px;cursor:pointer;padding:4px 6px;
+  background:none;border:none;color:#94a3b8;font-size:12px;cursor:pointer;padding:4px 6px;
 }
-.workflow-page .inb-po-lookup-inner #poLookupClear:hover{color:#fff;}
-/* PO Lookup results — centered modal (escapes the band entirely) */
-.po-lookup-modal{
-  position:fixed;inset:0;z-index:10000;
-  background:rgba(15,28,46,.55);
-  display:flex;align-items:flex-start;justify-content:center;
-  padding:6vh 16px 16px;
-  overflow-y:auto;
-}
-.po-lookup-modal[hidden]{display:none;}
-.po-lookup-modal-dialog{
-  background:#fff;color:var(--text,#0f1c2e);
-  width:100%;max-width:760px;
-  border-radius:14px;
-  box-shadow:0 24px 60px -20px rgba(15,28,46,.6);
-  overflow:hidden;
-  display:flex;flex-direction:column;
-  max-height:88vh;
-}
-.po-lookup-modal-header{
-  display:flex;align-items:center;justify-content:space-between;gap:16px;
-  padding:14px 20px;
-  background:linear-gradient(165deg,#1E70BD 0%,#155A9C 100%);
-  color:#fff;flex-shrink:0;
-}
-.po-lookup-modal-eyebrow{
-  font-size:10px;letter-spacing:.18em;text-transform:uppercase;
-  color:#BBD7F0;font-weight:700;
-}
-#poLookupModalTitle{
-  font-size:18px;font-weight:700;margin:2px 0 0;color:#fff;
-}
-.po-lookup-modal-close{
-  background:rgba(255,255,255,.18);border:none;color:#fff;
-  width:32px;height:32px;border-radius:8px;font-size:20px;line-height:1;
-  cursor:pointer;flex-shrink:0;
-}
-.po-lookup-modal-close:hover{background:rgba(255,255,255,.28);}
-.po-lookup-modal-body{
-  padding:0;overflow-y:auto;flex:1;min-height:0;
-  background:var(--bg,#f4f7fb);
-}
-.po-lookup-modal-body:empty::before{
-  content:'';
-}
+.workflow-page .inb-po-lookup-inner #poLookupClear:hover{color:#0f172a;}
 
-@media (max-width:760px){
-  .po-lookup-modal{padding:0;}
-  .po-lookup-modal-dialog{max-height:100vh;border-radius:0;}
-}
-
-/* Pace chip (still opens pulse-check) */
+/* Pace chip */
 .workflow-page .inb-pace{
   display:flex;align-items:center;gap:8px;
-  background:rgba(255,255,255,.16);
-  border:none;border-radius:10px;padding:5px 11px 5px 7px;cursor:pointer;
+  background:#fff;
+  border:1px solid #e2e8f0;border-radius:10px;padding:5px 11px 5px 7px;cursor:pointer;
+  box-shadow:0 1px 2px rgba(15,23,42,.04);
 }
-.workflow-page .inb-pace:hover{background:rgba(255,255,255,.24);}
-/* Beat the global #uphPaceIcon 86px !important rule with id+context + !important */
+.workflow-page .inb-pace:hover{background:#f8fafc;border-color:#cbd5e1;}
 .workflow-page .inb-pace img#uphPaceIcon,
 .workflow-page .inb-pace img{
   width:30px !important;height:30px !important;
@@ -3390,58 +3290,64 @@ font-weight:800
 .workflow-page .inb-pace-meta{display:flex;flex-direction:column;align-items:flex-start;line-height:1.15;max-width:140px;}
 .workflow-page .inb-pace-meta strong,
 .workflow-page .inb-pace-meta strong#uphPaceLabel{
-  font-size:11px !important;color:#fff !important;font-weight:700 !important;margin:0 !important;
+  font-size:11px !important;color:#0f172a !important;font-weight:700 !important;margin:0 !important;
 }
 .workflow-page .inb-pace-meta span,
 .workflow-page .inb-pace-meta span#uphPaceText{
-  font-size:10px !important;color:#BBD7F0 !important;margin:0 !important;
+  font-size:10px !important;color:#64748b !important;margin:0 !important;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;
 }
 
-/* Language toggle on the band */
+/* Language toggle */
 .workflow-page .inb-lang.lang-switch{
-  display:flex;background:rgba(255,255,255,.16);border-radius:8px;overflow:hidden;
+  display:flex;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;
+  box-shadow:0 1px 2px rgba(15,23,42,.04);
 }
 .workflow-page .inb-lang .lang-btn{
-  background:none;border:none;color:#BBD7F0;font-size:11px;font-weight:700;
+  background:none;border:none;color:#64748b;font-size:11px;font-weight:700;
   padding:6px 11px;cursor:pointer;
 }
-.workflow-page .inb-lang .lang-btn.active{background:#fff;color:#0C447C;}
+.workflow-page .inb-lang .lang-btn:hover{color:#0f172a;}
+.workflow-page .inb-lang .lang-btn.active{background:#0f172a;color:#fff;}
 
 .workflow-page .inb-legacy-user{display:none;}
 
-/* ── Attached tab bar ──────────────────────────────────────────── */
+/* Attached tab bar — white surface, ink active underline */
 .workflow-page .inb-tabbar-wrap{
   display:flex;align-items:stretch;
-  background:#0F4F8C;
+  background:#fff;
+  border:1px solid #e2e8f0;
   border-radius:0 0 16px 16px;
   padding:0 8px;
-  box-shadow:0 10px 24px -16px rgba(15,28,46,.5);
+  box-shadow:0 1px 2px rgba(15,23,42,.04);
 }
 .workflow-page .role-tabs.inb-tabbar{
   display:flex;gap:0;flex-wrap:nowrap;overflow-x:auto;flex:1;
   -webkit-overflow-scrolling:touch;scrollbar-width:thin;
 }
 .workflow-page .role-tabs.inb-tabbar::-webkit-scrollbar{height:3px;}
-.workflow-page .role-tabs.inb-tabbar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.25);border-radius:3px;}
+.workflow-page .role-tabs.inb-tabbar::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px;}
 .workflow-page .inb-tabbar .role-tab{
   background:none;border:none;border-radius:0;box-shadow:none;
-  color:#BBD7F0;font-size:13px;font-weight:600;
-  padding:12px 15px;white-space:nowrap;cursor:pointer;
+  color:#64748b;font-size:13px;font-weight:600;
+  padding:13px 15px;white-space:nowrap;cursor:pointer;
   border-bottom:2px solid transparent;
+  margin-bottom:-1px;
+  transition:color .12s;
 }
-.workflow-page .inb-tabbar .role-tab:hover{color:#fff;}
+.workflow-page .inb-tabbar .role-tab:hover{color:#0f172a;}
 .workflow-page .inb-tabbar .role-tab.active{
-  background:none;color:#fff;
-  border-bottom:2px solid #fff;box-shadow:none;
+  background:none;color:#0f172a;
+  border-bottom:2px solid #0f172a;box-shadow:none;
+  font-weight:700;
 }
 .workflow-page .inb-summary-btn{
   flex-shrink:0;align-self:center;margin-left:8px;
-  background:rgba(255,255,255,.16);border:none;color:#EAF3FB;
+  background:#f8fafc;border:1px solid #e2e8f0;color:#475569;
   border-radius:7px;padding:7px 13px;font-size:12px;font-weight:600;cursor:pointer;
   white-space:nowrap;
 }
-.workflow-page .inb-summary-btn:hover{background:rgba(255,255,255,.24);color:#fff;}
+.workflow-page .inb-summary-btn:hover{background:#fff;color:#0f172a;border-color:#cbd5e1;}
 
 /* ── Responsive (tablet) ───────────────────────────────────────── */
 @media (max-width:900px){
@@ -3454,155 +3360,1253 @@ font-weight:800
   .workflow-page .inb-pace-meta{display:none;}
   .workflow-page .inb-po-lookup{flex:1;}
   .workflow-page .inb-po-lookup-inner input{width:100%;}
+
+  /* Stack the header band vertically so each row gets full width on phone
+     instead of fighting for space horizontally. */
+  .workflow-page .inb-band-metrics{
+    flex-wrap:wrap; gap:12px;
+  }
+  .workflow-page .inb-band-tools{
+    width:100%; margin-left:0; margin-top:8px;
+    flex-wrap:wrap; gap:8px;
+  }
+  .workflow-page .inb-po-lookup-inner{
+    display:flex; gap:6px; width:100%;
+  }
+
+  /* Tabbar overrides — force horizontal scroll with visible gaps so labels
+     don't overlap. The previous fix set gap:0 which made labels appear to
+     run together visually. */
+  .workflow-page .role-tabs.inb-tabbar{
+    flex-wrap:nowrap !important;
+    overflow-x:auto !important;
+    gap:4px !important;
+    padding:0 8px !important;
+    scroll-snap-type:x proximity;
+  }
+  .workflow-page .inb-tabbar .role-tab{
+    flex-shrink:0 !important;
+    flex-grow:0 !important;
+    padding:11px 14px !important;
+    font-size:12px !important;
+    white-space:nowrap !important;
+    scroll-snap-align:start;
+    min-width:max-content;
+  }
+  /* Stack the Show Summary button below the scroll strip instead of next
+     to it — there isn't room on phone for both side-by-side. */
+  .workflow-page .inb-tabbar-wrap{
+    flex-direction:column;
+    align-items:stretch;
+    padding:0;
+  }
+  .workflow-page .inb-summary-btn{
+    margin:8px 12px;
+    align-self:flex-end;
+  }
 }
 
-/* ── Trends tab: chart containers ── */
-.workflow-page .stats-chart-box {
-  position: relative;
-  height: 300px;
-  width: 100%;
-  margin-top: 6px;
-}
-.workflow-page .stats-chart-box canvas {
-  width: 100% !important;
-  height: 100% !important;
-}
-.workflow-page .stats-chart-note {
-  display: none;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.5;
-  text-align: center;
-  padding: 40px 24px;
-  border: 1px dashed var(--line);
-  border-radius: 14px;
-  background: linear-gradient(180deg, #fbfeff 0%, #f5fbff 100%);
+/* The legacy @media (max-width:760px) rule sets `.role-tabs { flex-wrap: wrap }`
+   for compact mobile. That breaks the Slate tabbar's horizontal-scroll design.
+   This higher-specificity override restores nowrap for the Slate tabbar only,
+   without disturbing the legacy hero-tabs treatment elsewhere. */
+@media (max-width:760px){
+  .workflow-page .role-tabs.inb-tabbar{
+    flex-wrap:nowrap !important;
+    overflow-x:auto !important;
+  }
 }
 
-/* ── Scan card camera button ── */
-.workflow-page .os-scan-camera-btn {
-  flex-shrink: 0;
+/* ════════════════════════════════════════════════════════════════════
+   STOCK INTAKE MODAL — iPad-optimized, container-first fast intake.
+   Two-step flow inside one modal: pick container → add items.
+   Tap targets ≥48px throughout. Slate Professional palette.
+   ════════════════════════════════════════════════════════════════════ */
+.si-overlay{
+  position:fixed; inset:0; z-index:9500;
+  background:rgba(15,23,42,.65);
+  backdrop-filter:blur(4px);
+  display:flex; align-items:flex-start; justify-content:center;
+  overflow-y:auto;
+  padding:24px 16px;
+}
+.si-overlay[hidden]{display:none !important;}
+.si-modal{
+  background:#fff;
+  border-radius:18px;
+  width:100%; max-width:860px;
+  min-height:480px;
+  box-shadow:0 30px 80px rgba(15,23,42,.32);
+  overflow:hidden;
+  display:flex; flex-direction:column;
+  border:1px solid #e2e8f0;
+}
+
+/* Header */
+.si-modal-header{
+  display:flex; align-items:flex-start; justify-content:space-between;
+  gap:16px;
+  padding:22px 26px 18px;
+  border-bottom:1px solid #f1f5f9;
+  background:linear-gradient(180deg,#fbfcfe 0%,#fff 100%);
+}
+.si-eyebrow{
+  font-size:11px; font-weight:800; letter-spacing:.14em;
+  color:#185fa5; text-transform:uppercase;
+  margin-bottom:4px;
+}
+.si-title{
+  font-size:24px; font-weight:800; color:#0f172a;
+  letter-spacing:-.01em; line-height:1.15; margin:0;
+}
+.si-subtitle{
+  font-size:13px; color:#64748b; margin:4px 0 0; line-height:1.4;
+}
+.si-end-btn{
+  min-height:48px; padding:0 18px;
+  background:#fff; color:#991b1b;
+  border:1.5px solid #fecaca; border-radius:10px;
+  font-size:14px; font-weight:700;
+  cursor:pointer;
+  transition:background .14s, border-color .14s;
+  flex-shrink:0;
+}
+.si-end-btn:hover{background:#fef2f2; border-color:#fca5a5;}
+.si-complete-btn{
+  min-height:48px; padding:0 22px;
+  background:#0a7c4e; color:#fff;
+  border:1.5px solid #0a7c4e; border-radius:10px;
+  font-size:14px; font-weight:800;
+  cursor:pointer;
+  transition:background .14s, border-color .14s;
+  flex-shrink:0;
+}
+.si-complete-btn:hover{background:#0b8a57; border-color:#0b8a57;}
+
+/* Session stats row */
+.si-session-stats{
+  display:grid; grid-template-columns:repeat(3, 1fr);
+  gap:12px;
+  padding:14px 26px;
+  background:#f8fafc;
+  border-bottom:1px solid #f1f5f9;
+}
+.si-stat{
+  display:flex; flex-direction:column; align-items:flex-start;
+  gap:2px;
+}
+.si-stat-num{
+  font-size:22px; font-weight:800; color:#0f172a;
+  font-variant-numeric:tabular-nums;
+  letter-spacing:-.005em;
+}
+.si-stat-lbl{
+  font-size:10px; font-weight:700;
+  letter-spacing:.08em; text-transform:uppercase;
+  color:#64748b;
+}
+
+/* Step container — both steps share this */
+.si-step{
+  padding:24px 26px 28px;
+  flex:1;
+}
+.si-step-header{
+  display:flex; align-items:center; gap:12px; margin-bottom:6px;
+}
+.si-step-num{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:32px; height:32px;
+  background:#185fa5; color:#fff;
+  border-radius:50%;
+  font-size:14px; font-weight:800;
+  flex-shrink:0;
+}
+.si-step-title{
+  font-size:18px; font-weight:700; color:#0f172a;
+  margin:0; letter-spacing:-.005em;
+}
+.si-step-help{
+  font-size:13px; color:#64748b;
+  margin:0 0 18px 44px; line-height:1.45;
+}
+
+/* Fields */
+.si-field{ display:flex; flex-direction:column; gap:6px; }
+.si-field-lbl{
+  font-size:11px; font-weight:800;
+  letter-spacing:.06em; text-transform:uppercase;
+  color:#475569;
+}
+.si-input{
+  min-height:52px;
+  padding:12px 14px;
+  font-size:16px; font-weight:600;
+  border:1.5px solid #cbd5e1; border-radius:10px;
+  background:#fff; color:#0f172a;
+  font-family:inherit;
+  transition:border-color .12s, box-shadow .12s;
+  -webkit-appearance:none; appearance:none;
+}
+.si-input:focus{
+  outline:none;
+  border-color:#185fa5;
+  box-shadow:0 0 0 3px rgba(24,95,165,.12);
+}
+.si-input-xl{
+  min-height:56px; padding:14px 16px;
+  font-size:18px; font-weight:700;
+  letter-spacing:.02em;
+}
+
+/* Step 1 — container form */
+.si-container-form{
+  display:flex; flex-direction:column; gap:16px;
+  max-width:520px; margin:0 auto;
+}
+.si-container-info{
+  padding:14px 16px;
+  background:#f0f6ff; border:1px solid #cfe0f4;
+  border-radius:10px;
+}
+.si-container-info-row{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+}
+.si-container-info-tag{
+  font-size:10px; font-weight:800; letter-spacing:.1em;
+  padding:3px 8px; border-radius:5px;
+  background:#185fa5; color:#fff;
+}
+.si-container-info-row strong{
+  font-size:16px; color:#0f172a; letter-spacing:-.005em;
+}
+.si-container-info-meta{
+  font-size:12px; color:#475569; font-weight:500;
+}
+
+/* Primary action button */
+.si-primary-btn{
+  min-height:56px;
+  padding:0 24px;
+  background:#185fa5; color:#fff;
+  border:none; border-radius:12px;
+  font-size:16px; font-weight:800;
+  letter-spacing:.005em;
+  cursor:pointer;
+  transition:background .14s, transform .08s;
+  box-shadow:0 4px 12px rgba(24,95,165,.18);
+}
+.si-primary-btn:hover{background:#0c447c;}
+.si-primary-btn:active{transform:translateY(1px);}
+
+/* Step 2 — active container banner */
+.si-active-container-banner{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:14px;
+  padding:16px 18px;
+  background:linear-gradient(135deg,#0c447c 0%,#185fa5 100%);
+  border-radius:12px;
+  color:#fff;
+  margin-bottom:20px;
+}
+.si-active-left{ flex:1; min-width:0; }
+.si-active-code{
+  font-size:20px; font-weight:800;
+  letter-spacing:-.005em;
+  line-height:1.1;
+}
+.si-active-loc{
+  font-size:13px; opacity:.85;
+  margin-top:2px;
+}
+.si-active-count{
+  text-align:right; flex-shrink:0;
+  background:rgba(255,255,255,.15);
+  border-radius:10px;
+  padding:8px 14px;
+  border:1px solid rgba(255,255,255,.22);
+}
+.si-active-num{
+  display:block;
+  font-size:24px; font-weight:800;
+  font-variant-numeric:tabular-nums;
+}
+.si-active-lbl{
+  display:block;
+  font-size:10px; font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase;
+  opacity:.85;
+}
+.si-switch-btn{
+  margin-left:auto;
+  min-height:44px; padding:0 16px;
+  background:#fff; color:#475569;
+  border:1.5px solid #cbd5e1; border-radius:10px;
+  font-size:13px; font-weight:700;
+  cursor:pointer;
+  transition:background .12s, border-color .12s;
+}
+.si-switch-btn:hover{background:#f1f5f9; border-color:#94a3b8;}
+
+/* Step 2 — item entry row.
+   PO + Qty + Category sit in a 3-column grid above the Add button.
+   `min-width: 0` on grid items is critical — without it a long category
+   option like "Bags and Backpacks / Bolsas y Mochilas" forces the column
+   to grow beyond its track and pushes siblings off-screen. */
+.si-item-form{
+  background:#f8fafc;
+  border:1px solid #e2e8f0;
+  border-radius:14px;
+  padding:18px;
+  margin-bottom:20px;
+}
+.si-item-row{
+  display:grid;
+  grid-template-columns: 2fr 1fr 2fr;
+  gap:12px;
+  align-items:end;
+  margin-bottom:14px;
+}
+.si-item-row > .si-field{ min-width:0; }
+.si-item-row .si-input{ min-width:0; width:100%; }
+.si-add-btn{
+  display:block;
+  width:100%;
+  min-height:56px;
+  padding:0 24px;
+  background:#27500a; color:#fff;
+  border:none; border-radius:12px;
+  font-size:16px; font-weight:800;
+  letter-spacing:.005em;
+  cursor:pointer;
+  transition:background .14s, transform .08s;
+  box-shadow:0 4px 12px rgba(39,80,10,.22);
+}
+.si-add-btn:hover{background:#1d3f06;}
+.si-add-btn:active{transform:translateY(1px);}
+
+/* Apparel sizes */
+.si-sizes-row{
+  margin-top:14px;
+  padding-top:14px;
+  border-top:1px dashed #cbd5e1;
+}
+.si-sizes-grid{
+  display:grid;
+  grid-template-columns:repeat(7, 1fr);
+  gap:8px;
+  margin-top:8px;
+}
+.si-size-cell{
+  display:flex; flex-direction:column;
+  align-items:center;
+  gap:4px;
+}
+.si-size-lbl{
+  font-size:11px; font-weight:800;
+  color:#475569; letter-spacing:.05em;
+}
+.si-size-input{
+  text-align:center;
+  min-height:44px; padding:8px 4px;
+  font-size:14px;
+}
+
+/* Recent entries list */
+.si-recent-section{
+  background:#fff;
+  border:1px solid #e2e8f0;
+  border-radius:14px;
+  padding:18px;
+}
+.si-recent-header{
+  display:flex; align-items:baseline; justify-content:space-between;
+  gap:10px; margin-bottom:10px;
+}
+.si-recent-title{
+  font-size:14px; font-weight:800;
+  color:#0f172a; margin:0;
+  letter-spacing:-.005em;
+}
+.si-recent-hint{
+  font-size:11px; color:#64748b;
+}
+.si-recent-list{
+  list-style:none; margin:0; padding:0;
+  display:flex; flex-direction:column; gap:6px;
+}
+.si-recent-empty{
+  padding:20px;
+  text-align:center;
+  font-size:13px; color:#94a3b8;
+  font-style:italic;
+}
+.si-recent-item{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:12px;
+  padding:10px 12px;
+  background:#f8fafc;
+  border:1px solid #e2e8f0;
+  border-radius:9px;
+}
+.si-recent-main{
+  display:flex; align-items:center; gap:10px;
+  flex-wrap:wrap; flex:1; min-width:0;
+}
+.si-recent-po{
+  font-size:14px; font-weight:700; color:#0f172a;
+  font-variant-numeric:tabular-nums;
+}
+.si-recent-qty{
+  font-size:13px; color:#475569; font-weight:600;
+}
+.si-recent-cat{
+  font-size:11px; color:#475569; font-weight:600;
+  padding:2px 8px;
+  background:#e2e8f0;
+  border-radius:999px;
+}
+.si-recent-meta{
+  display:flex; align-items:center; gap:10px;
+  flex-shrink:0;
+}
+.si-recent-cont{
+  font-size:11px; font-weight:700;
+  color:#185fa5;
+  background:#e0ecfb;
+  padding:3px 8px;
+  border-radius:5px;
+  letter-spacing:.02em;
+}
+.si-recent-time{
+  font-size:11px; color:#94a3b8; font-weight:600;
+}
+.si-recent-del{
+  min-width:36px; min-height:36px;
+  border:1px solid #fecaca;
+  background:#fff; color:#dc2626;
+  border-radius:8px;
+  font-size:18px; line-height:1; font-weight:700;
+  cursor:pointer;
+  transition:background .12s;
+}
+.si-recent-del:hover{background:#fef2f2;}
+
+/* ─────────── Responsive — iPad portrait + phone ─────────── */
+@media (max-width:820px){
+  .si-overlay{padding:0;}
+  .si-modal{
+    border-radius:0;
+    max-width:100%; min-height:100vh;
+    border:none;
+  }
+  .si-modal-header{padding:16px 18px 14px;}
+  .si-title{font-size:20px;}
+  .si-session-stats{padding:12px 18px; grid-template-columns:repeat(3, 1fr);}
+  .si-stat-num{font-size:18px;}
+  .si-step{padding:18px 18px 24px;}
+  /* On phone/portrait iPad, fields stack two-up (PO + Qty), Category full-width */
+  .si-item-row{
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+  }
+  .si-item-row .si-field-cat{ grid-column:1 / 3; }
+  .si-sizes-grid{grid-template-columns:repeat(4, 1fr);}
+  .si-active-container-banner{
+    flex-direction:column; align-items:flex-start;
+  }
+  .si-active-count{align-self:flex-end;}
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   OVERSTOCK DELETE BUTTONS — trash icon on container cards + danger
+   variant on the inline buttons inside the location modal.
+   ════════════════════════════════════════════════════════════════════ */
+.os-trash-btn{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:30px; height:30px;
+  background:#fff; color:#991b1b;
+  border:1px solid #fecaca; border-radius:7px;
+  font-size:13px; line-height:1;
+  cursor:pointer;
+  padding:0;
+  transition:background .14s, border-color .14s, color .14s;
+  flex-shrink:0;
+}
+.os-trash-btn:hover{
+  background:#fef2f2;
+  border-color:#fca5a5;
+}
+.os-trash-btn:active{
+  background:#fee2e2;
+}
+
+/* Inline danger button (e.g., "Delete" inside the location modal) */
+.os-ghost-btn.os-danger-btn{
+  background:#fff; color:#991b1b;
+  border:1px solid #fecaca;
+}
+.os-ghost-btn.os-danger-btn:hover{
+  background:#fef2f2;
+  border-color:#fca5a5;
+  color:#7f1d1d;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   STOCK INTAKE EDIT-IN-PLACE + AUDIT EDIT QTY
+   ════════════════════════════════════════════════════════════════════ */
+.si-recent-edit{
+  min-width:36px; min-height:36px;
+  border:1px solid #cbd5e1;
+  background:#fff; color:#475569;
+  border-radius:8px;
+  font-size:16px; line-height:1; font-weight:700;
+  cursor:pointer;
+  transition:background .12s, border-color .12s, color .12s;
+}
+.si-recent-edit:hover{
+  background:#f1f5f9;
+  border-color:#185fa5;
+  color:#185fa5;
+}
+.si-recent-qty-input{
+  width:80px;
+  height:34px;
+  padding:4px 8px;
+  font-size:14px; font-weight:700;
+  border:1.5px solid #185fa5;
+  border-radius:7px;
+  background:#fff;
+  color:#0f172a;
+  font-family:inherit;
+}
+.si-recent-qty-input:focus{
+  outline:none;
+  box-shadow:0 0 0 3px rgba(24,95,165,.15);
+}
+.si-recent-save,
+.si-recent-cancel{
+  min-height:34px;
+  padding:0 12px;
+  border-radius:7px;
+  font-size:12px; font-weight:700;
+  cursor:pointer;
+  border:1.5px solid;
+}
+.si-recent-save{
+  background:#185fa5; color:#fff; border-color:#185fa5;
+}
+.si-recent-save:hover{ background:#0c447c; border-color:#0c447c; }
+.si-recent-cancel{
+  background:#fff; color:#475569; border-color:#cbd5e1;
+}
+.si-recent-cancel:hover{ background:#f1f5f9; border-color:#94a3b8; }
+
+/* Audit modal edit-qty button */
+.os-audit-btn-edit{
+  background:#fff;
+  color:#185fa5;
+  border:1px solid #cfe0f4;
+}
+.os-audit-btn-edit:hover{
+  background:#f0f6ff;
+  border-color:#185fa5;
+}
+
+/* Location map: visual hint for locations occupied by empty boxes */
+.os-loc.os-loc-empty-bx{
+  background:linear-gradient(180deg, #fffbeb 0%, #fef3c7 100%);
+  border-color:#fde68a;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   STOCK INTAKE — IDENTITY PICKER + ACTIVE USER CHIP
+   Each tablet picks a "who am I today" identity. Shows as a chip in the
+   modal header and lets the team hand off the tablet between associates.
+   ════════════════════════════════════════════════════════════════════ */
+.si-header-actions{
+  display:flex; flex-direction:column; gap:8px;
+  align-items:flex-end;
+  flex-shrink:0;
+}
+.si-active-user{
+  display:inline-flex; align-items:center; gap:8px;
+  padding:6px 10px;
+  background:#f0f6ff; border:1px solid #cfe0f4;
+  border-radius:8px;
+  font-size:12px;
+  color:#0c447c;
+}
+.si-active-user-lbl{
+  font-weight:500; opacity:.75;
+  text-transform:uppercase;
+  font-size:10px; letter-spacing:.06em;
+}
+.si-active-user-name{
+  font-weight:800; font-size:13px;
+  color:#0f172a;
+  letter-spacing:-.005em;
+}
+.si-switch-user-btn{
+  min-height:30px; padding:0 10px;
+  background:#fff; color:#475569;
+  border:1px solid #cbd5e1; border-radius:6px;
+  font-size:11px; font-weight:700;
+  cursor:pointer;
+  transition:background .12s, border-color .12s;
+  margin-left:4px;
+}
+.si-switch-user-btn:hover{
+  background:#f1f5f9; border-color:#185fa5; color:#185fa5;
+}
+
+/* Identity picker — Step 0 */
+.si-step-identity{
+  /* same padding as other steps; just structural */
+}
+.si-identity-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));
+  gap:10px;
+  margin:14px 0 18px;
+}
+.si-identity-btn{
+  min-height:64px;
+  padding:14px 16px;
+  background:#fff; color:#0f172a;
+  border:1.5px solid #cbd5e1; border-radius:12px;
+  font-size:16px; font-weight:700;
+  letter-spacing:-.005em;
+  cursor:pointer;
+  text-align:center;
+  transition:background .14s, border-color .14s, transform .08s;
+}
+.si-identity-btn:hover{
+  background:#f0f6ff; border-color:#185fa5; color:#0c447c;
+}
+.si-identity-btn:active{transform:translateY(1px);}
+.si-identity-empty{
+  grid-column:1 / -1;
+  padding:18px;
+  text-align:center;
+  font-size:13px; color:#64748b; font-style:italic;
+  background:#f8fafc; border:1px dashed #cbd5e1; border-radius:10px;
+}
+.si-identity-custom-row{
+  display:flex; gap:10px;
+  align-items:stretch;
+  margin-top:18px;
+  padding-top:18px;
+  border-top:1px solid #f1f5f9;
+}
+.si-identity-custom-row .si-input{ flex:1; min-width:0; }
+.si-identity-custom-row .si-primary-btn{ flex-shrink:0; min-width:0; padding:0 20px; }
+
+@media (max-width:820px){
+  .si-header-actions{flex-direction:row; align-items:center; gap:6px;}
+  .si-active-user{padding:5px 8px; font-size:11px;}
+  .si-active-user-name{font-size:12px;}
+  .si-identity-grid{grid-template-columns:1fr 1fr;}
+  .si-identity-custom-row{flex-direction:column;}
+  .si-identity-custom-row .si-primary-btn{width:100%;}
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   OPTION C REDESIGN — overstock page visual overhaul
+   ────────────────────────────────────────────────────────────────────
+   Scoped to `.os-c2` (added to #page-overstock). Other pages untouched.
+
+   SPECIFICITY STRATEGY:
+   The existing workflow.css has many `.workflow-page .X` selectors
+   (specificity 0,2,0). To guarantee Option C rules WIN regardless of
+   file order, every selector below starts with `body.workflow-page
+   .os-c2` (specificity 0,3,1). `!important` is added on critical
+   layout properties (display, grid-template-columns, padding, border)
+   so even an unexpected later rule can't break the layout.
+
+   DEPLOY NOTE: this section is delimited by the OPTION C banners.
+   To revert, delete from this marker to EOF.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── HIDE LEGACY PANEL HEADERS + INPUT BARS ──────────────────────── */
+/* The original PO Lookup + Audit panels still need to RENDER RESULTS
+   into their existing containers (#overstockPoLookupResults, etc.) —
+   so we can't hide the whole panel. Instead we hide just the chrome
+   (header + input bar) and let the result containers show inline.
+   This way, the toolbar acts as the input surface, but lookup/audit
+   results appear naturally below the toolbar where the user can see them.
+
+   The Log Entry panel IS fully hidden — its form gets relocated into
+   the Advanced modal on demand. */
+body.workflow-page .os-c2 #overstockAuditPanel .os-tool-header,
+body.workflow-page .os-c2 #overstockAuditPanel .os-tool-bar,
+body.workflow-page .os-c2 .os-panel.os-tool-panel .os-tool-header,
+body.workflow-page .os-c2 .os-panel.os-tool-panel .os-tool-bar {
+  display: none !important;
+}
+/* Make the tool panels themselves transparent shells — they're just
+   containers for the result content now. */
+body.workflow-page .os-c2 #overstockAuditPanel,
+body.workflow-page .os-c2 .os-panel.os-tool-panel {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 0 12px 0 !important;
+}
+/* Hide the result containers when they're empty so we don't leave
+   awkward whitespace. JS doesn't touch their display directly; this
+   uses :empty which CSS handles automatically. */
+body.workflow-page .os-c2 #overstockAuditResults:empty,
+body.workflow-page .os-c2 #overstockPoLookupResults:empty {
+  display: none !important;
+}
+/* Entry form panel — fully hidden. Its form gets relocated into the
+   Advanced modal on demand. */
+body.workflow-page .os-c2 #overstockEntryPanel {
+  display: none !important;
+}
+
+/* ── TOOLBAR ─────────────────────────────────────────────────────── */
+body.workflow-page .os-c2 .os-tb {
+  position: sticky !important;
+  top: 0;
+  z-index: 30;
+  background: #fff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 14px !important;
+  padding: 10px 12px !important;
+  margin: 0 0 16px 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  flex-wrap: wrap !important;
+  box-shadow: 0 2px 8px rgba(15,23,42,.04);
+}
+body.workflow-page .os-c2 .os-tb-group {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 0 8px !important;
+  border-right: 1px solid #eef2f7;
+}
+body.workflow-page .os-c2 .os-tb-group:last-child { border-right: 0 !important; }
+body.workflow-page .os-c2 .os-tb-right {
+  margin-left: auto !important;
+  padding-right: 4px !important;
+}
+body.workflow-page .os-c2 .os-tb-lbl {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-right: 2px;
   white-space: nowrap;
-  font-weight: 700;
+}
+body.workflow-page .os-c2 .os-tb-input {
+  padding: 8px 10px !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 7px !important;
+  font-size: 12px !important;
+  background: #fafbfc !important;
+  font-family: inherit;
+  color: #0f172a;
+  min-width: 0;
+  height: 34px !important;
+  box-sizing: border-box;
+}
+body.workflow-page .os-c2 .os-tb-input:focus {
+  outline: none;
+  border-color: #185fa5 !important;
+  background: #fff !important;
+  box-shadow: 0 0 0 2px rgba(24,95,165,.12);
+}
+body.workflow-page .os-c2 .os-tb-input-wide   { width: 200px !important; }
+body.workflow-page .os-c2 .os-tb-input-narrow { width: 120px !important; }
+body.workflow-page .os-c2 .os-tb-input-qty    { width: 64px  !important; }
+body.workflow-page .os-c2 .os-tb-btn {
+  padding: 7px 12px !important;
+  background: #fff !important;
+  color: #0f172a !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 7px !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  cursor: pointer;
+  height: 34px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: background .12s, border-color .12s, color .12s;
+  box-sizing: border-box;
+}
+body.workflow-page .os-c2 .os-tb-btn:hover {
+  background: #f0f6ff !important;
+  border-color: #185fa5 !important;
+  color: #185fa5 !important;
+}
+body.workflow-page .os-c2 .os-tb-btn-primary {
+  background: #185fa5 !important;
+  color: #fff !important;
+  border-color: #185fa5 !important;
+  font-weight: 700 !important;
+}
+body.workflow-page .os-c2 .os-tb-btn-primary:hover {
+  background: #0c447c !important;
+  border-color: #0c447c !important;
+  color: #fff !important;
+}
+body.workflow-page .os-c2 .os-tb-btn-green {
+  background: #16a34a !important;
+  color: #fff !important;
+  border-color: #16a34a !important;
+  font-weight: 700 !important;
+}
+body.workflow-page .os-c2 .os-tb-btn-green:hover {
+  background: #15803d !important;
+  border-color: #15803d !important;
+  color: #fff !important;
+}
+body.workflow-page .os-c2 .os-tb-btn-icon {
+  width: 34px !important;
+  padding: 0 !important;
 }
 
-/* ── Scan choice modal (Add items vs Audit) ── */
-.workflow-page .os-modal-sm { max-width: 420px; }
-.workflow-page .os-scan-choice-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+/* ⋯ overflow menu */
+body.workflow-page .os-c2 .os-tb-menu-wrap { position: relative; }
+body.workflow-page .os-c2 .os-tb-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: #fff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+  box-shadow: 0 10px 28px rgba(15,23,42,.12);
+  padding: 4px !important;
+  min-width: 200px;
+  z-index: 40;
 }
-.workflow-page .os-scan-choice-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 22px 14px;
-  border: 1.5px solid var(--line);
-  border-radius: 16px;
-  background: linear-gradient(180deg, #fbfeff 0%, #f1f8fe 100%);
+body.workflow-page .os-c2 .os-tb-menu[hidden] { display: none !important; }
+body.workflow-page .os-c2 .os-tb-menu-item {
+  display: block !important;
+  width: 100% !important;
+  text-align: left !important;
+  padding: 9px 12px !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #0f172a !important;
   cursor: pointer;
   font-family: inherit;
-  transition: border-color .15s, box-shadow .15s, transform .05s;
 }
-.workflow-page .os-scan-choice-btn:hover {
-  border-color: var(--blue4);
-  box-shadow: 0 4px 14px rgba(106,174,220,.22);
-}
-.workflow-page .os-scan-choice-btn:active { transform: translateY(1px); }
-.workflow-page .os-scan-choice-icon { font-size: 30px; line-height: 1; }
-.workflow-page .os-scan-choice-label { font-size: 15px; font-weight: 800; color: var(--navy); }
-.workflow-page .os-scan-choice-desc { font-size: 11px; color: var(--muted); text-align: center; }
-.workflow-page .os-scan-choice-disabled {
-  opacity: .5;
-}
-@media (max-width: 480px) {
-  .workflow-page .os-scan-choice-grid { grid-template-columns: 1fr; }
+body.workflow-page .os-c2 .os-tb-menu-item:hover {
+  background: #f0f6ff !important;
+  color: #185fa5 !important;
 }
 
-/* ── Camera scan modal ── */
-.workflow-page .os-scan-cam-region {
+/* ── ADVANCED LOG MODAL ──────────────────────────────────────────── */
+body.workflow-page .os-c2 .os-adv-overlay {
+  position: fixed !important;
+  inset: 0;
+  z-index: 9000;
+  background: rgba(15,23,42,.58);
+  backdrop-filter: blur(3px);
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  overflow-y: auto;
+  padding: 24px 16px !important;
+}
+body.workflow-page .os-c2 .os-adv-overlay[hidden] { display: none !important; }
+body.workflow-page .os-c2 .os-adv-modal {
+  background: #fff !important;
+  border-radius: 16px !important;
   width: 100%;
-  min-height: 260px;
-  border-radius: 14px;
+  max-width: 760px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 24px 60px rgba(15,23,42,.28);
   overflow: hidden;
-  background: #0b1622;
 }
-.workflow-page .os-scan-cam-region video { width: 100% !important; border-radius: 14px; }
-.workflow-page .os-scan-status-muted { color: var(--muted); }
+body.workflow-page .os-c2 .os-adv-head {
+  padding: 18px 22px 14px !important;
+  border-bottom: 1px solid #eef2f7 !important;
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 16px;
+  background: linear-gradient(180deg, #fbfcfe 0%, #fff 100%);
+}
+body.workflow-page .os-c2 .os-adv-eyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #185fa5;
+  margin-bottom: 4px;
+}
+body.workflow-page .os-c2 .os-adv-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -.01em;
+  margin: 0;
+  line-height: 1.2;
+}
+body.workflow-page .os-c2 .os-adv-sub {
+  font-size: 12px;
+  color: #64748b;
+  margin: 4px 0 0;
+  line-height: 1.4;
+}
+body.workflow-page .os-c2 .os-adv-close {
+  width: 36px !important;
+  height: 36px !important;
+  background: #fff !important;
+  color: #475569 !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 8px !important;
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 400;
+  cursor: pointer;
+  padding: 0 !important;
+  flex-shrink: 0;
+}
+body.workflow-page .os-c2 .os-adv-close:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+body.workflow-page .os-c2 .os-adv-body {
+  padding: 20px 22px !important;
+}
+/* When form is relocated INTO modal body, reveal it. The legacy panel
+   #overstockEntryPanel is still hidden (rule above) but the form moved
+   OUT of that panel into #osAdvLogBody, which is visible. */
+body.workflow-page .os-c2 .os-adv-body #overstockEntryForm {
+  display: block !important;
+}
 
-/* ── Boxes grid: "updated" line + box actions modal ── */
-.workflow-page .os-cc-updated { font-size: 11px; color: var(--muted); margin-top: 4px; }
-
-.workflow-page .os-box-act-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+/* ── HEAT-COLORED LOCATION MAP ───────────────────────────────────── */
+body.workflow-page .os-c2 .os-loc-grid {
+  display: grid !important;
+  grid-template-columns: repeat(8, 1fr) !important;
+  gap: 6px !important;
 }
-.workflow-page .os-box-act-btn {
-  display: flex; align-items: center; gap: 10px;
-  padding: 14px 14px;
-  border: 1.5px solid var(--line); border-radius: 14px;
-  background: linear-gradient(180deg, #fbfeff 0%, #f1f8fe 100%);
-  font-family: inherit; font-size: 14px; font-weight: 700; color: var(--navy);
-  cursor: pointer; text-align: left;
-  transition: border-color .15s, box-shadow .15s, transform .05s;
+body.workflow-page .os-c2 .os-loc {
+  aspect-ratio: 1 !important;
+  border: 1.5px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+  padding: 8px !important;
+  cursor: pointer;
+  background: #fafbfc !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  transition: transform .14s, box-shadow .14s, border-color .14s;
+  position: relative;
 }
-.workflow-page .os-box-act-btn:hover { border-color: var(--blue4); box-shadow: 0 4px 14px rgba(106,174,220,.2); }
-.workflow-page .os-box-act-btn:active { transform: translateY(1px); }
-.workflow-page .os-box-act-ic { font-size: 20px; line-height: 1; }
-.workflow-page .os-box-act-disabled { opacity: .45; pointer-events: none; }
-@media (max-width: 480px) {
-  .workflow-page .os-box-act-grid { grid-template-columns: 1fr; }
-}
-
-/* ── Boxes grid: sort tools + refined "lux" cards ── */
-.workflow-page .os-boxes-tools {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-}
-.workflow-page .os-boxes-grid {
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 12px;
-}
-
-/* Calm Cards — minimal, de-noised: a single status dot, no accent bar or
-   gradient, generous spacing. */
-.workflow-page .os-box-calm {
-  border: 1px solid #e8eff6;
-  border-radius: 14px;
-  padding: 15px 16px;
-  background: #fff;
-  box-shadow: none;
-  transition: transform .15s, box-shadow .15s, border-color .15s;
-}
-.workflow-page .os-box-calm:hover {
-  border-color: var(--blue4);
+body.workflow-page .os-c2 .os-loc:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 26px -18px rgba(16,50,74,.40);
+  box-shadow: 0 8px 20px rgba(15,23,42,.08);
+  border-color: #185fa5 !important;
 }
-.workflow-page .os-box-calm:active { transform: translateY(0); }
+body.workflow-page .os-c2 .os-loc-name {
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  color: #0f172a !important;
+  letter-spacing: -.01em;
+  line-height: 1;
+  font-family: inherit !important;
+}
+body.workflow-page .os-c2 .os-loc-count {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  margin-top: 0 !important;
+}
+/* Free locations: muted */
+body.workflow-page .os-c2 .os-loc.os-loc-empty {
+  background: #fafbfc !important;
+  opacity: .55;
+}
+body.workflow-page .os-c2 .os-loc.os-loc-empty .os-loc-count {
+  color: #94a3b8 !important;
+  font-style: italic;
+  font-weight: 500 !important;
+}
+/* Occupied — gradient by load (data-load set by JS) */
+body.workflow-page .os-c2 .os-loc.os-loc-occ {
+  background: linear-gradient(180deg, #fff, #f0f6ff) !important;
+  border-color: #cfe0f4 !important;
+}
+body.workflow-page .os-c2 .os-loc.os-loc-occ[data-load="med"] {
+  background: linear-gradient(180deg, #fff, #dbeafe) !important;
+  border-color: #93c5fd !important;
+}
+body.workflow-page .os-c2 .os-loc.os-loc-occ[data-load="heavy"] {
+  background: linear-gradient(180deg, #fff, #fed7aa) !important;
+  border-color: #fb923c !important;
+}
+body.workflow-page .os-c2 .os-loc.os-loc-occ[data-load="heavy"] .os-loc-name {
+  color: #c2410c !important;
+}
+/* Empty-box indicator (containers but zero units) */
+body.workflow-page .os-c2 .os-loc.os-loc-empty-bx {
+  background: linear-gradient(180deg, #fffbeb, #fef3c7) !important;
+  border-color: #fde68a !important;
+}
+body.workflow-page .os-c2 .os-loc.os-loc-empty-bx .os-loc-name {
+  color: #854d0e !important;
+}
 
-.workflow-page .os-box-calm-top {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+/* ── COMPACT BOX LIST ────────────────────────────────────────────── */
+/* The existing JS renders boxes into .os-card-grid. Re-style as a
+   3-column, 1px-gap row grid so they read like a compact list. */
+body.workflow-page .os-c2 .os-card-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+  gap: 1px !important;
+  background: #eef2f7;
+  margin: 0 !important;
 }
-.workflow-page .os-box-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.workflow-page .os-box-dot-green { background: #2bb887; }
-.workflow-page .os-box-dot-amber { background: #efb01c; }
-.workflow-page .os-box-dot-blue  { background: #4f8ef0; }
-.workflow-page .os-box-dot-gray  { background: #9aa9bd; }
-.workflow-page .os-box-calm-code {
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 16px; font-weight: 800; letter-spacing: .02em; color: var(--navy);
+body.workflow-page .os-c2 .os-box-card {
+  background: #fff !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 11px 14px !important;
+  margin: 0 !important;
+  box-shadow: none !important;
+  cursor: pointer;
+  transition: background .12s;
+  min-height: 0 !important;
 }
-.workflow-page .os-box-calm-nums { font-size: 13px; color: #46627d; }
-.workflow-page .os-box-calm-nums b { font-size: 15px; font-weight: 800; color: var(--navy); }
-.workflow-page .os-box-calm-foot {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 8px; margin-top: 10px;
+body.workflow-page .os-c2 .os-box-card:hover {
+  background: #f0f6ff !important;
+  transform: none !important;
 }
-.workflow-page .os-box-calm-loc {
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 11px; font-weight: 700; color: #5a7a96;
+body.workflow-page .os-c2 .os-cc-code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  color: #0f172a !important;
 }
-.workflow-page .os-box-calm-time { font-size: 11px; color: #90a4b8; white-space: nowrap; }
+body.workflow-page .os-c2 .os-cc-meta {
+  font-size: 11px !important;
+  color: #64748b !important;
+  font-variant-numeric: tabular-nums;
+  margin-top: 3px !important;
+}
+body.workflow-page .os-c2 .os-cc-loc {
+  margin-top: 2px !important;
+  font-size: 10px !important;
+}
+body.workflow-page .os-c2 .os-cc-cta {
+  display: none !important;
+}
+
+/* ── ACTIVITY FEED (Overstock Log view) ──────────────────────────── */
+body.workflow-page .os-c2 .os-log-view-toggle {
+  display: inline-flex !important;
+  background: #f1f5f9 !important;
+  border-radius: 9px !important;
+  padding: 3px !important;
+  gap: 2px;
+  margin-right: 8px;
+}
+body.workflow-page .os-c2 .os-log-view-btn {
+  padding: 6px 12px !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: #64748b !important;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background .12s, color .12s;
+}
+body.workflow-page .os-c2 .os-log-view-btn:hover {
+  color: #185fa5 !important;
+}
+body.workflow-page .os-c2 .os-log-view-btn.is-active {
+  background: #fff !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px rgba(15,23,42,.08);
+}
+body.workflow-page .os-c2 .os-feed-body {
+  padding: 4px 0;
+  max-height: 600px;
+  overflow-y: auto;
+}
+body.workflow-page .os-c2 .os-feed-item {
+  display: grid !important;
+  grid-template-columns: 64px 1fr auto auto !important;
+  gap: 12px !important;
+  padding: 10px 18px !important;
+  border-bottom: 1px solid #eef2f7;
+  align-items: center;
+  cursor: pointer;
+  transition: background .1s;
+}
+body.workflow-page .os-c2 .os-feed-item:hover {
+  background: #f0f6ff !important;
+}
+body.workflow-page .os-c2 .os-feed-item:last-child {
+  border-bottom: 0;
+}
+body.workflow-page .os-c2 .os-feed-time {
+  font-size: 10px;
+  color: #64748b;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  line-height: 1.3;
+}
+body.workflow-page .os-c2 .os-feed-time .feed-date {
+  display: block;
+  font-size: 9px;
+  color: #94a3b8;
+  font-weight: 600;
+  margin-top: 1px;
+}
+body.workflow-page .os-c2 .os-feed-content {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #0f172a;
+  min-width: 0;
+}
+body.workflow-page .os-c2 .os-feed-content .feed-po {
+  font-family: ui-monospace, Menlo, monospace;
+  font-weight: 700;
+}
+body.workflow-page .os-c2 .os-feed-content .feed-qty {
+  color: #c2410c;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  margin: 0 4px;
+}
+body.workflow-page .os-c2 .os-feed-content .feed-cat {
+  color: #475569;
+}
+body.workflow-page .os-c2 .os-feed-actor {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+body.workflow-page .os-c2 .os-feed-loc {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  color: #185fa5;
+  background: #f0f6ff;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+body.workflow-page .os-c2 .os-feed-loc .feed-loc-bx {
+  display: block;
+  font-size: 9px;
+  color: #64748b;
+  font-weight: 600;
+  margin-top: 1px;
+}
+body.workflow-page .os-c2 .os-feed-actions {
+  display: flex !important;
+  gap: 4px;
+}
+body.workflow-page .os-c2 .os-feed-act-btn {
+  width: 28px !important;
+  height: 28px !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 6px !important;
+  background: #fff !important;
+  color: #64748b !important;
+  cursor: pointer;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 13px;
+}
+body.workflow-page .os-c2 .os-feed-act-btn:hover {
+  background: #f0f6ff !important;
+  border-color: #185fa5 !important;
+  color: #185fa5 !important;
+}
+body.workflow-page .os-c2 .os-feed-empty {
+  padding: 32px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* ── RESPONSIVE — iPad / phone ───────────────────────────────────── */
+@media (max-width: 820px) {
+  body.workflow-page .os-c2 .os-tb {
+    gap: 8px !important;
+  }
+  body.workflow-page .os-c2 .os-tb-group {
+    border-right: 0 !important;
+    padding: 4px 0 !important;
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+  }
+  body.workflow-page .os-c2 .os-tb-right {
+    width: 100% !important;
+    justify-content: flex-end !important;
+    margin-left: 0 !important;
+  }
+  body.workflow-page .os-c2 .os-tb-input-wide {
+    width: 100% !important;
+  }
+  body.workflow-page .os-c2 .os-loc-grid {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
+  body.workflow-page .os-c2 .os-card-grid {
+    grid-template-columns: 1fr !important;
+  }
+  body.workflow-page .os-c2 .os-feed-item {
+    grid-template-columns: 56px 1fr auto !important;
+  }
+  body.workflow-page .os-c2 .os-feed-actions {
+    grid-column: 1 / -1 !important;
+    padding-top: 4px;
+    justify-content: flex-end !important;
+  }
+}
+/* ── END OPTION C ────────────────────────────────────────────────── */
+
+/* ── LOOKUP / AUDIT RESULTS NOW LIVE IN A MODAL ──────────────────── */
+/* Result containers (#overstockPoLookupResults, #overstockAuditResults)
+   are relocated into #osResultsBody when the toolbar fires Look up or
+   Audit Load. The modal handles its own styling. When the containers
+   are back in their hidden home (legacy panel), the :empty rule and
+   the hidden panel chrome above keep them invisible. No standalone
+   styling needed here. */
+
+/* The results modal — reuses .os-adv-overlay + .os-adv-modal styling
+   from the Advanced log modal, plus a slight width tweak. */
+body.workflow-page .os-c2 .os-results-modal {
+  max-width: 720px !important;
+}
+/* When result containers are INSIDE the modal body, override their
+   :empty hide rule (in case results are still loading) and remove
+   any margin since the modal body already has padding. */
+body.workflow-page .os-c2 #osResultsBody #overstockPoLookupResults,
+body.workflow-page .os-c2 #osResultsBody #overstockAuditResults {
+  display: block !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-shadow: none !important;
+}
