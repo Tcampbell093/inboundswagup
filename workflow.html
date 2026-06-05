@@ -8,7 +8,7 @@
   <!-- Cache-bust version param prevents stale CSS from being served when
        Option C styles change. Bump the v= suffix on any future CSS-only
        change that needs to take effect immediately. -->
-  <link rel="stylesheet" href="Styles/workflow.css?v=optc-1" />
+  <link rel="stylesheet" href="Styles/workflow.css?v=optc-2" />
   <link rel="stylesheet" href="Styles/pallets.css" />
 </head>
 <body class="workflow-page">
@@ -132,22 +132,13 @@
           </select>
           <button id="osTbAuditBtn" type="button" class="os-tb-btn">Load</button>
         </div>
-        <!-- Quick log: PO + qty + Add + Advanced (full form modal) -->
-        <div class="os-tb-group">
-          <span class="os-tb-lbl">+ Log</span>
-          <select id="osTbQuickPo" class="os-tb-input os-tb-input-narrow">
-            <option value="">PO from prep…</option>
-          </select>
-          <input id="osTbQuickQty" type="number" min="0" step="1" class="os-tb-input os-tb-input-qty" placeholder="Qty" />
-          <button id="osTbQuickAdd" type="button" class="os-tb-btn os-tb-btn-green">+ Add</button>
-          <button id="osTbQuickAdv" type="button" class="os-tb-btn" title="Open full entry form with all fields">⚙ Advanced</button>
-        </div>
         <!-- Right-aligned primary action + ⋯ overflow -->
         <div class="os-tb-group os-tb-right">
           <button id="osTbIntakeBtn" type="button" class="os-tb-btn os-tb-btn-primary">📦 Stock Intake</button>
           <div class="os-tb-menu-wrap">
             <button id="osTbMenuBtn" type="button" class="os-tb-btn os-tb-btn-icon" title="More actions" aria-haspopup="true" aria-expanded="false">⋯</button>
             <div id="osTbMenu" class="os-tb-menu" hidden role="menu">
+              <button id="osTbMenuAdvLog" type="button" class="os-tb-menu-item">✏️ Log entry (advanced)</button>
               <button id="osTbMenuRenorm" type="button" class="os-tb-menu-item" style="display:none;">🔧 Renormalize codes</button>
               <button id="osTbMenuSeed" type="button" class="os-tb-menu-item">📋 Load demo data</button>
             </div>

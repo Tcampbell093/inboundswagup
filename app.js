@@ -3207,58 +3207,12 @@ function bindOverstockEvents() {
       });
     }
 
-    // ── Quick log proxy (PO + qty + Add) ──────────────────────────────
-    const tbQuickPo  = $('osTbQuickPo');
-    const tbQuickQty = $('osTbQuickQty');
-    const tbQuickAdd = $('osTbQuickAdd');
-    function syncQuickPoOptions() {
-      const src = $('overstockEntryPo');
-      if (!src || !tbQuickPo) return;
-      const prev = tbQuickPo.value;
-      tbQuickPo.innerHTML = src.innerHTML;
-      if (prev && [...tbQuickPo.options].some(o => o.value === prev)) tbQuickPo.value = prev;
-    }
-    if (tbQuickPo && tbQuickQty && tbQuickAdd) {
-      syncQuickPoOptions();
-      // When the user picks a PO in the toolbar, mirror to the real form
-      // select and dispatch change so its auto-fill (qty/category) fires.
-      // Then mirror the auto-filled qty back into the toolbar input so the
-      // user sees what the system computed.
-      tbQuickPo.addEventListener('change', () => {
-        const real = $('overstockEntryPo');
-        if (!real) return;
-        real.value = tbQuickPo.value;
-        real.dispatchEvent(new Event('change', { bubbles: true }));
-        // setTimeout 0 lets the form's change handler complete first
-        setTimeout(() => {
-          const realQty = $('overstockEntryQty');
-          if (realQty) tbQuickQty.value = realQty.value;
-        }, 0);
-      });
-      tbQuickQty.addEventListener('input', () => {
-        const realQty = $('overstockEntryQty');
-        if (realQty) realQty.value = tbQuickQty.value;
-      });
-      tbQuickAdd.addEventListener('click', () => {
-        const realPo  = $('overstockEntryPo');
-        const realQty = $('overstockEntryQty');
-        const form    = $('overstockEntryForm');
-        if (!realPo || !realQty || !form) return;
-        if (!tbQuickPo.value) { alert('Pick a PO first.'); tbQuickPo.focus(); return; }
-        realPo.value = tbQuickPo.value;
-        realPo.dispatchEvent(new Event('change', { bubbles: true }));
-        realQty.value = tbQuickQty.value || realQty.value;
-        // Trigger the form's existing submit handler
-        if (typeof form.requestSubmit === 'function') form.requestSubmit();
-        else form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-        // Clear toolbar inputs for next entry
-        tbQuickPo.value = '';
-        tbQuickQty.value = '';
-      });
-    }
+    // ── Quick log REMOVED from toolbar in v2 (user feedback: confusing) ─
+    // Quick log lived in the toolbar but added clutter without pulling its
+    // weight. Stock Intake handles bulk logging; one-off entries go through
+    // the Advanced log modal (opened via the ⋯ menu).
 
     // ── Advanced modal: relocate form in/out ──────────────────────────
-    const tbAdvBtn   = $('osTbQuickAdv');
     const advOverlay = $('osAdvLogOverlay');
     const advClose   = $('osAdvLogClose');
     const advBody    = $('osAdvLogBody');
@@ -3276,12 +3230,13 @@ function bindOverstockEvents() {
       if (advOverlay) advOverlay.hidden = true;
       document.body.style.overflow = '';
     }
-    if (tbAdvBtn)   tbAdvBtn.addEventListener('click', openAdvanced);
+    // Trigger from the ⋯ menu's "Log entry (advanced)" item
+    $('osTbMenuAdvLog')?.addEventListener('click', openAdvanced);
     if (advClose)   advClose.addEventListener('click', closeAdvanced);
     if (advOverlay) advOverlay.addEventListener('click', (e) => {
       if (e.target === advOverlay) closeAdvanced(); // backdrop click
     });
-    // Close modal after successful submit so the user sees the result.
+    // Close modal after successful submit
     const formForListen = $('overstockEntryForm');
     if (formForListen) {
       formForListen.addEventListener('submit', () => {
@@ -3355,13 +3310,13 @@ function bindOverstockEvents() {
     if (tableBtn) tableBtn.addEventListener('click', () => showView('table'));
 
     // ── Hook the page render so toolbar dropdowns stay in sync ────────
-    // After every overstock render, the audit-location and PO selects in
-    // the form get repopulated. Mirror those into the toolbar's dropdowns.
+    // After every overstock render, the audit-location select in the form
+    // gets repopulated. Mirror those options into the toolbar's dropdown.
     if (typeof window.renderOverstockPage === 'function' && !window.renderOverstockPage.__optCHooked) {
       const orig = window.renderOverstockPage;
       const wrapped = function() {
         const r = orig.apply(this, arguments);
-        try { syncAuditLocOptions(); syncQuickPoOptions(); } catch (_) {}
+        try { syncAuditLocOptions(); } catch (_) {}
         return r;
       };
       wrapped.__optCHooked = true;
