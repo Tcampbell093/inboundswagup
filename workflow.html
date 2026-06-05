@@ -664,6 +664,30 @@
                 </div>
               </div>
 
+              <!-- Status + Action — set when first logging the PO (e.g. mark
+                   it ready for donation right away). -->
+              <div class="si-item-row">
+                <div class="si-field">
+                  <label class="si-field-lbl" for="stockIntakeItemStatus">Status</label>
+                  <select id="stockIntakeItemStatus" class="si-input">
+                    <option value="Not Donation">Not Donation</option>
+                    <option value="Donation">Donation</option>
+                    <option value="Pending PB">Pending PB</option>
+                    <option value="Donated">Donated</option>
+                  </select>
+                </div>
+                <div class="si-field">
+                  <label class="si-field-lbl" for="stockIntakeItemAction">Action</label>
+                  <select id="stockIntakeItemAction" class="si-input">
+                    <option value="Required">Required</option>
+                    <option value="Donated">Donated</option>
+                    <option value="Replaced">Replaced</option>
+                    <option value="Missing from Box">Missing from Box</option>
+                    <option value="Lost">Lost</option>
+                  </select>
+                </div>
+              </div>
+
               <!-- Apparel sizes (shown only when category = Apparel) -->
               <div class="si-sizes-row" id="stockIntakeItemSizesRow" hidden>
                 <label class="si-field-lbl">Size breakdown <span style="font-weight:400;opacity:.7;">(optional, totals must equal qty)</span></label>
