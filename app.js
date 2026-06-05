@@ -3689,16 +3689,15 @@ function getSelectedOverstockContainer() {
 function createOverstockContainer({ status = "Open", notes = "", code = "", barcode = "", currentLocation = "" } = {}) {
   if (!Array.isArray(state.data.overstockContainers)) state.data.overstockContainers = [];
   if (!state.data.overstockContainerUi) state.data.overstockContainerUi = { selectedId: "", search: "" };
-  // Honor a caller-provided OSC code (e.g. the box label the associate typed in
-  // Stock Intake) by creating the container with that code UP FRONT. The old
-  // flow created with an auto code and renamed afterward — that two-step left a
-  // window where the auto code could persist/sync and stick, so a box typed as
-  // OSC-001 could end up showing a different code. Falls back to the next
-  // sequential auto code if none is given or it's already taken.
+  // Honor a caller-provided code (the box label the associate typed in Stock
+  // Intake) by creating the container with that exact code UP FRONT — whether
+  // it's OSC-001, AWD-001, or any other label. The old flow only accepted OSC
+  // codes and shoved anything else into a barcode while assigning an auto OSC
+  // code, so a box typed "AWD-001" showed up as "OSC-996". Falls back to the
+  // next sequential auto code only if no code is given or it's already taken.
   const wanted = String(code || "").trim().toUpperCase();
-  const isValidOsc = /^OSC-\d+$/.test(wanted);
-  const taken = isValidOsc && state.data.overstockContainers.some(c => String(c.code || '').toUpperCase() === wanted);
-  const finalCode = (isValidOsc && !taken) ? wanted : getNextOverstockContainerCode();
+  const taken = !!wanted && state.data.overstockContainers.some(c => String(c.code || '').toUpperCase() === wanted);
+  const finalCode = (wanted && !taken) ? wanted : getNextOverstockContainerCode();
   const container = {
     id: makeId(),
     code: finalCode,
@@ -3931,6 +3930,10 @@ function normalizeOverstockContainerScan(value) {
   if (oscMatch) return `OSC-${String(Number(oscMatch[1] || 0)).padStart(3, "0")}`;
   const digitMatch = raw.match(/^0*(\d+)$/);
   if (digitMatch) return `OSC-${String(Number(digitMatch[1] || 0)).padStart(3, "0")}`;
+  // Any other "LETTERS + number" label (e.g. AWD-1, AWD-001) → PREFIX-### so
+  // the same box typed slightly differently still resolves to one code.
+  const prefixMatch = raw.match(/^([A-Z]+)-?0*(\d+)$/);
+  if (prefixMatch) return `${prefixMatch[1]}-${String(Number(prefixMatch[2] || 0)).padStart(3, "0")}`;
   return raw;
 }
 

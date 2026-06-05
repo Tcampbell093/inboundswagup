@@ -488,17 +488,13 @@
         return;
       }
       try {
-        // Create the container WITH its final code/barcode/location in one
-        // step. Passing the typed code straight to createOverstockContainer
-        // (rather than creating with an auto code and renaming afterward)
-        // removes the window where the auto code could persist/sync and stick —
-        // the bug where a box typed as OSC-001 showed a different code.
-        const isOsc = /^OSC-\d+$/i.test(normalized);
+        // Create the container WITH its final code + location in one step.
+        // The typed code IS the code — OSC-001, AWD-001, anything — so it never
+        // gets swapped for an auto code on the next step.
         container = window.createOverstockContainer({
           status: 'Stored',
           currentLocation: rawLoc,
-          code:    isOsc ? normalized : '',
-          barcode: isOsc ? '' : normalized,
+          code: normalized,
         });
       } catch (e) {
         showToast('Failed to create container: ' + e.message, 'error');
@@ -549,12 +545,10 @@
           // Now create a fresh container under the same code + location — again
           // with the final code up front (no create-then-rename).
           try {
-            const isOsc = /^OSC-\d+$/i.test(normalized);
             container = window.createOverstockContainer({
               status: 'Stored',
               currentLocation: rawLoc,
-              code:    isOsc ? normalized : '',
-              barcode: isOsc ? '' : normalized,
+              code: normalized,
             });
             showToast(`Wiped "${normalized}" — start fresh.`, 'success');
           } catch (e) {
@@ -616,9 +610,13 @@
     const poInput   = el('stockIntakeItemPo');
     const qtyInput  = el('stockIntakeItemQty');
     const catInput  = el('stockIntakeItemCategory');
+    const statusInput = el('stockIntakeItemStatus');
+    const actionInput = el('stockIntakeItemAction');
     const po       = (poInput?.value || '').trim();
     const qty      = Math.max(0, Math.floor(Number(qtyInput?.value || 0)));
     const category = catInput?.value || '';
+    const status   = statusInput?.value || 'Not Donation';
+    const action   = actionInput?.value || 'Required';
 
     if (!po) { showToast('Enter a PO number.', 'error'); poInput?.focus(); return; }
     if (!qty) { showToast('Enter a quantity.', 'error'); qtyInput?.focus(); return; }
@@ -670,8 +668,8 @@
       po,
       quantity: qty,
       category,
-      status: 'Not Donation',
-      action: 'Required',
+      status,
+      action,
       location: session.activeContainerLocation,
       associate: getCurrentUser(),
       sourceType: 'stock-intake',
@@ -713,6 +711,10 @@
     poInput.value = '';
     qtyInput.value = '';
     if (catInput) catInput.value = '';
+    // Reset status/action to the safe defaults so each PO starts neutral and
+    // "Donation" is a deliberate per-PO choice.
+    if (statusInput) statusInput.value = 'Not Donation';
+    if (actionInput) actionInput.value = 'Required';
     document.querySelectorAll('[data-si-size]').forEach(inp => { inp.value = ''; });
     el('stockIntakeItemSizesRow')?.setAttribute('hidden', '');
     poInput.focus();
