@@ -62,7 +62,12 @@ let workflowSyncInFlight=false;
 let workflowSyncQueued=false;
 let workflowSyncTimer=null;
 let workflowPollTimer=null;
-const WORKFLOW_POLL_INTERVAL = 20000; // poll every 20 seconds
+const WORKFLOW_POLL_INTERVAL = 30000; // poll every 30 seconds
+// Last server updated_at we've applied. The poll uses a tiny "meta" check to
+// learn the server's current updated_at and only downloads the FULL state when
+// it has actually changed — instead of re-transferring the whole blob every
+// interval. This is the main lever for staying under Neon's transfer cap.
+let lastSyncUpdatedAt = null;
 
 // Active editors — who is currently in which pallet modal
 // { palletId: { user, ts } } — updated from server on every GET/poll
@@ -84,15 +89,32 @@ async function workflowRegisterEditor(palletId, action) {
   } catch(_) { /* non-fatal */ }
 }
 
+// One poll cycle: cheap meta check first; full download only if changed.
+async function pollWorkflowOnce() {
+  if (!workflowSyncEnabled || workflowSyncInFlight) return;
+  try {
+    // Tiny response: just { updated_at, activeEditors } — no data_json blob.
+    const meta = await workflowApiRequest('GET', undefined, false, { meta: 1 });
+    if (!meta) return;
+    const remoteTs = meta.updated_at ? new Date(meta.updated_at).getTime() : 0;
+    const changed = !lastSyncUpdatedAt || (remoteTs && remoteTs > lastSyncUpdatedAt);
+    // Editors are cheap and change independently of the data — always refresh.
+    if (meta && typeof meta.activeEditors === 'object') {
+      workflowActiveEditors = meta.activeEditors || {};
+      if (typeof plt_refreshEditorWarning === 'function') plt_refreshEditorWarning();
+    }
+    if (changed) {
+      const full = await workflowApiRequest('GET');
+      if (full) applyWorkflowSyncPayload(full);
+    } else if (remoteTs) {
+      lastSyncUpdatedAt = remoteTs;
+    }
+  } catch(_) { /* non-fatal poll failure */ }
+}
+
 function startWorkflowPoll() {
   if (workflowPollTimer) return;
-  workflowPollTimer = setInterval(async () => {
-    if (!workflowSyncEnabled || workflowSyncInFlight) return;
-    try {
-      const data = await workflowApiRequest('GET');
-      if (data) applyWorkflowSyncPayload(data);
-    } catch(_) { /* non-fatal poll failure */ }
-  }, WORKFLOW_POLL_INTERVAL);
+  workflowPollTimer = setInterval(pollWorkflowOnce, WORKFLOW_POLL_INTERVAL);
 }
 
 function stopWorkflowPoll() {
@@ -140,7 +162,11 @@ function syncAssociatesFromAttendance() {
 function scheduleWorkflowSync() {
   if (!workflowSyncEnabled || !workflowSyncLoaded) return;
   if (workflowSyncTimer) clearTimeout(workflowSyncTimer);
-  workflowSyncTimer = setTimeout(() => { workflowSyncTimer = null; syncWorkflowState(); }, 250);
+  // 1s debounce (was 250ms) — coalesces bursts of edits (e.g. rapid stock
+  // intake) into a single upload, cutting repeated full-state transfers.
+  // Critical flushes (closing the intake modal) still call syncWorkflowState()
+  // directly, so this only affects the idle-coalescing window.
+  workflowSyncTimer = setTimeout(() => { workflowSyncTimer = null; syncWorkflowState(); }, 1000);
 }
 // Read the current Identity token from the shared session. auth.js (in the
 // top-level window) keeps this fresh; we re-read per request so a renewed
@@ -171,7 +197,7 @@ function handleWorkflowAuthExpired() {
     top.location.href = 'login.html';
   } catch (_) { window.location.href = 'login.html'; }
 }
-async function workflowApiRequest(method='GET', body, _retried){
+async function workflowApiRequest(method='GET', body, _retried, query){
   const token = getStoredAuthToken();
   const headers = { 'Accept': 'application/json' };
   if (token) headers['Authorization'] = 'Bearer ' + token;
@@ -180,7 +206,11 @@ async function workflowApiRequest(method='GET', body, _retried){
     headers['Content-Type'] = 'application/json';
     options.body = JSON.stringify(body);
   }
-  const response = await fetch(WORKFLOW_API_BASE, options);
+  let url = WORKFLOW_API_BASE;
+  if (query && Object.keys(query).length) {
+    url += (url.includes('?') ? '&' : '?') + new URLSearchParams(query).toString();
+  }
+  const response = await fetch(url, options);
   // Session expired/invalid (only possible once backend enforcement is on):
   // try a single silent token refresh, then retry the request once. If that
   // can't recover the session, route the user to re-login rather than silently
@@ -189,7 +219,7 @@ async function workflowApiRequest(method='GET', body, _retried){
     const refresher = getTokenRefresher();
     let fresh = null;
     if (refresher) { try { fresh = await refresher(); } catch (_) {} }
-    if (fresh) return workflowApiRequest(method, body, true);
+    if (fresh) return workflowApiRequest(method, body, true, query);
     handleWorkflowAuthExpired();
     throw new Error('Workflow sync unauthorized (session expired)');
   }
@@ -200,6 +230,12 @@ async function workflowApiRequest(method='GET', body, _retried){
   return data;
 }
 function applyWorkflowSyncPayload(payload={}){
+  // Track the server's updated_at so the poll can skip full downloads when
+  // nothing has changed.
+  if (payload && payload.updated_at) {
+    const ts = new Date(payload.updated_at).getTime();
+    if (!Number.isNaN(ts)) lastSyncUpdatedAt = ts;
+  }
   if (payload && typeof payload.activeEditors === 'object') {
     workflowActiveEditors = payload.activeEditors || {};
     // If a pallet modal is open, refresh its warning banner
@@ -2709,9 +2745,11 @@ async function init() {
   renderAll();
   restoreSavedTab();
   // Refresh workflow data when user tabs back — so associates always see latest pallets
-  window.addEventListener('focus', () => { if(workflowSyncEnabled) loadWorkflowFromBackend().catch(()=>{}); });
+  // On tab focus / becoming visible, do the cheap change-detecting poll rather
+  // than a full reload — only pulls the blob if the server actually changed.
+  window.addEventListener('focus', () => { if(workflowSyncEnabled) pollWorkflowOnce().catch(()=>{}); });
   document.addEventListener('visibilitychange', () => {
-    if(document.visibilityState === 'visible' && workflowSyncEnabled) loadWorkflowFromBackend().catch(()=>{});
+    if(document.visibilityState === 'visible' && workflowSyncEnabled) pollWorkflowOnce().catch(()=>{});
   });
 }
 

@@ -149,6 +149,24 @@ exports.handler = async function handler(event) {
     }
 
     if (event.httpMethod === 'GET') {
+      // Lightweight "meta" mode (?meta=1): return ONLY updated_at + editors, not
+      // the full data/masters blobs. The client polls this cheaply and downloads
+      // the full state only when updated_at has changed — drastically cutting
+      // repeated transfer of the same large blob.
+      const meta = event.queryStringParameters &&
+        (event.queryStringParameters.meta === '1' || event.queryStringParameters.meta === 'true');
+      if (meta) {
+        const r = await pool.query(
+          `SELECT active_editors, updated_at FROM workflow_sync_state WHERE state_key='default' LIMIT 1;`
+        );
+        const row = r.rows[0] || { active_editors: {}, updated_at: null };
+        return json(200, {
+          meta: true,
+          activeEditors: pruneEditors(row.active_editors),
+          updated_at: row.updated_at,
+        });
+      }
+
       const result = await pool.query(
         `SELECT data_json, masters_json, active_editors, updated_at FROM workflow_sync_state WHERE state_key='default' LIMIT 1;`
       );
