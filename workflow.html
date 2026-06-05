@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>QA Inbound Workflow</title>
   <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="Styles/workflow.css" />
+  <!-- Cache-bust version param prevents stale CSS from being served when
+       Option C styles change. Bump the v= suffix on any future CSS-only
+       change that needs to take effect immediately. -->
+  <link rel="stylesheet" href="Styles/workflow.css?v=optc-1" />
   <link rel="stylesheet" href="Styles/pallets.css" />
 </head>
 <body class="workflow-page">
@@ -104,7 +107,75 @@
       <div id="palletPrepActivity"></div>
     </section>
 
-        <section class="page" id="page-overstock">
+        <section class="page os-c2" id="page-overstock">
+
+      <!-- ════════════════════════════════════════════════════════════════
+           OPTION C TOOLBAR — sticky action bar at the top.
+           Consolidates PO Lookup + Audit selector + Quick log + Stock Intake
+           into one slim bar. The original PO Lookup / Audit / Log Entry
+           panels are hidden by CSS but kept in DOM so all event listeners,
+           autofill logic, and form submit handlers continue to work.
+           Toolbar controls proxy values to the legacy inputs.
+           ════════════════════════════════════════════════════════════════ -->
+      <div class="os-tb" role="toolbar" aria-label="Overstock toolbar">
+        <!-- PO Lookup -->
+        <div class="os-tb-group">
+          <span class="os-tb-lbl">🔍 PO</span>
+          <input id="osTbPoInput" type="text" class="os-tb-input os-tb-input-wide" placeholder="Enter PO#…" autocomplete="off" />
+          <button id="osTbPoBtn" type="button" class="os-tb-btn">Look up</button>
+        </div>
+        <!-- Audit by location -->
+        <div class="os-tb-group">
+          <span class="os-tb-lbl">📋 Audit</span>
+          <select id="osTbAuditLoc" class="os-tb-input os-tb-input-narrow">
+            <option value="">— Loc —</option>
+          </select>
+          <button id="osTbAuditBtn" type="button" class="os-tb-btn">Load</button>
+        </div>
+        <!-- Quick log: PO + qty + Add + Advanced (full form modal) -->
+        <div class="os-tb-group">
+          <span class="os-tb-lbl">+ Log</span>
+          <select id="osTbQuickPo" class="os-tb-input os-tb-input-narrow">
+            <option value="">PO from prep…</option>
+          </select>
+          <input id="osTbQuickQty" type="number" min="0" step="1" class="os-tb-input os-tb-input-qty" placeholder="Qty" />
+          <button id="osTbQuickAdd" type="button" class="os-tb-btn os-tb-btn-green">+ Add</button>
+          <button id="osTbQuickAdv" type="button" class="os-tb-btn" title="Open full entry form with all fields">⚙ Advanced</button>
+        </div>
+        <!-- Right-aligned primary action + ⋯ overflow -->
+        <div class="os-tb-group os-tb-right">
+          <button id="osTbIntakeBtn" type="button" class="os-tb-btn os-tb-btn-primary">📦 Stock Intake</button>
+          <div class="os-tb-menu-wrap">
+            <button id="osTbMenuBtn" type="button" class="os-tb-btn os-tb-btn-icon" title="More actions" aria-haspopup="true" aria-expanded="false">⋯</button>
+            <div id="osTbMenu" class="os-tb-menu" hidden role="menu">
+              <button id="osTbMenuRenorm" type="button" class="os-tb-menu-item" style="display:none;">🔧 Renormalize codes</button>
+              <button id="osTbMenuSeed" type="button" class="os-tb-menu-item">📋 Load demo data</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════════════════
+           ADVANCED LOG MODAL — wraps the existing #overstockEntryForm.
+           On open, JS relocates the form into the modal body. On close,
+           the form returns to its hidden home. All event listeners stay
+           bound because we move the SAME DOM node, not a clone.
+           ════════════════════════════════════════════════════════════════ -->
+      <div id="osAdvLogOverlay" class="os-adv-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="osAdvLogTitle">
+        <div class="os-adv-modal">
+          <div class="os-adv-head">
+            <div>
+              <div class="os-adv-eyebrow">+ LOG ENTRY · ADVANCED</div>
+              <h2 class="os-adv-title" id="osAdvLogTitle">Log Overstock Entry</h2>
+              <p class="os-adv-sub">All fields available — category, status, action, location, associate, sizes.</p>
+            </div>
+            <button type="button" class="os-adv-close" id="osAdvLogClose" aria-label="Close">×</button>
+          </div>
+          <div class="os-adv-body" id="osAdvLogBody">
+            <!-- #overstockEntryForm gets relocated here at open-time. -->
+          </div>
+        </div>
+      </div>
 
       <!-- ── Stat strip ── -->
       <div class="os-stat-strip">
@@ -391,7 +462,11 @@
 
 
       <!-- ── Log Entry form ── -->
-      <section class="os-panel">
+      <!-- id="overstockEntryPanel" lets Option C CSS hide this panel when
+           os-c2 is active. The form inside (#overstockEntryForm) stays in
+           DOM with all its event handlers; the ⚙ Advanced button in the
+           toolbar relocates this form into the modal body when opened. -->
+      <section class="os-panel" id="overstockEntryPanel">
         <div class="os-panel-head">
           <div>
             <div class="os-panel-title">+ Log Overstock Entry</div>
@@ -530,6 +605,13 @@
             <div class="os-panel-sub">Tap any <strong>PO#</strong> to audit its location.</div>
           </div>
           <div class="os-log-tools">
+            <!-- Feed/Table view toggle (Option C) ──
+                 Feed is the default visible view; clicking 🗂 Table shows
+                 the full spreadsheet view. Both render from the same data. -->
+            <div class="os-log-view-toggle" role="tablist" aria-label="Log view">
+              <button type="button" id="osLogViewFeed" class="os-log-view-btn is-active" role="tab" aria-selected="true">📰 Feed</button>
+              <button type="button" id="osLogViewTable" class="os-log-view-btn" role="tab" aria-selected="false">🗂 Table</button>
+            </div>
             <input id="osLogSearch" type="text" class="os-filter-input os-log-search" placeholder="🔎 Search this log…" autocomplete="off" />
             <select id="osLogSort" class="os-filter-select os-log-sort" aria-label="Sort log">
               <option value="recent">Newest first</option>
@@ -542,7 +624,12 @@
             </select>
           </div>
         </div>
-        <div class="os-table-wrap">
+        <!-- Feed view (default visible). Renders via renderOverstockFeed()
+             in app.js, using the same filtered entries the table uses. -->
+        <div id="overstockFeedBody" class="os-feed-body"></div>
+        <!-- Table view (hidden by default; revealed by 🗂 Table toggle).
+             All existing handlers + columns intact. -->
+        <div class="os-table-wrap os-log-table-wrap" hidden>
           <table class="os-table os-log-table">
             <thead>
               <tr>

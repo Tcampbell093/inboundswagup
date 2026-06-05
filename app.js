@@ -3154,6 +3154,221 @@ function bindOverstockEvents() {
     });
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // OPTION C TOOLBAR + ADVANCED MODAL + FEED/TABLE TOGGLE WIRING
+  // ────────────────────────────────────────────────────────────────────
+  // Thin proxy layer over the existing form / lookup / audit handlers.
+  // The toolbar's controls mirror their values into the legacy inputs
+  // and trigger the legacy buttons — no business logic changes here.
+  // Defensive: every getElementById is null-checked so a missing element
+  // doesn't break the rest of the wiring.
+  // ════════════════════════════════════════════════════════════════════
+  (function wireOptionCToolbar() {
+    const $ = (id) => document.getElementById(id);
+
+    // ── PO Lookup proxy ───────────────────────────────────────────────
+    const tbPoInput = $('osTbPoInput');
+    const tbPoBtn   = $('osTbPoBtn');
+    if (tbPoInput && tbPoBtn) {
+      const realInput = $('overstockPoLookupInput');
+      const realBtn   = $('overstockPoLookupBtn');
+      tbPoInput.addEventListener('input', () => { if (realInput) realInput.value = tbPoInput.value; });
+      tbPoInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); tbPoBtn.click(); }
+      });
+      tbPoBtn.addEventListener('click', () => {
+        if (realInput) realInput.value = tbPoInput.value;
+        if (realBtn) realBtn.click();
+      });
+    }
+
+    // ── Audit-by-location proxy ───────────────────────────────────────
+    const tbAuditLoc = $('osTbAuditLoc');
+    const tbAuditBtn = $('osTbAuditBtn');
+    function syncAuditLocOptions() {
+      const src = $('overstockAuditLocation');
+      if (!src || !tbAuditLoc) return;
+      const prev = tbAuditLoc.value;
+      tbAuditLoc.innerHTML = src.innerHTML;
+      if (prev && [...tbAuditLoc.options].some(o => o.value === prev)) tbAuditLoc.value = prev;
+    }
+    if (tbAuditLoc && tbAuditBtn) {
+      // Initial population. We'll also repopulate on every page render via
+      // the hook below.
+      syncAuditLocOptions();
+      tbAuditLoc.addEventListener('change', () => {
+        const real = $('overstockAuditLocation');
+        if (real) { real.value = tbAuditLoc.value; real.dispatchEvent(new Event('change', { bubbles: true })); }
+      });
+      tbAuditBtn.addEventListener('click', () => {
+        const real = $('overstockAuditLocation');
+        if (real) real.value = tbAuditLoc.value;
+        $('overstockAuditStartBtn')?.click();
+      });
+    }
+
+    // ── Quick log proxy (PO + qty + Add) ──────────────────────────────
+    const tbQuickPo  = $('osTbQuickPo');
+    const tbQuickQty = $('osTbQuickQty');
+    const tbQuickAdd = $('osTbQuickAdd');
+    function syncQuickPoOptions() {
+      const src = $('overstockEntryPo');
+      if (!src || !tbQuickPo) return;
+      const prev = tbQuickPo.value;
+      tbQuickPo.innerHTML = src.innerHTML;
+      if (prev && [...tbQuickPo.options].some(o => o.value === prev)) tbQuickPo.value = prev;
+    }
+    if (tbQuickPo && tbQuickQty && tbQuickAdd) {
+      syncQuickPoOptions();
+      // When the user picks a PO in the toolbar, mirror to the real form
+      // select and dispatch change so its auto-fill (qty/category) fires.
+      // Then mirror the auto-filled qty back into the toolbar input so the
+      // user sees what the system computed.
+      tbQuickPo.addEventListener('change', () => {
+        const real = $('overstockEntryPo');
+        if (!real) return;
+        real.value = tbQuickPo.value;
+        real.dispatchEvent(new Event('change', { bubbles: true }));
+        // setTimeout 0 lets the form's change handler complete first
+        setTimeout(() => {
+          const realQty = $('overstockEntryQty');
+          if (realQty) tbQuickQty.value = realQty.value;
+        }, 0);
+      });
+      tbQuickQty.addEventListener('input', () => {
+        const realQty = $('overstockEntryQty');
+        if (realQty) realQty.value = tbQuickQty.value;
+      });
+      tbQuickAdd.addEventListener('click', () => {
+        const realPo  = $('overstockEntryPo');
+        const realQty = $('overstockEntryQty');
+        const form    = $('overstockEntryForm');
+        if (!realPo || !realQty || !form) return;
+        if (!tbQuickPo.value) { alert('Pick a PO first.'); tbQuickPo.focus(); return; }
+        realPo.value = tbQuickPo.value;
+        realPo.dispatchEvent(new Event('change', { bubbles: true }));
+        realQty.value = tbQuickQty.value || realQty.value;
+        // Trigger the form's existing submit handler
+        if (typeof form.requestSubmit === 'function') form.requestSubmit();
+        else form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+        // Clear toolbar inputs for next entry
+        tbQuickPo.value = '';
+        tbQuickQty.value = '';
+      });
+    }
+
+    // ── Advanced modal: relocate form in/out ──────────────────────────
+    const tbAdvBtn   = $('osTbQuickAdv');
+    const advOverlay = $('osAdvLogOverlay');
+    const advClose   = $('osAdvLogClose');
+    const advBody    = $('osAdvLogBody');
+    function openAdvanced() {
+      const form = $('overstockEntryForm');
+      if (!form || !advOverlay || !advBody) return;
+      advBody.appendChild(form); // relocate form into modal
+      advOverlay.hidden = false;
+      document.body.style.overflow = 'hidden';
+    }
+    function closeAdvanced() {
+      const form = $('overstockEntryForm');
+      const home = $('overstockEntryPanel')?.querySelector('.os-panel-body');
+      if (form && home) home.appendChild(form); // return form to hidden home
+      if (advOverlay) advOverlay.hidden = true;
+      document.body.style.overflow = '';
+    }
+    if (tbAdvBtn)   tbAdvBtn.addEventListener('click', openAdvanced);
+    if (advClose)   advClose.addEventListener('click', closeAdvanced);
+    if (advOverlay) advOverlay.addEventListener('click', (e) => {
+      if (e.target === advOverlay) closeAdvanced(); // backdrop click
+    });
+    // Close modal after successful submit so the user sees the result.
+    const formForListen = $('overstockEntryForm');
+    if (formForListen) {
+      formForListen.addEventListener('submit', () => {
+        if (advOverlay && !advOverlay.hidden) setTimeout(closeAdvanced, 50);
+      });
+    }
+
+    // ── Toolbar's primary buttons (proxy to canonical IDs) ────────────
+    // The toolbar has its OWN Stock Intake button (osTbIntakeBtn) instead
+    // of duplicating #overstockStockIntakeBtn. Same for renorm + seed.
+    // Each proxies to the canonical button click.
+    $('osTbIntakeBtn')?.addEventListener('click', () => {
+      $('overstockStockIntakeBtn')?.click();
+    });
+    $('osTbMenuRenorm')?.addEventListener('click', () => {
+      $('overstockRenormalizeBtn')?.click();
+    });
+    $('osTbMenuSeed')?.addEventListener('click', () => {
+      $('overstockSeedBtn')?.click();
+    });
+    // Mirror the renorm button's role-gated visibility
+    if ($('osTbMenuRenorm')) {
+      const canSee = (typeof osCanDeleteContainer === 'function') ? osCanDeleteContainer() : false;
+      if (canSee) $('osTbMenuRenorm').style.display = '';
+    }
+
+    // ── ⋯ overflow menu ───────────────────────────────────────────────
+    const menuBtn = $('osTbMenuBtn');
+    const menuEl  = $('osTbMenu');
+    if (menuBtn && menuEl) {
+      menuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const willShow = menuEl.hidden;
+        menuEl.hidden = !willShow;
+        menuBtn.setAttribute('aria-expanded', String(willShow));
+      });
+      // Items inside the menu close it on click
+      menuEl.querySelectorAll('button').forEach(b => {
+        b.addEventListener('click', () => {
+          menuEl.hidden = true;
+          menuBtn.setAttribute('aria-expanded', 'false');
+        });
+      });
+      // Outside click closes the menu
+      document.addEventListener('click', (e) => {
+        if (menuEl.hidden) return;
+        if (e.target === menuBtn || menuBtn.contains(e.target)) return;
+        if (!menuEl.contains(e.target)) {
+          menuEl.hidden = true;
+          menuBtn.setAttribute('aria-expanded', 'false');
+        }
+      });
+    }
+
+    // ── Feed / Table view toggle ──────────────────────────────────────
+    const feedBtn   = $('osLogViewFeed');
+    const tableBtn  = $('osLogViewTable');
+    const feedBody  = $('overstockFeedBody');
+    const tableWrap = document.querySelector('.os-c2 .os-log-table-wrap');
+    function showView(which) {
+      if (!feedBtn || !tableBtn || !feedBody || !tableWrap) return;
+      const showFeed = which === 'feed';
+      feedBtn.classList.toggle('is-active', showFeed);
+      tableBtn.classList.toggle('is-active', !showFeed);
+      feedBtn.setAttribute('aria-selected', String(showFeed));
+      tableBtn.setAttribute('aria-selected', String(!showFeed));
+      feedBody.hidden  = !showFeed;
+      tableWrap.hidden =  showFeed;
+    }
+    if (feedBtn)  feedBtn.addEventListener('click',  () => showView('feed'));
+    if (tableBtn) tableBtn.addEventListener('click', () => showView('table'));
+
+    // ── Hook the page render so toolbar dropdowns stay in sync ────────
+    // After every overstock render, the audit-location and PO selects in
+    // the form get repopulated. Mirror those into the toolbar's dropdowns.
+    if (typeof window.renderOverstockPage === 'function' && !window.renderOverstockPage.__optCHooked) {
+      const orig = window.renderOverstockPage;
+      const wrapped = function() {
+        const r = orig.apply(this, arguments);
+        try { syncAuditLocOptions(); syncQuickPoOptions(); } catch (_) {}
+        return r;
+      };
+      wrapped.__optCHooked = true;
+      window.renderOverstockPage = wrapped;
+    }
+  })();
+
   const overstockPoSelect = document.getElementById("overstockEntryPo");
 
   // ── #3 Auto-qty warning + delta signal ──────────────────────────────────
@@ -5350,6 +5565,122 @@ function renormalizeOverstockContainerCodes() {
 }
 window.renormalizeOverstockContainerCodes = renormalizeOverstockContainerCodes;
 
+/* ════════════════════════════════════════════════════════════════════
+   renderOverstockFeed — Option C activity-feed view of the log.
+   ────────────────────────────────────────────────────────────────────
+   Renders the SAME filtered entries the table uses, but as compact
+   timeline rows: time | PO + qty + category + actor | location pill |
+   actions (Timeline / Edit / Delete). Feed + table stay synced because
+   they read from one shared array.
+   Falls silent on any error so it never blocks the rest of the render.
+   ════════════════════════════════════════════════════════════════════ */
+function renderOverstockFeed(entries) {
+  const body = document.getElementById('overstockFeedBody');
+  if (!body) return;
+  if (!Array.isArray(entries) || !entries.length) {
+    body.innerHTML = '<div class="os-feed-empty">No entries to show. Adjust filters above or log your first PO using the toolbar.</div>';
+    return;
+  }
+
+  // Permission check — matches the table's elevation logic exactly so the
+  // right buttons render per role.
+  const isElevated = (typeof osCanDeleteContainer === 'function') ? osCanDeleteContainer() : false;
+  const currentUser = state.currentUser;
+
+  const fmtTime = (ts) => {
+    const d = new Date(ts);
+    let h = d.getHours();
+    const m = String(d.getMinutes()).padStart(2, '0');
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return `${h}:${m} ${ampm}`;
+  };
+  const fmtDate = (val) => {
+    if (!val) return '';
+    if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) {
+      return val.slice(5).replace('-', '/');
+    }
+    const d = new Date(val);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  };
+
+  const html = entries.map(row => {
+    const isAutoRow = row.sourceType === 'auto' || row.sourceType === 'prep-extra';
+    const ownerLocked = (!isElevated && !!(currentUser && currentUser !== LEADERSHIP_USER && row.associate && row.associate !== currentUser));
+
+    const tsRaw = Number(row.updatedAt || row.createdAt || 0);
+    const timeLabel = tsRaw ? fmtTime(tsRaw) : '—';
+    const dateLabel = fmtDate(row.date || tsRaw);
+
+    const po       = row.po || '—';
+    const qty      = Number(row.quantity || 0);
+    const category = row.category || '';
+    const associate = row.associate || row.createdBy || '—';
+    const loc      = row.location || '—';
+    const cont     = row.containerCode || '';
+
+    const canEdit   = !ownerLocked;
+    const canDelete = !ownerLocked;
+    const hasHistory = (typeof getPoHistoryCount === 'function') ? getPoHistoryCount('overstock', row.po) >= 1 : false;
+
+    return `<div class="os-feed-item" data-entry-id="${escapeAttribute(row.id)}">
+      <div class="os-feed-time">${escapeHtml(timeLabel)}<span class="feed-date">${escapeHtml(dateLabel)}</span></div>
+      <div class="os-feed-content">
+        <div><span class="feed-po">PO# ${escapeHtml(po)}</span> <span class="feed-qty">+${qty}</span>${category ? ` <span class="feed-cat">${escapeHtml(category)}</span>` : ''}</div>
+        <div class="os-feed-actor">by ${escapeHtml(associate)}</div>
+      </div>
+      <div class="os-feed-loc">${escapeHtml(loc)}${cont ? `<span class="feed-loc-bx">${escapeHtml(cont)}</span>` : ''}</div>
+      <div class="os-feed-actions">
+        ${hasHistory ? `<button type="button" class="os-feed-act-btn" data-feed-act="timeline" data-entry-id="${escapeAttribute(row.id)}" data-po="${escapeAttribute(row.po)}" title="View timeline">⏱</button>` : ''}
+        ${canEdit   ? `<button type="button" class="os-feed-act-btn" data-feed-act="edit"   data-entry-id="${escapeAttribute(row.id)}" title="Edit">✎</button>` : ''}
+        ${canDelete ? `<button type="button" class="os-feed-act-btn" data-feed-act="delete" data-entry-id="${escapeAttribute(row.id)}" title="Delete">🗑</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  body.innerHTML = html;
+
+  // Wire actions. Same code paths as the table's row buttons so behavior
+  // (audit logs, tombstones, sync) is identical between the two views.
+  body.querySelectorAll('[data-feed-act="delete"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.entryId;
+      const row = (state.data.overstockEntries || []).find(r => r.id === id);
+      if (!row) return;
+      const label = row.containerCode ? `${row.containerCode} · PO# ${row.po}` : `PO# ${row.po}`;
+      if (!confirm(`Remove ${label}?`)) return;
+      if (typeof window.deleteOverstockEntry === 'function') {
+        window.deleteOverstockEntry(id);
+      } else {
+        state.data.overstockEntries = (state.data.overstockEntries || []).filter(r => r.id !== id);
+        persistData();
+      }
+      renderOverstockPage();
+    });
+  });
+  body.querySelectorAll('[data-feed-act="edit"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      // Flip to table view so the user sees the inline editor, then click
+      // the table row's existing Edit button to trigger it.
+      const tableBtn = document.getElementById('osLogViewTable');
+      if (tableBtn && !tableBtn.classList.contains('is-active')) tableBtn.click();
+      setTimeout(() => {
+        const id = btn.dataset.entryId;
+        const tr = document.querySelector(`#overstockTableBody tr[data-entry-id="${id}"]`);
+        const editBtn = tr?.querySelector('.overstock-edit-btn');
+        if (editBtn) editBtn.click();
+      }, 50);
+    });
+  });
+  body.querySelectorAll('[data-feed-act="timeline"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const po = btn.dataset.po;
+      if (po && typeof openPoHistoryModal === 'function') openPoHistoryModal('overstock', po);
+    });
+  });
+}
+window.renderOverstockFeed = renderOverstockFeed;
+
 function renderOverstockPage() {
   if (!Array.isArray(state.data.overstockEntries)) state.data.overstockEntries = [];
   if (!state.data.overstockFilters) state.data.overstockFilters = { date: '', associate: 'All', location: 'All', status: 'All', search: '', mineOnly: false };
@@ -5470,7 +5801,16 @@ function renderOverstockPage() {
       // no POs are logged inside it. Surface this so the warehouse team can
       // either fill it or delete the empty box.
       const hasOnlyEmptyBoxes = boxes.length > 0 && units === 0;
-      return `<div class="os-loc${isEmpty ? ' os-loc-empty' : ' os-loc-occ'}${hasOnlyEmptyBoxes ? ' os-loc-empty-bx' : ''}" data-loc="${escapeAttribute(loc)}" role="button" tabindex="0">
+      // Heat tier for Option C visual. Free locations get no data-load.
+      // Thresholds: <100u light, 100-400u medium, 400+u heavy.
+      let load = '';
+      if (units > 0) {
+        if (units < 100)      load = 'light';
+        else if (units < 400) load = 'med';
+        else                  load = 'heavy';
+      }
+      const loadAttr = load ? ` data-load="${load}"` : '';
+      return `<div class="os-loc${isEmpty ? ' os-loc-empty' : ' os-loc-occ'}${hasOnlyEmptyBoxes ? ' os-loc-empty-bx' : ''}"${loadAttr} data-loc="${escapeAttribute(loc)}" role="button" tabindex="0">
         <div class="os-loc-name">${loc}</div>
         <div class="os-loc-count">${boxes.length ? boxes.length+'bx' : 'free'}</div>
         ${units ? `<div style="font-size:9px;color:var(--muted);">${units}u</div>` : ''}
@@ -5598,6 +5938,12 @@ function renderOverstockPage() {
 
   const tbody = document.getElementById('overstockTableBody');
   if (!tbody) return;
+  // Render Option C activity feed alongside the table — both pull from the
+  // same visibleEntries so they stay perfectly in sync. If renderOverstockFeed
+  // isn't loaded for any reason, render proceeds normally without erroring.
+  try {
+    if (typeof renderOverstockFeed === 'function') renderOverstockFeed(visibleEntries);
+  } catch (e) { console.warn('Feed render failed:', e); }
   tbody.innerHTML = '';
   if (!visibleEntries.length) {
     tbody.innerHTML = `<tr><td colspan="9" class="empty-state-cell">${logQuery ? 'No entries match your search.' : t('noRows')}</td></tr>`;
@@ -5619,6 +5965,9 @@ function renderOverstockPage() {
     // managers/admins can act on anything; associates only on their own rows.
     const ownerLocked = (!isElevated && !!(state.currentUser && state.currentUser !== LEADERSHIP_USER && row.associate && row.associate !== state.currentUser));
     const tr = document.createElement('tr');
+    // Tag each row with its entry ID so the Option C feed view's edit-proxy
+    // can find this specific row when the user clicks ✎ in feed mode.
+    tr.setAttribute('data-entry-id', row.id);
     const batchCount = getPoHistoryCount('overstock', row.po);
     const batchBtn = batchCount >= 1
       ? `<button class="tiny-btn history-row" type="button">${t('viewTimeline')}</button>`
