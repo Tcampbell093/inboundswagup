@@ -4054,11 +4054,15 @@ body.workflow-page .os-c2 .os-panel.os-tool-panel {
   padding: 0 !important;
   margin: 0 0 12px 0 !important;
 }
-/* Hide the result containers when they're empty so we don't leave
-   awkward whitespace. JS doesn't touch their display directly; this
-   uses :empty which CSS handles automatically. */
-body.workflow-page .os-c2 #overstockAuditResults:empty,
-body.workflow-page .os-c2 #overstockPoLookupResults:empty {
+/* Hide the result containers WHENEVER they sit inside their original
+   tool panel — even when full. The modal is the only visible home. The
+   relocation system moves them in/out of #osResultsBody, and the rule
+   below this one shows them only inside the modal body.
+   The selector targets .os-panel.os-tool-panel (the audit panel + the
+   PO Lookup panel both have this class), so it covers both cases
+   without naming either ID directly. */
+body.workflow-page .os-c2 .os-panel.os-tool-panel #overstockAuditResults,
+body.workflow-page .os-c2 .os-panel.os-tool-panel #overstockPoLookupResults {
   display: none !important;
 }
 /* Entry form panel — fully hidden. Its form gets relocated into the
