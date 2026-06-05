@@ -42,7 +42,7 @@ async function verifyAdmin(event) {
   // ── Check role from hc_users (Neon) first — source of truth ──
   let role = 'l1';
   try {
-    const dbRes = await pool.query('SELECT role FROM hc_users WHERE email=$1', [user.email]);
+    const dbRes = await pool.query('SELECT role FROM hc_users WHERE LOWER(email)=LOWER($1)', [user.email]);
     if (dbRes.rows.length > 0 && dbRes.rows[0].role) {
       role = dbRes.rows[0].role;
     } else {
@@ -125,19 +125,23 @@ exports.handler = async function(event) {
     if (!caller) return json(401, { error: 'Unauthorized' });
 
     const body = JSON.parse(event.body || '{}');
-    const { email, role = 'l1', name = '' } = body;
-    if (!email) return json(400, { error: 'Email required' });
+    const { email: rawEmail, role = 'l1', name = '' } = body;
+    if (!rawEmail) return json(400, { error: 'Email required' });
+    // Normalize to lowercase so it matches the email Google returns at sign-in
+    // (Google sends lowercase). Storing/looking up mixed-case caused invited
+    // users to read as "not invited" when they logged in.
+    const email = String(rawEmail).trim().toLowerCase();
 
     // Add invited column if missing
     await pool.query(`ALTER TABLE hc_users ADD COLUMN IF NOT EXISTS invited BOOLEAN DEFAULT true`);
 
-    // Upsert into hc_users — create or update role
-    const existing = await pool.query('SELECT id FROM hc_users WHERE email=$1', [email]);
+    // Upsert into hc_users — create or update role. Match case-insensitively so
+    // a previously mis-cased row is updated (and normalized) rather than duplicated.
+    const existing = await pool.query('SELECT id FROM hc_users WHERE LOWER(email)=$1', [email]);
     if (existing.rows.length > 0) {
-      // User exists — update role and mark as invited
       await pool.query(
-        `UPDATE hc_users SET role=$2, invited=true, updated_at=now() WHERE email=$1`,
-        [email, role]
+        `UPDATE hc_users SET email=$1, role=$2, invited=true, updated_at=now() WHERE id=$3`,
+        [email, role, existing.rows[0].id]
       );
     } else {
       // New user — insert with invited=true
@@ -203,11 +207,11 @@ exports.handler = async function(event) {
     }
 
     // Look up the user first so we can audit-log what role they had
-    const existing = await pool.query('SELECT * FROM hc_users WHERE email=$1 OR id=$1', [email]);
+    const existing = await pool.query('SELECT * FROM hc_users WHERE LOWER(email)=LOWER($1) OR id=$1', [email]);
     if (!existing.rows.length) return json(404, { error: 'User not found' });
     const before = existing.rows[0];
 
-    await pool.query('DELETE FROM hc_users WHERE email=$1', [before.email]);
+    await pool.query('DELETE FROM hc_users WHERE id=$1', [before.id]);
 
     await writeAudit(caller.user.email, before.email, 'delete', {
       role: before.role,
@@ -229,7 +233,7 @@ exports.handler = async function(event) {
     const email = targetEmail || userId;
     if (!email) return json(400, { error: 'userId or targetEmail required' });
 
-    const existing = await pool.query('SELECT * FROM hc_users WHERE email=$1 OR id=$1', [email]);
+    const existing = await pool.query('SELECT * FROM hc_users WHERE LOWER(email)=LOWER($1) OR id=$1', [email]);
     if (!existing.rows.length) return json(404, { error: 'User not found' });
     const before = existing.rows[0];
 
@@ -261,14 +265,17 @@ exports.handler = async function(event) {
   if (method === 'POST' && action === 'upsert') {
     let body;
     try { body = JSON.parse(event.body || '{}'); } catch { return json(400, { error: 'Invalid JSON' }); }
-    const { id, email, name } = body;
-    if (!email) return json(400, { error: 'email required' });
+    const { id, email: rawEmail, name } = body;
+    if (!rawEmail) return json(400, { error: 'email required' });
+    // Google returns lowercase; match case-insensitively so an invite stored
+    // with different capitalization still authorizes the user.
+    const email = String(rawEmail).trim().toLowerCase();
 
     // Add invited column if missing
     await pool.query(`ALTER TABLE hc_users ADD COLUMN IF NOT EXISTS invited BOOLEAN DEFAULT true`);
 
-    // Check if user exists in our DB
-    const existing = await pool.query('SELECT * FROM hc_users WHERE email=$1', [email]);
+    // Check if user exists in our DB (case-insensitive)
+    const existing = await pool.query('SELECT * FROM hc_users WHERE LOWER(email)=$1 LIMIT 1', [email]);
 
     if (existing.rows.length === 0) {
       // Not in our system — block
@@ -280,15 +287,15 @@ exports.handler = async function(event) {
     if (u.suspended) return json(200, { suspended: true });
     if (u.invited === false) return json(200, { unauthorized: true, reason: 'not_invited' });
 
-    // Update last login
+    // Update last login (keyed on the row we found, normalizing its email)
     await pool.query(
-      `UPDATE hc_users SET last_login=now(), name=COALESCE(NULLIF($2,''), name), updated_at=now() WHERE email=$1`,
-      [email, name || '']
+      `UPDATE hc_users SET email=$1, last_login=now(), name=COALESCE(NULLIF($2,''), name), updated_at=now() WHERE id=$3`,
+      [email, name || '', u.id]
     );
 
     // Re-fetch the (possibly updated) name so the client reflects the
     // user's chosen display name, not whatever Identity sent.
-    const after = await pool.query('SELECT name FROM hc_users WHERE email=$1', [email]);
+    const after = await pool.query('SELECT name FROM hc_users WHERE id=$1', [u.id]);
     const dbName = (after.rows[0] && after.rows[0].name) || '';
 
     return json(200, {
@@ -330,7 +337,7 @@ exports.handler = async function(event) {
     // Only update the caller's own row, keyed on Identity-verified email
     const result = await pool.query(
       `UPDATE hc_users SET name=$2, updated_at=now()
-        WHERE email=$1
+        WHERE LOWER(email)=LOWER($1)
         RETURNING name`,
       [identityUser.email, newName]
     );
