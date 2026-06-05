@@ -2,7 +2,7 @@
 
 const assemblyApiBase  = '/.netlify/functions/assembly';
 const commentsApiBase  = '/.netlify/functions/flight-tracker-comments';
-const REFRESH_MS       = 60000;
+const REFRESH_MS       = 120000;
 
 // ── State ──────────────────────────────────────────────────────────────────
 const cmState = { pbId:'', pbName:'', so:'', account:'' };
@@ -195,13 +195,27 @@ function readLocalState(){
 }
 
 // ── Backend fetch ──────────────────────────────────────────────────────────
+// Change-detection: a tiny meta call tells us the server's updated_at; only
+// re-download the full board state when it changed.
+let _afLastUpdatedAt = null;
+let _afCachedState = null;
 async function getAssemblyState(){
   try{
+    let remoteTs = null;
+    try{
+      const m = await fetch(assemblyApiBase + '?meta=1', { headers:{Accept:'application/json'} });
+      if(m.ok){ const mj = await m.json(); remoteTs = mj && mj.updated_at ? new Date(mj.updated_at).getTime() : null; }
+    }catch(_){ /* fall through to full fetch */ }
+    if(remoteTs && _afLastUpdatedAt && remoteTs <= _afLastUpdatedAt && _afCachedState){
+      return { state: _afCachedState, updated_at: new Date(_afLastUpdatedAt).toISOString(), source:'cache' };
+    }
     const res  = await fetch(assemblyApiBase,{headers:{Accept:'application/json'}});
     const text = await res.text();
     let data = {};
     try{ data = text ? JSON.parse(text) : {}; }catch{ data={}; }
     if(!res.ok) throw new Error(data?.error||`Board load failed (${res.status})`);
+    _afCachedState = data.state || {};
+    if(data.updated_at){ const t = new Date(data.updated_at).getTime(); if(!Number.isNaN(t)) _afLastUpdatedAt = t; }
     return { state: data.state||{}, updated_at: data.updated_at||null, source:'backend' };
   }catch(err){
     const local = readLocalState();
