@@ -3166,7 +3166,78 @@ function bindOverstockEvents() {
   (function wireOptionCToolbar() {
     const $ = (id) => document.getElementById(id);
 
-    // ── PO Lookup proxy ───────────────────────────────────────────────
+    // ── Results modal helpers ─────────────────────────────────────────
+    // Toolbar's Look up and Audit Load buttons open this modal and
+    // relocate the relevant legacy result container (#overstockPoLookupResults
+    // or #overstockAuditResults) into the modal body. On close, the
+    // container goes back to its hidden home so subsequent runs render
+    // there until reopened.
+    const resOverlay = $('osResultsOverlay');
+    const resBody    = $('osResultsBody');
+    const resClose   = $('osResultsClose');
+    const resTitle   = $('osResultsTitle');
+    const resEyebrow = $('osResultsEyebrow');
+    const resSub     = $('osResultsSub');
+    // Track which container is currently in the modal so we know where to
+    // return it on close.
+    let activeResultContainerId = null;
+    function openResults(containerId, opts) {
+      const container = document.getElementById(containerId);
+      if (!container || !resOverlay || !resBody) return;
+      // If a different container was already in the modal, return it home first
+      if (activeResultContainerId && activeResultContainerId !== containerId) {
+        returnResultHome(activeResultContainerId);
+      }
+      resBody.appendChild(container);
+      activeResultContainerId = containerId;
+      if (resEyebrow) resEyebrow.textContent = (opts && opts.eyebrow) || 'RESULTS';
+      if (resTitle)   resTitle.textContent   = (opts && opts.title)   || 'Results';
+      if (resSub)     resSub.textContent     = (opts && opts.sub)     || '';
+      resOverlay.hidden = false;
+      document.body.style.overflow = 'hidden';
+    }
+    function returnResultHome(containerId) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      // Each result container's hidden home is its parent panel's natural
+      // location in the DOM. We stored the original parent on first
+      // relocation; if not stored, find it by its known sibling structure.
+      let home = container.__originalHome;
+      if (!home) {
+        // PO Lookup results live in the PO Lookup panel; Audit results live
+        // in the Audit panel. Look them up by ID.
+        if (containerId === 'overstockPoLookupResults') {
+          // The PO Lookup panel doesn't have an ID — find it by querying for
+          // the input it contains. Use the input's closest .os-panel.
+          home = document.getElementById('overstockPoLookupInput')?.closest('.os-panel');
+        } else if (containerId === 'overstockAuditResults') {
+          home = document.getElementById('overstockAuditPanel');
+        }
+      }
+      if (home) home.appendChild(container);
+    }
+    function closeResults() {
+      if (activeResultContainerId) returnResultHome(activeResultContainerId);
+      activeResultContainerId = null;
+      if (resOverlay) resOverlay.hidden = true;
+      document.body.style.overflow = '';
+    }
+    // Capture each container's original parent ONCE so we can return it
+    // reliably even if the panel has multiple result-like children.
+    [['overstockPoLookupResults'], ['overstockAuditResults']].forEach(([id]) => {
+      const el = document.getElementById(id);
+      if (el && !el.__originalHome) el.__originalHome = el.parentElement;
+    });
+    if (resClose) resClose.addEventListener('click', closeResults);
+    if (resOverlay) resOverlay.addEventListener('click', (e) => {
+      if (e.target === resOverlay) closeResults();
+    });
+    // Esc key closes modal
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && resOverlay && !resOverlay.hidden) closeResults();
+    });
+
+    // ── PO Lookup proxy (now opens results modal) ─────────────────────
     const tbPoInput = $('osTbPoInput');
     const tbPoBtn   = $('osTbPoBtn');
     if (tbPoInput && tbPoBtn) {
@@ -3177,12 +3248,22 @@ function bindOverstockEvents() {
         if (e.key === 'Enter') { e.preventDefault(); tbPoBtn.click(); }
       });
       tbPoBtn.addEventListener('click', () => {
-        if (realInput) realInput.value = tbPoInput.value;
+        const q = (tbPoInput.value || '').trim();
+        if (!q) { alert('Enter a PO number first.'); tbPoInput.focus(); return; }
+        if (realInput) realInput.value = q;
+        // Open results modal BEFORE triggering the search so when the search
+        // writes to #overstockPoLookupResults, the container is already in
+        // the modal body and the user sees the result instantly.
+        openResults('overstockPoLookupResults', {
+          eyebrow: '🔍 PO LOOKUP',
+          title: `PO# ${q}`,
+          sub: 'Full overstock history for this PO.',
+        });
         if (realBtn) realBtn.click();
       });
     }
 
-    // ── Audit-by-location proxy ───────────────────────────────────────
+    // ── Audit-by-location proxy (now opens results modal) ─────────────
     const tbAuditLoc = $('osTbAuditLoc');
     const tbAuditBtn = $('osTbAuditBtn');
     function syncAuditLocOptions() {
@@ -3193,16 +3274,22 @@ function bindOverstockEvents() {
       if (prev && [...tbAuditLoc.options].some(o => o.value === prev)) tbAuditLoc.value = prev;
     }
     if (tbAuditLoc && tbAuditBtn) {
-      // Initial population. We'll also repopulate on every page render via
-      // the hook below.
       syncAuditLocOptions();
       tbAuditLoc.addEventListener('change', () => {
         const real = $('overstockAuditLocation');
         if (real) { real.value = tbAuditLoc.value; real.dispatchEvent(new Event('change', { bubbles: true })); }
       });
       tbAuditBtn.addEventListener('click', () => {
+        const loc = tbAuditLoc.value;
+        if (!loc) { alert('Pick a location first.'); tbAuditLoc.focus(); return; }
         const real = $('overstockAuditLocation');
-        if (real) real.value = tbAuditLoc.value;
+        if (real) real.value = loc;
+        // Open modal first so the audit's render lands in the visible body
+        openResults('overstockAuditResults', {
+          eyebrow: '📋 LOCATION AUDIT',
+          title: `Audit ${loc}`,
+          sub: 'Review each PO at this location — mark still here, missing, or moved.',
+        });
         $('overstockAuditStartBtn')?.click();
       });
     }

@@ -8,7 +8,7 @@
   <!-- Cache-bust version param prevents stale CSS from being served when
        Option C styles change. Bump the v= suffix on any future CSS-only
        change that needs to take effect immediately. -->
-  <link rel="stylesheet" href="Styles/workflow.css?v=optc-2" />
+  <link rel="stylesheet" href="Styles/workflow.css?v=optc-3" />
   <link rel="stylesheet" href="Styles/pallets.css" />
 </head>
 <body class="workflow-page">
@@ -164,6 +164,31 @@
           </div>
           <div class="os-adv-body" id="osAdvLogBody">
             <!-- #overstockEntryForm gets relocated here at open-time. -->
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════════════════
+           RESULTS MODAL — popup for PO Lookup + Audit output.
+           Toolbar actions (Look up, Audit Load) open this modal and
+           relocate their existing result container into the body. All
+           existing event handlers inside the results stay bound because
+           we move the DOM nodes, not clones. On close, the result
+           container returns to its hidden home in the legacy panel.
+           ════════════════════════════════════════════════════════════════ -->
+      <div id="osResultsOverlay" class="os-adv-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="osResultsTitle">
+        <div class="os-adv-modal os-results-modal">
+          <div class="os-adv-head">
+            <div>
+              <div class="os-adv-eyebrow" id="osResultsEyebrow">RESULTS</div>
+              <h2 class="os-adv-title" id="osResultsTitle">Results</h2>
+              <p class="os-adv-sub" id="osResultsSub"></p>
+            </div>
+            <button type="button" class="os-adv-close" id="osResultsClose" aria-label="Close">×</button>
+          </div>
+          <div class="os-adv-body" id="osResultsBody">
+            <!-- Result container (#overstockPoLookupResults or
+                 #overstockAuditResults) gets relocated here at open-time. -->
           </div>
         </div>
       </div>
