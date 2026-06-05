@@ -4028,13 +4028,42 @@ font-weight:800
    To revert, delete from this marker to EOF.
    ════════════════════════════════════════════════════════════════════ */
 
-/* ── HIDE LEGACY PANELS ──────────────────────────────────────────── */
-/* The original PO Lookup + Audit + Log Entry panels are kept in the
-   DOM so their event listeners + form submission still work, but
-   visually replaced by the toolbar above. */
+/* ── HIDE LEGACY PANEL HEADERS + INPUT BARS ──────────────────────── */
+/* The original PO Lookup + Audit panels still need to RENDER RESULTS
+   into their existing containers (#overstockPoLookupResults, etc.) —
+   so we can't hide the whole panel. Instead we hide just the chrome
+   (header + input bar) and let the result containers show inline.
+   This way, the toolbar acts as the input surface, but lookup/audit
+   results appear naturally below the toolbar where the user can see them.
+
+   The Log Entry panel IS fully hidden — its form gets relocated into
+   the Advanced modal on demand. */
+body.workflow-page .os-c2 #overstockAuditPanel .os-tool-header,
+body.workflow-page .os-c2 #overstockAuditPanel .os-tool-bar,
+body.workflow-page .os-c2 .os-panel.os-tool-panel .os-tool-header,
+body.workflow-page .os-c2 .os-panel.os-tool-panel .os-tool-bar {
+  display: none !important;
+}
+/* Make the tool panels themselves transparent shells — they're just
+   containers for the result content now. */
 body.workflow-page .os-c2 #overstockAuditPanel,
-body.workflow-page .os-c2 #overstockEntryPanel,
 body.workflow-page .os-c2 .os-panel.os-tool-panel {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 0 12px 0 !important;
+}
+/* Hide the result containers when they're empty so we don't leave
+   awkward whitespace. JS doesn't touch their display directly; this
+   uses :empty which CSS handles automatically. */
+body.workflow-page .os-c2 #overstockAuditResults:empty,
+body.workflow-page .os-c2 #overstockPoLookupResults:empty {
+  display: none !important;
+}
+/* Entry form panel — fully hidden. Its form gets relocated into the
+   Advanced modal on demand. */
+body.workflow-page .os-c2 #overstockEntryPanel {
   display: none !important;
 }
 
@@ -4554,3 +4583,16 @@ body.workflow-page .os-c2 .os-feed-empty {
   }
 }
 /* ── END OPTION C ────────────────────────────────────────────────── */
+
+/* ── LOOKUP / AUDIT RESULT CONTAINERS ────────────────────────────── */
+/* These appear right under the toolbar when the user runs a lookup or
+   audit. Empty → hidden by the :empty rule above. */
+body.workflow-page .os-c2 #overstockAuditResults,
+body.workflow-page .os-c2 #overstockPoLookupResults {
+  background: #fff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 12px !important;
+  padding: 14px 16px !important;
+  margin-bottom: 12px !important;
+  box-shadow: 0 2px 8px rgba(15,23,42,.04);
+}
