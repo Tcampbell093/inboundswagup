@@ -75,7 +75,6 @@
           <button class="role-tab" data-page="putaway" data-i18n="tabPutaway">Putaway</button>
           <button class="role-tab" data-page="onhold">🚫 On Hold <span class="inb-tab-count" id="onHoldTabCount">0</span></button>
           <button class="role-tab" data-page="performance">Performance</button>
-          <button class="role-tab" data-page="stats">📈 Trends</button>
           <button class="role-tab" data-page="settings" data-i18n="tabSettings">Settings</button>
         </div>
         <button id="toggleSummaryBtn" class="inb-summary-btn" type="button">Show Summary</button>
@@ -104,7 +103,78 @@
       <div id="palletPrepActivity"></div>
     </section>
 
-        <section class="page" id="page-overstock">
+        <section class="page os-c2" id="page-overstock">
+
+      <!-- ════════════════════════════════════════════════════════════════
+           OPTION C TOOLBAR — sticky action bar at the top.
+           Consolidates PO Lookup + Audit selector + Quick log + Stock Intake
+           into one slim bar. Old panels for these tools are hidden via the
+           `.os-c2` namespace's CSS but their DOM nodes stay so all existing
+           event listeners + result-rendering targets keep working.
+           ════════════════════════════════════════════════════════════════ -->
+      <div class="os-tb" role="toolbar" aria-label="Overstock toolbar">
+
+        <!-- PO Lookup -->
+        <div class="os-tb-group">
+          <span class="os-tb-lbl">🔍 PO</span>
+          <input id="osTbPoInput" type="text" class="os-tb-input os-tb-input-wide" placeholder="Enter PO#…" autocomplete="off" />
+          <button id="osTbPoBtn" type="button" class="os-tb-btn">Look up</button>
+        </div>
+
+        <!-- Audit by location -->
+        <div class="os-tb-group">
+          <span class="os-tb-lbl">📋 Audit</span>
+          <select id="osTbAuditLoc" class="os-tb-input os-tb-input-narrow">
+            <option value="">— Loc —</option>
+          </select>
+          <button id="osTbAuditBtn" type="button" class="os-tb-btn">Load</button>
+        </div>
+
+        <!-- Quick log: PO + qty + Add + Advanced -->
+        <div class="os-tb-group">
+          <span class="os-tb-lbl">+ Log</span>
+          <select id="osTbQuickPo" class="os-tb-input os-tb-input-narrow">
+            <option value="">PO from prep…</option>
+          </select>
+          <input id="osTbQuickQty" type="number" min="0" step="1" class="os-tb-input" placeholder="Qty" style="width:64px;" />
+          <button id="osTbQuickAdd" type="button" class="os-tb-btn os-tb-btn-green">+ Add</button>
+          <button id="osTbQuickAdv" type="button" class="os-tb-btn" title="Open full entry form with all fields">⚙ Advanced</button>
+        </div>
+
+        <!-- Right-aligned primary + overflow menu -->
+        <div class="os-tb-group os-tb-right">
+          <button id="overstockStockIntakeBtn" type="button" class="os-tb-btn os-tb-btn-primary">📦 Stock Intake</button>
+          <div class="os-tb-menu-wrap">
+            <button id="osTbMenuBtn" type="button" class="os-tb-btn os-tb-btn-icon" title="More actions" aria-haspopup="true" aria-expanded="false">⋯</button>
+            <div id="osTbMenu" class="os-tb-menu" hidden role="menu">
+              <button id="overstockRenormalizeBtn" type="button" class="os-tb-menu-item" style="display:none;">🔧 Renormalize codes</button>
+              <button id="overstockSeedBtn" type="button" class="os-tb-menu-item">📋 Load demo data</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════════════════
+           ADVANCED LOG MODAL — wraps the existing #overstockEntryForm so
+           every existing event listener / autofill / submit handler keeps
+           working. The form itself isn't duplicated; we just relocate it
+           into this modal when opened.
+           ════════════════════════════════════════════════════════════════ -->
+      <div id="osAdvLogOverlay" class="os-adv-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="osAdvLogTitle">
+        <div class="os-adv-modal">
+          <div class="os-adv-head">
+            <div>
+              <div class="os-adv-eyebrow">+ LOG ENTRY · ADVANCED</div>
+              <h2 class="os-adv-title" id="osAdvLogTitle">Log Overstock Entry</h2>
+              <p class="os-adv-sub">All fields available — category, status, action, location, associate, sizes.</p>
+            </div>
+            <button type="button" class="os-adv-close" id="osAdvLogClose" aria-label="Close">×</button>
+          </div>
+          <div class="os-adv-body" id="osAdvLogBody">
+            <!-- Form gets relocated here at open-time, returned to its hidden home on close. -->
+          </div>
+        </div>
+      </div>
 
       <!-- ── Stat strip ── -->
       <div class="os-stat-strip">
@@ -141,14 +211,13 @@
         <div class="os-panel-head">
           <div>
             <div class="os-panel-title">🔎 Scan or type box code</div>
-            <div class="os-panel-sub">Scan the QR/barcode or type a code like OSC-003, then choose <strong>Add items</strong> or <strong>Audit</strong>.</div>
+            <div class="os-panel-sub">Enter a container code like OSC-003 and press Enter to open its audit modal.</div>
           </div>
         </div>
         <div class="os-panel-body">
           <form id="overstockContainerLookupForm" class="os-container-lookup-form">
             <input id="overstockContainerLookupInput" type="text" class="os-input os-container-lookup-input" placeholder="OSC-003" autocomplete="off" inputmode="text" />
-            <button id="overstockContainerCameraBtn" class="os-ghost-btn os-scan-camera-btn" type="button" title="Scan QR with the camera">📷 Scan</button>
-            <button id="overstockContainerLookupBtn" class="os-action-btn" type="submit">Go</button>
+            <button id="overstockContainerLookupBtn" class="os-action-btn" type="submit">Open audit</button>
           </form>
           <div id="overstockContainerLookupStatus" class="os-scan-status" aria-live="polite"></div>
         </div>
@@ -267,141 +336,21 @@
         </div>
       </div>
 
-      <!-- Scan choice modal — shown after a box code is scanned/typed -->
-      <div class="os-modal-backdrop" id="osMdScanChoice">
-        <div class="os-modal os-modal-sm" role="dialog" aria-modal="true">
-          <div class="os-modal-head">
-            <div>
-              <div class="os-modal-title" id="osScanChoiceTitle">OSC-000</div>
-              <div class="os-modal-sub" id="osScanChoiceSub">What do you want to do?</div>
-            </div>
-            <button class="os-modal-close" data-close="osMdScanChoice">✕</button>
-          </div>
-          <div class="os-modal-body">
-            <div class="os-scan-choice-grid">
-              <button class="os-scan-choice-btn" id="osScanChoiceAdd" type="button">
-                <span class="os-scan-choice-icon">📥</span>
-                <span class="os-scan-choice-label">Add items</span>
-                <span class="os-scan-choice-desc">Log POs into this box</span>
-              </button>
-              <button class="os-scan-choice-btn" id="osScanChoiceAudit" type="button">
-                <span class="os-scan-choice-icon">✅</span>
-                <span class="os-scan-choice-label">Audit</span>
-                <span class="os-scan-choice-desc">Verify what's inside</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Camera scan modal — opens the device camera to read the QR/barcode -->
-      <div class="os-modal-backdrop" id="osMdScanCamera">
-        <div class="os-modal os-modal-sm" role="dialog" aria-modal="true">
-          <div class="os-modal-head">
-            <div>
-              <div class="os-modal-title">📷 Scan box code</div>
-              <div class="os-modal-sub">Point the camera at the QR or barcode on the box.</div>
-            </div>
-            <button class="os-modal-close" id="osScanCamClose" type="button">✕</button>
-          </div>
-          <div class="os-modal-body">
-            <div id="osScanCamRegion" class="os-scan-cam-region"></div>
-            <div id="osScanCamStatus" class="os-scan-status os-scan-status-muted" aria-live="polite"></div>
-          </div>
-          <div class="os-modal-foot">
-            <button class="os-ghost-btn" id="osScanCamCancel" type="button">Cancel</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Box actions modal — opened by tapping a box in the Boxes grid -->
-      <div class="os-modal-backdrop" id="osMdBoxActions">
-        <div class="os-modal os-modal-sm" role="dialog" aria-modal="true">
-          <div class="os-modal-head">
-            <div>
-              <div class="os-modal-title" id="osBoxActTitle">OSC-000</div>
-              <div class="os-modal-sub" id="osBoxActSub"></div>
-            </div>
-            <button class="os-modal-close" data-close="osMdBoxActions">✕</button>
-          </div>
-          <div class="os-modal-body">
-            <div class="os-box-act-grid">
-              <button class="os-box-act-btn" id="osBoxActAudit" type="button"><span class="os-box-act-ic">🔍</span>Audit</button>
-              <button class="os-box-act-btn" id="osBoxActAdd" type="button"><span class="os-box-act-ic">➕</span>Add a PO</button>
-              <button class="os-box-act-btn" id="osBoxActEdit" type="button"><span class="os-box-act-ic">✏️</span>Edit</button>
-              <button class="os-box-act-btn" id="osBoxActMerge" type="button"><span class="os-box-act-ic">🔀</span>Merge</button>
-              <button class="os-box-act-btn" id="osBoxActMoveLoc" type="button"><span class="os-box-act-ic">↗</span>Move location</button>
-              <button class="os-box-act-btn" id="osBoxActMovePo" type="button"><span class="os-box-act-ic">📦</span>Move a PO</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Box edit modal -->
-      <div class="os-modal-backdrop" id="osMdBoxEdit">
-        <div class="os-modal os-modal-sm" role="dialog" aria-modal="true">
-          <div class="os-modal-head">
-            <div>
-              <div class="os-modal-title">Edit box</div>
-              <div class="os-modal-sub" id="osBoxEditSub"></div>
-            </div>
-            <button class="os-modal-close" data-close="osMdBoxEdit">✕</button>
-          </div>
-          <div class="os-modal-body">
-            <label class="os-field-lbl" for="osBoxEditCode">Box code</label>
-            <input id="osBoxEditCode" class="os-input" type="text" placeholder="OSC-001" autocomplete="off" />
-            <label class="os-field-lbl" for="osBoxEditLoc" style="margin-top:10px;">Location</label>
-            <select id="osBoxEditLoc" class="os-input"></select>
-            <label class="os-field-lbl" for="osBoxEditStatus" style="margin-top:10px;">Status</label>
-            <select id="osBoxEditStatus" class="os-input"></select>
-            <label class="os-field-lbl" for="osBoxEditNotes" style="margin-top:10px;">Notes</label>
-            <input id="osBoxEditNotes" class="os-input" type="text" autocomplete="off" />
-            <div id="osBoxEditWarn" class="os-scan-status os-scan-status-warning" style="margin-top:8px;"></div>
-          </div>
-          <div class="os-modal-foot">
-            <button class="os-submit-btn" id="osBoxEditSave" type="button">Save changes</button>
-            <button class="os-ghost-btn" data-close="osMdBoxEdit" type="button">Cancel</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Move-a-PO modal — move one PO into another box -->
-      <div class="os-modal-backdrop" id="osMdMovePo">
-        <div class="os-modal os-modal-sm" role="dialog" aria-modal="true">
-          <div class="os-modal-head">
-            <div>
-              <div class="os-modal-title">Move a PO</div>
-              <div class="os-modal-sub" id="osMovePoSub"></div>
-            </div>
-            <button class="os-modal-close" data-close="osMdMovePo">✕</button>
-          </div>
-          <div class="os-modal-body">
-            <label class="os-field-lbl" for="osMovePoSel">Which PO?</label>
-            <select id="osMovePoSel" class="os-input"></select>
-            <label class="os-field-lbl" for="osMovePoDest" style="margin-top:10px;">Into which box?</label>
-            <select id="osMovePoDest" class="os-input"></select>
-            <div id="osMovePoWarn" class="os-scan-status os-scan-status-warning" style="margin-top:8px;"></div>
-          </div>
-          <div class="os-modal-foot">
-            <button class="os-submit-btn" id="osMovePoConfirm" type="button">Move PO</button>
-            <button class="os-ghost-btn" data-close="osMdMovePo" type="button">Cancel</button>
-          </div>
-        </div>
-      </div>
-
-
       <!-- ── Log Entry form ── -->
-      <section class="os-panel">
+      <!-- id="overstockEntryPanel" lets the .os-c2 CSS hide this panel
+           (toolbar replaces it). Form stays in DOM so its event listeners
+           keep working; clicking ⚙ Advanced in the toolbar relocates this
+           form into the modal. -->
+      <section class="os-panel" id="overstockEntryPanel">
         <div class="os-panel-head">
           <div>
             <div class="os-panel-title">+ Log Overstock Entry</div>
             <div class="os-panel-sub">POs come directly from Prep — no manual typing needed. Select a PO and the quantity auto-fills.</div>
           </div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <button id="overstockStockIntakeBtn" class="os-action-btn" type="button" style="padding:10px 16px;font-weight:700;">📦 Stock Intake</button>
-            <button id="overstockRenormalizeBtn" class="os-ghost-btn" type="button" title="One-time cleanup: rename OSC-#### codes to OSC-###" style="display:none;">🔧 Renormalize codes</button>
-            <button id="overstockSeedBtn" class="os-ghost-btn" type="button">Load Demo Data</button>
-          </div>
+          <!-- Note: Stock Intake / Renormalize / Load Demo Data buttons
+               used to live here. They've been MOVED to the toolbar at the
+               top of the page (which is the canonical, visible location).
+               Duplicating IDs here would break getElementById lookups. -->
         </div>
         <div class="os-panel-body">
           <form id="overstockEntryForm" class="os-entry-form">
@@ -524,26 +473,23 @@
 
       <!-- ── Overstock Log ── -->
       <section class="os-panel os-log-panel">
-        <div class="os-panel-head os-log-head">
+        <div class="os-panel-head">
           <div>
             <div class="os-panel-title">📋 Overstock Log</div>
-            <div class="os-panel-sub">Tap any <strong>PO#</strong> to audit its location.</div>
+            <div class="os-panel-sub">Everything logged — what's there, what can be donated, what still needs to stay.</div>
           </div>
-          <div class="os-log-tools">
-            <input id="osLogSearch" type="text" class="os-filter-input os-log-search" placeholder="🔎 Search this log…" autocomplete="off" />
-            <select id="osLogSort" class="os-filter-select os-log-sort" aria-label="Sort log">
-              <option value="recent">Newest first</option>
-              <option value="oldest">Oldest first</option>
-              <option value="po">PO# (A–Z)</option>
-              <option value="qty-desc">Qty (high → low)</option>
-              <option value="qty-asc">Qty (low → high)</option>
-              <option value="location">Location</option>
-              <option value="associate">Associate</option>
-            </select>
+          <div class="os-log-view-toggle" role="tablist" aria-label="Log view">
+            <button type="button" id="osLogViewFeed" class="os-log-view-btn is-active" role="tab" aria-selected="true">📰 Feed</button>
+            <button type="button" id="osLogViewTable" class="os-log-view-btn" role="tab" aria-selected="false">🗂 Table</button>
           </div>
         </div>
-        <div class="os-table-wrap">
-          <table class="os-table os-log-table">
+        <!-- Feed view (default). Rendered by renderOverstockFeed() in app.js.
+             Reads from state.data.overstockEntries — same data source as
+             the table below, so the two stay in sync automatically. -->
+        <div id="overstockFeedBody" class="os-feed-body"></div>
+        <!-- Table view (toggleable). All existing handlers + columns intact. -->
+        <div class="os-table-wrap os-log-table-wrap" hidden>
+          <table class="os-table">
             <thead>
               <tr>
                 <th>Date</th><th>PO#</th><th>Category</th><th>Qty</th>
@@ -552,15 +498,6 @@
             </thead>
             <tbody id="overstockTableBody"></tbody>
           </table>
-        </div>
-        <div class="os-log-foot">
-          <span class="os-log-count" id="osLogCount"></span>
-          <div class="os-log-pagesize">
-            <span class="os-log-pagesize-lbl">Show</span>
-            <button type="button" class="os-log-size-btn" data-size="25">25</button>
-            <button type="button" class="os-log-size-btn" data-size="50">50</button>
-            <button type="button" class="os-log-size-btn" data-size="100">100</button>
-          </div>
         </div>
       </section>
 
@@ -587,8 +524,7 @@
                 <strong class="si-active-user-name" id="stockIntakeActiveUserName">—</strong>
                 <button type="button" class="si-switch-user-btn" id="stockIntakeSwitchUserBtn">Switch</button>
               </div>
-              <button type="button" class="si-end-btn" id="stockIntakeCancelBtn">Cancel</button>
-              <button type="button" class="si-complete-btn" id="stockIntakeCompleteBtn">Complete</button>
+              <button type="button" class="si-end-btn" id="stockIntakeEndBtn">End Session</button>
             </div>
           </div>
 
@@ -662,30 +598,6 @@
                 <div class="si-field si-field-cat">
                   <label class="si-field-lbl" for="stockIntakeItemCategory">Category</label>
                   <select id="stockIntakeItemCategory" class="si-input"></select>
-                </div>
-              </div>
-
-              <!-- Status + Action — set when first logging the PO (e.g. mark
-                   it ready for donation right away). -->
-              <div class="si-item-row">
-                <div class="si-field">
-                  <label class="si-field-lbl" for="stockIntakeItemStatus">Status</label>
-                  <select id="stockIntakeItemStatus" class="si-input">
-                    <option value="Not Donation">Not Donation</option>
-                    <option value="Donation">Donation</option>
-                    <option value="Pending PB">Pending PB</option>
-                    <option value="Donated">Donated</option>
-                  </select>
-                </div>
-                <div class="si-field">
-                  <label class="si-field-lbl" for="stockIntakeItemAction">Action</label>
-                  <select id="stockIntakeItemAction" class="si-input">
-                    <option value="Required">Required</option>
-                    <option value="Donated">Donated</option>
-                    <option value="Replaced">Replaced</option>
-                    <option value="Missing from Box">Missing from Box</option>
-                    <option value="Lost">Lost</option>
-                  </select>
                 </div>
               </div>
 
@@ -855,65 +767,6 @@
       </section>
     </section>
 
-    <section class="page" id="page-stats">
-      <section class="panel performance-dept-shell">
-        <div class="panel-header panel-header-split">
-          <div>
-            <div class="eyebrow">Operations Trends</div>
-            <h2>Trends &amp; History</h2>
-            <p>How the warehouse is moving over time. Newer areas fill in as the daily snapshot accumulates history.</p>
-          </div>
-          <div class="performance-dept-switch" style="align-items:center;">
-            <select id="statsRange" class="os-filter-select" aria-label="Time range">
-              <option value="30">Last 30 days</option>
-              <option value="90">Last 90 days</option>
-              <option value="180" selected>Last 180 days</option>
-            </select>
-            <button class="secondary-btn" id="statsRefresh" type="button">Refresh</button>
-          </div>
-        </div>
-        <div id="statsStatus" class="os-panel-sub" style="padding:0 0 4px 2px;"></div>
-      </section>
-
-      <!-- Snapshot cards — latest captured values -->
-      <section class="panel">
-        <div class="stats-grid">
-          <article class="stat-card"><span class="stat-label">Overstock Units</span><strong id="statsCardOverstock">—</strong><p>Active units on the shelf (latest)</p></article>
-          <article class="stat-card"><span class="stat-label">Pallets Tracked</span><strong id="statsCardPallets">—</strong><p>In the workflow (latest)</p></article>
-          <article class="stat-card"><span class="stat-label">Headcount</span><strong id="statsCardHeadcount">—</strong><p>Marked present (latest day)</p></article>
-          <article class="stat-card"><span class="stat-label">Pipeline Units</span><strong id="statsCardPipelineUnits">—</strong><p>Open order units (latest)</p></article>
-          <article class="stat-card"><span class="stat-label">Pipeline Value</span><strong id="statsCardPipelineValue">—</strong><p>Open order $ (latest)</p></article>
-        </div>
-      </section>
-
-      <section class="performance-grid two-up">
-        <section class="panel">
-          <div class="panel-header"><div><div class="eyebrow">Order pipeline</div><h3>Units &amp; value over time</h3></div></div>
-          <div class="stats-chart-box"><canvas id="statsChartPipeline"></canvas><div class="stats-chart-note" id="statsNotePipeline"></div></div>
-        </section>
-        <section class="panel">
-          <div class="panel-header"><div><div class="eyebrow">Inbound activity</div><h3>Pallet events per day</h3></div></div>
-          <div class="stats-chart-box"><canvas id="statsChartInbound"></canvas><div class="stats-chart-note" id="statsNoteInbound"></div></div>
-        </section>
-      </section>
-
-      <section class="performance-grid two-up">
-        <section class="panel">
-          <div class="panel-header"><div><div class="eyebrow">Productivity</div><h3>Units touched &amp; cost per unit</h3></div></div>
-          <div class="stats-chart-box"><canvas id="statsChartProductivity"></canvas><div class="stats-chart-note" id="statsNoteProductivity"></div></div>
-        </section>
-        <section class="panel">
-          <div class="panel-header"><div><div class="eyebrow">Overstock</div><h3>Active units on shelf over time</h3></div></div>
-          <div class="stats-chart-box"><canvas id="statsChartOverstock"></canvas><div class="stats-chart-note" id="statsNoteOverstock"></div></div>
-        </section>
-      </section>
-
-      <section class="panel">
-        <div class="panel-header"><div><div class="eyebrow">Staffing</div><h3>Headcount over time</h3></div></div>
-        <div class="stats-chart-box"><canvas id="statsChartHeadcount"></canvas><div class="stats-chart-note" id="statsNoteHeadcount"></div></div>
-      </section>
-    </section>
-
     <section class="page" id="page-settings">
       <section class="panel"><div class="panel-header"><div><h2 data-i18n="settingsMasterLists">Settings / Master Lists</h2><p data-i18n="settingsHelp">Associate names now come from Attendance. Manage categories and locations here so the rest of the workflow can use dropdowns.</p></div></div><div class="performance-grid three-up"><div class="settings-card"><div class="settings-card-header"><h3 data-i18n="categories">Categories</h3><form id="categoryForm" class="inline-master-form"><input id="categoryInput" type="text" /><button class="tiny-btn" type="submit" data-i18n="add">Add</button></form></div><div id="categoriesList" class="master-list"></div></div><div class="settings-card"><div class="settings-card-header"><h3 data-i18n="locations">Locations</h3><form id="locationForm" class="inline-master-form"><input id="locationInput" type="text" /><button class="tiny-btn" type="submit" data-i18n="add">Add</button></form></div><div id="locationsList" class="master-list"></div></div><div class="settings-card"><div class="settings-card-header"><h3>Putaway Locations</h3><form id="putawayLocationForm" class="inline-master-form"><input id="putawayLocationInput" type="text" placeholder="QA5-C1" /><button class="tiny-btn" type="submit">Add</button></form></div><div class="uph-pace-settings-copy" style="margin-bottom:10px;">Format: QA-QZ rows, bays 1-10, levels A-D, halves 1-2.</div><div id="putawayLocationsList" class="master-list"></div></div><div class="settings-card"><div class="settings-card-header"><h3>UPH Pace Images</h3></div>
         <div class="uph-pace-settings-copy">Upload custom images for the 4 UPH stages. These replace the default pace icons for this browser.</div>
@@ -993,18 +846,8 @@
 </div>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <!-- Chart.js powers the Trends tab (loaded from CDN like xlsx above). -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <!-- html5-qrcode powers camera scanning of box QR/barcodes (cross-device, incl. iOS Safari). -->
-  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-  <!-- Authentication gate. Standalone (e.g. opening /workflow directly via a
-       shared link or QR code) requires a signed-in session and redirects to
-       login otherwise. When embedded in the portal it stays passive and just
-       hydrates the session the portal already established. -->
-  <script src="auth.js"></script>
   <script src="i18n.js"></script>
   <script src="app.js"></script>
-  <script src="stats-module.js"></script>
   <script src="inbound-pallets.js"></script>
   <script src="po-lookup.js"></script>
   <script src="stock-intake.js"></script>
