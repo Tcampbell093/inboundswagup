@@ -564,7 +564,7 @@ function sortOverstockLog(rows, sortKey) {
 }
 
 // ── Boxes grid view state (session-only) ────────────────────────────────
-const osBoxesUi = { sort: "updated" };
+const osBoxesUi = { sort: "updated", tab: "all", search: "" };
 
 function sortBoxes(boxes, key) {
   const arr = boxes.slice();
@@ -5882,10 +5882,53 @@ function renderOverstockPage() {
   // ── Boxes (manage any box: audit / add / edit / merge / move) ────────────
   const conEl = document.getElementById('overstockConsolidate');
   if (conEl) {
-    const boxes = sortBoxes(
-      containers.filter(c => c.status !== 'Closed'),
-      osBoxesUi.sort
-    );
+    // Compute counts BEFORE filtering so each tab shows the true total of
+    // its status, not the filtered subset. This matches the preview the
+    // user picked: "All 105 / Open 4 / On cart 8 / Stored 86 / Full 7".
+    const activeBoxes = containers.filter(c => c.status !== 'Closed');
+    const statusCounts = {
+      all:       activeBoxes.length,
+      Open:      activeBoxes.filter(c => c.status === 'Open').length,
+      'On Cart': activeBoxes.filter(c => c.status === 'On Cart').length,
+      Stored:    activeBoxes.filter(c => c.status === 'Stored').length,
+      Full:      activeBoxes.filter(c => c.status === 'Full').length,
+    };
+
+    // Apply the active tab filter (defaults to "all" → no status filter).
+    let filtered = activeBoxes;
+    if (osBoxesUi.tab && osBoxesUi.tab !== 'all') {
+      filtered = filtered.filter(c => c.status === osBoxesUi.tab);
+    }
+
+    // Apply the search query — matches box code OR any PO inside the box.
+    // Case-insensitive substring match; 105 boxes is small enough that this
+    // is instant on every keystroke without debouncing.
+    const q = (osBoxesUi.search || '').trim().toLowerCase();
+    if (q) {
+      filtered = filtered.filter(c => {
+        if (String(c.code || '').toLowerCase().includes(q)) return true;
+        const items = getOverstockContainerItems(c.id);
+        return items.some(it => String(it.po || '').toLowerCase().includes(q));
+      });
+    }
+
+    const boxes = sortBoxes(filtered, osBoxesUi.sort);
+
+    // Build the status tabs HTML. Each tab is a button so it tabs into
+    // keyboard focus order naturally; the active one gets the .is-active
+    // class which the Option C CSS styles like the preview.
+    const tabsData = [
+      { key: 'all',     label: 'All' },
+      { key: 'Open',    label: 'Open' },
+      { key: 'On Cart', label: 'On cart' },
+      { key: 'Stored',  label: 'Stored' },
+      { key: 'Full',    label: 'Full' },
+    ];
+    const tabsHtml = tabsData.map(t => {
+      const count = statusCounts[t.key] || 0;
+      const active = (osBoxesUi.tab || 'all') === t.key;
+      return `<button type="button" class="os-box-tab${active ? ' is-active' : ''}" data-box-tab="${escapeAttribute(t.key)}">${escapeHtml(t.label)}<span class="os-box-tab-count">${count}</span></button>`;
+    }).join('');
 
     conEl.innerHTML = `
       <section class="os-panel">
@@ -5900,8 +5943,16 @@ function renderOverstockPage() {
               <option value="name">Name (OSC #)</option>
               <option value="location">Location</option>
             </select>
-            <span class="os-badge os-badge-purple">${boxes.length} box${boxes.length !== 1 ? 'es' : ''}</span>
+            <span class="os-badge os-badge-purple">${boxes.length} of ${activeBoxes.length}</span>
           </div>
+        </div>
+        <!-- Status filter tabs (Option C boxes redesign — pick the status
+             you're working with, see only those boxes). -->
+        <div class="os-box-tabs" role="tablist" aria-label="Filter boxes by status">${tabsHtml}</div>
+        <!-- Search input. Matches box code OR any PO logged inside. -->
+        <div class="os-box-search-row">
+          <input id="osBoxesSearch" type="text" class="os-box-search" placeholder="🔎 Search box code or PO…" autocomplete="off" value="${escapeAttribute(osBoxesUi.search || '')}" />
+          ${osBoxesUi.search ? `<button type="button" id="osBoxesSearchClear" class="os-box-search-clear" title="Clear search">✕</button>` : ''}
         </div>
         <div class="os-panel-body">
           ${boxes.length
@@ -5921,7 +5972,7 @@ function renderOverstockPage() {
                   </div>
                 </div>`;
               }).join('')}</div>`
-            : `<div class="os-empty-state"><div class="os-empty-icon">📦</div>No boxes yet.</div>`}
+            : `<div class="os-empty-state"><div class="os-empty-icon">📦</div>${q || (osBoxesUi.tab && osBoxesUi.tab !== 'all') ? 'No boxes match your filters.' : 'No boxes yet.'}</div>`}
         </div>
       </section>`;
 
@@ -5929,6 +5980,38 @@ function renderOverstockPage() {
     if (sortSel) {
       sortSel.value = osBoxesUi.sort;
       sortSel.onchange = () => { osBoxesUi.sort = sortSel.value; renderOverstockPage(); };
+    }
+    // Wire tab clicks — set the active tab and re-render
+    conEl.querySelectorAll('[data-box-tab]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        osBoxesUi.tab = btn.dataset.boxTab;
+        renderOverstockPage();
+      });
+    });
+    // Wire the search input. Re-render on every keystroke. The input
+    // value re-applies on each render via the value attribute, and we
+    // refocus + restore the cursor position so the user doesn't get
+    // bounced out of the field while typing.
+    const searchInput = document.getElementById('osBoxesSearch');
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        const cursorPos = searchInput.selectionStart;
+        osBoxesUi.search = searchInput.value;
+        renderOverstockPage();
+        // After render, restore focus + cursor to the (newly rendered) input
+        const fresh = document.getElementById('osBoxesSearch');
+        if (fresh) {
+          fresh.focus();
+          try { fresh.setSelectionRange(cursorPos, cursorPos); } catch (_) {}
+        }
+      });
+    }
+    const searchClear = document.getElementById('osBoxesSearchClear');
+    if (searchClear) {
+      searchClear.addEventListener('click', () => {
+        osBoxesUi.search = '';
+        renderOverstockPage();
+      });
     }
     conEl.querySelectorAll('[data-box-actions]').forEach(card => {
       const open = () => osOpenBoxActions(card.dataset.boxActions);
