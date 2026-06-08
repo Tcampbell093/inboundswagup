@@ -188,13 +188,26 @@
         localStorage.removeItem(HC_USER_KEY);
         localStorage.removeItem(USER_KEY);
         window.hcCurrentUser = null;
+
+        // Netlify Identity can't pass prompt=select_account to Google, so on a
+        // browser with a single Google session the next sign-in silently reuses
+        // it and skips the account chooser. To let a different user sign in
+        // (e.g. on a shared tablet / incognito), we also sign the browser out of
+        // Google here, then return to our login page. Google's logout honours
+        // the continue= target back to login.html.
+        const loginUrl    = window.location.origin + '/login.html';
+        const googleLogout = 'https://accounts.google.com/Logout?continue=' +
+          encodeURIComponent('https://appengine.google.com/_ah/logout?continue=' +
+            encodeURIComponent(loginUrl));
+
         if (d.token) {
+          // Clear the Netlify Identity session first, then the Google session.
           fetch(API_URL + '/logout', {
             method: 'POST',
             headers: { 'Authorization': 'Bearer ' + d.token }
-          }).finally(function() { window.location.href = 'login.html'; });
+          }).finally(function() { window.location.href = googleLogout; });
         } else {
-          window.location.href = 'login.html';
+          window.location.href = googleLogout;
         }
       });
     }
