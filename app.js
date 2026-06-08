@@ -168,67 +168,10 @@ function scheduleWorkflowSync() {
   // directly, so this only affects the idle-coalescing window.
   workflowSyncTimer = setTimeout(() => { workflowSyncTimer = null; syncWorkflowState(); }, 1000);
 }
-// ── Cross-frame auth bridge ───────────────────────────────────────────────
-// When the inbound module runs embedded (iframe inside the portal), some
-// browsers (iPad Safari with "Prevent Cross-Site Tracking", Chrome with
-// strict privacy settings) PARTITION storage for embedded documents — so the
-// iframe's localStorage.getItem('hcAuthUser') comes back null even though the
-// top-level window is fully logged in. With no token, the sync GET fails, the
-// loader falls into its catch, sync is disabled, and the associate just sees
-// empty containers (the data is fine on the server — we just never asked for
-// it with a valid token). To survive partitioning we ALSO accept the token
-// over postMessage from the top-level window, which always owns a working
-// session. We request it on boot and the parent answers directly to us.
-let _bridgedAuthToken = null;
-const _hcIsEmbedded = (() => { try { return window.self !== window.top; } catch (_) { return true; } })();
-
-function requestAuthTokenFromParent() {
-  if (!_hcIsEmbedded) return;
-  try { window.parent.postMessage({ type: 'HC_AUTH_TOKEN_REQUEST' }, window.location.origin); } catch (_) {}
-}
-
-// Listen for the token the parent posts down (on request, on login, and after
-// every background refresh). Same-origin only.
-window.addEventListener('message', (e) => {
-  if (e.origin !== window.location.origin) return;
-  const d = e.data;
-  if (!d || d.type !== 'HC_AUTH_TOKEN' || typeof d.token !== 'string' || !d.token) return;
-  const isNew = d.token !== _bridgedAuthToken;
-  _bridgedAuthToken = d.token;
-  // Mirror into our own (possibly partitioned) localStorage so anything else
-  // reading hcAuthUser in this context also benefits.
-  try {
-    const s = JSON.parse(localStorage.getItem('hcAuthUser') || '{}') || {};
-    s.token = d.token;
-    localStorage.setItem('hcAuthUser', JSON.stringify(s));
-  } catch (_) {}
-  // Self-heal: if the first backend load already failed for lack of a token,
-  // a freshly-arrived token means we can recover without a page reload.
-  if (isNew && workflowSyncLoaded && !workflowSyncEnabled) {
-    loadWorkflowFromBackend().then(() => { if (workflowSyncEnabled) renderAll(); }).catch(() => {});
-  }
-});
-
-// Block (briefly, bounded) until we have a usable token. Used before the very
-// first backend load so a partitioned iframe doesn't fire its GET token-less.
-// No-op when we can already read a token from shared storage, or when not
-// embedded.
-async function ensureBridgedToken(maxWaitMs = 2000) {
-  if (getStoredAuthToken()) return;        // already have one — go
-  if (!_hcIsEmbedded) return;              // top-level reads its own storage
-  const start = Date.now();
-  requestAuthTokenFromParent();
-  while (!getStoredAuthToken() && Date.now() - start < maxWaitMs) {
-    await new Promise((r) => setTimeout(r, 150));
-    if (!getStoredAuthToken()) requestAuthTokenFromParent(); // re-ask; parent iframe may have loaded late
-  }
-}
-
-// Read the current Identity token. Prefer the bridged token (the top-level
-// window owns refresh, so it's the freshest copy), then fall back to whatever
-// is in this context's localStorage.
+// Read the current Identity token from the shared session. auth.js (in the
+// top-level window) keeps this fresh; we re-read per request so a renewed
+// token is picked up immediately, including inside the embedded inbound iframe.
 function getStoredAuthToken() {
-  if (_bridgedAuthToken) return _bridgedAuthToken;
   try {
     const s = JSON.parse(localStorage.getItem('hcAuthUser') || 'null');
     return (s && s.token) || null;
@@ -621,7 +564,7 @@ function sortOverstockLog(rows, sortKey) {
 }
 
 // ── Boxes grid view state (session-only) ────────────────────────────────
-const osBoxesUi = { sort: "updated", tab: "all", search: "" };
+const osBoxesUi = { sort: "updated" };
 
 function sortBoxes(boxes, key) {
   const arr = boxes.slice();
@@ -2797,12 +2740,6 @@ async function init() {
   bindLanguageSwitch();
   bindFilterToggles();
   bindCurrentUserControls();
-  // Make sure we hold a valid auth token before the first backend load. In a
-  // storage-partitioned iframe the token isn't in our localStorage, so we ask
-  // the parent for it and wait (briefly) for the answer. Without this the very
-  // first GET goes out token-less and the page falls back to an empty local
-  // copy — the "every container is empty on the tablet" symptom.
-  await ensureBridgedToken();
   await Promise.all([loadWorkflowFromBackend(), refreshImportedLibraryCache()]);
   applyLanguage();
   renderAll();
@@ -3216,263 +3153,6 @@ function bindOverstockEvents() {
       renderOverstockPage();
     });
   }
-
-  // ════════════════════════════════════════════════════════════════════
-  // OPTION C TOOLBAR + ADVANCED MODAL + FEED/TABLE TOGGLE WIRING
-  // ────────────────────────────────────────────────────────────────────
-  // Thin proxy layer over the existing form / lookup / audit handlers.
-  // The toolbar's controls mirror their values into the legacy inputs
-  // and trigger the legacy buttons — no business logic changes here.
-  // Defensive: every getElementById is null-checked so a missing element
-  // doesn't break the rest of the wiring.
-  // ════════════════════════════════════════════════════════════════════
-  (function wireOptionCToolbar() {
-    const $ = (id) => document.getElementById(id);
-
-    // ── Results modal helpers ─────────────────────────────────────────
-    // Toolbar's Look up and Audit Load buttons open this modal and
-    // relocate the relevant legacy result container (#overstockPoLookupResults
-    // or #overstockAuditResults) into the modal body. On close, the
-    // container goes back to its hidden home so subsequent runs render
-    // there until reopened.
-    const resOverlay = $('osResultsOverlay');
-    const resBody    = $('osResultsBody');
-    const resClose   = $('osResultsClose');
-    const resTitle   = $('osResultsTitle');
-    const resEyebrow = $('osResultsEyebrow');
-    const resSub     = $('osResultsSub');
-    // Track which container is currently in the modal so we know where to
-    // return it on close.
-    let activeResultContainerId = null;
-    function openResults(containerId, opts) {
-      const container = document.getElementById(containerId);
-      if (!container || !resOverlay || !resBody) return;
-      // If a different container was already in the modal, return it home first
-      if (activeResultContainerId && activeResultContainerId !== containerId) {
-        returnResultHome(activeResultContainerId);
-      }
-      resBody.appendChild(container);
-      activeResultContainerId = containerId;
-      if (resEyebrow) resEyebrow.textContent = (opts && opts.eyebrow) || 'RESULTS';
-      if (resTitle)   resTitle.textContent   = (opts && opts.title)   || 'Results';
-      if (resSub)     resSub.textContent     = (opts && opts.sub)     || '';
-      resOverlay.hidden = false;
-      document.body.style.overflow = 'hidden';
-    }
-    function returnResultHome(containerId) {
-      const container = document.getElementById(containerId);
-      if (!container) return;
-      // Each result container's hidden home is its parent panel's natural
-      // location in the DOM. We stored the original parent on first
-      // relocation; if not stored, find it by its known sibling structure.
-      let home = container.__originalHome;
-      if (!home) {
-        // PO Lookup results live in the PO Lookup panel; Audit results live
-        // in the Audit panel. Look them up by ID.
-        if (containerId === 'overstockPoLookupResults') {
-          // The PO Lookup panel doesn't have an ID — find it by querying for
-          // the input it contains. Use the input's closest .os-panel.
-          home = document.getElementById('overstockPoLookupInput')?.closest('.os-panel');
-        } else if (containerId === 'overstockAuditResults') {
-          home = document.getElementById('overstockAuditPanel');
-        }
-      }
-      if (home) home.appendChild(container);
-    }
-    function closeResults() {
-      if (activeResultContainerId) returnResultHome(activeResultContainerId);
-      activeResultContainerId = null;
-      if (resOverlay) resOverlay.hidden = true;
-      document.body.style.overflow = '';
-    }
-    // Capture each container's original parent ONCE so we can return it
-    // reliably even if the panel has multiple result-like children.
-    [['overstockPoLookupResults'], ['overstockAuditResults']].forEach(([id]) => {
-      const el = document.getElementById(id);
-      if (el && !el.__originalHome) el.__originalHome = el.parentElement;
-    });
-    if (resClose) resClose.addEventListener('click', closeResults);
-    if (resOverlay) resOverlay.addEventListener('click', (e) => {
-      if (e.target === resOverlay) closeResults();
-    });
-    // Esc key closes modal
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && resOverlay && !resOverlay.hidden) closeResults();
-    });
-
-    // ── PO Lookup proxy (now opens results modal) ─────────────────────
-    const tbPoInput = $('osTbPoInput');
-    const tbPoBtn   = $('osTbPoBtn');
-    if (tbPoInput && tbPoBtn) {
-      const realInput = $('overstockPoLookupInput');
-      const realBtn   = $('overstockPoLookupBtn');
-      tbPoInput.addEventListener('input', () => { if (realInput) realInput.value = tbPoInput.value; });
-      tbPoInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); tbPoBtn.click(); }
-      });
-      tbPoBtn.addEventListener('click', () => {
-        const q = (tbPoInput.value || '').trim();
-        if (!q) { alert('Enter a PO number first.'); tbPoInput.focus(); return; }
-        if (realInput) realInput.value = q;
-        // Open results modal BEFORE triggering the search so when the search
-        // writes to #overstockPoLookupResults, the container is already in
-        // the modal body and the user sees the result instantly.
-        openResults('overstockPoLookupResults', {
-          eyebrow: '🔍 PO LOOKUP',
-          title: `PO# ${q}`,
-          sub: 'Full overstock history for this PO.',
-        });
-        if (realBtn) realBtn.click();
-      });
-    }
-
-    // ── Audit-by-location proxy (now opens results modal) ─────────────
-    const tbAuditLoc = $('osTbAuditLoc');
-    const tbAuditBtn = $('osTbAuditBtn');
-    function syncAuditLocOptions() {
-      const src = $('overstockAuditLocation');
-      if (!src || !tbAuditLoc) return;
-      const prev = tbAuditLoc.value;
-      tbAuditLoc.innerHTML = src.innerHTML;
-      if (prev && [...tbAuditLoc.options].some(o => o.value === prev)) tbAuditLoc.value = prev;
-    }
-    if (tbAuditLoc && tbAuditBtn) {
-      syncAuditLocOptions();
-      tbAuditLoc.addEventListener('change', () => {
-        const real = $('overstockAuditLocation');
-        if (real) { real.value = tbAuditLoc.value; real.dispatchEvent(new Event('change', { bubbles: true })); }
-      });
-      tbAuditBtn.addEventListener('click', () => {
-        const loc = tbAuditLoc.value;
-        if (!loc) { alert('Pick a location first.'); tbAuditLoc.focus(); return; }
-        const real = $('overstockAuditLocation');
-        if (real) real.value = loc;
-        // Open modal first so the audit's render lands in the visible body
-        openResults('overstockAuditResults', {
-          eyebrow: '📋 LOCATION AUDIT',
-          title: `Audit ${loc}`,
-          sub: 'Review each PO at this location — mark still here, missing, or moved.',
-        });
-        $('overstockAuditStartBtn')?.click();
-      });
-    }
-
-    // ── Quick log REMOVED from toolbar in v2 (user feedback: confusing) ─
-    // Quick log lived in the toolbar but added clutter without pulling its
-    // weight. Stock Intake handles bulk logging; one-off entries go through
-    // the Advanced log modal (opened via the ⋯ menu).
-
-    // ── Advanced modal: relocate form in/out ──────────────────────────
-    const advOverlay = $('osAdvLogOverlay');
-    const advClose   = $('osAdvLogClose');
-    const advBody    = $('osAdvLogBody');
-    function openAdvanced() {
-      const form = $('overstockEntryForm');
-      if (!form || !advOverlay || !advBody) return;
-      advBody.appendChild(form); // relocate form into modal
-      advOverlay.hidden = false;
-      document.body.style.overflow = 'hidden';
-    }
-    function closeAdvanced() {
-      const form = $('overstockEntryForm');
-      const home = $('overstockEntryPanel')?.querySelector('.os-panel-body');
-      if (form && home) home.appendChild(form); // return form to hidden home
-      if (advOverlay) advOverlay.hidden = true;
-      document.body.style.overflow = '';
-    }
-    // Trigger from the ⋯ menu's "Log entry (advanced)" item
-    $('osTbMenuAdvLog')?.addEventListener('click', openAdvanced);
-    if (advClose)   advClose.addEventListener('click', closeAdvanced);
-    if (advOverlay) advOverlay.addEventListener('click', (e) => {
-      if (e.target === advOverlay) closeAdvanced(); // backdrop click
-    });
-    // Close modal after successful submit
-    const formForListen = $('overstockEntryForm');
-    if (formForListen) {
-      formForListen.addEventListener('submit', () => {
-        if (advOverlay && !advOverlay.hidden) setTimeout(closeAdvanced, 50);
-      });
-    }
-
-    // ── Toolbar's primary buttons (proxy to canonical IDs) ────────────
-    // The toolbar has its OWN Stock Intake button (osTbIntakeBtn) instead
-    // of duplicating #overstockStockIntakeBtn. Same for renorm + seed.
-    // Each proxies to the canonical button click.
-    $('osTbIntakeBtn')?.addEventListener('click', () => {
-      $('overstockStockIntakeBtn')?.click();
-    });
-    $('osTbMenuRenorm')?.addEventListener('click', () => {
-      $('overstockRenormalizeBtn')?.click();
-    });
-    $('osTbMenuSeed')?.addEventListener('click', () => {
-      $('overstockSeedBtn')?.click();
-    });
-    // Mirror the renorm button's role-gated visibility
-    if ($('osTbMenuRenorm')) {
-      const canSee = (typeof osCanDeleteContainer === 'function') ? osCanDeleteContainer() : false;
-      if (canSee) $('osTbMenuRenorm').style.display = '';
-    }
-
-    // ── ⋯ overflow menu ───────────────────────────────────────────────
-    const menuBtn = $('osTbMenuBtn');
-    const menuEl  = $('osTbMenu');
-    if (menuBtn && menuEl) {
-      menuBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const willShow = menuEl.hidden;
-        menuEl.hidden = !willShow;
-        menuBtn.setAttribute('aria-expanded', String(willShow));
-      });
-      // Items inside the menu close it on click
-      menuEl.querySelectorAll('button').forEach(b => {
-        b.addEventListener('click', () => {
-          menuEl.hidden = true;
-          menuBtn.setAttribute('aria-expanded', 'false');
-        });
-      });
-      // Outside click closes the menu
-      document.addEventListener('click', (e) => {
-        if (menuEl.hidden) return;
-        if (e.target === menuBtn || menuBtn.contains(e.target)) return;
-        if (!menuEl.contains(e.target)) {
-          menuEl.hidden = true;
-          menuBtn.setAttribute('aria-expanded', 'false');
-        }
-      });
-    }
-
-    // ── Feed / Table view toggle ──────────────────────────────────────
-    const feedBtn   = $('osLogViewFeed');
-    const tableBtn  = $('osLogViewTable');
-    const feedBody  = $('overstockFeedBody');
-    const tableWrap = document.querySelector('.os-c2 .os-log-table-wrap');
-    function showView(which) {
-      if (!feedBtn || !tableBtn || !feedBody || !tableWrap) return;
-      const showFeed = which === 'feed';
-      feedBtn.classList.toggle('is-active', showFeed);
-      tableBtn.classList.toggle('is-active', !showFeed);
-      feedBtn.setAttribute('aria-selected', String(showFeed));
-      tableBtn.setAttribute('aria-selected', String(!showFeed));
-      feedBody.hidden  = !showFeed;
-      tableWrap.hidden =  showFeed;
-    }
-    if (feedBtn)  feedBtn.addEventListener('click',  () => showView('feed'));
-    if (tableBtn) tableBtn.addEventListener('click', () => showView('table'));
-
-    // ── Hook the page render so toolbar dropdowns stay in sync ────────
-    // After every overstock render, the audit-location select in the form
-    // gets repopulated. Mirror those options into the toolbar's dropdown.
-    if (typeof window.renderOverstockPage === 'function' && !window.renderOverstockPage.__optCHooked) {
-      const orig = window.renderOverstockPage;
-      const wrapped = function() {
-        const r = orig.apply(this, arguments);
-        try { syncAuditLocOptions(); } catch (_) {}
-        return r;
-      };
-      wrapped.__optCHooked = true;
-      window.renderOverstockPage = wrapped;
-    }
-  })();
 
   const overstockPoSelect = document.getElementById("overstockEntryPo");
 
@@ -5670,122 +5350,6 @@ function renormalizeOverstockContainerCodes() {
 }
 window.renormalizeOverstockContainerCodes = renormalizeOverstockContainerCodes;
 
-/* ════════════════════════════════════════════════════════════════════
-   renderOverstockFeed — Option C activity-feed view of the log.
-   ────────────────────────────────────────────────────────────────────
-   Renders the SAME filtered entries the table uses, but as compact
-   timeline rows: time | PO + qty + category + actor | location pill |
-   actions (Timeline / Edit / Delete). Feed + table stay synced because
-   they read from one shared array.
-   Falls silent on any error so it never blocks the rest of the render.
-   ════════════════════════════════════════════════════════════════════ */
-function renderOverstockFeed(entries) {
-  const body = document.getElementById('overstockFeedBody');
-  if (!body) return;
-  if (!Array.isArray(entries) || !entries.length) {
-    body.innerHTML = '<div class="os-feed-empty">No entries to show. Adjust filters above or log your first PO using the toolbar.</div>';
-    return;
-  }
-
-  // Permission check — matches the table's elevation logic exactly so the
-  // right buttons render per role.
-  const isElevated = (typeof osCanDeleteContainer === 'function') ? osCanDeleteContainer() : false;
-  const currentUser = state.currentUser;
-
-  const fmtTime = (ts) => {
-    const d = new Date(ts);
-    let h = d.getHours();
-    const m = String(d.getMinutes()).padStart(2, '0');
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    h = h % 12 || 12;
-    return `${h}:${m} ${ampm}`;
-  };
-  const fmtDate = (val) => {
-    if (!val) return '';
-    if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) {
-      return val.slice(5).replace('-', '/');
-    }
-    const d = new Date(val);
-    return `${d.getMonth() + 1}/${d.getDate()}`;
-  };
-
-  const html = entries.map(row => {
-    const isAutoRow = row.sourceType === 'auto' || row.sourceType === 'prep-extra';
-    const ownerLocked = (!isElevated && !!(currentUser && currentUser !== LEADERSHIP_USER && row.associate && row.associate !== currentUser));
-
-    const tsRaw = Number(row.updatedAt || row.createdAt || 0);
-    const timeLabel = tsRaw ? fmtTime(tsRaw) : '—';
-    const dateLabel = fmtDate(row.date || tsRaw);
-
-    const po       = row.po || '—';
-    const qty      = Number(row.quantity || 0);
-    const category = row.category || '';
-    const associate = row.associate || row.createdBy || '—';
-    const loc      = row.location || '—';
-    const cont     = row.containerCode || '';
-
-    const canEdit   = !ownerLocked;
-    const canDelete = !ownerLocked;
-    const hasHistory = (typeof getPoHistoryCount === 'function') ? getPoHistoryCount('overstock', row.po) >= 1 : false;
-
-    return `<div class="os-feed-item" data-entry-id="${escapeAttribute(row.id)}">
-      <div class="os-feed-time">${escapeHtml(timeLabel)}<span class="feed-date">${escapeHtml(dateLabel)}</span></div>
-      <div class="os-feed-content">
-        <div><span class="feed-po">PO# ${escapeHtml(po)}</span> <span class="feed-qty">+${qty}</span>${category ? ` <span class="feed-cat">${escapeHtml(category)}</span>` : ''}</div>
-        <div class="os-feed-actor">by ${escapeHtml(associate)}</div>
-      </div>
-      <div class="os-feed-loc">${escapeHtml(loc)}${cont ? `<span class="feed-loc-bx">${escapeHtml(cont)}</span>` : ''}</div>
-      <div class="os-feed-actions">
-        ${hasHistory ? `<button type="button" class="os-feed-act-btn" data-feed-act="timeline" data-entry-id="${escapeAttribute(row.id)}" data-po="${escapeAttribute(row.po)}" title="View timeline">⏱</button>` : ''}
-        ${canEdit   ? `<button type="button" class="os-feed-act-btn" data-feed-act="edit"   data-entry-id="${escapeAttribute(row.id)}" title="Edit">✎</button>` : ''}
-        ${canDelete ? `<button type="button" class="os-feed-act-btn" data-feed-act="delete" data-entry-id="${escapeAttribute(row.id)}" title="Delete">🗑</button>` : ''}
-      </div>
-    </div>`;
-  }).join('');
-
-  body.innerHTML = html;
-
-  // Wire actions. Same code paths as the table's row buttons so behavior
-  // (audit logs, tombstones, sync) is identical between the two views.
-  body.querySelectorAll('[data-feed-act="delete"]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.entryId;
-      const row = (state.data.overstockEntries || []).find(r => r.id === id);
-      if (!row) return;
-      const label = row.containerCode ? `${row.containerCode} · PO# ${row.po}` : `PO# ${row.po}`;
-      if (!confirm(`Remove ${label}?`)) return;
-      if (typeof window.deleteOverstockEntry === 'function') {
-        window.deleteOverstockEntry(id);
-      } else {
-        state.data.overstockEntries = (state.data.overstockEntries || []).filter(r => r.id !== id);
-        persistData();
-      }
-      renderOverstockPage();
-    });
-  });
-  body.querySelectorAll('[data-feed-act="edit"]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      // Flip to table view so the user sees the inline editor, then click
-      // the table row's existing Edit button to trigger it.
-      const tableBtn = document.getElementById('osLogViewTable');
-      if (tableBtn && !tableBtn.classList.contains('is-active')) tableBtn.click();
-      setTimeout(() => {
-        const id = btn.dataset.entryId;
-        const tr = document.querySelector(`#overstockTableBody tr[data-entry-id="${id}"]`);
-        const editBtn = tr?.querySelector('.overstock-edit-btn');
-        if (editBtn) editBtn.click();
-      }, 50);
-    });
-  });
-  body.querySelectorAll('[data-feed-act="timeline"]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const po = btn.dataset.po;
-      if (po && typeof openPoHistoryModal === 'function') openPoHistoryModal('overstock', po);
-    });
-  });
-}
-window.renderOverstockFeed = renderOverstockFeed;
-
 function renderOverstockPage() {
   if (!Array.isArray(state.data.overstockEntries)) state.data.overstockEntries = [];
   if (!state.data.overstockFilters) state.data.overstockFilters = { date: '', associate: 'All', location: 'All', status: 'All', search: '', mineOnly: false };
@@ -5906,16 +5470,7 @@ function renderOverstockPage() {
       // no POs are logged inside it. Surface this so the warehouse team can
       // either fill it or delete the empty box.
       const hasOnlyEmptyBoxes = boxes.length > 0 && units === 0;
-      // Heat tier for Option C visual. Free locations get no data-load.
-      // Thresholds: <100u light, 100-400u medium, 400+u heavy.
-      let load = '';
-      if (units > 0) {
-        if (units < 100)      load = 'light';
-        else if (units < 400) load = 'med';
-        else                  load = 'heavy';
-      }
-      const loadAttr = load ? ` data-load="${load}"` : '';
-      return `<div class="os-loc${isEmpty ? ' os-loc-empty' : ' os-loc-occ'}${hasOnlyEmptyBoxes ? ' os-loc-empty-bx' : ''}"${loadAttr} data-loc="${escapeAttribute(loc)}" role="button" tabindex="0">
+      return `<div class="os-loc${isEmpty ? ' os-loc-empty' : ' os-loc-occ'}${hasOnlyEmptyBoxes ? ' os-loc-empty-bx' : ''}" data-loc="${escapeAttribute(loc)}" role="button" tabindex="0">
         <div class="os-loc-name">${loc}</div>
         <div class="os-loc-count">${boxes.length ? boxes.length+'bx' : 'free'}</div>
         ${units ? `<div style="font-size:9px;color:var(--muted);">${units}u</div>` : ''}
@@ -5945,53 +5500,10 @@ function renderOverstockPage() {
   // ── Boxes (manage any box: audit / add / edit / merge / move) ────────────
   const conEl = document.getElementById('overstockConsolidate');
   if (conEl) {
-    // Compute counts BEFORE filtering so each tab shows the true total of
-    // its status, not the filtered subset. This matches the preview the
-    // user picked: "All 105 / Open 4 / On cart 8 / Stored 86 / Full 7".
-    const activeBoxes = containers.filter(c => c.status !== 'Closed');
-    const statusCounts = {
-      all:       activeBoxes.length,
-      Open:      activeBoxes.filter(c => c.status === 'Open').length,
-      'On Cart': activeBoxes.filter(c => c.status === 'On Cart').length,
-      Stored:    activeBoxes.filter(c => c.status === 'Stored').length,
-      Full:      activeBoxes.filter(c => c.status === 'Full').length,
-    };
-
-    // Apply the active tab filter (defaults to "all" → no status filter).
-    let filtered = activeBoxes;
-    if (osBoxesUi.tab && osBoxesUi.tab !== 'all') {
-      filtered = filtered.filter(c => c.status === osBoxesUi.tab);
-    }
-
-    // Apply the search query — matches box code OR any PO inside the box.
-    // Case-insensitive substring match; 105 boxes is small enough that this
-    // is instant on every keystroke without debouncing.
-    const q = (osBoxesUi.search || '').trim().toLowerCase();
-    if (q) {
-      filtered = filtered.filter(c => {
-        if (String(c.code || '').toLowerCase().includes(q)) return true;
-        const items = getOverstockContainerItems(c.id);
-        return items.some(it => String(it.po || '').toLowerCase().includes(q));
-      });
-    }
-
-    const boxes = sortBoxes(filtered, osBoxesUi.sort);
-
-    // Build the status tabs HTML. Each tab is a button so it tabs into
-    // keyboard focus order naturally; the active one gets the .is-active
-    // class which the Option C CSS styles like the preview.
-    const tabsData = [
-      { key: 'all',     label: 'All' },
-      { key: 'Open',    label: 'Open' },
-      { key: 'On Cart', label: 'On cart' },
-      { key: 'Stored',  label: 'Stored' },
-      { key: 'Full',    label: 'Full' },
-    ];
-    const tabsHtml = tabsData.map(t => {
-      const count = statusCounts[t.key] || 0;
-      const active = (osBoxesUi.tab || 'all') === t.key;
-      return `<button type="button" class="os-box-tab${active ? ' is-active' : ''}" data-box-tab="${escapeAttribute(t.key)}">${escapeHtml(t.label)}<span class="os-box-tab-count">${count}</span></button>`;
-    }).join('');
+    const boxes = sortBoxes(
+      containers.filter(c => c.status !== 'Closed'),
+      osBoxesUi.sort
+    );
 
     conEl.innerHTML = `
       <section class="os-panel">
@@ -6006,16 +5518,8 @@ function renderOverstockPage() {
               <option value="name">Name (OSC #)</option>
               <option value="location">Location</option>
             </select>
-            <span class="os-badge os-badge-purple">${boxes.length} of ${activeBoxes.length}</span>
+            <span class="os-badge os-badge-purple">${boxes.length} box${boxes.length !== 1 ? 'es' : ''}</span>
           </div>
-        </div>
-        <!-- Status filter tabs (Option C boxes redesign — pick the status
-             you're working with, see only those boxes). -->
-        <div class="os-box-tabs" role="tablist" aria-label="Filter boxes by status">${tabsHtml}</div>
-        <!-- Search input. Matches box code OR any PO logged inside. -->
-        <div class="os-box-search-row">
-          <input id="osBoxesSearch" type="text" class="os-box-search" placeholder="🔎 Search box code or PO…" autocomplete="off" value="${escapeAttribute(osBoxesUi.search || '')}" />
-          ${osBoxesUi.search ? `<button type="button" id="osBoxesSearchClear" class="os-box-search-clear" title="Clear search">✕</button>` : ''}
         </div>
         <div class="os-panel-body">
           ${boxes.length
@@ -6035,7 +5539,7 @@ function renderOverstockPage() {
                   </div>
                 </div>`;
               }).join('')}</div>`
-            : `<div class="os-empty-state"><div class="os-empty-icon">📦</div>${q || (osBoxesUi.tab && osBoxesUi.tab !== 'all') ? 'No boxes match your filters.' : 'No boxes yet.'}</div>`}
+            : `<div class="os-empty-state"><div class="os-empty-icon">📦</div>No boxes yet.</div>`}
         </div>
       </section>`;
 
@@ -6043,38 +5547,6 @@ function renderOverstockPage() {
     if (sortSel) {
       sortSel.value = osBoxesUi.sort;
       sortSel.onchange = () => { osBoxesUi.sort = sortSel.value; renderOverstockPage(); };
-    }
-    // Wire tab clicks — set the active tab and re-render
-    conEl.querySelectorAll('[data-box-tab]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        osBoxesUi.tab = btn.dataset.boxTab;
-        renderOverstockPage();
-      });
-    });
-    // Wire the search input. Re-render on every keystroke. The input
-    // value re-applies on each render via the value attribute, and we
-    // refocus + restore the cursor position so the user doesn't get
-    // bounced out of the field while typing.
-    const searchInput = document.getElementById('osBoxesSearch');
-    if (searchInput) {
-      searchInput.addEventListener('input', () => {
-        const cursorPos = searchInput.selectionStart;
-        osBoxesUi.search = searchInput.value;
-        renderOverstockPage();
-        // After render, restore focus + cursor to the (newly rendered) input
-        const fresh = document.getElementById('osBoxesSearch');
-        if (fresh) {
-          fresh.focus();
-          try { fresh.setSelectionRange(cursorPos, cursorPos); } catch (_) {}
-        }
-      });
-    }
-    const searchClear = document.getElementById('osBoxesSearchClear');
-    if (searchClear) {
-      searchClear.addEventListener('click', () => {
-        osBoxesUi.search = '';
-        renderOverstockPage();
-      });
     }
     conEl.querySelectorAll('[data-box-actions]').forEach(card => {
       const open = () => osOpenBoxActions(card.dataset.boxActions);
@@ -6126,12 +5598,6 @@ function renderOverstockPage() {
 
   const tbody = document.getElementById('overstockTableBody');
   if (!tbody) return;
-  // Render Option C activity feed alongside the table — both pull from the
-  // same visibleEntries so they stay perfectly in sync. If renderOverstockFeed
-  // isn't loaded for any reason, render proceeds normally without erroring.
-  try {
-    if (typeof renderOverstockFeed === 'function') renderOverstockFeed(visibleEntries);
-  } catch (e) { console.warn('Feed render failed:', e); }
   tbody.innerHTML = '';
   if (!visibleEntries.length) {
     tbody.innerHTML = `<tr><td colspan="9" class="empty-state-cell">${logQuery ? 'No entries match your search.' : t('noRows')}</td></tr>`;
@@ -6153,9 +5619,6 @@ function renderOverstockPage() {
     // managers/admins can act on anything; associates only on their own rows.
     const ownerLocked = (!isElevated && !!(state.currentUser && state.currentUser !== LEADERSHIP_USER && row.associate && row.associate !== state.currentUser));
     const tr = document.createElement('tr');
-    // Tag each row with its entry ID so the Option C feed view's edit-proxy
-    // can find this specific row when the user clicks ✎ in feed mode.
-    tr.setAttribute('data-entry-id', row.id);
     const batchCount = getPoHistoryCount('overstock', row.po);
     const batchBtn = batchCount >= 1
       ? `<button class="tiny-btn history-row" type="button">${t('viewTimeline')}</button>`
