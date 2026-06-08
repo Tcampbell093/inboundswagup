@@ -42,7 +42,7 @@ async function verifyUser(event) {
     // of truth used everywhere else. If the DB is briefly unreachable we accept
     // a validly-signed Identity token rather than hard-failing all sync.
     try {
-      const db = await pool.query('SELECT suspended, invited FROM hc_users WHERE email=$1', [user.email]);
+      const db = await pool.query('SELECT suspended, invited FROM hc_users WHERE LOWER(email)=LOWER($1)', [user.email]);
       if (db.rows.length) {
         const u = db.rows[0];
         if (u.suspended) return null;
