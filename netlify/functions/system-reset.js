@@ -40,7 +40,7 @@ async function verifyAdmin(event) {
 
   // Check role from hc_users (Neon) — source of truth
   try {
-    const dbRes = await pool.query('SELECT role FROM hc_users WHERE email=$1', [user.email]);
+    const dbRes = await pool.query('SELECT role FROM hc_users WHERE LOWER(email)=LOWER($1)', [user.email]);
     const dbRole = dbRes.rows[0]?.role;
     if (dbRole === 'admin') return { email: user.email, role: 'admin' };
     // Fall back to Netlify Identity metadata
