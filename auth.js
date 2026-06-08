@@ -21,6 +21,38 @@
   let isEmbedded = false;
   try { isEmbedded = (window.self !== window.top); } catch (_) { isEmbedded = true; }
 
+  // ── Cross-frame auth bridge (top-level owner) ──────────────────────────
+  // Embedded modules (the inbound iframe) may be unable to read the shared
+  // hcAuthUser from their own localStorage when the browser partitions storage
+  // for embedded documents (iPad Safari "Prevent Cross-Site Tracking", strict
+  // Chrome privacy). We — the top-level window that always holds a working
+  // session — hand the token down over postMessage: on request from a frame,
+  // and proactively whenever the token changes (login + background refresh).
+  function broadcastTokenToFrames() {
+    if (isEmbedded) return; // only the top-level owner broadcasts
+    const s = readSession();
+    const token = (s && s.token) || (window.hcCurrentUser && window.hcCurrentUser.token) || null;
+    if (!token) return;
+    let frames;
+    try { frames = document.querySelectorAll('iframe'); } catch (_) { return; }
+    frames.forEach(function (f) {
+      try { f.contentWindow && f.contentWindow.postMessage({ type: 'HC_AUTH_TOKEN', token: token }, window.location.origin); } catch (_) {}
+    });
+  }
+  // Answer a frame that asks for the token, replying straight to the asker so
+  // it works even before the frame is fully in the DOM at broadcast time.
+  if (!isEmbedded) {
+    window.addEventListener('message', function (e) {
+      if (e.origin !== window.location.origin) return;
+      if (!e.data || e.data.type !== 'HC_AUTH_TOKEN_REQUEST') return;
+      const s = readSession();
+      const token = (s && s.token) || (window.hcCurrentUser && window.hcCurrentUser.token) || null;
+      if (token && e.source) {
+        try { e.source.postMessage({ type: 'HC_AUTH_TOKEN', token: token }, window.location.origin); } catch (_) {}
+      }
+    });
+  }
+
   // ── Background token renewal ───────────────────────────────────────────
   // Netlify Identity access tokens expire (~1h). Without renewal, a tablet
   // left open all day would start failing authenticated sync once the backend
@@ -58,6 +90,7 @@
         localStorage.setItem(HC_USER_KEY, JSON.stringify(cur));
         if (window.hcCurrentUser) window.hcCurrentUser.token = cur.token;
         scheduleTokenRefresh();
+        broadcastTokenToFrames();
       })
       .catch(function (err) {
         console.warn('HC Auth: token refresh failed:', err.message);
@@ -87,6 +120,7 @@
           localStorage.setItem(HC_USER_KEY, JSON.stringify(cur));
           if (window.hcCurrentUser) window.hcCurrentUser.token = cur.token;
           resolve(cur.token);
+          broadcastTokenToFrames();
         })
         .catch(function () { resolve(null); });
     });
@@ -141,6 +175,10 @@
 
       // Keep the session token fresh in the background (top-level only).
       scheduleTokenRefresh();
+
+      // Hand the token down to any embedded modules (inbound iframe) so a
+      // storage-partitioned frame can still authenticate its sync calls.
+      broadcastTokenToFrames();
     }
 
     // ── Logout button — always attach regardless of session ───

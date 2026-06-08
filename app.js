@@ -168,10 +168,67 @@ function scheduleWorkflowSync() {
   // directly, so this only affects the idle-coalescing window.
   workflowSyncTimer = setTimeout(() => { workflowSyncTimer = null; syncWorkflowState(); }, 1000);
 }
-// Read the current Identity token from the shared session. auth.js (in the
-// top-level window) keeps this fresh; we re-read per request so a renewed
-// token is picked up immediately, including inside the embedded inbound iframe.
+// ── Cross-frame auth bridge ───────────────────────────────────────────────
+// When the inbound module runs embedded (iframe inside the portal), some
+// browsers (iPad Safari with "Prevent Cross-Site Tracking", Chrome with
+// strict privacy settings) PARTITION storage for embedded documents — so the
+// iframe's localStorage.getItem('hcAuthUser') comes back null even though the
+// top-level window is fully logged in. With no token, the sync GET fails, the
+// loader falls into its catch, sync is disabled, and the associate just sees
+// empty containers (the data is fine on the server — we just never asked for
+// it with a valid token). To survive partitioning we ALSO accept the token
+// over postMessage from the top-level window, which always owns a working
+// session. We request it on boot and the parent answers directly to us.
+let _bridgedAuthToken = null;
+const _hcIsEmbedded = (() => { try { return window.self !== window.top; } catch (_) { return true; } })();
+
+function requestAuthTokenFromParent() {
+  if (!_hcIsEmbedded) return;
+  try { window.parent.postMessage({ type: 'HC_AUTH_TOKEN_REQUEST' }, window.location.origin); } catch (_) {}
+}
+
+// Listen for the token the parent posts down (on request, on login, and after
+// every background refresh). Same-origin only.
+window.addEventListener('message', (e) => {
+  if (e.origin !== window.location.origin) return;
+  const d = e.data;
+  if (!d || d.type !== 'HC_AUTH_TOKEN' || typeof d.token !== 'string' || !d.token) return;
+  const isNew = d.token !== _bridgedAuthToken;
+  _bridgedAuthToken = d.token;
+  // Mirror into our own (possibly partitioned) localStorage so anything else
+  // reading hcAuthUser in this context also benefits.
+  try {
+    const s = JSON.parse(localStorage.getItem('hcAuthUser') || '{}') || {};
+    s.token = d.token;
+    localStorage.setItem('hcAuthUser', JSON.stringify(s));
+  } catch (_) {}
+  // Self-heal: if the first backend load already failed for lack of a token,
+  // a freshly-arrived token means we can recover without a page reload.
+  if (isNew && workflowSyncLoaded && !workflowSyncEnabled) {
+    loadWorkflowFromBackend().then(() => { if (workflowSyncEnabled) renderAll(); }).catch(() => {});
+  }
+});
+
+// Block (briefly, bounded) until we have a usable token. Used before the very
+// first backend load so a partitioned iframe doesn't fire its GET token-less.
+// No-op when we can already read a token from shared storage, or when not
+// embedded.
+async function ensureBridgedToken(maxWaitMs = 2000) {
+  if (getStoredAuthToken()) return;        // already have one — go
+  if (!_hcIsEmbedded) return;              // top-level reads its own storage
+  const start = Date.now();
+  requestAuthTokenFromParent();
+  while (!getStoredAuthToken() && Date.now() - start < maxWaitMs) {
+    await new Promise((r) => setTimeout(r, 150));
+    if (!getStoredAuthToken()) requestAuthTokenFromParent(); // re-ask; parent iframe may have loaded late
+  }
+}
+
+// Read the current Identity token. Prefer the bridged token (the top-level
+// window owns refresh, so it's the freshest copy), then fall back to whatever
+// is in this context's localStorage.
 function getStoredAuthToken() {
+  if (_bridgedAuthToken) return _bridgedAuthToken;
   try {
     const s = JSON.parse(localStorage.getItem('hcAuthUser') || 'null');
     return (s && s.token) || null;
@@ -2740,6 +2797,12 @@ async function init() {
   bindLanguageSwitch();
   bindFilterToggles();
   bindCurrentUserControls();
+  // Make sure we hold a valid auth token before the first backend load. In a
+  // storage-partitioned iframe the token isn't in our localStorage, so we ask
+  // the parent for it and wait (briefly) for the answer. Without this the very
+  // first GET goes out token-less and the page falls back to an empty local
+  // copy — the "every container is empty on the tablet" symptom.
+  await ensureBridgedToken();
   await Promise.all([loadWorkflowFromBackend(), refreshImportedLibraryCache()]);
   applyLanguage();
   renderAll();
