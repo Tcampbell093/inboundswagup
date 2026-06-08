@@ -4740,3 +4740,104 @@ body.workflow-page .os-c2 #osResultsBody table.sheet-table tbody select:focus {
   border-color: #185fa5 !important;
   box-shadow: 0 0 0 2px rgba(24,95,165,.12);
 }
+
+/* ── BOXES SECTION — STATUS TABS + SEARCH (Option B redesign) ─────── */
+/* Tabs row inside the boxes panel. The "All" tab is active by default;
+   clicking another sets osBoxesUi.tab = '<status>' and re-renders.
+   Counts on each tab show TRUE totals (unfiltered by search) so the
+   user can see what's where regardless of the current search. */
+body.workflow-page .os-c2 .os-box-tabs {
+  display: flex !important;
+  gap: 4px !important;
+  padding: 10px 16px !important;
+  background: #f8fafc !important;
+  border-top: 1px solid #eef2f7 !important;
+  border-bottom: 1px solid #eef2f7 !important;
+  flex-wrap: wrap !important;
+}
+body.workflow-page .os-c2 .os-box-tab {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 6px 12px !important;
+  border-radius: 7px !important;
+  border: 0.5px solid transparent !important;
+  background: transparent !important;
+  color: #64748b !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background .12s, color .12s, border-color .12s;
+}
+body.workflow-page .os-c2 .os-box-tab:hover {
+  color: #185fa5 !important;
+  background: #f0f6ff !important;
+}
+body.workflow-page .os-c2 .os-box-tab.is-active {
+  background: #fff !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 1px 3px rgba(15,23,42,.06);
+}
+body.workflow-page .os-c2 .os-box-tab-count {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  padding: 1px 6px !important;
+  border-radius: 999px !important;
+  background: #e2e8f0 !important;
+  color: #475569 !important;
+  font-variant-numeric: tabular-nums;
+}
+body.workflow-page .os-c2 .os-box-tab.is-active .os-box-tab-count {
+  background: #185fa5 !important;
+  color: #fff !important;
+}
+
+/* Search row right under the tabs. */
+body.workflow-page .os-c2 .os-box-search-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 10px 16px !important;
+  border-bottom: 1px solid #eef2f7 !important;
+  background: #fff;
+}
+body.workflow-page .os-c2 .os-box-search {
+  flex: 1 !important;
+  padding: 8px 12px !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 7px !important;
+  font-size: 12px !important;
+  font-family: inherit;
+  background: #fafbfc !important;
+  color: #0f172a !important;
+  height: 34px !important;
+  box-sizing: border-box;
+}
+body.workflow-page .os-c2 .os-box-search:focus {
+  outline: none;
+  border-color: #185fa5 !important;
+  background: #fff !important;
+  box-shadow: 0 0 0 2px rgba(24,95,165,.12);
+}
+body.workflow-page .os-c2 .os-box-search-clear {
+  width: 30px !important;
+  height: 30px !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 6px !important;
+  background: #fff !important;
+  color: #64748b !important;
+  cursor: pointer;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 14px !important;
+  font-family: inherit;
+}
+body.workflow-page .os-c2 .os-box-search-clear:hover {
+  background: #fef2f2 !important;
+  border-color: #fca5a5 !important;
+  color: #b91c1c !important;
+}
