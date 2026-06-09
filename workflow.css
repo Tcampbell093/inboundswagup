@@ -4850,3 +4850,19 @@ body.workflow-page .os-c2 #osResultsBody #overstockAuditResults {
 .workflow-page .os-box-dot-green { background: #22a85f; }
 .workflow-page .os-box-dot-gray { background: #b8c2cf; }
 .workflow-page .os-boxes-noresult { padding: 18px 8px; text-align: center; color: #8aa0bb; font-size: 14px; }
+/* ── Scan panel header action group ── */
+.workflow-page .os-panel-head-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* ── Box-actions modal: action buttons ── */
+.workflow-page .os-box-act-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.workflow-page .os-box-act-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 13px 12px; border-radius: 12px; border: 1px solid #dce4ee; background: #fff;
+  color: #2f4156; font-weight: 700; font-size: 14px; cursor: pointer; font-family: inherit;
+  transition: background .12s, border-color .12s, transform .04s;
+}
+.workflow-page .os-box-act-btn:hover { background: #f4f8fc; border-color: #bcd4e8; }
+.workflow-page .os-box-act-btn:active { transform: translateY(1px); }
+.workflow-page .os-box-act-ic { font-size: 16px; line-height: 1; }
+.workflow-page .os-box-act-primary { background: #1d6fb8; border-color: #1d6fb8; color: #fff; }
+.workflow-page .os-box-act-primary:hover { background: #195f9e; border-color: #195f9e; }

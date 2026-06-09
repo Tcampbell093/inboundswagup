@@ -3134,7 +3134,7 @@ function bindOverstockEvents() {
     renderOverstockPage();
   });
 
-  document.getElementById("overstockSeedBtn").addEventListener("click", () => {
+  document.getElementById("overstockSeedBtn")?.addEventListener("click", () => {
     state.data.overstockEntries = demoOverstockEntries();
     persistData();
     renderOverstockPage();
@@ -3441,7 +3441,7 @@ function bindOverstockEvents() {
     formEl.addEventListener("change", overstockSaveDraft);
   }
 
-  document.getElementById("overstockEntryForm").addEventListener("submit", (event) => {
+  if (formEl) formEl.addEventListener("submit", (event) => {
     event.preventDefault();
     if (!Array.isArray(state.data.overstockEntries)) state.data.overstockEntries = [];
     if (!state.data.overstockFilters) state.data.overstockFilters = { date: "", associate: "All", location: "All", status: "All", search: "" };

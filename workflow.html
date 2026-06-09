@@ -146,7 +146,11 @@
             <div class="os-panel-title">🔎 Scan or type box code</div>
             <div class="os-panel-sub">Scan the QR/barcode or type a code like OSC-003, then choose <strong>Add items</strong> or <strong>Audit</strong>.</div>
           </div>
-          <button id="overstockDonationsBtn" class="os-ghost-btn" type="button" title="Review donated items">🎁 Donations</button>
+          <div class="os-panel-head-actions">
+            <button id="overstockStockIntakeBtn" class="os-action-btn" type="button">📦 Stock Intake</button>
+            <button id="overstockDonationsBtn" class="os-ghost-btn" type="button" title="Review donated items">🎁 Donations</button>
+            <button id="overstockRenormalizeBtn" class="os-ghost-btn" type="button" title="One-time cleanup: rename OSC-#### codes to OSC-###" style="display:none;">🔧 Renormalize codes</button>
+          </div>
         </div>
         <div class="os-panel-body">
           <form id="overstockContainerLookupForm" class="os-container-lookup-form">
@@ -369,12 +373,12 @@
           <div class="os-modal-body">
             <div class="os-loc-banner" id="osBoxActLoc"></div>
             <div class="os-box-act-grid">
-              <button class="os-box-act-btn" id="osBoxActAudit" type="button"><span class="os-box-act-ic">🔍</span>Audit</button>
-              <button class="os-box-act-btn" id="osBoxActAdd" type="button"><span class="os-box-act-ic">➕</span>Add a PO</button>
-              <button class="os-box-act-btn" id="osBoxActEdit" type="button"><span class="os-box-act-ic">✏️</span>Edit</button>
-              <button class="os-box-act-btn" id="osBoxActMerge" type="button"><span class="os-box-act-ic">🔀</span>Merge</button>
-              <button class="os-box-act-btn" id="osBoxActMoveLoc" type="button"><span class="os-box-act-ic">↗</span>Move location</button>
-              <button class="os-box-act-btn" id="osBoxActMovePo" type="button"><span class="os-box-act-ic">📦</span>Move a PO</button>
+              <button class="os-box-act-btn os-box-act-primary" id="osBoxActAudit" type="button"><span class="os-box-act-ic">🔍</span><span>Audit</span></button>
+              <button class="os-box-act-btn os-box-act-primary" id="osBoxActAdd" type="button"><span class="os-box-act-ic">➕</span><span>Add a PO</span></button>
+              <button class="os-box-act-btn" id="osBoxActEdit" type="button"><span class="os-box-act-ic">✏️</span><span>Edit</span></button>
+              <button class="os-box-act-btn" id="osBoxActMerge" type="button"><span class="os-box-act-ic">🔀</span><span>Merge</span></button>
+              <button class="os-box-act-btn" id="osBoxActMoveLoc" type="button"><span class="os-box-act-ic">↗</span><span>Move location</span></button>
+              <button class="os-box-act-btn" id="osBoxActMovePo" type="button"><span class="os-box-act-ic">📦</span><span>Move a PO</span></button>
             </div>
           </div>
         </div>
@@ -434,136 +438,11 @@
 
 
       <!-- ── Log Entry form ── -->
-      <section class="os-panel">
-        <div class="os-panel-head">
-          <div>
-            <div class="os-panel-title">+ Log Overstock Entry</div>
-            <div class="os-panel-sub">POs come directly from Prep — no manual typing needed. Select a PO and the quantity auto-fills.</div>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <button id="overstockStockIntakeBtn" class="os-action-btn" type="button" style="padding:10px 16px;font-weight:700;">📦 Stock Intake</button>
-            <button id="overstockRenormalizeBtn" class="os-ghost-btn" type="button" title="One-time cleanup: rename OSC-#### codes to OSC-###" style="display:none;">🔧 Renormalize codes</button>
-            <button id="overstockSeedBtn" class="os-ghost-btn" type="button">Load Demo Data</button>
-          </div>
-        </div>
-        <div class="os-panel-body">
-          <form id="overstockEntryForm" class="os-entry-form">
-            <div class="os-field">
-              <label class="os-field-lbl" for="overstockEntryDate">Date</label>
-              <input id="overstockEntryDate" type="date" class="os-input" required />
-            </div>
+      <!-- Manual "Log Overstock Entry" form removed — intake now flows through
+           Stock Intake / scanning. Stock Intake button lives in the scan panel. -->
 
-            <div class="os-field os-field-wide">
-              <div class="os-field-lbl-row">
-                <label class="os-field-lbl" for="overstockEntryPo">PO Number</label>
-                <span class="os-mode-toggle-wrap">
-                  <span id="overstockPoModeLabel" class="os-auto-tag">Auto from Prep</span>
-                  <button type="button" id="overstockPoModeToggle" class="os-ghost-btn os-ghost-btn-xs">Enter manually</button>
-                </span>
-              </div>
-              <select id="overstockEntryPo" class="os-input" required></select>
-              <input id="overstockEntryPoManual" type="text" class="os-input" placeholder="Type PO number…" style="display:none;" autocomplete="off" />
-              <div id="overstockManualPoWarning" class="os-warn-box" style="display:none;">
-                ⚠️ Manual entry — overstock quantity will not be auto-filled. Enter it manually below.
-              </div>
-            </div>
-
-            <div class="os-field">
-              <label class="os-field-lbl" for="overstockEntryQty">
-                Qty
-                <span id="overstockQtyAutoLabel" class="os-auto-tag">auto-filled</span>
-              </label>
-              <input id="overstockEntryQty" type="number" min="0" step="1" class="os-input os-qty-input" />
-              <div id="overstockQtyAdjustedBadge" class="os-warn-badge" style="display:none;"></div>
-              <div id="overstockAutoQtyWarn" class="os-warn-box" style="display:none;">
-                ⚠️ Adjusting an automated quantity — confirm this is intentional.
-              </div>
-            </div>
-
-            <div class="os-field">
-              <label class="os-field-lbl" for="overstockEntryCategory">Category</label>
-              <select id="overstockEntryCategory" class="os-input"></select>
-            </div>
-            <div class="os-field">
-              <label class="os-field-lbl" for="overstockEntryStatus">Status</label>
-              <select id="overstockEntryStatus" class="os-input" required></select>
-            </div>
-            <div class="os-field">
-              <label class="os-field-lbl" for="overstockEntryAction">Action</label>
-              <select id="overstockEntryAction" class="os-input" required></select>
-            </div>
-            <div class="os-field">
-              <label class="os-field-lbl" for="overstockEntryLocation">Location</label>
-              <select id="overstockEntryLocation" class="os-input" required></select>
-            </div>
-            <div class="os-field">
-              <label class="os-field-lbl" for="overstockEntryAssociate">Associate</label>
-              <select id="overstockEntryAssociate" class="os-input" required></select>
-            </div>
-
-            <!-- Apparel sizes — shown only when category = Apparel -->
-            <div class="os-field os-field-full" id="overstockApparelSizes" style="display:none;">
-              <label class="os-field-lbl">Size Breakdown <span style="font-weight:400;opacity:.7;">(optional)</span></label>
-              <div class="os-sizes-row">
-                <div class="os-size-cell"><span class="os-size-lbl">XS</span><input type="number" min="0" class="overstock-size-input os-size-input" data-size="XS" placeholder="0"/></div>
-                <div class="os-size-cell"><span class="os-size-lbl">S</span><input type="number" min="0" class="overstock-size-input os-size-input" data-size="S" placeholder="0"/></div>
-                <div class="os-size-cell"><span class="os-size-lbl">M</span><input type="number" min="0" class="overstock-size-input os-size-input" data-size="M" placeholder="0"/></div>
-                <div class="os-size-cell"><span class="os-size-lbl">L</span><input type="number" min="0" class="overstock-size-input os-size-input" data-size="L" placeholder="0"/></div>
-                <div class="os-size-cell"><span class="os-size-lbl">XL</span><input type="number" min="0" class="overstock-size-input os-size-input" data-size="XL" placeholder="0"/></div>
-                <div class="os-size-cell"><span class="os-size-lbl">2XL</span><input type="number" min="0" class="overstock-size-input os-size-input" data-size="2XL" placeholder="0"/></div>
-                <div class="os-size-cell"><span class="os-size-lbl">3XL</span><input type="number" min="0" class="overstock-size-input os-size-input" data-size="3XL" placeholder="0"/></div>
-              </div>
-              <div id="overstockSizeTotalHint" class="os-size-hint"></div>
-            </div>
-
-            <div class="os-field os-field-full">
-              <button class="os-submit-btn" type="submit">Add Entry</button>
-            </div>
-          </form>
-        </div>
-      </section>
-
-      <!-- ── Location Audit tool ── -->
-      <section class="os-panel os-tool-panel" id="overstockAuditPanel">
-        <div class="os-tool-header">
-          <div class="os-tool-icon">📋</div>
-          <div class="os-tool-meta">
-            <h2 class="os-tool-title">Location Audit</h2>
-            <p class="os-tool-sub">Pick a location, load its POs, and update each one inline.</p>
-          </div>
-        </div>
-        <div class="os-tool-bar">
-          <div class="os-search-wrap">
-            <span class="os-search-icon">📍</span>
-            <select id="overstockAuditLocation" class="os-search-select">
-              <option value="">— Select location —</option>
-            </select>
-          </div>
-          <button id="overstockAuditStartBtn" class="os-action-btn" type="button">Load POs</button>
-          <button id="overstockAuditClearBtn" class="os-ghost-btn" type="button" style="display:none;">✕ Clear</button>
-        </div>
-        <div id="overstockAuditResults"></div>
-      </section>
-
-      <!-- ── PO Lookup tool ── -->
-      <section class="os-panel os-tool-panel">
-        <div class="os-tool-header">
-          <div class="os-tool-icon">🔍</div>
-          <div class="os-tool-meta">
-            <h2 class="os-tool-title">PO Lookup</h2>
-            <p class="os-tool-sub">Trace a PO's full overstock history — quantity, who logged it, every edit.</p>
-          </div>
-        </div>
-        <div class="os-tool-bar">
-          <div class="os-search-wrap os-search-wrap-text">
-            <span class="os-search-icon">🏷️</span>
-            <input id="overstockPoLookupInput" type="text" class="os-search-input" placeholder="Enter PO number…" autocomplete="off" />
-          </div>
-          <button id="overstockPoLookupBtn" class="os-action-btn" type="button">Search</button>
-          <button id="overstockPoLookupClear" class="os-ghost-btn" type="button" style="display:none;">✕ Clear</button>
-        </div>
-        <div id="overstockPoLookupResults"></div>
-      </section>
+      <!-- Location Audit + standalone PO Lookup removed — audit by tapping a box
+           or a location; trace POs via the top search bar and the log below. -->
 
       <!-- ── Overstock Log ── -->
       <section class="os-panel os-log-panel">
