@@ -86,4 +86,30 @@ async function requireRole(event, allowedRoles) {
   return caller;
 }
 
-module.exports = { verifyUser, requireRole, bearer };
+// Is auth enforcement turned on for this endpoint? Controlled by env vars so it
+// can be rolled out one endpoint at a time and reverted instantly with no code
+// change. Precedence: per-endpoint REQUIRE_AUTH_<NAME> wins, else the global
+// FUNCTIONS_REQUIRE_AUTH, else OFF (default). Example: REQUIRE_AUTH_ATTENDANCE.
+function authEnforced(name) {
+  const key = 'REQUIRE_AUTH_' + String(name || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+  const per = process.env[key];
+  const val = (per != null && per !== '') ? per : process.env.FUNCTIONS_REQUIRE_AUTH;
+  return String(val || '').toLowerCase() === 'true';
+}
+
+// One-call guard for a function handler. Returns:
+//   { allow:true,  caller }            -> proceed (caller is null when not enforced)
+//   { allow:false, code, body }        -> return json(code, body)
+// When enforcement is OFF for this endpoint it's a near no-op (one env read),
+// so wiring this into a handler changes nothing until the flag is flipped.
+async function guard(event, name, allowedRoles) {
+  if (!authEnforced(name)) return { allow: true, caller: null };
+  const caller = await verifyUser(event);
+  if (!caller) return { allow: false, code: 401, body: { error: 'Authentication required' } };
+  if (allowedRoles && allowedRoles.length && !allowedRoles.includes(caller.role)) {
+    return { allow: false, code: 403, body: { error: 'Forbidden — insufficient role' } };
+  }
+  return { allow: true, caller };
+}
+
+module.exports = { verifyUser, requireRole, bearer, authEnforced, guard };

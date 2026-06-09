@@ -38,6 +38,8 @@ async function ensureTable() {
 }
 
 exports.handler = async function(event) {
+  const _g = await require('./_auth').guard(event, 'flight-tracker-photos');
+  if (!_g.allow) return json(_g.code, _g.body);
   await ensureTable();
 
   // GET with ?id=123 — fetch actual image data for a specific photo
