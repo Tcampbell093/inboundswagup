@@ -3513,6 +3513,7 @@ function bindOverstockEvents() {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
+    osLogEvent(selectedPo, 'added', `Logged to overstock${document.getElementById("overstockEntryLocation").value ? ` at ${document.getElementById("overstockEntryLocation").value}` : ''}`, { containerCode: '', location: document.getElementById("overstockEntryLocation").value || '' });
     persistData();
     overstockClearDraft();
     document.getElementById("overstockEntryForm").reset();
@@ -3543,6 +3544,24 @@ function normalizeOverstockPo(raw) {
 }
 window.isValidOverstockPo = isValidOverstockPo;
 window.normalizeOverstockPo = normalizeOverstockPo;
+
+// Append-only, synced per-PO trail so every overstock action on a PO can be
+// traced later: what happened, when, and by whom. Surfaced in the PO Lookup.
+function osLogEvent(po, action, label, extra) {
+  try {
+    if (!Array.isArray(state.data.overstockHistory)) state.data.overstockHistory = [];
+    state.data.overstockHistory.unshift(Object.assign({
+      id: makeId(),
+      po: normalizeOverstockPo(po),
+      action: action || 'event',
+      label: label || action || 'change',
+      by: (window.hcCurrentUser?.name || window.hcCurrentUser?.email || state.currentUser || 'unknown'),
+      ts: Date.now(),
+    }, extra || {}));
+    if (state.data.overstockHistory.length > 4000) state.data.overstockHistory.length = 4000;
+  } catch (_) {}
+}
+window.osLogEvent = osLogEvent;
 
 // Finds containers that list the same PO more than once and merges each set
 // into a single line — quantities (and apparel size breakdowns) are summed, so
@@ -4028,6 +4047,7 @@ function deleteOverstockEntry(entryId) {
     location: row.location,
     sourceType: row.sourceType,
   });
+  osLogEvent(row.po, 'deleted', `Deleted from overstock${row.containerCode ? ` (was in ${row.containerCode})` : ''}`, { containerCode: row.containerCode || '', location: row.location || '' });
   return { ok: true };
 }
 
@@ -4792,6 +4812,7 @@ function osReleaseDonation(donationId, containerId) {
   }
 
   state.data.overstockDonations = donations.filter(d => d.id !== donationId);
+  osLogEvent(don.po, 'released', `Returned to ${container.code} from the donations list`, { containerCode: container.code, location: container.currentLocation || '' });
   osReleasePickId = null;
   persistData();
   if (typeof renderOverstockPage === 'function') renderOverstockPage();
@@ -4854,6 +4875,9 @@ function osUndoLast() {
     if (item.snap[k] === undefined) delete state.data[k];
     else state.data[k] = item.snap[k];
   });
+  // History is append-only (not snapshotted), so record the reversal too.
+  const undoPo = (/PO#?\s*([\w-]+)/.exec(item.label || '') || [])[1] || '';
+  osLogEvent(undoPo, 'undo', `Undid — ${item.label}`);
   persistData();
   if (typeof renderOverstockPage === 'function') renderOverstockPage();
   // If the audit modal is still up, rebuild it fresh so the restored PO/qty
@@ -5308,6 +5332,9 @@ function osOpenAudit(loc, containerId) {
       decided[entry.id] = 'adjusted';
     }
     osLogAdjust(entry, direction, amt, reason, from, to);
+    osLogEvent(entry.po, direction === 'add' ? 'adjust_add' : 'adjust_remove',
+      `${direction === 'add' ? 'Added' : 'Removed'} ${amt} unit${amt === 1 ? '' : 's'}${to === 0 ? ' (emptied)' : ''}${reason ? ` — ${reason}` : ''}`,
+      { containerCode: entry.containerCode || '', location: entry.location || '', from, to });
     persistData();
     if (typeof renderOverstockPage === 'function') renderOverstockPage();
     panelMode = 'default';
@@ -5372,6 +5399,7 @@ function osOpenAudit(loc, containerId) {
   function applyOutcome(entry, outcome) {
     flushQty();
     osSnapshotForUndo(outcome === 'donate' ? `Donated PO# ${entry.po}` : outcome === 'pull' ? `Pulled PO# ${entry.po}` : `Kept PO# ${entry.po}`);
+    const boxBefore = entry.containerCode || (container ? container.code : '') || '';
     if (outcome === 'kept') {
       entry.action = 'Required';
       if (entry.status === 'Donation') entry.status = 'Not Donation';
@@ -5397,6 +5425,10 @@ function osOpenAudit(loc, containerId) {
       if (idx >= 0) scopeEntries.splice(idx, 1);
       if (activeId === entry.id) activeId = null;
     }
+    osLogEvent(entry.po,
+      outcome === 'donate' ? 'donated' : outcome === 'pull' ? 'pulled' : 'kept',
+      outcome === 'donate' ? `Donated from ${boxBefore || 'box'}` : outcome === 'pull' ? `Pulled from ${boxBefore || 'box'}` : `Kept in ${boxBefore || scopeLocation() || 'overstock'}`,
+      { containerCode: boxBefore, location: outcome === 'kept' ? (entry.location || '') : '' });
     persistData();
     if (typeof renderOverstockPage === 'function') renderOverstockPage();
     render();
@@ -5412,6 +5444,7 @@ function osOpenAudit(loc, containerId) {
     entry.action        = 'Required';
     entry.updatedAt     = Date.now();
     decided[entry.id]   = 'move';
+    osLogEvent(entry.po, 'moved', `Moved to ${t.code}`, { containerCode: t.code, location: t.currentLocation || '' });
     persistData();
     if (typeof renderOverstockPage === 'function') renderOverstockPage();
     panelMode = 'default';
