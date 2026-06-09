@@ -2,6 +2,10 @@
 // DATA VALIDATION LAYER
 // =============================
 
+// HTML-escape helper for dashboard cards — defends against injected/imported
+// data being rendered into innerHTML (amplified by unauthenticated endpoints).
+function mcEsc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
+
 function sanitizeNumber(value, fallback = 0) {
   const num = Number(value);
   return isNaN(num) ? fallback : num;
@@ -1752,7 +1756,7 @@ function renderHome(){
       {title:'Audit Alerts',value:editedTrace.length,copy:mostEdited?`${mostEdited.po} has ${mostEdited.edits} edit(s).`:'No edited POs in current visible data'},
       {title:'Repeat PO Activity',value:multiTouch.length,copy:mostTouched?`${mostTouched.po} has ${mostTouched.touches} touches.`:'No repeated PO activity detected'},
     ];
-    exceptionCenter.innerHTML=exceptionCards.map(card=>`<article class="mc-exception-card"><div class="mc-exception-title">${card.title}</div><strong>${card.value}</strong><div class="mc-priority-copy">${card.copy}</div></article>`).join('');
+    exceptionCenter.innerHTML=exceptionCards.map(card=>`<article class="mc-exception-card"><div class="mc-exception-title">${mcEsc(card.title)}</div><strong>${mcEsc(card.value)}</strong><div class="mc-priority-copy">${mcEsc(card.copy)}</div></article>`).join('');
   }
 
   const timeline=document.getElementById('mcTimelinePulse');
@@ -1790,7 +1794,7 @@ function renderHome(){
       urgencyItems.push({title:'Upcoming assembly load',copy:`${soon.date} has ${soon.pbCount} PB(s) and ${Number(soon.units||0).toLocaleString()} units on the board.`,target:'calendarPage'});
     }
     if(!urgencyItems.length) urgencyItems.push({title:'No urgent time pressure found',copy:'Current modules do not show a strong time-sensitive signal.',target:'homePage'});
-    urgency.innerHTML=urgencyItems.slice(0,5).map(item=>`<article class="mc-urgency-item"><div class="mc-priority-title">${item.title}</div><div class="mc-urgency-copy">${item.copy}</div><button class="btn secondary" type="button" data-home-jump="${item.target}">Open</button></article>`).join('');
+    urgency.innerHTML=urgencyItems.slice(0,5).map(item=>`<article class="mc-urgency-item"><div class="mc-priority-title">${mcEsc(item.title)}</div><div class="mc-urgency-copy">${mcEsc(item.copy)}</div><button class="btn secondary" type="button" data-home-jump="${mcEsc(item.target)}">Open</button></article>`).join('');
   }
 
   const recent=document.getElementById('mcRecentChanges');
@@ -1810,7 +1814,7 @@ function renderHome(){
       if(upcoming) updates.push({title:'Upcoming birthday on file',copy:`${upcoming.name} • ${upcoming.date.toLocaleDateString('en-US',{month:'long',day:'numeric'})}`,target:'attendancePage'});
     }
     if(!updates.length) updates.push({title:'No recent system updates',copy:'Imports and policy changes will appear here as they happen.',target:'importHubPage'});
-    recent.innerHTML=updates.slice(0,6).map(item=>`<article class="mc-update-item"><div class="mc-priority-title">${item.title}</div><div class="mc-update-copy">${item.copy}</div><button class="btn secondary" type="button" data-home-jump="${item.target}">Open</button></article>`).join('');
+    recent.innerHTML=updates.slice(0,6).map(item=>`<article class="mc-update-item"><div class="mc-priority-title">${mcEsc(item.title)}</div><div class="mc-update-copy">${mcEsc(item.copy)}</div><button class="btn secondary" type="button" data-home-jump="${mcEsc(item.target)}">Open</button></article>`).join('');
   }
 
   document.querySelectorAll('[data-home-jump]').forEach(btn=>{
