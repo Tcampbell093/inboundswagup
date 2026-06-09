@@ -224,6 +224,8 @@ async function readAll() {
 }
 
 exports.handler = async function handler(event) {
+  const _g = await require('./_auth').guard(event, 'productivity-sync');
+  if (!_g.allow) return json(_g.code, _g.body);
   if (!process.env.DATABASE_URL) {
     return json(500, { error: 'DATABASE_URL is not configured' });
   }
