@@ -3006,6 +3006,20 @@ function bindMasterEvents() {
       osRemoveReasonInput.value = "";
     });
   }
+
+  const osDedupBtn = document.getElementById("osDedupBtn");
+  if (osDedupBtn) {
+    osDedupBtn.addEventListener("click", () => {
+      const resultEl = document.getElementById("osDedupResult");
+      if (!confirm("Scan all containers and merge any duplicate POs?\n\nDuplicate lines (same PO in the same box) are combined into one; their units are added together so nothing is lost.")) return;
+      const { mergedGroups, removed } = osCleanupDuplicatePos();
+      const msg = removed
+        ? `Merged ${removed} duplicate line${removed === 1 ? "" : "s"} across ${mergedGroups} PO${mergedGroups === 1 ? "" : "s"}. Units were preserved.`
+        : "No duplicate POs found — nothing to clean up.";
+      if (resultEl) resultEl.textContent = msg;
+      if (typeof showToast === "function") showToast(msg, removed ? "success" : "info");
+    });
+  }
 }
 
 
@@ -3451,6 +3465,24 @@ function bindOverstockEvents() {
     if (overstockPoManualMode && overstockManualInput) overstockManualInput.style.borderColor = "";
     if (!overstockPoManualMode && overstockPoSelect) overstockPoSelect.style.borderColor = "";
 
+    // #3 PO format validation — only for manually typed POs (dropdown values
+    // come from a vetted PO list, so they can't be mistyped).
+    if (overstockPoManualMode && !isValidOverstockPo(selectedPo)) {
+      if (overstockManualInput) { overstockManualInput.style.borderColor = "#dc2626"; overstockManualInput.focus(); }
+      showToast("This PO number appears to be invalid. Please check the PO and try again.", "error");
+      return;
+    }
+
+    // #5 Category required — no PO can be saved without one.
+    const overstockCatEl = document.getElementById("overstockEntryCategory");
+    const overstockCatVal = overstockCatEl?.value || "";
+    if (!overstockCatVal) {
+      if (overstockCatEl) { overstockCatEl.style.borderColor = "#dc2626"; overstockCatEl.focus(); }
+      showToast("Please select a category before saving this PO.", "error");
+      return;
+    }
+    if (overstockCatEl) overstockCatEl.style.borderColor = "";
+
     // Collect size breakdown if Apparel
     const sizeBreakdown = {};
     let hasSizes = false;
@@ -3495,6 +3527,80 @@ function bindOverstockEvents() {
     renderOverstockPage();
   });
 }
+
+// ── Overstock PO validation & duplicate cleanup ─────────────────────────
+// Format-based check: catches obvious typos (letters, stray punctuation,
+// multiple hyphen groups, junk length) WITHOUT capping the numeric value, so
+// naturally-increasing PO numbers keep working. Allows digits with at most one
+// hyphen group (e.g. "2977445" or "29-77445").
+function isValidOverstockPo(raw) {
+  const po = String(raw == null ? "" : raw).trim();
+  if (!po) return false;
+  return /^\d{3,15}(?:-\d{1,6})?$/.test(po);
+}
+function normalizeOverstockPo(raw) {
+  return String(raw == null ? "" : raw).trim();
+}
+window.isValidOverstockPo = isValidOverstockPo;
+window.normalizeOverstockPo = normalizeOverstockPo;
+
+// Finds containers that list the same PO more than once and merges each set
+// into a single line — quantities (and apparel size breakdowns) are summed, so
+// no units are lost. Returns { mergedGroups, removed }. Safe to run repeatedly.
+function osCleanupDuplicatePos() {
+  const entries = state.data.overstockEntries || [];
+  const groups = new Map();
+  entries.forEach((e) => {
+    if (!e || !e.containerId) return; // only container-bound POs can collide
+    if (e.action === "Missing from Box" || e.action === "Lost") return;
+    const key = e.containerId + "||" + normalizeOverstockPo(e.po).toUpperCase();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(e);
+  });
+
+  let mergedGroups = 0, removed = 0;
+  const removeIds = new Set();
+  groups.forEach((list) => {
+    if (list.length < 2) return;
+    list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    const keep = list[0];
+    let totalQty = Number(keep.quantity || 0);
+    const sizeAgg = Object.assign({}, keep.sizeBreakdown || {});
+    let latest = keep;
+    for (let i = 1; i < list.length; i++) {
+      const d = list[i];
+      totalQty += Number(d.quantity || 0);
+      if (d.sizeBreakdown) for (const k in d.sizeBreakdown) sizeAgg[k] = Number(sizeAgg[k] || 0) + Number(d.sizeBreakdown[k] || 0);
+      if ((d.updatedAt || d.createdAt || 0) >= (latest.updatedAt || latest.createdAt || 0)) latest = d;
+      removeIds.add(d.id);
+      removed++;
+    }
+    keep.quantity = totalQty;
+    if (Object.keys(sizeAgg).length) keep.sizeBreakdown = sizeAgg;
+    if (!keep.category && latest.category) keep.category = latest.category;
+    keep.updatedAt = Date.now();
+    mergedGroups++;
+    try {
+      const KEY = "hc_overstock_delete_log_v1";
+      const log = JSON.parse(localStorage.getItem(KEY) || "[]");
+      log.unshift({
+        ts: Date.now(),
+        by: (window.hcCurrentUser?.name || window.hcCurrentUser?.email || state.currentUser || "cleanup"),
+        kind: "dedup-merge",
+        payload: { containerId: keep.containerId, containerCode: keep.containerCode, po: keep.po, mergedCount: list.length, totalQty },
+      });
+      localStorage.setItem(KEY, JSON.stringify(log.slice(0, 500)));
+    } catch (_) {}
+  });
+
+  if (removed) {
+    state.data.overstockEntries = entries.filter((e) => !removeIds.has(e.id));
+    persistData();
+    if (typeof renderOverstockPage === "function") renderOverstockPage();
+  }
+  return { mergedGroups, removed };
+}
+window.osCleanupDuplicatePos = osCleanupDuplicatePos;
 
 function translateStatus(value) {
   const map = {
@@ -4042,6 +4148,20 @@ function openOverstockAuditByContainerScan(value) {
 // associate can either log items into the box or audit it. Works for codes
 // that don't exist yet too — boxes are pre-labeled OSC-001..300, so a fresh
 // box naturally routes to "Add items" (which creates it on first entry).
+// Prominent "where is this box" banner shown when a container is opened/scanned.
+function osRenderLocationBanner(elId, container) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!container) {
+    el.innerHTML = `<span class="os-loc-pin">📦</span><span class="os-loc-label">Location</span><span class="os-loc-value os-loc-none">New box — not stored yet</span>`;
+    return;
+  }
+  const loc = container.currentLocation ? String(container.currentLocation).trim() : "";
+  el.innerHTML = loc
+    ? `<span class="os-loc-pin">📍</span><span class="os-loc-label">Location</span><span class="os-loc-value">${escapeHtml(loc)}</span>`
+    : `<span class="os-loc-pin">📍</span><span class="os-loc-label">Location</span><span class="os-loc-value os-loc-none">On the cart / not set</span>`;
+}
+
 function openOverstockScanChoice(value) {
   const code = extractOscCode(value);
   if (!code) {
@@ -4068,9 +4188,10 @@ function openOverstockScanChoice(value) {
   titleEl.textContent = displayCode;
   if (subEl) {
     subEl.textContent = container
-      ? `${itemCount} item${itemCount === 1 ? "" : "s"}${container.currentLocation ? ` · ${container.currentLocation}` : " · on the cart"}`
+      ? `${itemCount} item${itemCount === 1 ? "" : "s"} in this box`
       : "New box — nothing logged here yet";
   }
+  osRenderLocationBanner("osScanChoiceLoc", container);
 
   // Audit only makes sense if the box exists with contents; otherwise nudge
   // toward Add items rather than opening an empty audit.
@@ -4110,7 +4231,24 @@ function openOverstockAddItems(code) {
 
 // ── Camera QR/barcode scanning (html5-qrcode) ───────────────────────────
 let osCamScanner = null;
-function openOverstockCamera() {
+let osCamPermState = null; // 'granted' | 'denied' | 'prompt' | null (unknown)
+
+// Best-effort permission probe. Safari/iOS doesn't support the 'camera'
+// PermissionName and throws — we swallow that and treat it as unknown so the
+// normal getUserMedia path still runs.
+async function osGetCameraPermission() {
+  try {
+    if (!navigator.permissions || !navigator.permissions.query) return osCamPermState;
+    const st = await navigator.permissions.query({ name: "camera" });
+    osCamPermState = st.state;
+    if (!st.__osBound) { st.__osBound = true; st.onchange = () => { osCamPermState = st.state; }; }
+    return st.state;
+  } catch (_) {
+    return osCamPermState; // unknown — let getUserMedia decide
+  }
+}
+
+async function openOverstockCamera() {
   osOpenModal("osMdScanCamera");
   const statusEl = document.getElementById("osScanCamStatus");
   const region = document.getElementById("osScanCamRegion");
@@ -4119,7 +4257,17 @@ function openOverstockCamera() {
     return;
   }
   region.innerHTML = "";
-  if (statusEl) statusEl.textContent = "Starting camera…";
+
+  // If permission is already blocked, don't fire another doomed getUserMedia
+  // (which just flashes a generic failure) — explain how to re-enable it.
+  const perm = await osGetCameraPermission();
+  if (perm === "denied") {
+    if (statusEl) statusEl.textContent =
+      "Camera access is blocked. Allow the camera for this site in your browser settings (on iPad: Settings → Safari → Camera → Allow), then try again — or type the code instead.";
+    return;
+  }
+
+  if (statusEl) statusEl.textContent = perm === "granted" ? "Starting camera…" : "Starting camera… allow access if prompted.";
   osCamScanner = new Html5Qrcode("osScanCamRegion", { verbose: false });
   osCamScanner.start(
     { facingMode: "environment" },
@@ -4134,9 +4282,18 @@ function openOverstockCamera() {
     },
     () => { /* per-frame decode miss — ignore */ }
   )
-    .then(() => { if (statusEl) statusEl.textContent = "Point at the QR or barcode on the box."; })
+    .then(() => { osCamPermState = "granted"; if (statusEl) statusEl.textContent = "Point at the QR or barcode on the box."; })
     .catch((err) => {
-      if (statusEl) statusEl.textContent = "Couldn't open the camera (" + (err?.message || err) + "). Type the code instead.";
+      const name = err?.name || "";
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        osCamPermState = "denied";
+        if (statusEl) statusEl.textContent =
+          "Camera access was denied. Allow the camera for this site (iPad: Settings → Safari → Camera), then reopen the scanner — or type the code instead.";
+      } else if (name === "NotFoundError" || name === "OverconstrainedError") {
+        if (statusEl) statusEl.textContent = "No camera was found on this device. Type the code instead.";
+      } else {
+        if (statusEl) statusEl.textContent = "Couldn't open the camera (" + (err?.message || err) + "). Type the code instead.";
+      }
     });
 }
 function closeOverstockCamera() {
@@ -4697,7 +4854,8 @@ function osOpenBoxActions(containerId) {
 
   document.getElementById('osBoxActTitle').textContent = c.code;
   document.getElementById('osBoxActSub').textContent =
-    `${items.length} PO${items.length === 1 ? '' : 's'} · ${units} units${c.currentLocation ? ` · ${c.currentLocation}` : ' · no location'}`;
+    `${items.length} PO${items.length === 1 ? '' : 's'} · ${units} units`;
+  osRenderLocationBanner('osBoxActLoc', c);
 
   const wire = (id, fn) => { const b = document.getElementById(id); if (b) b.onclick = fn; };
   wire('osBoxActAudit',   () => { osCloseModal('osMdBoxActions'); osOpenAudit(c.currentLocation || '', c.id); });
@@ -4845,7 +5003,12 @@ function osOpenAudit(loc, containerId) {
     const units = scopeEntries.reduce((s, r) => s + Number(r.quantity || 0), 0);
     const boxes = new Set(scopeEntries.map(r => r.containerId || '__none')).size;
     const sub = document.getElementById('osAuSub');
-    if (sub) sub.textContent = `${boxes} box${boxes !== 1 ? 'es' : ''} · ${total} PO${total !== 1 ? 's' : ''} · ${units} units`;
+    if (sub) {
+      const locTxt = container
+        ? (container.currentLocation ? ` · 📍 ${container.currentLocation}` : ' · 📍 on the cart')
+        : (loc ? ` · 📍 ${loc}` : '');
+      sub.textContent = `${boxes} box${boxes !== 1 ? 'es' : ''} · ${total} PO${total !== 1 ? 's' : ''} · ${units} units${locTxt}`;
+    }
     if (progEl) progEl.innerHTML = `<b>${done} / ${total}</b> done`;
   }
 

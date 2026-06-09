@@ -294,6 +294,7 @@
             <button class="os-modal-close" data-close="osMdScanChoice">✕</button>
           </div>
           <div class="os-modal-body">
+            <div class="os-loc-banner" id="osScanChoiceLoc"></div>
             <div class="os-scan-choice-grid">
               <button class="os-scan-choice-btn" id="osScanChoiceAdd" type="button">
                 <span class="os-scan-choice-icon">📥</span>
@@ -341,6 +342,7 @@
             <button class="os-modal-close" data-close="osMdBoxActions">✕</button>
           </div>
           <div class="os-modal-body">
+            <div class="os-loc-banner" id="osBoxActLoc"></div>
             <div class="os-box-act-grid">
               <button class="os-box-act-btn" id="osBoxActAudit" type="button"><span class="os-box-act-ic">🔍</span>Audit</button>
               <button class="os-box-act-btn" id="osBoxActAdd" type="button"><span class="os-box-act-ic">➕</span>Add a PO</button>
@@ -959,6 +961,12 @@
             </div>
             <div id="osRemoveReasonsList" class="master-list"></div>
           </div>
+        </div>
+        <div class="settings-card" style="margin-top:14px;">
+          <div class="settings-card-header"><h3>Duplicate PO cleanup</h3></div>
+          <div class="uph-pace-settings-copy" style="margin-bottom:10px;">Scans every container for the same PO listed more than once and merges each set into one line. Units (and apparel sizes) are added together, so nothing is lost.</div>
+          <button id="osDedupBtn" class="secondary-btn" type="button">Find &amp; merge duplicates</button>
+          <div id="osDedupResult" class="uph-pace-settings-copy" style="margin-top:10px;"></div>
         </div>
       </section>
     </section>
