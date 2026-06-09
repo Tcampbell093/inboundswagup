@@ -252,21 +252,32 @@
 
       <!-- Audit modal -->
       <div class="os-modal-backdrop" id="osMdAudit">
-        <div class="os-modal os-modal-wide" role="dialog" aria-modal="true">
-          <div class="os-modal-head">
-            <div>
-              <div class="os-modal-title" id="osAuTitle">Audit location</div>
-              <div class="os-modal-sub" id="osAuSub">Verify each box is physically present</div>
+        <div class="os-modal os-modal-wide os-au2-modal" role="dialog" aria-modal="true">
+          <div class="os-modal-head os-au2-head">
+            <div class="os-au2-head-id">
+              <span class="os-au2-head-icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+              </span>
+              <div>
+                <div class="os-modal-title os-au2-title" id="osAuTitle">Audit location</div>
+                <div class="os-modal-sub" id="osAuSub">Verify each box is physically present</div>
+              </div>
             </div>
-            <button class="os-modal-close" data-close="osMdAudit">✕</button>
+            <div class="os-au2-head-r">
+              <span class="os-au2-prog" id="osAu2Prog"></span>
+              <button class="os-modal-close" data-close="osMdAudit">✕</button>
+            </div>
           </div>
           <div class="os-modal-body" id="osAuBody"></div>
           <div class="os-modal-foot os-au2-foot">
             <div class="os-au2-panel" id="osAu2Panel"></div>
             <div class="os-au2-footbar">
-              <button class="os-ghost-btn" data-close="osMdAudit" type="button">Close</button>
+              <button class="os-ghost-btn os-au2-closebtn" data-close="osMdAudit" type="button">Close</button>
               <span class="os-au2-hint">Tap any PO above to review it</span>
-              <button class="os-submit-btn" id="osAu2Finish" type="button">Finish audit</button>
+              <button class="os-submit-btn os-au2-finish" id="osAu2Finish" type="button">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m9 12 2 2 4-4"/></svg>
+                Finish audit
+              </button>
             </div>
           </div>
         </div>
