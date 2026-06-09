@@ -570,7 +570,7 @@ function sortOverstockLog(rows, sortKey) {
 }
 
 // ── Boxes grid view state (session-only) ────────────────────────────────
-const osBoxesUi = { sort: "updated" };
+const osBoxesUi = { sort: "updated", filter: "" };
 
 function sortBoxes(boxes, key) {
   const arr = boxes.slice();
@@ -6095,12 +6095,13 @@ function renderOverstockPage() {
             <div class="os-panel-sub">Tap a box for options — audit, add a PO, edit, merge, or move.</div>
           </div>
           <div class="os-boxes-tools">
+            <input id="osBoxesFilter" class="os-filter-input os-boxes-filter" type="text" placeholder="Find a box…" autocomplete="off" />
             <select id="osBoxesSort" class="os-filter-select" aria-label="Sort boxes">
               <option value="updated">Last updated</option>
               <option value="name">Name (OSC #)</option>
               <option value="location">Location</option>
             </select>
-            <span class="os-badge os-badge-purple">${boxes.length} box${boxes.length !== 1 ? 'es' : ''}</span>
+            <span class="os-badge os-badge-purple" id="osBoxesCount">${boxes.length} box${boxes.length !== 1 ? 'es' : ''}</span>
           </div>
         </div>
         <div class="os-panel-body">
@@ -6109,18 +6110,17 @@ function renderOverstockPage() {
                 const items = getOverstockContainerItems(c.id);
                 const units = items.reduce((s,r)=>s+Number(r.quantity||0),0);
                 const statusDot = {'Open':'os-box-dot-blue','On Cart':'os-box-dot-amber','Stored':'os-box-dot-green','Full':'os-box-dot-gray'}[c.status]||'os-box-dot-gray';
-                return `<div class="os-box-card os-box-calm" data-box-actions="${escapeAttribute(c.id)}" role="button" tabindex="0">
-                  <div class="os-box-calm-top">
+                const search = (c.code + ' ' + (c.currentLocation || '')).toLowerCase();
+                return `<div class="os-box-card os-box-calm" data-box-actions="${escapeAttribute(c.id)}" data-search="${escapeAttribute(search)}" role="button" tabindex="0">
+                  <div class="os-box-calm-l1">
                     <span class="os-box-dot ${statusDot}" title="${escapeAttribute(c.status)}"></span>
                     <span class="os-box-calm-code">${escapeHtml(c.code)}</span>
-                  </div>
-                  <div class="os-box-calm-nums"><b>${items.length}</b> PO${items.length===1?'':'s'} · <b>${units}</b> units</div>
-                  <div class="os-box-calm-foot">
-                    <span class="os-box-calm-loc">${c.currentLocation ? escapeHtml(c.currentLocation) : '—'}</span>
                     <span class="os-box-calm-time">${escapeHtml(formatDateTimeShort(c.updatedAt || c.createdAt))}</span>
                   </div>
+                  <div class="os-box-calm-l2"><b>${items.length}</b> PO${items.length===1?'':'s'} · <b>${units}</b>u${c.currentLocation ? ` · 📍 ${escapeHtml(c.currentLocation)}` : ''}</div>
                 </div>`;
-              }).join('')}</div>`
+              }).join('')}</div>
+              <div class="os-boxes-noresult" id="osBoxesNoResult" style="display:none;">No boxes match your search.</div>`
             : `<div class="os-empty-state"><div class="os-empty-icon">📦</div>No boxes yet.</div>`}
         </div>
       </section>`;
@@ -6129,6 +6129,27 @@ function renderOverstockPage() {
     if (sortSel) {
       sortSel.value = osBoxesUi.sort;
       sortSel.onchange = () => { osBoxesUi.sort = sortSel.value; renderOverstockPage(); };
+    }
+    // Filter in the DOM (no re-render) so the box keeps focus while typing.
+    const boxFilter = document.getElementById('osBoxesFilter');
+    if (boxFilter) {
+      boxFilter.value = osBoxesUi.filter || '';
+      const applyBoxFilter = () => {
+        const q = (boxFilter.value || '').trim().toLowerCase();
+        osBoxesUi.filter = boxFilter.value;
+        let shown = 0;
+        conEl.querySelectorAll('.os-boxes-grid [data-box-actions]').forEach(card => {
+          const match = !q || (card.dataset.search || '').includes(q);
+          card.style.display = match ? '' : 'none';
+          if (match) shown++;
+        });
+        const countEl = document.getElementById('osBoxesCount');
+        if (countEl) countEl.textContent = q ? `${shown} of ${boxes.length}` : `${boxes.length} box${boxes.length !== 1 ? 'es' : ''}`;
+        const noRes = document.getElementById('osBoxesNoResult');
+        if (noRes) noRes.style.display = (q && shown === 0) ? '' : 'none';
+      };
+      boxFilter.oninput = applyBoxFilter;
+      if (osBoxesUi.filter) applyBoxFilter();
     }
     conEl.querySelectorAll('[data-box-actions]').forEach(card => {
       const open = () => osOpenBoxActions(card.dataset.boxActions);
