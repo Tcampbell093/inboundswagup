@@ -6114,10 +6114,10 @@ function renderOverstockPage() {
                 return `<div class="os-box-card os-box-calm" data-box-actions="${escapeAttribute(c.id)}" data-search="${escapeAttribute(search)}" role="button" tabindex="0">
                   <div class="os-box-calm-l1">
                     <span class="os-box-dot ${statusDot}" title="${escapeAttribute(c.status)}"></span>
-                    <span class="os-box-calm-code">${escapeHtml(c.code)}</span>
-                    <span class="os-box-calm-time">${escapeHtml(formatDateTimeShort(c.updatedAt || c.createdAt))}</span>
+                    <span class="os-box-calm-code" title="${escapeAttribute(c.code)}">${escapeHtml(c.code)}</span>
                   </div>
                   <div class="os-box-calm-l2"><b>${items.length}</b> PO${items.length===1?'':'s'} · <b>${units}</b>u${c.currentLocation ? ` · 📍 ${escapeHtml(c.currentLocation)}` : ''}</div>
+                  <div class="os-box-calm-l3">${escapeHtml(formatDateTimeShort(c.updatedAt || c.createdAt))}</div>
                 </div>`;
               }).join('')}</div>
               <div class="os-boxes-noresult" id="osBoxesNoResult" style="display:none;">No boxes match your search.</div>`
