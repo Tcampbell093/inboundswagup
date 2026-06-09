@@ -941,6 +941,26 @@
         </div>
         <button id="uphResetImagesBtn" class="secondary-btn settings-reset-pace-btn" type="button">Reset Pace Images</button>
       </div></div></section>
+      <section class="panel" id="osReasonsSettings" style="display:none;">
+        <div class="panel-header"><div>
+          <h2>Overstock — Add / Remove Reasons</h2>
+          <p>Customize the reasons offered when adding or removing units from an overstock PO during an audit. Managers and admins only.</p>
+        </div></div>
+        <div class="performance-grid three-up">
+          <div class="settings-card">
+            <div class="settings-card-header"><h3>Add reasons</h3>
+              <form id="osAddReasonForm" class="inline-master-form"><input id="osAddReasonInput" type="text" placeholder="Received more" /><button class="tiny-btn" type="submit">Add</button></form>
+            </div>
+            <div id="osAddReasonsList" class="master-list"></div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-header"><h3>Remove reasons</h3>
+              <form id="osRemoveReasonForm" class="inline-master-form"><input id="osRemoveReasonInput" type="text" placeholder="Replace broken inventory" /><button class="tiny-btn" type="submit">Add</button></form>
+            </div>
+            <div id="osRemoveReasonsList" class="master-list"></div>
+          </div>
+        </div>
+      </section>
     </section>
   </div>
 
