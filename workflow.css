@@ -3164,6 +3164,98 @@ font-weight:800
 }
 .workflow-page .os-audit-reason-cancel:hover { color: var(--navy); }
 
+/* ── Overstock audit v2 — tap-a-PO review with unit stepper ────────── */
+.workflow-page .os-au2-progresshead {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 12px;
+}
+.workflow-page .os-au2-scope { font-size: 12px; color: var(--muted); font-weight: 600; }
+.workflow-page .os-au2-progress {
+  text-align: center; line-height: 1.1; color: #1a56db;
+  background: #edf2fe; border: 1px solid #c3d4f7;
+  border-radius: 12px; padding: 6px 14px; flex-shrink: 0;
+}
+.workflow-page .os-au2-progress b { font-size: 15px; font-weight: 800; display: block; }
+.workflow-page .os-au2-progress span { font-size: 11px; font-weight: 700; }
+.workflow-page .os-au2-group { margin-bottom: 14px; }
+.workflow-page .os-au2-group-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 8px; flex-wrap: wrap;
+}
+.workflow-page .os-au2-group-code {
+  font-size: 14px; font-weight: 800; font-family: monospace; color: var(--navy);
+}
+.workflow-page .os-au2-group-meta { font-size: 12px; color: var(--muted); margin-left: 6px; }
+.workflow-page .os-au2-group-acts { display: flex; gap: 6px; }
+.workflow-page .os-au2-cards {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+.workflow-page .os-au2-card {
+  border: 1px solid var(--line); border-radius: 12px;
+  background: #fff; padding: 10px 8px; cursor: pointer; text-align: center;
+  font-family: inherit; transition: border-color .12s, box-shadow .12s, background .12s;
+}
+.workflow-page .os-au2-card:hover { border-color: #93b4f5; }
+.workflow-page .os-au2-card.is-active {
+  border-color: #1a56db; box-shadow: 0 0 0 2px #c3d4f7;
+}
+.workflow-page .os-au2-card-po { font-size: 15px; font-weight: 800; color: var(--navy); }
+.workflow-page .os-au2-card-st { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.workflow-page .os-au2-kept   .os-au2-card-po { color: #0a7c4e; }
+.workflow-page .os-au2-kept   { background: #f0fdf7; }
+.workflow-page .os-au2-donate .os-au2-card-po { color: #1a56db; }
+.workflow-page .os-au2-donate { background: #f3f7ff; }
+.workflow-page .os-au2-pull   .os-au2-card-po { color: #b45309; }
+.workflow-page .os-au2-pull   { background: #fffaf0; }
+.workflow-page .os-au2-move   .os-au2-card-po { color: #587490; }
+.workflow-page .os-au2-move   { background: #f6f9fc; }
+.workflow-page .os-au2-empty { text-align: center; padding: 24px 0; color: var(--muted); font-size: 13px; }
+
+/* Review panel (lives in the modal foot, sticks to the bottom) */
+.workflow-page .os-au2-foot { flex-direction: column; align-items: stretch; gap: 0; padding: 0; }
+.workflow-page .os-au2-panel { padding: 14px 18px; background: #f7fafd; border-top: 1px solid var(--line); }
+.workflow-page .os-au2-panel-empty { font-size: 13px; color: var(--muted); text-align: center; }
+.workflow-page .os-au2-panel-top {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px;
+}
+.workflow-page .os-au2-panel-ctx { font-size: 11px; font-weight: 800; letter-spacing: .04em; color: var(--muted); }
+.workflow-page .os-au2-panel-po { font-size: 22px; font-weight: 800; color: var(--navy); }
+.workflow-page .os-au2-panel-cat { font-size: 13px; color: var(--muted); }
+.workflow-page .os-au2-stepper {
+  display: flex; align-items: center; gap: 2px; background: #fff;
+  border: 1px solid var(--line); border-radius: 12px; padding: 4px; flex-shrink: 0;
+}
+.workflow-page .os-au2-step {
+  width: 40px; height: 40px; border: none; background: #eef4fa; border-radius: 9px;
+  font-size: 22px; font-weight: 700; color: var(--navy); cursor: pointer; line-height: 1;
+}
+.workflow-page .os-au2-step:hover { background: #dde9f4; }
+.workflow-page .os-au2-step-val { min-width: 56px; text-align: center; line-height: 1.05; }
+.workflow-page .os-au2-step-val b { font-size: 18px; font-weight: 800; color: var(--navy); display: block; }
+.workflow-page .os-au2-step-val span { font-size: 11px; color: var(--muted); }
+.workflow-page .os-au2-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.workflow-page .os-au2-btn {
+  border: 1px solid var(--line); background: #fff; border-radius: 12px;
+  padding: 14px 8px; font-size: 14px; font-weight: 700; cursor: pointer;
+  font-family: inherit; color: var(--navy); transition: background .12s, border-color .12s;
+}
+.workflow-page .os-au2-btn:hover { background: #f3f4f6; }
+.workflow-page .os-au2-btn-keep   { color: #0a7c4e; border-color: #7edcb8; }
+.workflow-page .os-au2-btn-keep:hover   { background: #e6f7f0; }
+.workflow-page .os-au2-btn-move   { color: #587490; }
+.workflow-page .os-au2-btn-donate { color: #1a56db; border-color: #93b4f5; }
+.workflow-page .os-au2-btn-donate:hover { background: #edf2fe; }
+.workflow-page .os-au2-btn-pull   { color: #b45309; border-color: #f0c050; }
+.workflow-page .os-au2-btn-pull:hover   { background: #fff8e6; }
+.workflow-page .os-au2-move { display: flex; gap: 8px; align-items: center; }
+.workflow-page .os-au2-move-sel { flex: 1; min-width: 0; }
+.workflow-page .os-au2-footbar {
+  display: flex; align-items: center; gap: 12px; padding: 12px 18px;
+  border-top: 1px solid var(--line); background: #fff;
+}
+.workflow-page .os-au2-hint { flex: 1; font-size: 12px; color: var(--muted); }
+
 /* ════════════════════════════════════════════════════════════════════
    INBOUND HEADER — Option B: branded band + attached tab bar
    ════════════════════════════════════════════════════════════════════ */

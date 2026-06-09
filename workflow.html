@@ -261,8 +261,13 @@
             <button class="os-modal-close" data-close="osMdAudit">✕</button>
           </div>
           <div class="os-modal-body" id="osAuBody"></div>
-          <div class="os-modal-foot">
-            <button class="os-submit-btn" data-close="osMdAudit" type="button">Done</button>
+          <div class="os-modal-foot os-au2-foot">
+            <div class="os-au2-panel" id="osAu2Panel"></div>
+            <div class="os-au2-footbar">
+              <button class="os-ghost-btn" data-close="osMdAudit" type="button">Close</button>
+              <span class="os-au2-hint">Tap any PO above to review it</span>
+              <button class="os-submit-btn" id="osAu2Finish" type="button">Finish audit</button>
+            </div>
           </div>
         </div>
       </div>

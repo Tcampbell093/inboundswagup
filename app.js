@@ -4790,268 +4790,262 @@ function osOpenAudit(loc, containerId) {
     ? (state.data.overstockContainers || []).find(c => c.id === containerId)
     : null;
 
-  const scopeLabel = container ? `${container.code} at ${loc}` : `all of ${loc}`;
   document.getElementById('osAuTitle').textContent = container
     ? `Audit ${container.code}`
     : `Audit ${loc} — all boxes`;
-  document.getElementById('osAuSub').textContent = `Confirm each PO is still in ${scopeLabel}`;
+  document.getElementById('osAuSub').textContent = container
+    ? `Tap a PO to keep, move, donate, pull it — or adjust its unit count`
+    : `Tap any PO to review it`;
 
-  const body = document.getElementById('osAuBody');
+  const body  = document.getElementById('osAuBody');
+  const panel = document.getElementById('osAu2Panel');
 
-  function renderAuditBody() {
-    const entries = (state.data.overstockEntries || [])
-      .filter(r => {
-        if (r.action === 'Missing from Box' || r.action === 'Lost' || r.action === 'Replaced') return false;
-        // Scope: specific container OR all POs at location
-        return containerId ? r.containerId === containerId : r.location === loc;
+  // Snapshot the POs in scope ONCE so cards don't vanish mid-audit when an
+  // outcome (donate / pull / move) changes an entry's location.
+  const scopeEntries = (state.data.overstockEntries || []).filter(r => {
+    if (r.action === 'Missing from Box' || r.action === 'Lost') return false;
+    return containerId ? r.containerId === containerId : r.location === loc;
+  });
+
+  // Session decisions: entryId -> 'kept' | 'move' | 'donate' | 'pull'.
+  // Pre-seed from already-recorded dispositions so re-opening shows the tag.
+  const decided = {};
+  scopeEntries.forEach(r => {
+    if (r.action === 'Donated') decided[r.id] = 'donate';
+    else if (r.action === 'Replaced') decided[r.id] = 'pull';
+  });
+
+  let activeId  = null;
+  let panelMode = 'default'; // 'default' | 'move'
+
+  // ── Debounced quantity commit (so +/- taps don't spam the log) ──────
+  let qtyOrig = null, qtyTimer = null, qtyEntryId = null;
+  function osLogAuditQty(entry, from, to) {
+    try {
+      const KEY = 'hc_overstock_delete_log_v1';
+      const log = JSON.parse(localStorage.getItem(KEY) || '[]');
+      log.unshift({
+        ts: Date.now(),
+        by: (window.hcCurrentUser?.name || window.hcCurrentUser?.email || state.currentUser || 'unknown'),
+        kind: 'edit-qty',
+        payload: { id: entry.id, po: entry.po, containerCode: entry.containerCode, from, to, where: 'audit' },
       });
+      localStorage.setItem(KEY, JSON.stringify(log.slice(0, 500)));
+    } catch (_) {}
+  }
+  function flushQty() {
+    if (qtyTimer) { clearTimeout(qtyTimer); qtyTimer = null; }
+    if (qtyEntryId == null) return;
+    const e = scopeEntries.find(x => x.id === qtyEntryId);
+    const from = qtyOrig, to = e ? e.quantity : null;
+    qtyEntryId = null; qtyOrig = null;
+    if (!e || from == null || from === to) return;
+    osLogAuditQty(e, from, to);
+    persistData();
+    if (typeof renderOverstockPage === 'function') renderOverstockPage();
+  }
+  function bumpQty(entry, delta) {
+    if (qtyEntryId !== entry.id) { flushQty(); qtyEntryId = entry.id; qtyOrig = Number(entry.quantity || 0); }
+    entry.quantity = Math.max(1, Number(entry.quantity || 0) + delta);
+    entry.updatedAt = Date.now();
+    if (entry.sizeBreakdown && Object.keys(entry.sizeBreakdown).length) {
+      const total = Object.values(entry.sizeBreakdown).reduce((s, n) => s + Number(n || 0), 0);
+      if (total !== entry.quantity) entry.sizeBreakdown = undefined;
+    }
+    // Live-update the qty readouts without a full re-render (keeps scroll position).
+    const qEl = panel.querySelector('#osAu2Qty');
+    if (qEl) qEl.textContent = entry.quantity;
+    const stEl = body.querySelector(`.os-au2-card[data-po="${entry.id}"] .os-au2-card-st`);
+    if (stEl) stEl.textContent = `${entry.quantity}u · ${tagFor(entry.id).label}`;
+    if (qtyTimer) clearTimeout(qtyTimer);
+    qtyTimer = setTimeout(flushQty, 700);
+  }
 
-    if (!entries.length) {
-      const scopeDesc = container ? `in ${container.code}` : `at ${escapeHtml(loc)}`;
-      body.innerHTML = `<div style="text-align:center;padding:24px 0;color:var(--muted);font-size:13px;">No active POs logged ${scopeDesc}.</div>`;
+  // ── Outcomes (whole-PO) ─────────────────────────────────────────────
+  function tagFor(id) {
+    switch (decided[id]) {
+      case 'kept':   return { cls: 'kept',   label: 'kept' };
+      case 'donate': return { cls: 'donate', label: 'donate' };
+      case 'pull':   return { cls: 'pull',   label: 'pulled' };
+      case 'move':   return { cls: 'move',   label: 'moved' };
+      default:       return { cls: 'review', label: 'review' };
+    }
+  }
+  function scopeLocation() { return container ? (container.currentLocation || loc) : loc; }
+  function applyOutcome(entry, outcome) {
+    flushQty();
+    if (outcome === 'kept') {
+      entry.action = 'Required';
+      if (entry.status === 'Donation') entry.status = 'Not Donation';
+      if (!entry.location) entry.location = scopeLocation();
+    } else if (outcome === 'donate') {
+      entry.action = 'Donated';
+      entry.status = 'Donation';
+      entry.location = '';
+    } else if (outcome === 'pull') {
+      entry.action = 'Replaced';
+      entry.location = '';
+    }
+    entry.updatedAt = Date.now();
+    decided[entry.id] = outcome;
+    persistData();
+    if (typeof renderOverstockPage === 'function') renderOverstockPage();
+    render();
+  }
+  function applyMove(entry, targetId) {
+    flushQty();
+    const t = (state.data.overstockContainers || []).find(c => c.id === targetId);
+    if (!t) return;
+    entry.containerId   = t.id;
+    entry.containerCode = t.code;
+    entry.location      = t.currentLocation || entry.location || scopeLocation();
+    entry.action        = 'Required';
+    entry.updatedAt     = Date.now();
+    decided[entry.id]   = 'move';
+    persistData();
+    if (typeof renderOverstockPage === 'function') renderOverstockPage();
+    panelMode = 'default';
+    render();
+  }
+
+  // ── Selection + rendering ───────────────────────────────────────────
+  function selectPo(id) { flushQty(); activeId = id; panelMode = 'default'; render(); }
+
+  function renderCards() {
+    if (!scopeEntries.length) {
+      body.innerHTML = `<div class="os-au2-empty">No active POs logged here.</div>`;
       return;
     }
+    // Group by container, preserving first-seen order.
+    const groups = [];
+    const byKey = new Map();
+    scopeEntries.forEach(r => {
+      const key = r.containerId || '__none';
+      if (!byKey.has(key)) {
+        const g = { id: r.containerId || null, code: r.containerCode || (r.containerId ? '(box)' : 'No box'), entries: [] };
+        byKey.set(key, g); groups.push(g);
+      }
+      byKey.get(key).entries.push(r);
+    });
 
-    // Who can hard-delete an entry from within the audit (for mistakes):
-    // managers/admins, or the associate who logged it.
-    const auditElevated = (typeof osCanDeleteContainer === 'function') ? osCanDeleteContainer() : false;
-    body.innerHTML = entries.map(r => {
-      const containerLabel = r.containerCode ? ` · ${escapeHtml(r.containerCode)}` : '';
-      const canDel = auditElevated || (!!state.currentUser && r.associate === state.currentUser);
-      return `<div class="os-audit-row" id="osAuRow_${escapeAttribute(r.id)}">
-        <div class="os-audit-info">
-          <div class="os-audit-code">PO# ${escapeHtml(r.po)}</div>
-          <div class="os-audit-meta" id="osAuMeta_${escapeAttribute(r.id)}">${Number(r.quantity || 0)} units · ${escapeHtml(r.category || '—')}${containerLabel}</div>
-          ${r.sourcePalletLabel ? `<div class="os-audit-pos">${escapeHtml(r.sourcePalletLabel)}</div>` : ''}
+    const total = scopeEntries.length;
+    const done  = scopeEntries.filter(r => decided[r.id]).length;
+    const units = scopeEntries.reduce((s, r) => s + Number(r.quantity || 0), 0);
+
+    let html = `<div class="os-au2-progresshead">
+      <div class="os-au2-scope">${groups.length} box${groups.length !== 1 ? 'es' : ''} · ${total} PO${total !== 1 ? 's' : ''} · ${units} units</div>
+      <div class="os-au2-progress"><b>${done} / ${total}</b><span>done</span></div>
+    </div>`;
+
+    html += groups.map(g => {
+      const gUnits = g.entries.reduce((s, r) => s + Number(r.quantity || 0), 0);
+      const cards = g.entries.map(r => {
+        const t = tagFor(r.id);
+        const active = r.id === activeId ? ' is-active' : '';
+        return `<button class="os-au2-card os-au2-${t.cls}${active}" data-po="${escapeAttribute(r.id)}" type="button">
+          <div class="os-au2-card-po">${escapeHtml(r.po)}</div>
+          <div class="os-au2-card-st">${Number(r.quantity || 0)}u · ${t.label}</div>
+        </button>`;
+      }).join('');
+      return `<div class="os-au2-group">
+        <div class="os-au2-group-head">
+          <div><span class="os-au2-group-code">${escapeHtml(g.code)}</span><span class="os-au2-group-meta">${g.entries.length} POs · ${gUnits}u</span></div>
+          ${g.id ? `<div class="os-au2-group-acts">
+            <button class="os-ghost-btn" data-grp-move="${escapeAttribute(g.id)}" type="button" style="font-size:11px;padding:5px 10px;">↗ Move box</button>
+            <button class="os-ghost-btn" data-grp-merge="${escapeAttribute(g.id)}" type="button" style="font-size:11px;padding:5px 10px;">Merge</button>
+          </div>` : ''}
         </div>
-        <div class="os-audit-actions">
-          <button class="os-audit-btn os-audit-btn-ok" data-audit-confirm="${escapeAttribute(r.id)}" type="button">Still here</button>
-          <button class="os-audit-btn os-audit-btn-missing" data-audit-remove="${escapeAttribute(r.id)}" type="button">Not here</button>
-          <button class="os-audit-btn os-audit-btn-edit" data-audit-edit-qty="${escapeAttribute(r.id)}" type="button" title="Edit quantity" aria-label="Edit quantity">✎ Edit qty</button>
-          ${canDel ? `<button class="os-audit-btn os-audit-btn-del" data-audit-delete="${escapeAttribute(r.id)}" type="button" title="Delete this entry — logged by mistake">🗑 Delete</button>` : ''}
-        </div>
-      </div>
-      <!-- Removal reason panel — hidden by default -->
-      <div class="os-audit-reason-panel" id="osAuReason_${escapeAttribute(r.id)}" style="display:none;">
-        <div class="os-audit-reason-title">Why is PO# ${escapeHtml(r.po)} no longer here?</div>
-        <div class="os-audit-reason-grid">
-          <button class="os-audit-reason-btn" data-reason="Pulled for Assembly" data-entry="${escapeAttribute(r.id)}">Pulled for Assembly</button>
-          <button class="os-audit-reason-btn" data-reason="Replaced" data-entry="${escapeAttribute(r.id)}">Used as Replacement</button>
-          <button class="os-audit-reason-btn" data-reason="Donated" data-entry="${escapeAttribute(r.id)}">Donated</button>
-          <button class="os-audit-reason-btn" data-reason="Missing from Box" data-entry="${escapeAttribute(r.id)}">Missing / Unknown</button>
-          <button class="os-audit-reason-btn os-audit-reason-move" data-reason="moved" data-entry="${escapeAttribute(r.id)}">Moved to another location</button>
-        </div>
-        <div class="os-audit-move-row" id="osAuMove_${escapeAttribute(r.id)}" style="display:none;">
-          <select class="os-input os-audit-move-sel" id="osAuMoveSel_${escapeAttribute(r.id)}" style="font-size:13px;">
-            <option value="">— Select new location —</option>
-            ${overstockLocations.map(l => `<option value="${escapeAttribute(l)}">${escapeHtml(l)}</option>`).join('')}
-          </select>
-          <button class="os-audit-btn os-audit-btn-ok" data-confirm-move="${escapeAttribute(r.id)}" type="button" style="flex-shrink:0;">Confirm move</button>
-        </div>
-        <button class="os-audit-reason-cancel" data-cancel="${escapeAttribute(r.id)}" type="button">↩ Cancel</button>
+        <div class="os-au2-cards">${cards}</div>
       </div>`;
     }).join('');
 
-    // Wire confirm (still here)
-    body.querySelectorAll('[data-audit-confirm]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const row = document.getElementById(`osAuRow_${btn.dataset.auditConfirm}`);
-        if (!row) return;
-        row.classList.remove('au-ok', 'au-missing', 'au-wrong');
-        row.classList.add('au-ok');
-        row.querySelector('.os-audit-actions').innerHTML =
-          `<div class="os-audit-status-label">✓ Confirmed</div>`;
-      });
-    });
-
-    // Wire hard-delete — removes a mis-logged entry entirely. Distinct from
-    // "Not here" (which records WHY a physically-present item left). Use this
-    // only for data-entry mistakes.
-    body.querySelectorAll('[data-audit-delete]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const entryId = btn.dataset.auditDelete;
-        const entry = (state.data.overstockEntries || []).find(x => x.id === entryId);
-        if (!entry) return;
-        const label = entry.containerCode ? `${entry.containerCode} · PO# ${entry.po}` : `PO# ${entry.po}`;
-        if (!confirm(`Delete ${label} entirely?\n\nUse this only if it was logged by mistake. If the item was physically pulled, donated, or moved, use "Not here" instead so it's recorded properly.`)) return;
-        if (typeof window.deleteOverstockEntry === 'function') {
-          window.deleteOverstockEntry(entryId);
-        } else {
-          state.data.overstockEntries = (state.data.overstockEntries || []).filter(i => i.id !== entryId);
-          persistData();
-        }
-        if (typeof renderOverstockPage === 'function') renderOverstockPage();
-        renderAuditBody(); // refresh the audit list (shows empty state if it was the last one)
-      });
-    });
-
-    // Wire "not here" — show reason panel
-    body.querySelectorAll('[data-audit-remove]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const entryId = btn.dataset.auditRemove;
-        const row = document.getElementById(`osAuRow_${entryId}`);
-        const panel = document.getElementById(`osAuReason_${entryId}`);
-        if (row) { row.classList.add('au-missing'); }
-        if (panel) panel.style.display = 'block';
-        btn.closest('.os-audit-actions').innerHTML =
-          `<div class="os-audit-status-label" style="color:#991b1b;">Select reason ↓</div>`;
-      });
-    });
-
-    // Wire "edit qty" — inline editor for the quantity. Common correction
-    // when the associate later realizes they miscounted ("5 not 4").
-    body.querySelectorAll('[data-audit-edit-qty]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const entryId = btn.dataset.auditEditQty;
-        const entry = (state.data.overstockEntries || []).find(r => r.id === entryId);
-        if (!entry) return;
-        const meta = document.getElementById(`osAuMeta_${entryId}`);
-        const actions = btn.closest('.os-audit-actions');
-        if (!meta || !actions) return;
-        const originalMeta = meta.innerHTML;
-        const originalActions = actions.innerHTML;
-        meta.innerHTML = `
-          <span style="font-size:12px;color:#475569;">New qty:</span>
-          <input type="number" min="1" step="1" inputmode="numeric" value="${entry.quantity}" class="os-input" style="width:84px;height:34px;padding:4px 8px;font-size:14px;font-weight:700;display:inline-block;margin:0 6px;" id="osAuEditInput_${escapeAttribute(entryId)}" />
-          <span style="font-size:12px;color:var(--muted);">(was ${entry.quantity})</span>
-        `;
-        actions.innerHTML = `
-          <button class="os-audit-btn os-audit-btn-ok" data-audit-save-qty="${escapeAttribute(entryId)}" type="button">Save</button>
-          <button class="os-audit-btn" data-audit-cancel-edit="${escapeAttribute(entryId)}" type="button" style="background:#fff;color:#475569;border:1px solid #cbd5e1;">Cancel</button>
-        `;
-        const input = document.getElementById(`osAuEditInput_${entryId}`);
-        if (input) { input.focus(); input.select(); }
-
-        actions.querySelector('[data-audit-save-qty]').addEventListener('click', () => {
-          const newQty = Math.max(1, Math.floor(Number(input?.value || 0)));
-          if (!newQty) { alert('Quantity must be at least 1.'); return; }
-          const oldQty = entry.quantity;
-          if (newQty === oldQty) {
-            meta.innerHTML = originalMeta;
-            actions.innerHTML = originalActions;
-            renderAuditBody(); // rebind handlers
-            return;
-          }
-          entry.quantity = newQty;
-          entry.updatedAt = Date.now();
-          // Clear sizeBreakdown if it no longer matches qty
-          if (entry.sizeBreakdown && Object.keys(entry.sizeBreakdown).length) {
-            const total = Object.values(entry.sizeBreakdown).reduce((s,n)=>s+Number(n||0),0);
-            if (total !== newQty) entry.sizeBreakdown = undefined;
-          }
-          // Log the edit
-          try {
-            const KEY = 'hc_overstock_delete_log_v1';
-            const log = JSON.parse(localStorage.getItem(KEY) || '[]');
-            log.unshift({
-              ts: Date.now(),
-              by: (window.hcCurrentUser?.name || window.hcCurrentUser?.email || state.currentUser || 'unknown'),
-              kind: 'edit-qty',
-              payload: { id: entryId, po: entry.po, containerCode: entry.containerCode, from: oldQty, to: newQty, where: 'audit' },
-            });
-            localStorage.setItem(KEY, JSON.stringify(log.slice(0, 500)));
-          } catch (_) {}
-          persistData();
-          renderOverstockPage();
-          renderAuditBody(); // re-render the audit list to reflect new qty + restore actions
-        });
-        actions.querySelector('[data-audit-cancel-edit]').addEventListener('click', () => {
-          meta.innerHTML = originalMeta;
-          actions.innerHTML = originalActions;
-          renderAuditBody();
-        });
-      });
-    });
-
-    // Wire reason buttons
-    body.querySelectorAll('[data-reason]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const entryId = btn.dataset.entry;
-        const reason = btn.dataset.reason;
-        if (reason === 'moved') {
-          document.getElementById(`osAuMove_${entryId}`).style.display = 'flex';
-          return;
-        }
-        applyAuditRemoval(entryId, reason, null);
-      });
-    });
-
-    // Wire confirm move
-    body.querySelectorAll('[data-confirm-move]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const entryId = btn.dataset.confirmMove;
-        const newLoc = document.getElementById(`osAuMoveSel_${entryId}`)?.value;
-        if (!newLoc) return;
-        applyAuditRemoval(entryId, 'Moved', newLoc);
-      });
-    });
-
-    // Wire cancel
-    body.querySelectorAll('[data-cancel]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const entryId = btn.dataset.cancel;
-        const row = document.getElementById(`osAuRow_${entryId}`);
-        const panel = document.getElementById(`osAuReason_${entryId}`);
-        if (row) row.classList.remove('au-missing', 'au-ok', 'au-wrong');
-        if (panel) panel.style.display = 'none';
-        // Restore buttons
-        if (row) row.querySelector('.os-audit-actions').innerHTML = `
-          <button class="os-audit-btn os-audit-btn-ok" data-audit-confirm="${escapeAttribute(entryId)}" type="button">Still here</button>
-          <button class="os-audit-btn os-audit-btn-missing" data-audit-remove="${escapeAttribute(entryId)}" type="button">Not here</button>`;
-        // Re-wire the restored buttons
-        row?.querySelector('[data-audit-confirm]')?.addEventListener('click', () => {
-          row.classList.add('au-ok');
-          row.querySelector('.os-audit-actions').innerHTML = `<div class="os-audit-status-label">✓ Confirmed</div>`;
-        });
-        row?.querySelector('[data-audit-remove]')?.addEventListener('click', () => {
-          row.classList.add('au-missing');
-          if (panel) panel.style.display = 'block';
-          row.querySelector('.os-audit-actions').innerHTML = `<div class="os-audit-status-label" style="color:#991b1b;">Select reason ↓</div>`;
-        });
-      });
-    });
+    body.innerHTML = html;
+    body.querySelectorAll('[data-po]').forEach(b => b.addEventListener('click', () => selectPo(b.dataset.po)));
+    body.querySelectorAll('[data-grp-move]').forEach(b => b.addEventListener('click', () => {
+      flushQty(); osCloseModal('osMdAudit'); osMoveContainer(b.dataset.grpMove, loc);
+    }));
+    body.querySelectorAll('[data-grp-merge]').forEach(b => b.addEventListener('click', () => {
+      flushQty(); osCloseModal('osMdAudit'); osOpenMerge(b.dataset.grpMerge);
+    }));
   }
 
-  function applyAuditRemoval(entryId, reason, newLocation) {
-    const entry = (state.data.overstockEntries || []).find(r => r.id === entryId);
-    if (!entry) return;
-
-    if (newLocation) {
-      // Just a location move — update location, don't change action
-      entry.location = newLocation;
-      entry.updatedAt = Date.now();
-      // Also update containerCode's location if it's a container-tracked entry
-      const container = (state.data.overstockContainers || []).find(c => c.id === entry.containerId);
-      if (container) updateOverstockContainer(container.id, { currentLocation: newLocation });
-    } else {
-      // Map reason to the existing action options
-      const actionMap = {
-        'Pulled for Assembly': 'Replaced',
-        'Used as Replacement': 'Replaced',
-        'Donated':             'Donated',
-        'Missing from Box':    'Missing from Box',
-        'Moved':               'Required',
-      };
-      entry.action   = actionMap[reason] || reason;
-      entry.status   = reason === 'Donated' ? 'Donation' : entry.status;
-      entry.location = ''; // removed from this location
-      entry.updatedAt = Date.now();
+  function renderPanel() {
+    const e = activeId ? scopeEntries.find(x => x.id === activeId) : null;
+    if (!e) {
+      // Nothing selected — collapse the panel; the footer hint covers it.
+      panel.innerHTML = '';
+      panel.style.display = 'none';
+      return;
     }
-    persistData();
+    panel.style.display = '';
+    const boxCode = e.containerCode || (container ? container.code : '') || '—';
 
-    // Mark the row visually done
-    const row = document.getElementById(`osAuRow_${entryId}`);
-    const panel = document.getElementById(`osAuReason_${entryId}`);
-    if (row) {
-      row.classList.remove('au-missing');
-      row.classList.add(newLocation ? 'au-ok' : 'au-wrong');
-      row.querySelector('.os-audit-actions').innerHTML =
-        `<div class="os-audit-status-label">${newLocation ? `Moved to ${newLocation}` : reason}</div>`;
+    if (panelMode === 'move') {
+      const others = (state.data.overstockContainers || []).filter(c => c.id !== e.containerId && c.status !== 'Closed');
+      panel.innerHTML = `
+        <div class="os-au2-panel-top">
+          <div>
+            <div class="os-au2-panel-ctx">MOVE · PO# ${escapeHtml(e.po)}</div>
+            <div class="os-au2-panel-po" style="font-size:16px;">Move to which box?</div>
+          </div>
+        </div>
+        <div class="os-au2-move">
+          <select class="os-input os-au2-move-sel" id="osAu2MoveSel">
+            <option value="">— Select box —</option>
+            ${others.map(c => `<option value="${escapeAttribute(c.id)}">${escapeHtml(c.code)}${c.currentLocation ? ` · ${escapeHtml(c.currentLocation)}` : ''}</option>`).join('')}
+          </select>
+          <button class="os-au2-btn os-au2-btn-keep" id="osAu2MoveGo" type="button" style="padding:10px 14px;">Move</button>
+          <button class="os-au2-btn" id="osAu2MoveCancel" type="button" style="padding:10px 14px;">Cancel</button>
+        </div>`;
+      panel.querySelector('#osAu2MoveGo').addEventListener('click', () => {
+        const tid = panel.querySelector('#osAu2MoveSel').value;
+        if (!tid) return;
+        applyMove(e, tid);
+      });
+      panel.querySelector('#osAu2MoveCancel').addEventListener('click', () => { panelMode = 'default'; renderPanel(); });
+      return;
     }
-    if (panel) panel.style.display = 'none';
+
+    panel.innerHTML = `
+      <div class="os-au2-panel-top">
+        <div>
+          <div class="os-au2-panel-ctx">REVIEWING · ${escapeHtml(boxCode)}</div>
+          <div class="os-au2-panel-po">PO# ${escapeHtml(e.po)}</div>
+          <div class="os-au2-panel-cat">${escapeHtml(e.category || '—')}</div>
+        </div>
+        <div class="os-au2-stepper">
+          <button class="os-au2-step" id="osAu2Minus" type="button" aria-label="Remove a unit">−</button>
+          <div class="os-au2-step-val"><b id="osAu2Qty">${Number(e.quantity || 0)}</b><span>units</span></div>
+          <button class="os-au2-step" id="osAu2Plus" type="button" aria-label="Add a unit">+</button>
+        </div>
+      </div>
+      <div class="os-au2-actions">
+        <button class="os-au2-btn os-au2-btn-keep"   data-out="kept"   type="button">Keep</button>
+        <button class="os-au2-btn os-au2-btn-move"   data-out="move"   type="button">Move</button>
+        <button class="os-au2-btn os-au2-btn-donate" data-out="donate" type="button">Donate</button>
+        <button class="os-au2-btn os-au2-btn-pull"   data-out="pull"   type="button">Pull</button>
+      </div>`;
+    panel.querySelector('#osAu2Minus').addEventListener('click', () => bumpQty(e, -1));
+    panel.querySelector('#osAu2Plus').addEventListener('click', () => bumpQty(e, +1));
+    panel.querySelectorAll('[data-out]').forEach(b => b.addEventListener('click', () => {
+      const out = b.dataset.out;
+      if (out === 'move') { panelMode = 'move'; renderPanel(); return; }
+      applyOutcome(e, out);
+    }));
   }
 
-  renderAuditBody();
+  function render() { renderCards(); renderPanel(); }
+
+  // Finish / Close both flush any pending quantity edit before leaving.
+  const finishBtn = document.getElementById('osAu2Finish');
+  if (finishBtn) finishBtn.onclick = () => {
+    flushQty();
+    osCloseModal('osMdAudit');
+    if (typeof showToast === 'function') showToast('Audit saved.');
+  };
+  document.querySelectorAll('#osMdAudit [data-close="osMdAudit"]').forEach(b => { b.onclick = () => { flushQty(); }; });
+
+  render();
   osOpenModal('osMdAudit');
 }
 
