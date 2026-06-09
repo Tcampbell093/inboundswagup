@@ -4790,15 +4790,34 @@ function osOpenAudit(loc, containerId) {
     ? (state.data.overstockContainers || []).find(c => c.id === containerId)
     : null;
 
-  document.getElementById('osAuTitle').textContent = container
-    ? `Audit ${container.code}`
-    : `Audit ${loc} — all boxes`;
-  document.getElementById('osAuSub').textContent = container
-    ? `Tap a PO to keep, move, donate, pull it — or adjust its unit count`
-    : `Tap any PO to review it`;
+  document.getElementById('osAuTitle').textContent = container ? container.code : (loc || 'Overstock');
 
-  const body  = document.getElementById('osAuBody');
-  const panel = document.getElementById('osAu2Panel');
+  const body   = document.getElementById('osAuBody');
+  const panel  = document.getElementById('osAu2Panel');
+  const progEl = document.getElementById('osAu2Prog');
+
+  // Inline line-icons (inherit button colour via currentColor).
+  const ICON = (() => {
+    const s = (p, sz = 18) => `<svg class="os-au2-ico" width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+    return {
+      keep:    s('<polyline points="20 6 9 17 4 12"/>'),
+      move:    s('<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>'),
+      donate:  s('<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>'),
+      pull:    s('<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.1 2.1-2.8-2.8 2.1-2.1z"/>'),
+      boxMove: s('<path d="M7 7h10v10"/><path d="M7 17 17 7"/>', 13),
+      merge:   s('<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>', 13),
+    };
+  })();
+
+  function updateHead() {
+    const total = scopeEntries.length;
+    const done  = scopeEntries.filter(r => decided[r.id]).length;
+    const units = scopeEntries.reduce((s, r) => s + Number(r.quantity || 0), 0);
+    const boxes = new Set(scopeEntries.map(r => r.containerId || '__none')).size;
+    const sub = document.getElementById('osAuSub');
+    if (sub) sub.textContent = `${boxes} box${boxes !== 1 ? 'es' : ''} · ${total} PO${total !== 1 ? 's' : ''} · ${units} units`;
+    if (progEl) progEl.innerHTML = `<b>${done} / ${total}</b> done`;
+  }
 
   // Snapshot the POs in scope ONCE so cards don't vanish mid-audit when an
   // outcome (donate / pull / move) changes an entry's location.
@@ -4928,16 +4947,7 @@ function osOpenAudit(loc, containerId) {
       byKey.get(key).entries.push(r);
     });
 
-    const total = scopeEntries.length;
-    const done  = scopeEntries.filter(r => decided[r.id]).length;
-    const units = scopeEntries.reduce((s, r) => s + Number(r.quantity || 0), 0);
-
-    let html = `<div class="os-au2-progresshead">
-      <div class="os-au2-scope">${groups.length} box${groups.length !== 1 ? 'es' : ''} · ${total} PO${total !== 1 ? 's' : ''} · ${units} units</div>
-      <div class="os-au2-progress"><b>${done} / ${total}</b><span>done</span></div>
-    </div>`;
-
-    html += groups.map(g => {
+    let html = groups.map(g => {
       const gUnits = g.entries.reduce((s, r) => s + Number(r.quantity || 0), 0);
       const cards = g.entries.map(r => {
         const t = tagFor(r.id);
@@ -4951,8 +4961,8 @@ function osOpenAudit(loc, containerId) {
         <div class="os-au2-group-head">
           <div><span class="os-au2-group-code">${escapeHtml(g.code)}</span><span class="os-au2-group-meta">${g.entries.length} POs · ${gUnits}u</span></div>
           ${g.id ? `<div class="os-au2-group-acts">
-            <button class="os-ghost-btn" data-grp-move="${escapeAttribute(g.id)}" type="button" style="font-size:11px;padding:5px 10px;">↗ Move box</button>
-            <button class="os-ghost-btn" data-grp-merge="${escapeAttribute(g.id)}" type="button" style="font-size:11px;padding:5px 10px;">Merge</button>
+            <button class="os-au2-boxbtn" data-grp-move="${escapeAttribute(g.id)}" type="button">${ICON.boxMove}<span>Move</span></button>
+            <button class="os-au2-boxbtn" data-grp-merge="${escapeAttribute(g.id)}" type="button">${ICON.merge}<span>Merge</span></button>
           </div>` : ''}
         </div>
         <div class="os-au2-cards">${cards}</div>
@@ -5020,10 +5030,10 @@ function osOpenAudit(loc, containerId) {
         </div>
       </div>
       <div class="os-au2-actions">
-        <button class="os-au2-btn os-au2-btn-keep"   data-out="kept"   type="button">Keep</button>
-        <button class="os-au2-btn os-au2-btn-move"   data-out="move"   type="button">Move</button>
-        <button class="os-au2-btn os-au2-btn-donate" data-out="donate" type="button">Donate</button>
-        <button class="os-au2-btn os-au2-btn-pull"   data-out="pull"   type="button">Pull</button>
+        <button class="os-au2-btn os-au2-btn-keep"   data-out="kept"   type="button">${ICON.keep}<span>Keep</span></button>
+        <button class="os-au2-btn os-au2-btn-move"   data-out="move"   type="button">${ICON.move}<span>Move</span></button>
+        <button class="os-au2-btn os-au2-btn-donate" data-out="donate" type="button">${ICON.donate}<span>Donate</span></button>
+        <button class="os-au2-btn os-au2-btn-pull"   data-out="pull"   type="button">${ICON.pull}<span>Pull</span></button>
       </div>`;
     panel.querySelector('#osAu2Minus').addEventListener('click', () => bumpQty(e, -1));
     panel.querySelector('#osAu2Plus').addEventListener('click', () => bumpQty(e, +1));
@@ -5034,7 +5044,7 @@ function osOpenAudit(loc, containerId) {
     }));
   }
 
-  function render() { renderCards(); renderPanel(); }
+  function render() { renderCards(); renderPanel(); updateHead(); }
 
   // Finish / Close both flush any pending quantity edit before leaving.
   const finishBtn = document.getElementById('osAu2Finish');
