@@ -143,6 +143,7 @@
             <div class="os-panel-title">🔎 Scan or type box code</div>
             <div class="os-panel-sub">Scan the QR/barcode or type a code like OSC-003, then choose <strong>Add items</strong> or <strong>Audit</strong>.</div>
           </div>
+          <button id="overstockDonationsBtn" class="os-ghost-btn" type="button" title="Review donated items">🎁 Donations</button>
         </div>
         <div class="os-panel-body">
           <form id="overstockContainerLookupForm" class="os-container-lookup-form">
@@ -307,6 +308,26 @@
                 <span class="os-scan-choice-desc">Verify what's inside</span>
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Donations review modal — every donated PO, with when & by whom -->
+      <div class="os-modal-backdrop" id="osMdDonations">
+        <div class="os-modal" role="dialog" aria-modal="true">
+          <div class="os-modal-head">
+            <div>
+              <div class="os-modal-title">🎁 Donated items</div>
+              <div class="os-modal-sub" id="osDonSub">Every PO donated, with when and by whom.</div>
+            </div>
+            <button class="os-modal-close" data-close="osMdDonations">✕</button>
+          </div>
+          <div class="os-modal-body">
+            <div class="os-don-tools">
+              <input id="osDonSearch" type="text" class="os-input" placeholder="Search PO, box, category, person…" autocomplete="off" />
+              <button id="osDonExport" class="os-ghost-btn" type="button">⬇ Export CSV</button>
+            </div>
+            <div id="osDonList" class="os-don-list"></div>
           </div>
         </div>
       </div>
