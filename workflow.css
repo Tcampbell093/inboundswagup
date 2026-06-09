@@ -4866,3 +4866,16 @@ body.workflow-page .os-c2 #osResultsBody #overstockAuditResults {
 .workflow-page .os-box-act-ic { font-size: 16px; line-height: 1; }
 .workflow-page .os-box-act-primary { background: #1d6fb8; border-color: #1d6fb8; color: #fff; }
 .workflow-page .os-box-act-primary:hover { background: #195f9e; border-color: #195f9e; }
+/* ── Boxes: hide-empty / review toggles + anomaly markers ── */
+.workflow-page .os-chip-toggle {
+  border: 1px solid #d4dce6; background: #fff; color: #4a5d72; font-weight: 700;
+  font-size: 12.5px; border-radius: 999px; padding: 6px 12px; cursor: pointer; font-family: inherit;
+  white-space: nowrap; transition: background .12s, border-color .12s, color .12s;
+}
+.workflow-page .os-chip-toggle:hover { background: #f3f7fb; }
+.workflow-page .os-chip-toggle.is-on { background: #1d6fb8; border-color: #1d6fb8; color: #fff; }
+.workflow-page .os-chip-warn { color: #9a5b00; border-color: #f0d28a; background: #fff8e9; }
+.workflow-page .os-chip-warn:hover { background: #fdefcf; }
+.workflow-page .os-chip-warn.is-on { background: #e8890c; border-color: #e8890c; color: #fff; }
+.workflow-page .os-box-warn { margin-left: 4px; font-size: 13px; flex-shrink: 0; cursor: help; }
+.workflow-page .os-box-flagged { border-color: #f0d28a; background: #fffdf6; }

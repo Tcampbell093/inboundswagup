@@ -570,7 +570,7 @@ function sortOverstockLog(rows, sortKey) {
 }
 
 // ── Boxes grid view state (session-only) ────────────────────────────────
-const osBoxesUi = { sort: "updated", filter: "" };
+const osBoxesUi = { sort: "updated", filter: "", hideEmpty: false, flaggedOnly: false };
 
 function sortBoxes(boxes, key) {
   const arr = boxes.slice();
@@ -6087,6 +6087,22 @@ function renderOverstockPage() {
       osBoxesUi.sort
     );
 
+    // Derive per-box facts once: contents, emptiness, anomaly flags, and a
+    // search string that also includes the PO numbers inside the box.
+    const STD_CODE = /^[A-Za-z]+(?:-[A-Za-z]+)?-\d{1,4}$/;
+    const boxData = boxes.map(c => {
+      const items = getOverstockContainerItems(c.id);
+      const units = items.reduce((s, r) => s + Number(r.quantity || 0), 0);
+      const isEmpty = items.length === 0 && units === 0;
+      const flags = [];
+      if (units > 1000) flags.push('Unusually high unit count');
+      if (!STD_CODE.test(String(c.code || '').trim())) flags.push('Non-standard box code');
+      const search = (c.code + ' ' + (c.currentLocation || '') + ' ' + items.map(i => String(i.po || '')).join(' ')).toLowerCase();
+      return { c, items, units, isEmpty, flags, search };
+    });
+    const emptyCount   = boxData.filter(b => b.isEmpty).length;
+    const flaggedCount = boxData.filter(b => b.flags.length).length;
+
     conEl.innerHTML = `
       <section class="os-panel">
         <div class="os-panel-head">
@@ -6095,7 +6111,9 @@ function renderOverstockPage() {
             <div class="os-panel-sub">Tap a box for options — audit, add a PO, edit, merge, or move.</div>
           </div>
           <div class="os-boxes-tools">
-            <input id="osBoxesFilter" class="os-filter-input os-boxes-filter" type="text" placeholder="Find a box…" autocomplete="off" />
+            <input id="osBoxesFilter" class="os-filter-input os-boxes-filter" type="text" placeholder="Find a box or PO…" autocomplete="off" />
+            ${emptyCount ? `<button id="osBoxesHideEmpty" class="os-chip-toggle${osBoxesUi.hideEmpty ? ' is-on' : ''}" type="button">Hide empty (${emptyCount})</button>` : ''}
+            ${flaggedCount ? `<button id="osBoxesFlagged" class="os-chip-toggle os-chip-warn${osBoxesUi.flaggedOnly ? ' is-on' : ''}" type="button" title="Boxes with an unusual unit count or a non-standard code">⚠ ${flaggedCount} to review</button>` : ''}
             <select id="osBoxesSort" class="os-filter-select" aria-label="Sort boxes">
               <option value="updated">Last updated</option>
               <option value="name">Name (OSC #)</option>
@@ -6106,21 +6124,20 @@ function renderOverstockPage() {
         </div>
         <div class="os-panel-body">
           ${boxes.length
-            ? `<div class="os-card-grid os-boxes-grid">${boxes.map(c => {
-                const items = getOverstockContainerItems(c.id);
-                const units = items.reduce((s,r)=>s+Number(r.quantity||0),0);
+            ? `<div class="os-card-grid os-boxes-grid">${boxData.map(b => {
+                const c = b.c;
                 const statusDot = {'Open':'os-box-dot-blue','On Cart':'os-box-dot-amber','Stored':'os-box-dot-green','Full':'os-box-dot-gray'}[c.status]||'os-box-dot-gray';
-                const search = (c.code + ' ' + (c.currentLocation || '')).toLowerCase();
-                return `<div class="os-box-card os-box-calm" data-box-actions="${escapeAttribute(c.id)}" data-search="${escapeAttribute(search)}" role="button" tabindex="0">
+                return `<div class="os-box-card os-box-calm${b.flags.length ? ' os-box-flagged' : ''}" data-box-actions="${escapeAttribute(c.id)}" data-search="${escapeAttribute(b.search)}" data-empty="${b.isEmpty ? 1 : 0}" data-flag="${b.flags.length ? 1 : 0}" role="button" tabindex="0">
                   <div class="os-box-calm-l1">
                     <span class="os-box-dot ${statusDot}" title="${escapeAttribute(c.status)}"></span>
                     <span class="os-box-calm-code" title="${escapeAttribute(c.code)}">${escapeHtml(c.code)}</span>
+                    ${b.flags.length ? `<span class="os-box-warn" title="${escapeAttribute(b.flags.join(' · '))}">⚠</span>` : ''}
                   </div>
-                  <div class="os-box-calm-l2"><b>${items.length}</b> PO${items.length===1?'':'s'} · <b>${units}</b>u${c.currentLocation ? ` · 📍 ${escapeHtml(c.currentLocation)}` : ''}</div>
+                  <div class="os-box-calm-l2"><b>${b.items.length}</b> PO${b.items.length===1?'':'s'} · <b>${b.units}</b>u${c.currentLocation ? ` · 📍 ${escapeHtml(c.currentLocation)}` : ''}</div>
                   <div class="os-box-calm-l3">${escapeHtml(formatDateTimeShort(c.updatedAt || c.createdAt))}</div>
                 </div>`;
               }).join('')}</div>
-              <div class="os-boxes-noresult" id="osBoxesNoResult" style="display:none;">No boxes match your search.</div>`
+              <div class="os-boxes-noresult" id="osBoxesNoResult" style="display:none;">No boxes match.</div>`
             : `<div class="os-empty-state"><div class="os-empty-icon">📦</div>No boxes yet.</div>`}
         </div>
       </section>`;
@@ -6130,7 +6147,8 @@ function renderOverstockPage() {
       sortSel.value = osBoxesUi.sort;
       sortSel.onchange = () => { osBoxesUi.sort = sortSel.value; renderOverstockPage(); };
     }
-    // Filter in the DOM (no re-render) so the box keeps focus while typing.
+    // Filter in the DOM (no re-render) so inputs keep focus. Combines the text
+    // query (code / location / PO), the "hide empty" toggle, and "to review".
     const boxFilter = document.getElementById('osBoxesFilter');
     if (boxFilter) {
       boxFilter.value = osBoxesUi.filter || '';
@@ -6139,17 +6157,24 @@ function renderOverstockPage() {
         osBoxesUi.filter = boxFilter.value;
         let shown = 0;
         conEl.querySelectorAll('.os-boxes-grid [data-box-actions]').forEach(card => {
-          const match = !q || (card.dataset.search || '').includes(q);
+          let match = !q || (card.dataset.search || '').includes(q);
+          if (match && osBoxesUi.hideEmpty && card.dataset.empty === '1') match = false;
+          if (match && osBoxesUi.flaggedOnly && card.dataset.flag !== '1') match = false;
           card.style.display = match ? '' : 'none';
           if (match) shown++;
         });
+        const active = q || osBoxesUi.hideEmpty || osBoxesUi.flaggedOnly;
         const countEl = document.getElementById('osBoxesCount');
-        if (countEl) countEl.textContent = q ? `${shown} of ${boxes.length}` : `${boxes.length} box${boxes.length !== 1 ? 'es' : ''}`;
+        if (countEl) countEl.textContent = active ? `${shown} of ${boxes.length}` : `${boxes.length} box${boxes.length !== 1 ? 'es' : ''}`;
         const noRes = document.getElementById('osBoxesNoResult');
-        if (noRes) noRes.style.display = (q && shown === 0) ? '' : 'none';
+        if (noRes) noRes.style.display = (shown === 0 && boxes.length > 0) ? '' : 'none';
       };
       boxFilter.oninput = applyBoxFilter;
-      if (osBoxesUi.filter) applyBoxFilter();
+      const hideEmptyBtn = document.getElementById('osBoxesHideEmpty');
+      if (hideEmptyBtn) hideEmptyBtn.onclick = () => { osBoxesUi.hideEmpty = !osBoxesUi.hideEmpty; hideEmptyBtn.classList.toggle('is-on', osBoxesUi.hideEmpty); applyBoxFilter(); };
+      const flaggedBtn = document.getElementById('osBoxesFlagged');
+      if (flaggedBtn) flaggedBtn.onclick = () => { osBoxesUi.flaggedOnly = !osBoxesUi.flaggedOnly; flaggedBtn.classList.toggle('is-on', osBoxesUi.flaggedOnly); applyBoxFilter(); };
+      if (osBoxesUi.filter || osBoxesUi.hideEmpty || osBoxesUi.flaggedOnly) applyBoxFilter();
     }
     conEl.querySelectorAll('[data-box-actions]').forEach(card => {
       const open = () => osOpenBoxActions(card.dataset.boxActions);
