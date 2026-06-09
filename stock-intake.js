@@ -622,25 +622,29 @@
     const action   = actionInput?.value || 'Required';
 
     if (!po) { showToast('Enter a PO number.', 'error'); poInput?.focus(); return; }
+    // PO format check — reject obvious typos (letters, stray punctuation,
+    // multiple hyphen groups) without capping the numeric value.
+    if (typeof window.isValidOverstockPo === 'function' && !window.isValidOverstockPo(po)) {
+      showToast('This PO number appears to be invalid. Please check the PO and try again.', 'error');
+      poInput?.focus(); poInput?.select(); return;
+    }
     if (!qty) { showToast('Enter a quantity.', 'error'); qtyInput?.focus(); return; }
+    // Category required before saving.
+    if (!category) { showToast('Please select a category before saving this PO.', 'error'); catInput?.focus(); return; }
 
-    // Duplicate-in-container check. Warn (don't block) if this PO already
-    // exists in the active container — protects against accidental double-Add
-    // taps and the "did I already do this one?" mistake. Looks at the live
-    // data layer, not just the session, so it works across reloads too.
+    // Duplicate-in-container: BLOCK. A container must never list the same PO
+    // twice. To change the count, use the ✎ pencil on the existing line.
+    // Checks the live data layer (not just the session) so it holds across
+    // reloads and devices.
     try {
       const existing = (window.state?.data?.overstockEntries || []).find(r =>
         r.containerId === session.activeContainerId &&
         String(r.po).trim().toUpperCase() === po.toUpperCase()
       );
       if (existing) {
-        const proceed = confirm(
-          `PO# ${po} is already in this container with ${existing.quantity} units.\n\n` +
-          `Click OK to add another ${qty}-unit entry anyway (will become a separate line),\n` +
-          `or Cancel to back out.\n\n` +
-          `If you meant to CHANGE the quantity, cancel and use the pencil icon ✎ on the existing entry instead.`
-        );
-        if (!proceed) { poInput?.focus(); poInput?.select(); return; }
+        showToast('This PO already exists in this container. Use the ✎ pencil to change its quantity.', 'error');
+        poInput?.focus(); poInput?.select();
+        return;
       }
     } catch (_) {}
 

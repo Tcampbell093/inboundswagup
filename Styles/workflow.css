@@ -4994,3 +4994,18 @@ body.workflow-page .os-c2 .os-box-search-clear:hover {
 .workflow-page .os-au2-adjrow { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 .workflow-page .os-au2-reason-sel { flex: 1; min-width: 160px; }
 .workflow-page .os-au2-adjacts { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+/* ── Overstock container location banner (scan / box-actions) ── */
+.workflow-page .os-loc-banner {
+  display: flex; align-items: center; gap: 10px;
+  background: #eef5ff; border: 1px solid #d4e4fb; border-radius: 12px;
+  padding: 12px 14px; margin-bottom: 14px;
+}
+.workflow-page .os-loc-pin { font-size: 20px; line-height: 1; }
+.workflow-page .os-loc-label {
+  font-size: 11px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: #5a7aa6;
+}
+.workflow-page .os-loc-value {
+  font-size: 20px; font-weight: 800; color: #16263a; margin-left: auto; text-align: right;
+}
+.workflow-page .os-loc-value.os-loc-none { font-size: 14px; font-weight: 600; color: #8aa0bb; }
