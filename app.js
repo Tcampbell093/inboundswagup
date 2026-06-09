@@ -432,6 +432,12 @@ const defaultMasters = {
     "QA4-A1","QA4-A2","QA4-B1","QA4-B2","QA4-C1","QA4-C2","QA4-D1","QA4-D2",
     "QA5-A1","QA5-A2","QA5-B1","QA5-B2","QA5-C1","QA5-C2","QA5-D1","QA5-D2",
   ],
+  osAddReasons: [
+    "Received more","Found extra","Miscount","Returned",
+  ],
+  osRemoveReasons: [
+    "Replace broken inventory","Temporary","Damaged","Miscount",
+  ],
 };
 
 const translations = {
@@ -2980,6 +2986,26 @@ function bindMasterEvents() {
       putawayLocationInput.value = "";
     });
   }
+
+  // Overstock Add/Remove adjustment reasons (manager/admin editable)
+  const osAddReasonForm = document.getElementById("osAddReasonForm");
+  const osAddReasonInput = document.getElementById("osAddReasonInput");
+  if (osAddReasonForm && osAddReasonInput) {
+    osAddReasonForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      addMasterItem("osAddReasons", osAddReasonInput.value.trim());
+      osAddReasonInput.value = "";
+    });
+  }
+  const osRemoveReasonForm = document.getElementById("osRemoveReasonForm");
+  const osRemoveReasonInput = document.getElementById("osRemoveReasonInput");
+  if (osRemoveReasonForm && osRemoveReasonInput) {
+    osRemoveReasonForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      addMasterItem("osRemoveReasons", osRemoveReasonInput.value.trim());
+      osRemoveReasonInput.value = "";
+    });
+  }
 }
 
 
@@ -4806,6 +4832,10 @@ function osOpenAudit(loc, containerId) {
       pull:    s('<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.1 2.1-2.8-2.8 2.1-2.1z"/>'),
       boxMove: s('<path d="M7 7h10v10"/><path d="M7 17 17 7"/>', 13),
       merge:   s('<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>', 13),
+      adjust:  s('<path d="M4 7h7"/><path d="M7.5 3.5v7"/><path d="M13 17h7"/>'),
+      add:     s('<circle cx="12" cy="12" r="9"/><path d="M12 8v8"/><path d="M8 12h8"/>', 16),
+      remove:  s('<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>', 16),
+      trash:   s('<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>', 17),
     };
   })();
 
@@ -4835,59 +4865,92 @@ function osOpenAudit(loc, containerId) {
   });
 
   let activeId  = null;
-  let panelMode = 'default'; // 'default' | 'move'
+  let panelMode = 'default'; // 'default' | 'move' | 'adjust'
+  let adjustDir = 'remove';  // 'add' | 'remove' (within the Add/Remove flow)
+  let adjustAmt = 1;
 
-  // ── Debounced quantity commit (so +/- taps don't spam the log) ──────
-  let qtyOrig = null, qtyTimer = null, qtyEntryId = null;
-  function osLogAuditQty(entry, from, to) {
+  // Quantity now changes only through the reasoned Add/Remove flow
+  // (applyAdjust), so there's no bare-stepper debounce. flushQty is kept as a
+  // harmless no-op so the existing call sites don't need changing.
+  function flushQty() {}
+
+  // Every add/remove is logged with its reason for traceability.
+  function osLogAdjust(entry, direction, amount, reason, from, to) {
     try {
       const KEY = 'hc_overstock_delete_log_v1';
       const log = JSON.parse(localStorage.getItem(KEY) || '[]');
       log.unshift({
         ts: Date.now(),
         by: (window.hcCurrentUser?.name || window.hcCurrentUser?.email || state.currentUser || 'unknown'),
-        kind: 'edit-qty',
-        payload: { id: entry.id, po: entry.po, containerCode: entry.containerCode, from, to, where: 'audit' },
+        kind: 'adjust',
+        payload: { id: entry.id, po: entry.po, containerCode: entry.containerCode, direction, amount, reason, from, to, where: 'audit' },
       });
       localStorage.setItem(KEY, JSON.stringify(log.slice(0, 500)));
     } catch (_) {}
   }
-  function flushQty() {
-    if (qtyTimer) { clearTimeout(qtyTimer); qtyTimer = null; }
-    if (qtyEntryId == null) return;
-    const e = scopeEntries.find(x => x.id === qtyEntryId);
-    const from = qtyOrig, to = e ? e.quantity : null;
-    qtyEntryId = null; qtyOrig = null;
-    if (!e || from == null || from === to) return;
-    osLogAuditQty(e, from, to);
-    persistData();
-    if (typeof renderOverstockPage === 'function') renderOverstockPage();
+  function reasonsFor(dir) {
+    const key = dir === 'add' ? 'osAddReasons' : 'osRemoveReasons';
+    const list = (state.masters && Array.isArray(state.masters[key])) ? state.masters[key] : (defaultMasters[key] || []);
+    return list;
   }
-  function bumpQty(entry, delta) {
-    if (qtyEntryId !== entry.id) { flushQty(); qtyEntryId = entry.id; qtyOrig = Number(entry.quantity || 0); }
-    entry.quantity = Math.max(1, Number(entry.quantity || 0) + delta);
+  function applyAdjust(entry, direction, amount, reason) {
+    const amt  = Math.max(1, Math.floor(Number(amount) || 0));
+    const from = Number(entry.quantity || 0);
+    const to   = direction === 'add' ? from + amt : Math.max(0, from - amt);
+    if (to === from) { panelMode = 'default'; render(); return; }
+    entry.quantity  = to;
     entry.updatedAt = Date.now();
     if (entry.sizeBreakdown && Object.keys(entry.sizeBreakdown).length) {
       const total = Object.values(entry.sizeBreakdown).reduce((s, n) => s + Number(n || 0), 0);
       if (total !== entry.quantity) entry.sizeBreakdown = undefined;
     }
-    // Live-update the qty readouts without a full re-render (keeps scroll position).
-    const qEl = panel.querySelector('#osAu2Qty');
-    if (qEl) qEl.textContent = entry.quantity;
-    const stEl = body.querySelector(`.os-au2-card[data-po="${entry.id}"] .os-au2-card-st`);
-    if (stEl) stEl.textContent = `${entry.quantity}u · ${tagFor(entry.id).label}`;
-    if (qtyTimer) clearTimeout(qtyTimer);
-    qtyTimer = setTimeout(flushQty, 700);
+    if (to === 0) {
+      // Everything removed — the PO has left the box.
+      entry.location = '';
+      entry.action   = 'Replaced';
+      decided[entry.id] = 'removed';
+    } else {
+      decided[entry.id] = 'adjusted';
+    }
+    osLogAdjust(entry, direction, amt, reason, from, to);
+    persistData();
+    if (typeof renderOverstockPage === 'function') renderOverstockPage();
+    panelMode = 'default';
+    render();
+  }
+
+  // ── Delete a PO entry (mistake) — managers/admins or whoever logged it ──
+  function canDeleteEntry(entry) {
+    const elevated = (typeof osCanDeleteContainer === 'function') ? osCanDeleteContainer() : false;
+    return elevated || (!!state.currentUser && entry.associate === state.currentUser);
+  }
+  function deleteActivePo(entry) {
+    const label = entry.containerCode ? `${entry.containerCode} · PO# ${entry.po}` : `PO# ${entry.po}`;
+    if (!confirm(`Delete ${label} entirely?\n\nThis removes the PO from overstock. Use this only for entries logged by mistake — for items pulled, donated, or moved, use those actions instead so it's recorded properly.`)) return;
+    if (typeof window.deleteOverstockEntry === 'function') {
+      window.deleteOverstockEntry(entry.id);
+    } else {
+      state.data.overstockEntries = (state.data.overstockEntries || []).filter(i => i.id !== entry.id);
+      persistData();
+    }
+    const idx = scopeEntries.findIndex(x => x.id === entry.id);
+    if (idx >= 0) scopeEntries.splice(idx, 1);
+    delete decided[entry.id];
+    if (activeId === entry.id) activeId = null;
+    if (typeof renderOverstockPage === 'function') renderOverstockPage();
+    render();
   }
 
   // ── Outcomes (whole-PO) ─────────────────────────────────────────────
   function tagFor(id) {
     switch (decided[id]) {
-      case 'kept':   return { cls: 'kept',   label: 'kept' };
-      case 'donate': return { cls: 'donate', label: 'donate' };
-      case 'pull':   return { cls: 'pull',   label: 'pulled' };
-      case 'move':   return { cls: 'move',   label: 'moved' };
-      default:       return { cls: 'review', label: 'review' };
+      case 'kept':     return { cls: 'kept',   label: 'kept' };
+      case 'donate':   return { cls: 'donate', label: 'donate' };
+      case 'pull':     return { cls: 'pull',   label: 'pulled' };
+      case 'move':     return { cls: 'move',   label: 'moved' };
+      case 'adjusted': return { cls: 'kept',   label: 'adjusted' };
+      case 'removed':  return { cls: 'pull',   label: 'removed' };
+      default:         return { cls: 'review', label: 'review' };
     }
   }
   function scopeLocation() { return container ? (container.currentLocation || loc) : loc; }
@@ -5016,32 +5079,78 @@ function osOpenAudit(loc, containerId) {
       return;
     }
 
+    if (panelMode === 'adjust') { renderAdjustPanel(e); return; }
+
+    const canDel = canDeleteEntry(e);
     panel.innerHTML = `
       <div class="os-au2-panel-top">
         <div>
           <div class="os-au2-panel-ctx">REVIEWING · ${escapeHtml(boxCode)}</div>
           <div class="os-au2-panel-po">PO# ${escapeHtml(e.po)}</div>
-          <div class="os-au2-panel-cat">${escapeHtml(e.category || '—')}</div>
+          <div class="os-au2-panel-cat">${escapeHtml(e.category || '—')} · ${Number(e.quantity || 0)} units</div>
         </div>
-        <div class="os-au2-stepper">
-          <button class="os-au2-step" id="osAu2Minus" type="button" aria-label="Remove a unit">−</button>
-          <div class="os-au2-step-val"><b id="osAu2Qty">${Number(e.quantity || 0)}</b><span>units</span></div>
-          <button class="os-au2-step" id="osAu2Plus" type="button" aria-label="Add a unit">+</button>
-        </div>
+        ${canDel ? `<button class="os-au2-del" id="osAu2Del" type="button" title="Delete this PO" aria-label="Delete this PO">${ICON.trash}</button>` : ''}
       </div>
       <div class="os-au2-actions">
         <button class="os-au2-btn os-au2-btn-keep"   data-out="kept"   type="button">${ICON.keep}<span>Keep</span></button>
         <button class="os-au2-btn os-au2-btn-move"   data-out="move"   type="button">${ICON.move}<span>Move</span></button>
         <button class="os-au2-btn os-au2-btn-donate" data-out="donate" type="button">${ICON.donate}<span>Donate</span></button>
-        <button class="os-au2-btn os-au2-btn-pull"   data-out="pull"   type="button">${ICON.pull}<span>Pull</span></button>
+        <button class="os-au2-btn os-au2-btn-adjust" data-out="adjust" type="button">${ICON.adjust}<span>Add / Remove</span></button>
       </div>`;
-    panel.querySelector('#osAu2Minus').addEventListener('click', () => bumpQty(e, -1));
-    panel.querySelector('#osAu2Plus').addEventListener('click', () => bumpQty(e, +1));
+    panel.querySelector('#osAu2Del')?.addEventListener('click', () => deleteActivePo(e));
     panel.querySelectorAll('[data-out]').forEach(b => b.addEventListener('click', () => {
       const out = b.dataset.out;
-      if (out === 'move') { panelMode = 'move'; renderPanel(); return; }
+      if (out === 'move')   { panelMode = 'move';   renderPanel(); return; }
+      if (out === 'adjust') { panelMode = 'adjust'; adjustDir = 'remove'; adjustAmt = 1; renderPanel(); return; }
       applyOutcome(e, out);
     }));
+  }
+
+  function renderAdjustPanel(e) {
+    const from = Number(e.quantity || 0);
+    if (adjustDir === 'remove' && adjustAmt > from) adjustAmt = Math.max(1, from);
+    if (adjustAmt < 1) adjustAmt = 1;
+    const reasons = reasonsFor(adjustDir);
+    const verb = adjustDir === 'add' ? 'Add' : 'Remove';
+    panel.innerHTML = `
+      <div class="os-au2-panel-top">
+        <div>
+          <div class="os-au2-panel-ctx">ADD / REMOVE · PO# ${escapeHtml(e.po)}</div>
+          <div class="os-au2-panel-po" style="font-size:18px;">${from} units in box</div>
+        </div>
+        <div class="os-au2-segor">
+          <button class="os-au2-seg${adjustDir === 'add' ? ' is-on' : ''}" data-dir="add" type="button">${ICON.add}Add</button>
+          <button class="os-au2-seg${adjustDir === 'remove' ? ' is-on' : ''}" data-dir="remove" type="button">${ICON.remove}Remove</button>
+        </div>
+      </div>
+      <div class="os-au2-adjrow">
+        <div class="os-au2-stepper">
+          <button class="os-au2-step" id="osAu2AdjMinus" type="button" aria-label="Fewer">−</button>
+          <div class="os-au2-step-val"><b id="osAu2AdjAmt">${adjustAmt}</b><span>units</span></div>
+          <button class="os-au2-step" id="osAu2AdjPlus" type="button" aria-label="More">+</button>
+        </div>
+        <select class="os-input os-au2-reason-sel" id="osAu2Reason">
+          ${reasons.length
+            ? reasons.map(rr => `<option value="${escapeAttribute(rr)}">${escapeHtml(rr)}</option>`).join('')
+            : `<option value="">No reasons — add some in Settings</option>`}
+        </select>
+      </div>
+      <div class="os-au2-adjacts">
+        <button class="os-au2-btn ${adjustDir === 'add' ? 'os-au2-btn-keep' : 'os-au2-btn-pull'}" id="osAu2AdjGo" type="button">${verb} ${adjustAmt}</button>
+        <button class="os-au2-btn" id="osAu2AdjCancel" type="button">Cancel</button>
+      </div>`;
+    const amtEl = panel.querySelector('#osAu2AdjAmt');
+    const goEl  = panel.querySelector('#osAu2AdjGo');
+    const sync = () => { amtEl.textContent = adjustAmt; goEl.textContent = `${verb} ${adjustAmt}`; };
+    panel.querySelectorAll('[data-dir]').forEach(b => b.addEventListener('click', () => { adjustDir = b.dataset.dir; renderAdjustPanel(e); }));
+    panel.querySelector('#osAu2AdjMinus').addEventListener('click', () => { adjustAmt = Math.max(1, adjustAmt - 1); sync(); });
+    panel.querySelector('#osAu2AdjPlus').addEventListener('click', () => { const cap = adjustDir === 'remove' ? Math.max(1, from) : 99999; adjustAmt = Math.min(cap, adjustAmt + 1); sync(); });
+    goEl.addEventListener('click', () => {
+      const reason = panel.querySelector('#osAu2Reason').value;
+      if (!reason) { alert('Pick a reason first (a manager can add reasons in Settings).'); return; }
+      applyAdjust(e, adjustDir, adjustAmt, reason);
+    });
+    panel.querySelector('#osAu2AdjCancel').addEventListener('click', () => { panelMode = 'default'; renderPanel(); });
   }
 
   function render() { renderCards(); renderPanel(); updateHead(); }
@@ -6995,6 +7104,21 @@ function renderMasterLists() {
   if (categoriesList) renderSingleMasterList("categories", categoriesList);
   if (locationsList) renderSingleMasterList("locations", locationsList);
   if (putawayLocationsList) renderSingleMasterList("putawayLocations", putawayLocationsList);
+
+  // Overstock adjustment reasons — visible/editable to managers & admins only.
+  if (!Array.isArray(state.masters.osAddReasons)) state.masters.osAddReasons = [...(defaultMasters.osAddReasons || [])];
+  if (!Array.isArray(state.masters.osRemoveReasons)) state.masters.osRemoveReasons = [...(defaultMasters.osRemoveReasons || [])];
+  const reasonsPanel = document.getElementById("osReasonsSettings");
+  if (reasonsPanel) {
+    const elevated = (typeof authHasLeadershipAccess === "function") ? authHasLeadershipAccess() : false;
+    reasonsPanel.style.display = elevated ? "" : "none";
+    if (elevated) {
+      const addList = document.getElementById("osAddReasonsList");
+      const remList = document.getElementById("osRemoveReasonsList");
+      if (addList) renderSingleMasterList("osAddReasons", addList);
+      if (remList) renderSingleMasterList("osRemoveReasons", remList);
+    }
+  }
 }
 
 function renderSingleMasterList(type, container) {
