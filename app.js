@@ -570,7 +570,7 @@ function sortOverstockLog(rows, sortKey) {
 }
 
 // ── Boxes grid view state (session-only) ────────────────────────────────
-const osBoxesUi = { sort: "updated" };
+const osBoxesUi = { sort: "updated", filter: "" };
 
 function sortBoxes(boxes, key) {
   const arr = boxes.slice();
@@ -3513,6 +3513,7 @@ function bindOverstockEvents() {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
+    osLogEvent(selectedPo, 'added', `Logged to overstock${document.getElementById("overstockEntryLocation").value ? ` at ${document.getElementById("overstockEntryLocation").value}` : ''}`, { containerCode: '', location: document.getElementById("overstockEntryLocation").value || '' });
     persistData();
     overstockClearDraft();
     document.getElementById("overstockEntryForm").reset();
@@ -3543,6 +3544,24 @@ function normalizeOverstockPo(raw) {
 }
 window.isValidOverstockPo = isValidOverstockPo;
 window.normalizeOverstockPo = normalizeOverstockPo;
+
+// Append-only, synced per-PO trail so every overstock action on a PO can be
+// traced later: what happened, when, and by whom. Surfaced in the PO Lookup.
+function osLogEvent(po, action, label, extra) {
+  try {
+    if (!Array.isArray(state.data.overstockHistory)) state.data.overstockHistory = [];
+    state.data.overstockHistory.unshift(Object.assign({
+      id: makeId(),
+      po: normalizeOverstockPo(po),
+      action: action || 'event',
+      label: label || action || 'change',
+      by: (window.hcCurrentUser?.name || window.hcCurrentUser?.email || state.currentUser || 'unknown'),
+      ts: Date.now(),
+    }, extra || {}));
+    if (state.data.overstockHistory.length > 4000) state.data.overstockHistory.length = 4000;
+  } catch (_) {}
+}
+window.osLogEvent = osLogEvent;
 
 // Finds containers that list the same PO more than once and merges each set
 // into a single line — quantities (and apparel size breakdowns) are summed, so
@@ -4028,6 +4047,7 @@ function deleteOverstockEntry(entryId) {
     location: row.location,
     sourceType: row.sourceType,
   });
+  osLogEvent(row.po, 'deleted', `Deleted from overstock${row.containerCode ? ` (was in ${row.containerCode})` : ''}`, { containerCode: row.containerCode || '', location: row.location || '' });
   return { ok: true };
 }
 
@@ -4792,6 +4812,7 @@ function osReleaseDonation(donationId, containerId) {
   }
 
   state.data.overstockDonations = donations.filter(d => d.id !== donationId);
+  osLogEvent(don.po, 'released', `Returned to ${container.code} from the donations list`, { containerCode: container.code, location: container.currentLocation || '' });
   osReleasePickId = null;
   persistData();
   if (typeof renderOverstockPage === 'function') renderOverstockPage();
@@ -4854,6 +4875,9 @@ function osUndoLast() {
     if (item.snap[k] === undefined) delete state.data[k];
     else state.data[k] = item.snap[k];
   });
+  // History is append-only (not snapshotted), so record the reversal too.
+  const undoPo = (/PO#?\s*([\w-]+)/.exec(item.label || '') || [])[1] || '';
+  osLogEvent(undoPo, 'undo', `Undid — ${item.label}`);
   persistData();
   if (typeof renderOverstockPage === 'function') renderOverstockPage();
   // If the audit modal is still up, rebuild it fresh so the restored PO/qty
@@ -5308,6 +5332,9 @@ function osOpenAudit(loc, containerId) {
       decided[entry.id] = 'adjusted';
     }
     osLogAdjust(entry, direction, amt, reason, from, to);
+    osLogEvent(entry.po, direction === 'add' ? 'adjust_add' : 'adjust_remove',
+      `${direction === 'add' ? 'Added' : 'Removed'} ${amt} unit${amt === 1 ? '' : 's'}${to === 0 ? ' (emptied)' : ''}${reason ? ` — ${reason}` : ''}`,
+      { containerCode: entry.containerCode || '', location: entry.location || '', from, to });
     persistData();
     if (typeof renderOverstockPage === 'function') renderOverstockPage();
     panelMode = 'default';
@@ -5372,6 +5399,7 @@ function osOpenAudit(loc, containerId) {
   function applyOutcome(entry, outcome) {
     flushQty();
     osSnapshotForUndo(outcome === 'donate' ? `Donated PO# ${entry.po}` : outcome === 'pull' ? `Pulled PO# ${entry.po}` : `Kept PO# ${entry.po}`);
+    const boxBefore = entry.containerCode || (container ? container.code : '') || '';
     if (outcome === 'kept') {
       entry.action = 'Required';
       if (entry.status === 'Donation') entry.status = 'Not Donation';
@@ -5397,6 +5425,10 @@ function osOpenAudit(loc, containerId) {
       if (idx >= 0) scopeEntries.splice(idx, 1);
       if (activeId === entry.id) activeId = null;
     }
+    osLogEvent(entry.po,
+      outcome === 'donate' ? 'donated' : outcome === 'pull' ? 'pulled' : 'kept',
+      outcome === 'donate' ? `Donated from ${boxBefore || 'box'}` : outcome === 'pull' ? `Pulled from ${boxBefore || 'box'}` : `Kept in ${boxBefore || scopeLocation() || 'overstock'}`,
+      { containerCode: boxBefore, location: outcome === 'kept' ? (entry.location || '') : '' });
     persistData();
     if (typeof renderOverstockPage === 'function') renderOverstockPage();
     render();
@@ -5412,6 +5444,7 @@ function osOpenAudit(loc, containerId) {
     entry.action        = 'Required';
     entry.updatedAt     = Date.now();
     decided[entry.id]   = 'move';
+    osLogEvent(entry.po, 'moved', `Moved to ${t.code}`, { containerCode: t.code, location: t.currentLocation || '' });
     persistData();
     if (typeof renderOverstockPage === 'function') renderOverstockPage();
     panelMode = 'default';
@@ -6062,12 +6095,13 @@ function renderOverstockPage() {
             <div class="os-panel-sub">Tap a box for options — audit, add a PO, edit, merge, or move.</div>
           </div>
           <div class="os-boxes-tools">
+            <input id="osBoxesFilter" class="os-filter-input os-boxes-filter" type="text" placeholder="Find a box…" autocomplete="off" />
             <select id="osBoxesSort" class="os-filter-select" aria-label="Sort boxes">
               <option value="updated">Last updated</option>
               <option value="name">Name (OSC #)</option>
               <option value="location">Location</option>
             </select>
-            <span class="os-badge os-badge-purple">${boxes.length} box${boxes.length !== 1 ? 'es' : ''}</span>
+            <span class="os-badge os-badge-purple" id="osBoxesCount">${boxes.length} box${boxes.length !== 1 ? 'es' : ''}</span>
           </div>
         </div>
         <div class="os-panel-body">
@@ -6076,18 +6110,17 @@ function renderOverstockPage() {
                 const items = getOverstockContainerItems(c.id);
                 const units = items.reduce((s,r)=>s+Number(r.quantity||0),0);
                 const statusDot = {'Open':'os-box-dot-blue','On Cart':'os-box-dot-amber','Stored':'os-box-dot-green','Full':'os-box-dot-gray'}[c.status]||'os-box-dot-gray';
-                return `<div class="os-box-card os-box-calm" data-box-actions="${escapeAttribute(c.id)}" role="button" tabindex="0">
-                  <div class="os-box-calm-top">
+                const search = (c.code + ' ' + (c.currentLocation || '')).toLowerCase();
+                return `<div class="os-box-card os-box-calm" data-box-actions="${escapeAttribute(c.id)}" data-search="${escapeAttribute(search)}" role="button" tabindex="0">
+                  <div class="os-box-calm-l1">
                     <span class="os-box-dot ${statusDot}" title="${escapeAttribute(c.status)}"></span>
                     <span class="os-box-calm-code">${escapeHtml(c.code)}</span>
-                  </div>
-                  <div class="os-box-calm-nums"><b>${items.length}</b> PO${items.length===1?'':'s'} · <b>${units}</b> units</div>
-                  <div class="os-box-calm-foot">
-                    <span class="os-box-calm-loc">${c.currentLocation ? escapeHtml(c.currentLocation) : '—'}</span>
                     <span class="os-box-calm-time">${escapeHtml(formatDateTimeShort(c.updatedAt || c.createdAt))}</span>
                   </div>
+                  <div class="os-box-calm-l2"><b>${items.length}</b> PO${items.length===1?'':'s'} · <b>${units}</b>u${c.currentLocation ? ` · 📍 ${escapeHtml(c.currentLocation)}` : ''}</div>
                 </div>`;
-              }).join('')}</div>`
+              }).join('')}</div>
+              <div class="os-boxes-noresult" id="osBoxesNoResult" style="display:none;">No boxes match your search.</div>`
             : `<div class="os-empty-state"><div class="os-empty-icon">📦</div>No boxes yet.</div>`}
         </div>
       </section>`;
@@ -6096,6 +6129,27 @@ function renderOverstockPage() {
     if (sortSel) {
       sortSel.value = osBoxesUi.sort;
       sortSel.onchange = () => { osBoxesUi.sort = sortSel.value; renderOverstockPage(); };
+    }
+    // Filter in the DOM (no re-render) so the box keeps focus while typing.
+    const boxFilter = document.getElementById('osBoxesFilter');
+    if (boxFilter) {
+      boxFilter.value = osBoxesUi.filter || '';
+      const applyBoxFilter = () => {
+        const q = (boxFilter.value || '').trim().toLowerCase();
+        osBoxesUi.filter = boxFilter.value;
+        let shown = 0;
+        conEl.querySelectorAll('.os-boxes-grid [data-box-actions]').forEach(card => {
+          const match = !q || (card.dataset.search || '').includes(q);
+          card.style.display = match ? '' : 'none';
+          if (match) shown++;
+        });
+        const countEl = document.getElementById('osBoxesCount');
+        if (countEl) countEl.textContent = q ? `${shown} of ${boxes.length}` : `${boxes.length} box${boxes.length !== 1 ? 'es' : ''}`;
+        const noRes = document.getElementById('osBoxesNoResult');
+        if (noRes) noRes.style.display = (q && shown === 0) ? '' : 'none';
+      };
+      boxFilter.oninput = applyBoxFilter;
+      if (osBoxesUi.filter) applyBoxFilter();
     }
     conEl.querySelectorAll('[data-box-actions]').forEach(card => {
       const open = () => osOpenBoxActions(card.dataset.boxActions);

@@ -49,6 +49,82 @@
     advanced:'#1D9E75', pulled_back:'#EF9F27',
   };
 
+  var OS_HISTORY_COLORS = {
+    added:'#185FA5', adjust_add:'#185FA5', adjust_remove:'#EF9F27',
+    kept:'#1D9E75', moved:'#7c3aed', donated:'#E24B4A', released:'#1D9E75',
+    deleted:'#E24B4A', pulled:'#EF9F27', undo:'#888',
+  };
+
+  function normPo(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
+
+  // Reads the client's synced overstock data so the lookup can trace POs that
+  // only ever lived in the overstock workflow (e.g. manually-typed PO numbers),
+  // which the backend doesn't know about. Returns { has, html }.
+  function localOverstockTrace(query) {
+    var st = (window.state && window.state.data) ? window.state.data : null;
+    if (!st) return { has: false, html: '' };
+    var q = normPo(query);
+    var entries   = (st.overstockEntries   || []).filter(function(e){ return e && normPo(e.po) === q; });
+    var donations = (st.overstockDonations || []).filter(function(d){ return d && normPo(d.po) === q; });
+    var events    = (st.overstockHistory   || []).filter(function(ev){ return ev && normPo(ev.po) === q; });
+    if (!entries.length && !donations.length && !events.length) return { has: false, html: '' };
+
+    var totalNow = entries.reduce(function(s, e){ return s + (Number(e.quantity) || 0); }, 0);
+    var html = '<div style="border:1px solid #f1c40f;border-radius:10px;overflow:hidden;margin-top:8px;background:#fffdf5;">';
+    html += '<div style="display:flex;align-items:center;gap:10px;padding:11px 14px;background:#FEF9E7;border-bottom:1px solid #f6e3a0;">';
+    html += '<span style="font-size:18px;">📦</span><div style="flex:1;min-width:0;">';
+    html += '<span style="font-size:13px;font-weight:800;">Overstock trace — ' + esc(query) + '</span>';
+    html += '<div style="font-size:11px;color:#7a5b16;">' + entries.length + ' active line' + (entries.length === 1 ? '' : 's') + ' · ' + qty(totalNow) + ' units · ' + events.length + ' logged event' + (events.length === 1 ? '' : 's') + '</div>';
+    html += '</div></div><div style="padding:12px 14px;">';
+
+    html += section('Where it is now');
+    if (entries.length) {
+      entries.forEach(function(e){
+        var inBox = e.containerCode ? ('📦 ' + esc(e.containerCode)) : (e.action === 'Donated' ? 'Donated (out of box)' : 'No box');
+        var loc = e.location ? (' · 📍 ' + esc(e.location)) : '';
+        html += '<div style="font-size:12px;padding:5px 0;border-bottom:1px solid #f3e6c0;">' + inBox + loc + ' · ' + qty(e.quantity) + ' units · ' + esc(e.category || 'Uncategorized') + (e.action ? ' · <span style="color:#7a5b16;">' + esc(e.action) + '</span>' : '') + '</div>';
+      });
+    } else {
+      html += '<div style="font-size:12px;color:#888;padding:4px 0;">Not currently in any box.</div>';
+    }
+
+    if (donations.length) {
+      html += '<div style="height:8px;"></div>' + section('Donations');
+      donations.forEach(function(d){
+        html += '<div style="font-size:12px;padding:5px 0;border-bottom:1px solid #f3e6c0;">🎁 ' + qty(d.quantity) + ' units from ' + esc(d.containerCode || '—') + '<div style="font-size:10px;color:#888;">' + fmtTime(d.donatedAt) + (d.donatedBy ? ' · ' + esc(d.donatedBy) : '') + '</div></div>';
+      });
+    }
+
+    // Build the timeline from logged events, and backfill from existing data
+    // for actions that predate logging (so older POs still trace).
+    var timeline = events.slice();
+    var hasType = {};
+    events.forEach(function(ev){ hasType[ev.action] = true; });
+    if (!hasType.added) entries.forEach(function(e){
+      timeline.push({ action: 'added', label: 'Logged to overstock' + (e.containerCode ? ' · box ' + e.containerCode : ''), ts: e.createdAt || 0, by: e.associate || '' });
+    });
+    if (!hasType.donated) donations.forEach(function(d){
+      timeline.push({ action: 'donated', label: 'Donated' + (d.containerCode ? ' from ' + d.containerCode : ''), ts: d.donatedAt || 0, by: d.donatedBy || '' });
+    });
+    timeline.sort(function(a, b){ return (b.ts || 0) - (a.ts || 0); });
+
+    if (timeline.length) {
+      html += '<div style="height:8px;"></div>' + section('Full history (' + timeline.length + ')');
+      html += '<div style="max-height:260px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;">';
+      timeline.forEach(function(ev){
+        var col = OS_HISTORY_COLORS[ev.action] || '#888';
+        html += '<div style="display:flex;gap:9px;font-size:12px;align-items:flex-start;">';
+        html += '<div style="width:7px;height:7px;border-radius:50%;background:' + col + ';margin-top:4px;flex-shrink:0;"></div>';
+        html += '<div style="flex:1;"><span style="font-weight:700;">' + esc(ev.label || ev.action) + '</span>';
+        html += '<div style="font-size:10px;color:#888;margin-top:1px;">' + fmtTime(ev.ts) + (ev.by ? ' · ' + esc(ev.by) : '') + '</div></div></div>';
+      });
+      html += '</div>';
+    }
+
+    html += '</div></div>';
+    return { has: true, html: html };
+  }
+
   async function lookupPO(query) {
     var resultsEl = document.getElementById('poLookupResults');
     if (!resultsEl) return;
@@ -59,11 +135,14 @@
       var res  = await fetch(API + '?po=' + encodeURIComponent(query));
       var data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Lookup failed');
+      var local;
+      try { local = localOverstockTrace(query); } catch (_) { local = { has: false, html: '' }; }
       if (!data.found) {
+        if (local.has) { resultsEl.innerHTML = local.html; return; }
         resultsEl.innerHTML = '<div style="padding:12px;border-radius:8px;background:var(--blue1,#f0f6ff);border:1px solid var(--blue2,#d0e4ff);font-size:13px;color:var(--muted,#888);">No records found for <strong>' + esc(query) + '</strong>. This PO has not been logged in the inbound workflow yet.</div>';
         return;
       }
-      resultsEl.innerHTML = renderResult(data);
+      resultsEl.innerHTML = renderResult(data) + (local.has ? local.html : '');
 
       // Wire expand/collapse
       var head = document.getElementById('poResultHead');

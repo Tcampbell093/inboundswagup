@@ -690,6 +690,7 @@
     try {
       if (!Array.isArray(window.state.data.overstockEntries)) window.state.data.overstockEntries = [];
       window.state.data.overstockEntries.unshift(entry);
+      if (typeof window.osLogEvent === 'function') window.osLogEvent(po, 'added', `Added to box ${session.activeContainerCode || ''}`.trim(), { containerCode: session.activeContainerCode || '', location: session.activeContainerLocation || '' });
       if (typeof window.persistData === 'function') window.persistData();
     } catch (e) {
       showToast('Failed to save entry: ' + e.message, 'error');
