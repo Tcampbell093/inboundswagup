@@ -4734,6 +4734,64 @@ function exportDonationsCsv() {
 }
 window.openOverstockDonations = openOverstockDonations;
 
+// ── Forgiving undo for overstock actions ────────────────────────────────
+// Every removing/changing PO action snapshots the overstock data first, so any
+// of them — donate, delete, remove-to-zero, keep, move, add/remove — can be
+// reversed, even several steps back. Built for associates who aren't used to
+// software: nothing is ever a dead end.
+const OS_UNDO_KEYS = ['overstockEntries', 'overstockContainers', 'overstockDonations', '__deletedOverstockEntryIds', '__deletedOverstockContainerIds'];
+let osUndoStack = [];
+let osActiveAudit = null; // {loc, containerId} while the audit modal is open
+
+function osCloneForUndo(v) { try { return v == null ? v : JSON.parse(JSON.stringify(v)); } catch (_) { return v; } }
+function osSnapshotForUndo(label) {
+  const snap = {};
+  OS_UNDO_KEYS.forEach(k => { snap[k] = osCloneForUndo(state.data[k]); });
+  osUndoStack.push({ label: label || 'change', ts: Date.now(), snap });
+  if (osUndoStack.length > 20) osUndoStack.shift();
+  osUpdateUndoUI();
+}
+function osUndoAvailable() { return osUndoStack.length > 0; }
+function osLastUndoLabel() { return osUndoStack.length ? osUndoStack[osUndoStack.length - 1].label : ''; }
+function osIsAuditOpen() {
+  const m = document.getElementById('osMdAudit');
+  return !!(m && m.classList.contains('os-modal-open'));
+}
+function osUndoLast() {
+  const item = osUndoStack.pop();
+  if (!item) { osUpdateUndoUI(); return; }
+  OS_UNDO_KEYS.forEach(k => {
+    if (item.snap[k] === undefined) delete state.data[k];
+    else state.data[k] = item.snap[k];
+  });
+  persistData();
+  if (typeof renderOverstockPage === 'function') renderOverstockPage();
+  // If the audit modal is still up, rebuild it fresh so the restored PO/qty
+  // reappears exactly where it was.
+  if (osIsAuditOpen() && osActiveAudit) osOpenAudit(osActiveAudit.loc, osActiveAudit.containerId);
+  osUpdateUndoUI();
+  if (typeof showToast === 'function') showToast(`Undone — ${item.label}`, 'success');
+}
+function osUpdateUndoUI() {
+  const has = osUndoAvailable();
+  const label = osLastUndoLabel();
+  const btn = document.getElementById('osAu2Undo'); // inside the audit modal
+  if (btn) {
+    btn.style.display = has ? '' : 'none';
+    btn.textContent = has ? `↶ Undo: ${label}` : '↶ Undo';
+    btn.onclick = osUndoLast;
+  }
+  const bar = document.getElementById('overstockUndoBar'); // on the overstock page
+  if (bar) {
+    bar.innerHTML = has
+      ? `<div class="os-undo-bar"><span class="os-undo-txt">↩︎ Last change: <strong>${escapeHtml(label)}</strong></span><button class="os-undo-btn" id="osUndoBarBtn" type="button">Undo</button></div>`
+      : '';
+    const b = document.getElementById('osUndoBarBtn');
+    if (b) b.onclick = osUndoLast;
+  }
+}
+window.osUndoLast = osUndoLast;
+
 function osBuildLocGrid(gridId, onTap) {
   const g = document.getElementById(gridId);
   if (!g) return;
@@ -5054,6 +5112,9 @@ function osOpenAudit(loc, containerId) {
     ? (state.data.overstockContainers || []).find(c => c.id === containerId)
     : null;
 
+  // Remember what's being audited so Undo can refresh this exact view.
+  osActiveAudit = { loc: loc, containerId: containerId || null };
+
   document.getElementById('osAuTitle').textContent = container ? container.code : (loc || 'Overstock');
 
   const body   = document.getElementById('osAuBody');
@@ -5141,6 +5202,7 @@ function osOpenAudit(loc, containerId) {
     const from = Number(entry.quantity || 0);
     const to   = direction === 'add' ? from + amt : Math.max(0, from - amt);
     if (to === from) { panelMode = 'default'; render(); return; }
+    osSnapshotForUndo(`${direction === 'add' ? 'Added' : 'Removed'} ${amt} on PO# ${entry.po}`);
     entry.quantity  = to;
     entry.updatedAt = Date.now();
     if (entry.sizeBreakdown && Object.keys(entry.sizeBreakdown).length) {
@@ -5169,7 +5231,8 @@ function osOpenAudit(loc, containerId) {
   }
   function deleteActivePo(entry) {
     const label = entry.containerCode ? `${entry.containerCode} · PO# ${entry.po}` : `PO# ${entry.po}`;
-    if (!confirm(`Delete ${label} entirely?\n\nThis removes the PO from overstock. Use this only for entries logged by mistake — for items pulled, donated, or moved, use those actions instead so it's recorded properly.`)) return;
+    if (!confirm(`Delete ${label} entirely?\n\nThis removes the PO from overstock. Use this only for entries logged by mistake — for items pulled, donated, or moved, use those actions instead so it's recorded properly.\n\n(You can undo this right after if it was a mistake.)`)) return;
+    osSnapshotForUndo(`Deleted PO# ${entry.po}`);
     if (typeof window.deleteOverstockEntry === 'function') {
       window.deleteOverstockEntry(entry.id);
     } else {
@@ -5218,6 +5281,7 @@ function osOpenAudit(loc, containerId) {
   }
   function applyOutcome(entry, outcome) {
     flushQty();
+    osSnapshotForUndo(outcome === 'donate' ? `Donated PO# ${entry.po}` : outcome === 'pull' ? `Pulled PO# ${entry.po}` : `Kept PO# ${entry.po}`);
     if (outcome === 'kept') {
       entry.action = 'Required';
       if (entry.status === 'Donation') entry.status = 'Not Donation';
@@ -5251,6 +5315,7 @@ function osOpenAudit(loc, containerId) {
     flushQty();
     const t = (state.data.overstockContainers || []).find(c => c.id === targetId);
     if (!t) return;
+    osSnapshotForUndo(`Moved PO# ${entry.po}`);
     entry.containerId   = t.id;
     entry.containerCode = t.code;
     entry.location      = t.currentLocation || entry.location || scopeLocation();
@@ -5375,6 +5440,9 @@ function osOpenAudit(loc, containerId) {
       const out = b.dataset.out;
       if (out === 'move')   { panelMode = 'move';   renderPanel(); return; }
       if (out === 'adjust') { panelMode = 'adjust'; adjustDir = 'remove'; adjustAmt = 1; renderPanel(); return; }
+      if (out === 'donate') {
+        if (!confirm(`Donate PO# ${e.po} (${Number(e.quantity || 0)} units)?\n\nThis takes it out of the box and adds it to the donations list. You can undo it right after if it was a mistake.`)) return;
+      }
       applyOutcome(e, out);
     }));
   }
@@ -5421,6 +5489,9 @@ function osOpenAudit(loc, containerId) {
     goEl.addEventListener('click', () => {
       const reason = panel.querySelector('#osAu2Reason').value;
       if (!reason) { alert('Pick a reason first (a manager can add reasons in Settings).'); return; }
+      if (adjustDir === 'remove' && from > 0 && adjustAmt >= from) {
+        if (!confirm(`Remove all ${from} units from PO# ${e.po}?\n\nThis empties the PO and takes it out of the box. You can undo it right after.`)) return;
+      }
       applyAdjust(e, adjustDir, adjustAmt, reason);
     });
     panel.querySelector('#osAu2AdjCancel').addEventListener('click', () => { panelMode = 'default'; renderPanel(); });
@@ -5438,6 +5509,7 @@ function osOpenAudit(loc, containerId) {
   document.querySelectorAll('#osMdAudit [data-close="osMdAudit"]').forEach(b => { b.onclick = () => { flushQty(); }; });
 
   render();
+  osUpdateUndoUI();
   osOpenModal('osMdAudit');
 }
 
@@ -5745,6 +5817,7 @@ function renderOverstockPage() {
   // everything is already consistent, so this is cheap on healthy data and
   // self-healing on drifted data.
   try { repairOverstockConsistency(); } catch (e) { console.warn('Overstock repair failed:', e); }
+  try { osUpdateUndoUI(); } catch (_) {}
 
   const containers = state.data.overstockContainers;
   // "On cart" = any non-closed box without a location yet — regardless of status label.

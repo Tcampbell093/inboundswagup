@@ -133,6 +133,9 @@
       <!-- ── Unboxed from Prep warning banner (rendered by JS) ── -->
       <div id="overstockUnboxedBanner"></div>
 
+      <!-- ── Undo bar (rendered by JS whenever a recent change can be reversed) ── -->
+      <div id="overstockUndoBar"></div>
+
       <!-- ── Put Away — cart queue (rendered by JS) ── -->
       <div id="overstockContainerHub"></div>
 
@@ -274,6 +277,7 @@
             <div class="os-au2-panel" id="osAu2Panel"></div>
             <div class="os-au2-footbar">
               <button class="os-ghost-btn os-au2-closebtn" data-close="osMdAudit" type="button">Close</button>
+              <button class="os-ghost-btn os-au2-undo" id="osAu2Undo" type="button" style="display:none;">↶ Undo</button>
               <span class="os-au2-hint">Tap any PO above to review it</span>
               <button class="os-submit-btn os-au2-finish" id="osAu2Finish" type="button">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m9 12 2 2 4-4"/></svg>
