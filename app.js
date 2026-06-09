@@ -4312,6 +4312,7 @@ function bindOverstockScanUI() {
   if (window.__osScanUIBound) return;
   window.__osScanUIBound = true;
   document.getElementById("overstockContainerCameraBtn")?.addEventListener("click", openOverstockCamera);
+  document.getElementById("overstockDonationsBtn")?.addEventListener("click", openOverstockDonations);
   document.getElementById("osScanCamClose")?.addEventListener("click", closeOverstockCamera);
   document.getElementById("osScanCamCancel")?.addEventListener("click", closeOverstockCamera);
   // Backdrop click on the camera modal must also stop the camera.
@@ -4653,6 +4654,85 @@ function osBindModalClose() {
     bd.addEventListener('click', e => { if (e.target === bd) osCloseModal(bd.id); });
   });
 }
+
+// ── Donations review (every donated PO, with when + by whom) ─────────────
+function getOverstockDonations() {
+  const list = Array.isArray(state.data.overstockDonations) ? state.data.overstockDonations : [];
+  return [...list].sort((a, b) => (b.donatedAt || 0) - (a.donatedAt || 0));
+}
+
+function openOverstockDonations() {
+  renderDonationsList('');
+  const search = document.getElementById('osDonSearch');
+  if (search) { search.value = ''; search.oninput = () => renderDonationsList(search.value || ''); }
+  const exp = document.getElementById('osDonExport');
+  if (exp) exp.onclick = exportDonationsCsv;
+  osOpenModal('osMdDonations');
+}
+
+function renderDonationsList(filter) {
+  const host = document.getElementById('osDonList');
+  const sub  = document.getElementById('osDonSub');
+  if (!host) return;
+  let rows = getOverstockDonations();
+  const q = String(filter || '').trim().toLowerCase();
+  if (q) rows = rows.filter(r => [r.po, r.category, r.containerCode, r.location, r.donatedBy]
+    .map(x => String(x || '').toLowerCase()).join(' ').includes(q));
+
+  const totalUnits = rows.reduce((s, r) => s + Number(r.quantity || 0), 0);
+  if (sub) sub.textContent = rows.length
+    ? `${rows.length} donation${rows.length === 1 ? '' : 's'} · ${totalUnits} units`
+    : 'Nothing donated yet.';
+
+  if (!rows.length) {
+    host.innerHTML = `<div class="os-don-empty">No donated items${q ? ' match your search' : ' yet'}.</div>`;
+    return;
+  }
+
+  host.innerHTML = rows.map(r => {
+    const when = new Date(r.donatedAt || 0);
+    const whenTxt = isNaN(when.getTime()) ? '—' : when.toLocaleString();
+    const sizes = r.sizeBreakdown && Object.keys(r.sizeBreakdown).length
+      ? ` · ${Object.entries(r.sizeBreakdown).map(([k, v]) => `${escapeHtml(k)}:${Number(v)}`).join(' ')}`
+      : '';
+    return `<div class="os-don-row">
+      <div class="os-don-main">
+        <span class="os-don-po">PO# ${escapeHtml(String(r.po || '—'))}</span>
+        <span class="os-don-qty">${Number(r.quantity || 0)}u</span>
+        <span class="os-don-cat">${escapeHtml(r.category || 'Uncategorized')}</span>
+      </div>
+      <div class="os-don-meta">
+        <span>📦 ${escapeHtml(r.containerCode || '—')}${r.location ? ` · 📍 ${escapeHtml(r.location)}` : ''}${sizes}</span>
+        <span>🧑 ${escapeHtml(r.donatedBy || 'unknown')} · 🕑 ${escapeHtml(whenTxt)}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function exportDonationsCsv() {
+  const rows = getOverstockDonations();
+  if (!rows.length) { if (typeof showToast === 'function') showToast('No donations to export.', 'info'); return; }
+  const esc = (v) => {
+    const s = String(v == null ? '' : v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [['Donated at', 'PO', 'Units', 'Category', 'Box', 'Location', 'Donated by'].join(',')];
+  rows.forEach(r => {
+    const when = new Date(r.donatedAt || 0);
+    lines.push([
+      isNaN(when.getTime()) ? '' : when.toISOString(),
+      r.po, Number(r.quantity || 0), r.category || '', r.containerCode || '', r.location || '', r.donatedBy || '',
+    ].map(esc).join(','));
+  });
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `overstock-donations-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+window.openOverstockDonations = openOverstockDonations;
 
 function osBuildLocGrid(gridId, onTap) {
   const g = document.getElementById(gridId);
@@ -5117,6 +5197,25 @@ function osOpenAudit(loc, containerId) {
     }
   }
   function scopeLocation() { return container ? (container.currentLocation || loc) : loc; }
+  // Append a permanent, synced donation record so donated POs can be reviewed
+  // and investigated later (what, how many, from which box, when, by whom).
+  function osLogDonation(entry) {
+    try {
+      if (!Array.isArray(state.data.overstockDonations)) state.data.overstockDonations = [];
+      state.data.overstockDonations.unshift({
+        id: makeId(),
+        entryId: entry.id,
+        po: entry.po,
+        quantity: Number(entry.quantity || 0),
+        category: entry.category || '',
+        containerCode: entry.containerCode || (container ? container.code : '') || '',
+        location: entry.location || scopeLocation() || '',
+        sizeBreakdown: entry.sizeBreakdown || undefined,
+        donatedBy: (window.hcCurrentUser?.name || window.hcCurrentUser?.email || state.currentUser || 'unknown'),
+        donatedAt: Date.now(),
+      });
+    } catch (_) {}
+  }
   function applyOutcome(entry, outcome) {
     flushQty();
     if (outcome === 'kept') {
@@ -5124,15 +5223,26 @@ function osOpenAudit(loc, containerId) {
       if (entry.status === 'Donation') entry.status = 'Not Donation';
       if (!entry.location) entry.location = scopeLocation();
     } else if (outcome === 'donate') {
+      // Record it FIRST (while box/location are still on the entry), then take
+      // the PO out of the container entirely.
+      osLogDonation(entry);
       entry.action = 'Donated';
       entry.status = 'Donation';
       entry.location = '';
+      entry.containerId = '';
+      entry.containerCode = '';
     } else if (outcome === 'pull') {
       entry.action = 'Replaced';
       entry.location = '';
     }
     entry.updatedAt = Date.now();
     decided[entry.id] = outcome;
+    // A donated PO has left the box — drop it from this audit's list.
+    if (outcome === 'donate') {
+      const idx = scopeEntries.findIndex(x => x.id === entry.id);
+      if (idx >= 0) scopeEntries.splice(idx, 1);
+      if (activeId === entry.id) activeId = null;
+    }
     persistData();
     if (typeof renderOverstockPage === 'function') renderOverstockPage();
     render();

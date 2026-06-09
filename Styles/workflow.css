@@ -5009,3 +5009,21 @@ body.workflow-page .os-c2 .os-box-search-clear:hover {
   font-size: 20px; font-weight: 800; color: #16263a; margin-left: auto; text-align: right;
 }
 .workflow-page .os-loc-value.os-loc-none { font-size: 14px; font-weight: 600; color: #8aa0bb; }
+/* ── Donations review modal ── */
+.workflow-page .os-don-tools { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+.workflow-page .os-don-tools .os-input { flex: 1; min-width: 0; }
+.workflow-page .os-don-list { max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.workflow-page .os-don-row {
+  border: 1px solid #e4ebf3; border-radius: 12px; padding: 11px 13px; background: #fff;
+}
+.workflow-page .os-don-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.workflow-page .os-don-po { font-weight: 800; color: #16263a; font-size: 15px; }
+.workflow-page .os-don-qty {
+  font-weight: 700; color: #0a7c4e; background: #e7f7ef; border-radius: 999px; padding: 2px 9px; font-size: 13px;
+}
+.workflow-page .os-don-cat { color: #5a7088; font-size: 13px; }
+.workflow-page .os-don-meta {
+  display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  margin-top: 6px; color: #76889e; font-size: 12.5px;
+}
+.workflow-page .os-don-empty { text-align: center; color: #8aa0bb; padding: 28px 10px; font-size: 14px; }
