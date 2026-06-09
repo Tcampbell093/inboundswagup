@@ -7,6 +7,9 @@
 
   const USERS_API = '/.netlify/functions/users';
 
+  // HTML-escape for error/status text rendered into innerHTML.
+  function stEsc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
+
   // ── Helpers ───────────────────────────────────────────────
   function getToken() {
     try {
@@ -51,7 +54,7 @@
       allUsers = data.users || [];
       renderUserTable();
     } catch(e) {
-      list.innerHTML = `<div style="text-align:center;padding:24px;color:#e55;">Error: ${e.message}</div>`;
+      list.innerHTML = `<div style="text-align:center;padding:24px;color:#e55;">Error: ${stEsc(e.message)}</div>`;
     }
   }
 
@@ -280,7 +283,7 @@
       }, 1200);
 
     } catch(e) {
-      if (statusEl) statusEl.innerHTML = `<span style="color:#e55;">Error: ${e.message}</span>`;
+      if (statusEl) statusEl.innerHTML = `<span style="color:#e55;">Error: ${stEsc(e.message)}</span>`;
     }
   }
 
@@ -326,7 +329,7 @@
       }, 800);
 
     } catch (e) {
-      if (statusEl) statusEl.innerHTML = `<span style="color:#e55;">Error: ${e.message}</span>`;
+      if (statusEl) statusEl.innerHTML = `<span style="color:#e55;">Error: ${stEsc(e.message)}</span>`;
     }
   }
 
@@ -376,7 +379,7 @@
       }, identityFailed ? 5000 : 1800);
 
     } catch(e) {
-      if (statusEl) statusEl.innerHTML = `<span style="color:#e55;">Error: ${e.message}</span>`;
+      if (statusEl) statusEl.innerHTML = `<span style="color:#e55;">Error: ${stEsc(e.message)}</span>`;
     }
   }
 
@@ -421,7 +424,7 @@
         </table>
       `;
     } catch(e) {
-      logEl.innerHTML = `<div style="text-align:center;padding:16px;color:#e55;">Error: ${e.message}</div>`;
+      logEl.innerHTML = `<div style="text-align:center;padding:16px;color:#e55;">Error: ${stEsc(e.message)}</div>`;
     }
   }
 
