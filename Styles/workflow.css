@@ -5042,3 +5042,22 @@ body.workflow-page .os-c2 .os-box-search-clear:hover {
 .workflow-page .os-undo-btn:hover { background: #ffc400; }
 .workflow-page .os-au2-undo { color: #8a5a00; border-color: #f0d28a; font-weight: 700; }
 .workflow-page .os-au2-undo:hover { background: #fff3d6; }
+/* ── Donations: return-to-box action ── */
+.workflow-page .os-don-act { margin-top: 10px; }
+.workflow-page .os-don-release {
+  border: 1px solid #cdd9e6; background: #f4f8fc; color: #2f4d6b;
+  font-weight: 700; font-size: 13px; border-radius: 9px; padding: 8px 14px; cursor: pointer;
+}
+.workflow-page .os-don-release:hover { background: #e8f1fb; border-color: #b6cde4; }
+.workflow-page .os-don-release-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.workflow-page .os-don-relsel { flex: 1; min-width: 150px; }
+.workflow-page .os-don-relgo {
+  border: 1px solid #1f9d57; background: #22a85f; color: #fff;
+  font-weight: 800; font-size: 13px; border-radius: 9px; padding: 9px 16px; cursor: pointer;
+}
+.workflow-page .os-don-relgo:hover { background: #1f9d57; }
+.workflow-page .os-don-relcancel {
+  border: 1px solid #d9e0e8; background: #fff; color: #5a7088;
+  font-weight: 700; font-size: 13px; border-radius: 9px; padding: 9px 14px; cursor: pointer;
+}
+.workflow-page .os-don-relnone { color: #b06a00; font-size: 13px; flex: 1; }

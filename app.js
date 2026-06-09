@@ -4661,7 +4661,10 @@ function getOverstockDonations() {
   return [...list].sort((a, b) => (b.donatedAt || 0) - (a.donatedAt || 0));
 }
 
+let osReleasePickId = null; // donation row currently choosing a box to return to
+
 function openOverstockDonations() {
+  osReleasePickId = null;
   renderDonationsList('');
   const search = document.getElementById('osDonSearch');
   if (search) { search.value = ''; search.oninput = () => renderDonationsList(search.value || ''); }
@@ -4689,12 +4692,34 @@ function renderDonationsList(filter) {
     return;
   }
 
+  const containers = (state.data.overstockContainers || []).filter(c => c.status !== 'Closed');
   host.innerHTML = rows.map(r => {
     const when = new Date(r.donatedAt || 0);
     const whenTxt = isNaN(when.getTime()) ? '—' : when.toLocaleString();
     const sizes = r.sizeBreakdown && Object.keys(r.sizeBreakdown).length
       ? ` · ${Object.entries(r.sizeBreakdown).map(([k, v]) => `${escapeHtml(k)}:${Number(v)}`).join(' ')}`
       : '';
+    let action;
+    if (osReleasePickId === r.id) {
+      const origCode = String(r.containerCode || '');
+      if (containers.length) {
+        const opts = containers.map(c =>
+          `<option value="${escapeAttribute(c.id)}"${c.code === origCode ? ' selected' : ''}>${escapeHtml(c.code)}${c.currentLocation ? ` · ${escapeHtml(c.currentLocation)}` : ' · on the cart'}</option>`
+        ).join('');
+        action = `<div class="os-don-release-row">
+          <select class="os-input os-don-relsel">${opts}</select>
+          <button class="os-don-relgo" data-relgo="${escapeAttribute(r.id)}" type="button">Return</button>
+          <button class="os-don-relcancel" data-relcancel="${escapeAttribute(r.id)}" type="button">Cancel</button>
+        </div>`;
+      } else {
+        action = `<div class="os-don-release-row">
+          <span class="os-don-relnone">No open boxes to return it to — create or open a box first.</span>
+          <button class="os-don-relcancel" data-relcancel="${escapeAttribute(r.id)}" type="button">Cancel</button>
+        </div>`;
+      }
+    } else {
+      action = `<button class="os-don-release" data-rel="${escapeAttribute(r.id)}" type="button">↩︎ Return to a box</button>`;
+    }
     return `<div class="os-don-row">
       <div class="os-don-main">
         <span class="os-don-po">PO# ${escapeHtml(String(r.po || '—'))}</span>
@@ -4705,8 +4730,73 @@ function renderDonationsList(filter) {
         <span>📦 ${escapeHtml(r.containerCode || '—')}${r.location ? ` · 📍 ${escapeHtml(r.location)}` : ''}${sizes}</span>
         <span>🧑 ${escapeHtml(r.donatedBy || 'unknown')} · 🕑 ${escapeHtml(whenTxt)}</span>
       </div>
+      <div class="os-don-act">${action}</div>
     </div>`;
   }).join('');
+
+  host.querySelectorAll('[data-rel]').forEach(b => b.addEventListener('click', () => { osReleasePickId = b.dataset.rel; renderDonationsList(filter); }));
+  host.querySelectorAll('[data-relcancel]').forEach(b => b.addEventListener('click', () => { osReleasePickId = null; renderDonationsList(filter); }));
+  host.querySelectorAll('[data-relgo]').forEach(b => b.addEventListener('click', () => {
+    const sel = host.querySelector('.os-don-relsel');
+    osReleaseDonation(b.dataset.relgo, sel ? sel.value : '');
+  }));
+}
+
+// Release a donated PO and put it back into a container. Restores the original
+// entry if it still exists, otherwise recreates it from the donation record.
+// Undoable, and blocks creating a duplicate PO in the target box.
+function osReleaseDonation(donationId, containerId) {
+  const donations = Array.isArray(state.data.overstockDonations) ? state.data.overstockDonations : [];
+  const don = donations.find(d => d.id === donationId);
+  if (!don) return;
+  const container = (state.data.overstockContainers || []).find(c => c.id === containerId);
+  if (!container) { if (typeof showToast === 'function') showToast('Pick a box to return it to.', 'error'); return; }
+
+  const entries = Array.isArray(state.data.overstockEntries) ? state.data.overstockEntries : [];
+  const entry = don.entryId ? entries.find(e => e.id === don.entryId) : null;
+  const norm = (v) => (typeof window.normalizeOverstockPo === 'function' ? window.normalizeOverstockPo(v) : String(v == null ? '' : v).trim()).toUpperCase();
+  const dupe = entries.find(e => e !== entry && e.containerId === container.id && norm(e.po) === norm(don.po)
+    && e.action !== 'Missing from Box' && e.action !== 'Lost');
+  if (dupe) { if (typeof showToast === 'function') showToast(`PO# ${don.po} is already in ${container.code}. Pick a different box.`, 'error'); return; }
+
+  osSnapshotForUndo(`Released PO# ${don.po} to ${container.code}`);
+
+  if (entry) {
+    entry.containerId   = container.id;
+    entry.containerCode = container.code;
+    entry.location      = container.currentLocation || '';
+    entry.action        = 'Required';
+    entry.status        = 'Not Donation';
+    if ((!entry.quantity || Number(entry.quantity) === 0) && don.quantity) entry.quantity = Number(don.quantity);
+    if (!entry.sizeBreakdown && don.sizeBreakdown) entry.sizeBreakdown = don.sizeBreakdown;
+    entry.updatedAt = Date.now();
+  } else {
+    entries.unshift({
+      id: makeId(),
+      date: new Date().toISOString().slice(0, 10),
+      po: don.po,
+      quantity: Number(don.quantity || 0),
+      category: don.category || '',
+      sizeBreakdown: don.sizeBreakdown || undefined,
+      status: 'Not Donation',
+      action: 'Required',
+      location: container.currentLocation || '',
+      containerId: container.id,
+      containerCode: container.code,
+      associate: state.currentUser || '',
+      sourceType: 'released-donation',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    state.data.overstockEntries = entries;
+  }
+
+  state.data.overstockDonations = donations.filter(d => d.id !== donationId);
+  osReleasePickId = null;
+  persistData();
+  if (typeof renderOverstockPage === 'function') renderOverstockPage();
+  renderDonationsList(document.getElementById('osDonSearch')?.value || '');
+  if (typeof showToast === 'function') showToast(`Returned PO# ${don.po} to ${container.code}.`, 'success');
 }
 
 function exportDonationsCsv() {
