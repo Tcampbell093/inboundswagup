@@ -61,7 +61,27 @@ async function ensureSchema() {
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS overstock_comments_item_idx ON overstock_comments(item_id);`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS overstock_cost_ref (
+      po_key          TEXT PRIMARY KEY,
+      po_name         TEXT,
+      cost            NUMERIC,
+      account_owner   TEXT,
+      psa             TEXT,
+      client_name     TEXT,
+      account_product TEXT,
+      po_sf_id        TEXT,
+      so_sf_id        TEXT,
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
   schemaReady = true;
+}
+
+// Normalize a PO so the warehouse's bare-digit POs (e.g. "257798") match the
+// cost report's "PO-257798" naming.
+function normPoKey(s) {
+  return String(s == null ? '' : s).trim().toUpperCase().replace(/^PO[-\s]*/, '').replace(/\s+/g, '');
 }
 
 // Pull the warehouse's current overstock entries straight from the workflow
@@ -137,14 +157,16 @@ exports.handler = async function handler(event) {
       }
 
       // Full list for the viewer table: projected entries joined with holds +
-      // comment counts.
+      // comment counts + the imported cost/Salesforce reference.
       const entries = await readOverstockEntries();
-      const [hr, cc] = await Promise.all([
+      const [hr, cc, ref] = await Promise.all([
         pool.query(`SELECT item_id, hold_status, hold_reason, hold_by, hold_at FROM overstock_holds;`),
         pool.query(`SELECT item_id, COUNT(*)::int AS n FROM overstock_comments GROUP BY item_id;`),
+        pool.query(`SELECT po_key, cost, account_owner, psa, client_name, account_product, po_sf_id, so_sf_id FROM overstock_cost_ref;`),
       ]);
       const holdMap = new Map(hr.rows.map(r => [r.item_id, r]));
       const countMap = new Map(cc.rows.map(r => [r.item_id, r.n]));
+      const refMap = new Map(ref.rows.map(r => [r.po_key, r]));
       const items = entries.map(e => {
         const p = projectEntry(e);
         const h = holdMap.get(p.id);
@@ -153,14 +175,61 @@ exports.handler = async function handler(event) {
         p.holdBy = h ? (h.hold_by || '') : '';
         p.holdAt = h ? h.hold_at : null;
         p.commentCount = countMap.get(p.id) || 0;
+        const rf = refMap.get(normPoKey(p.po));
+        if (rf) {
+          p.cost = rf.cost != null ? Number(rf.cost) : null;
+          p.accountOwner = rf.account_owner || '';
+          p.psa = rf.psa || '';
+          p.clientName = rf.client_name || '';
+          p.accountProduct = rf.account_product || '';
+          p.poSfId = rf.po_sf_id || '';
+          p.soSfId = rf.so_sf_id || '';
+        }
         return p;
       });
-      return json(200, { items, updatedAt: Date.now() });
+      return json(200, { items, updatedAt: Date.now(), refCount: refMap.size });
     }
 
     if (event.httpMethod === 'POST') {
       const body = JSON.parse(event.body || '{}');
       const action = body.action;
+
+      // Import the Salesforce cost reference (manager/admin only). Client sends
+      // the parsed report in chunks; the first chunk passes replace:true to
+      // clear the old reference before loading the new one.
+      if (action === 'importCostRef') {
+        if (!['admin', 'manager'].includes(caller.role)) return json(403, { error: 'Manager/admin only' });
+        const rows = Array.isArray(body.rows) ? body.rows : [];
+        if (body.replace) await pool.query('DELETE FROM overstock_cost_ref;');
+        const keys = [], names = [], costs = [], owners = [], psas = [], clients = [], products = [], poids = [], soids = [];
+        for (const r of rows) {
+          const key = normPoKey(r.po);
+          if (!key) continue;
+          keys.push(key);
+          names.push(String(r.po || '').trim());
+          const c = (r.cost === '' || r.cost == null) ? null : Number(r.cost);
+          costs.push(Number.isFinite(c) ? c : null);
+          owners.push(String(r.accountOwner || ''));
+          psas.push(String(r.psa || ''));
+          clients.push(String(r.clientName || ''));
+          products.push(String(r.accountProduct || ''));
+          poids.push(String(r.poSfId || ''));
+          soids.push(String(r.soSfId || ''));
+        }
+        if (keys.length) {
+          await pool.query(
+            `INSERT INTO overstock_cost_ref (po_key, po_name, cost, account_owner, psa, client_name, account_product, po_sf_id, so_sf_id)
+             SELECT * FROM unnest($1::text[],$2::text[],$3::numeric[],$4::text[],$5::text[],$6::text[],$7::text[],$8::text[],$9::text[])
+             ON CONFLICT (po_key) DO UPDATE SET
+               po_name=EXCLUDED.po_name, cost=EXCLUDED.cost, account_owner=EXCLUDED.account_owner,
+               psa=EXCLUDED.psa, client_name=EXCLUDED.client_name, account_product=EXCLUDED.account_product,
+               po_sf_id=EXCLUDED.po_sf_id, so_sf_id=EXCLUDED.so_sf_id, updated_at=NOW();`,
+            [keys, names, costs, owners, psas, clients, products, poids, soids]
+          );
+        }
+        return json(200, { ok: true, inserted: keys.length });
+      }
+
       const itemId = body.itemId != null ? String(body.itemId).trim() : '';
       if (!itemId) return json(400, { error: 'itemId required' });
 
