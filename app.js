@@ -5161,6 +5161,21 @@ function osOpenBoxActions(containerId) {
   wire('osBoxActMoveLoc', () => { osCloseModal('osMdBoxActions'); osMoveContainer(c.id, c.currentLocation || ''); });
   wire('osBoxActMovePo',  () => { osCloseModal('osMdBoxActions'); osOpenMovePo(c.id); });
 
+  // Delete the whole box — managers/admins only (heavy two-step confirm,
+  // refuses non-empty boxes unless you explicitly confirm the cascade).
+  const delBtn = document.getElementById('osBoxActDelete');
+  if (delBtn) {
+    const canDel = (typeof osCanDeleteContainer === 'function') ? osCanDeleteContainer() : false;
+    delBtn.hidden = !canDel;
+    delBtn.onclick = () => {
+      osCloseModal('osMdBoxActions');
+      osConfirmAndDeleteContainer(c.id, () => {
+        if (typeof renderOverstockPage === 'function') renderOverstockPage();
+        if (typeof showToast === 'function') showToast(`Deleted box ${c.code}.`, 'success');
+      });
+    };
+  }
+
   // "Move a PO" needs at least one PO and another box to move into.
   const others = (state.data.overstockContainers || []).filter(x => x.id !== c.id && x.status !== 'Closed');
   const movePoBtn = document.getElementById('osBoxActMovePo');
