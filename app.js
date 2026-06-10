@@ -438,6 +438,7 @@ const defaultMasters = {
   osRemoveReasons: [
     "Replace broken inventory","Temporary","Damaged","Miscount",
   ],
+  overstockLocations: Array.from({ length: 24 }, (_, i) => `E-${i + 1}`),
 };
 
 const translations = {
@@ -544,7 +545,14 @@ const translations = {
 
 const overstockStatusOptions = ["Donation", "Not Donation", "Pending PB", "Donated"];
 const overstockActionOptions = ["Donated", "Required", "Replaced", "Missing from Box", "Lost"];
-const overstockLocations = Array.from({length:24}, (_,i)=>`E-${i+1}`);
+// Overstock locations are now an editable master list (Settings → Overstock
+// Locations), seeded E-1..E-24. This getter always reflects the current list,
+// falling back to the default if masters haven't loaded yet.
+const DEFAULT_OVERSTOCK_LOCATIONS = Array.from({length:24}, (_,i)=>`E-${i+1}`);
+function getOverstockLocations() {
+  const m = (typeof state !== 'undefined' && state.masters) ? state.masters.overstockLocations : null;
+  return (Array.isArray(m) && m.length) ? m : DEFAULT_OVERSTOCK_LOCATIONS;
+}
 
 // ── Overstock Log view state (session-only, not synced) ───────────────────
 // Drives the log's own search box, sort order, and how many rows show at once.
@@ -2987,6 +2995,17 @@ function bindMasterEvents() {
     });
   }
 
+  // Overstock locations (editable list, seeded E-1..E-24)
+  const osOverstockLocForm = document.getElementById("osOverstockLocForm");
+  const osOverstockLocInput = document.getElementById("osOverstockLocInput");
+  if (osOverstockLocForm && osOverstockLocInput) {
+    osOverstockLocForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      addMasterItem("overstockLocations", osOverstockLocInput.value.trim().toUpperCase());
+      osOverstockLocInput.value = "";
+    });
+  }
+
   // Overstock Add/Remove adjustment reasons (manager/admin editable)
   const osAddReasonForm = document.getElementById("osAddReasonForm");
   const osAddReasonInput = document.getElementById("osAddReasonInput");
@@ -3307,7 +3326,7 @@ function bindOverstockEvents() {
     const prev = auditLocationSel.value;
     auditLocationSel.innerHTML = "";
     appendOption(auditLocationSel, "", "— Select location —");
-    overstockLocations.forEach(loc => appendOption(auditLocationSel, loc, loc));
+    getOverstockLocations().forEach(loc => appendOption(auditLocationSel, loc, loc));
     if (prev) auditLocationSel.value = prev;
   }
   populateAuditLocations();
@@ -3731,7 +3750,7 @@ function populateOverstockFormSelects() {
   if (locationSelect) {
     locationSelect.innerHTML = "";
     appendOption(locationSelect, "", t("selectLocation"));
-    overstockLocations.forEach(loc => appendOption(locationSelect, loc, loc));
+    getOverstockLocations().forEach(loc => appendOption(locationSelect, loc, loc));
   }
 
   const statusSelect = document.getElementById("overstockEntryStatus");
@@ -3761,7 +3780,7 @@ function populateOverstockFilterSelects() {
   const locationFilter = document.getElementById("overstockLocationFilter");
   locationFilter.innerHTML = "";
   appendOption(locationFilter, "All", t("everyone"));
-  overstockLocations.forEach(loc => appendOption(locationFilter, loc, loc));
+  getOverstockLocations().forEach(loc => appendOption(locationFilter, loc, loc));
   locationFilter.value = filters.location || "All";
 
   const statusFilter = document.getElementById("overstockStatusFilter");
@@ -4936,7 +4955,7 @@ function osBuildLocGrid(gridId, onTap) {
   if (!g) return;
   g.innerHTML = '';
   const containers = Array.isArray(state.data.overstockContainers) ? state.data.overstockContainers : [];
-  overstockLocations.forEach(loc => {
+  getOverstockLocations().forEach(loc => {
     const boxes = containers.filter(c => c.currentLocation === loc && c.status !== 'Closed');
     const d = document.createElement('div');
     d.className = 'os-loc' + (boxes.length ? ' os-loc-occ' : ' os-loc-empty');
@@ -5166,7 +5185,7 @@ function osOpenBoxEdit(containerId) {
 
   codeEl.value = c.code || '';
   locEl.innerHTML = '<option value="">— No location —</option>' +
-    overstockLocations.map(l => `<option value="${escapeAttribute(l)}">${escapeHtml(l)}</option>`).join('');
+    getOverstockLocations().map(l => `<option value="${escapeAttribute(l)}">${escapeHtml(l)}</option>`).join('');
   locEl.value = c.currentLocation || '';
   const statuses = ['Open', 'On Cart', 'Stored', 'Full', 'Closed'];
   statusEl.innerHTML = statuses.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -6087,7 +6106,7 @@ function renderOverstockPage() {
       if (!locBoxMap[c.currentLocation]) locBoxMap[c.currentLocation] = [];
       locBoxMap[c.currentLocation].push(c);
     });
-    const locCards = overstockLocations.map(loc => {
+    const locCards = getOverstockLocations().map(loc => {
       const boxes = locBoxMap[loc] || [];
       const units = boxes.flatMap(c => getOverstockContainerItems(c.id)).reduce((s,r)=>s+Number(r.quantity||0),0);
       const isEmpty = boxes.length === 0;
@@ -6411,7 +6430,7 @@ function toggleOverstockEditRow(tableRow, rowId) {
 
   const locationSel = editTr.querySelector('[data-field="location"]');
   locationSel.innerHTML = "";
-  overstockLocations.forEach(loc => appendOption(locationSel, loc, loc));
+  getOverstockLocations().forEach(loc => appendOption(locationSel, loc, loc));
   locationSel.value = row.location;
 
   const associateSel = editTr.querySelector('[data-field="associate"]');
@@ -7666,6 +7685,9 @@ function renderMasterLists() {
   if (categoriesList) renderSingleMasterList("categories", categoriesList);
   if (locationsList) renderSingleMasterList("locations", locationsList);
   if (putawayLocationsList) renderSingleMasterList("putawayLocations", putawayLocationsList);
+  if (!Array.isArray(state.masters.overstockLocations)) state.masters.overstockLocations = [...DEFAULT_OVERSTOCK_LOCATIONS];
+  const osLocsListEl = document.getElementById("osOverstockLocsList");
+  if (osLocsListEl) renderSingleMasterList("overstockLocations", osLocsListEl);
 
   // Overstock adjustment reasons — visible/editable to managers & admins only.
   if (!Array.isArray(state.masters.osAddReasons)) state.masters.osAddReasons = [...(defaultMasters.osAddReasons || [])];
