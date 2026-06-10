@@ -116,19 +116,28 @@
     [els.cat, els.status, els.hold].forEach(function (s) { s.addEventListener('change', renderTable); });
     document.getElementById('oslRefresh').addEventListener('click', loadList);
 
-    // Import cost report — managers/admins only.
+    // Import cost report — managers/admins only. Wire it always; the role
+    // (set asynchronously by auth) only controls visibility, re-checked below.
     var importBtn = document.getElementById('oslImport');
     var importFile = document.getElementById('oslImportFile');
-    if (importBtn && importFile && isElevated()) {
-      importBtn.hidden = false;
+    if (importBtn && importFile) {
       importBtn.addEventListener('click', function () { importFile.click(); });
       importFile.addEventListener('change', function () {
         if (importFile.files && importFile.files[0]) handleImport(importFile.files[0]);
         importFile.value = '';
       });
     }
+    updateImportVisibility();
+    // The signed-in role resolves a moment after load — re-check until known.
+    var _t = 0;
+    var _iv = setInterval(function () { updateImportVisibility(); if (isElevated() || ++_t > 40) clearInterval(_iv); }, 200);
 
     buildModal();
+  }
+
+  function updateImportVisibility() {
+    var b = document.getElementById('oslImport');
+    if (b) b.hidden = !isElevated();
   }
 
   function isElevated() {
@@ -399,6 +408,7 @@
   }
   function onMaybeActivate() {
     if (!els.body) return;
+    updateImportVisibility();
     if (isActive()) loadList();
   }
 
