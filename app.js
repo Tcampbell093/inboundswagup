@@ -3563,6 +3563,31 @@ function osLogEvent(po, action, label, extra) {
 }
 window.osLogEvent = osLogEvent;
 
+// ── Office holds (read from the overstock-holds backend) ─────────────────
+// Office/external users can mark a PO "On Hold" / "Do Not Donate" from the
+// Overstock Lookup page. We surface that here so warehouse associates can see
+// it and don't donate/remove a held item. Read-only on this side.
+let osHoldsMap = {};
+let _osHoldsFetchedAt = 0;
+let _osHoldsInFlight = false;
+function osHoldFor(id) { return osHoldsMap[String(id)] || null; }
+function osIsHeld(id) { const h = osHoldFor(id); return !!(h && (h.status === 'On Hold' || h.status === 'Do Not Donate')); }
+function osLoadHolds(force) {
+  const now = Date.now();
+  if (!force && (now - _osHoldsFetchedAt < 20000)) return; // throttle ~20s
+  if (_osHoldsInFlight) return;
+  _osHoldsInFlight = true;
+  fetch('/.netlify/functions/overstock-holds?holdsOnly=1', { headers: { 'Accept': 'application/json' } })
+    .then(r => (r.ok ? r.json() : null))
+    .then(j => {
+      _osHoldsInFlight = false;
+      _osHoldsFetchedAt = Date.now();
+      if (j && j.holds) { osHoldsMap = j.holds; if (typeof renderOverstockPage === 'function') renderOverstockPage(); }
+    })
+    .catch(() => { _osHoldsInFlight = false; });
+}
+window.osLoadHolds = osLoadHolds;
+
 // Finds containers that list the same PO more than once and merges each set
 // into a single line — quantities (and apparel size breakdowns) are summed, so
 // no units are lost. Returns { mergedGroups, removed }. Safe to run repeatedly.
@@ -5348,6 +5373,10 @@ function osOpenAudit(loc, containerId) {
   }
   function deleteActivePo(entry) {
     const label = entry.containerCode ? `${entry.containerCode} · PO# ${entry.po}` : `PO# ${entry.po}`;
+    const _hdDel = osHoldFor(entry.id);
+    if (_hdDel && (_hdDel.status === 'On Hold' || _hdDel.status === 'Do Not Donate')) {
+      if (!confirm(`⚠️ STOP — PO# ${entry.po} is marked "${_hdDel.status}"${_hdDel.by ? ` by ${_hdDel.by}` : ''}${_hdDel.reason ? `\nReason: ${_hdDel.reason}` : ''}\n\nThe office has asked to keep this. Delete anyway?`)) return;
+    }
     if (!confirm(`Delete ${label} entirely?\n\nThis removes the PO from overstock. Use this only for entries logged by mistake — for items pulled, donated, or moved, use those actions instead so it's recorded properly.\n\n(You can undo this right after if it was a mistake.)`)) return;
     osSnapshotForUndo(`Deleted PO# ${entry.po}`);
     if (typeof window.deleteOverstockEntry === 'function') {
@@ -5476,9 +5505,14 @@ function osOpenAudit(loc, containerId) {
       const cards = g.entries.map(r => {
         const t = tagFor(r.id);
         const active = r.id === activeId ? ' is-active' : '';
-        return `<button class="os-au2-card os-au2-${t.cls}${active}" data-po="${escapeAttribute(r.id)}" type="button">
+        const held = osHoldFor(r.id);
+        const heldBadge = (held && (held.status === 'On Hold' || held.status === 'Do Not Donate'))
+          ? `<div class="os-au2-card-hold" title="${escapeAttribute(held.status + (held.reason ? ' — ' + held.reason : '') + (held.by ? ' (' + held.by + ')' : ''))}">🔒 ${escapeHtml(held.status)}</div>`
+          : '';
+        return `<button class="os-au2-card os-au2-${t.cls}${active}${held && held.status !== 'Available' && held.status !== 'Released' ? ' os-au2-held' : ''}" data-po="${escapeAttribute(r.id)}" type="button">
           <div class="os-au2-card-po">${escapeHtml(r.po)}</div>
           <div class="os-au2-card-st">${Number(r.quantity || 0)}u · ${t.label}</div>
+          ${heldBadge}
         </button>`;
       }).join('');
       return `<div class="os-au2-group">
@@ -5564,6 +5598,10 @@ function osOpenAudit(loc, containerId) {
       if (out === 'move')   { panelMode = 'move';   renderPanel(); return; }
       if (out === 'adjust') { panelMode = 'adjust'; adjustDir = 'remove'; adjustAmt = 1; renderPanel(); return; }
       if (out === 'donate') {
+        const _hd = osHoldFor(e.id);
+        if (_hd && (_hd.status === 'On Hold' || _hd.status === 'Do Not Donate')) {
+          if (!confirm(`⚠️ STOP — PO# ${e.po} is marked "${_hd.status}"${_hd.by ? ` by ${_hd.by}` : ''}${_hd.reason ? `\nReason: ${_hd.reason}` : ''}\n\nThe office has asked NOT to donate this. Donate anyway?`)) return;
+        }
         if (!confirm(`Donate PO# ${e.po} (${Number(e.quantity || 0)} units)?\n\nThis takes it out of the box and adds it to the donations list. You can undo it right after if it was a mistake.`)) return;
       }
       applyOutcome(e, out);
@@ -5613,6 +5651,10 @@ function osOpenAudit(loc, containerId) {
       const reason = panel.querySelector('#osAu2Reason').value;
       if (!reason) { alert('Pick a reason first (a manager can add reasons in Settings).'); return; }
       if (adjustDir === 'remove' && from > 0 && adjustAmt >= from) {
+        const _hdRm = osHoldFor(e.id);
+        if (_hdRm && (_hdRm.status === 'On Hold' || _hdRm.status === 'Do Not Donate')) {
+          if (!confirm(`⚠️ STOP — PO# ${e.po} is marked "${_hdRm.status}"${_hdRm.by ? ` by ${_hdRm.by}` : ''}${_hdRm.reason ? `\nReason: ${_hdRm.reason}` : ''}\n\nThe office has asked to keep this. Remove all units anyway?`)) return;
+        }
         if (!confirm(`Remove all ${from} units from PO# ${e.po}?\n\nThis empties the PO and takes it out of the box. You can undo it right after.`)) return;
       }
       applyAdjust(e, adjustDir, adjustAmt, reason);
@@ -5941,6 +5983,7 @@ function renderOverstockPage() {
   // self-healing on drifted data.
   try { repairOverstockConsistency(); } catch (e) { console.warn('Overstock repair failed:', e); }
   try { osUpdateUndoUI(); } catch (_) {}
+  try { osLoadHolds(); } catch (_) {}
 
   const containers = state.data.overstockContainers;
   // "On cart" = any non-closed box without a location yet — regardless of status label.
@@ -6257,9 +6300,13 @@ function renderOverstockPage() {
       ? `<div style="font-size:10px;color:#92400e;background:#fef3c7;padding:1px 5px;border-radius:4px;margin-top:2px;display:inline-block;">⚠️ adj. from ${row.originalAutoQty}</div>` : '';
     const statusClass = row.status === 'Donation' ? 'os-badge-green' : 'os-badge-gray';
     const actionClass = row.action === 'Required' ? 'os-badge-amber' : row.action === 'Donated' ? 'os-badge-green' : 'os-badge-blue';
+    const _hold = osHoldFor(row.id);
+    const heldTag = (_hold && (_hold.status === 'On Hold' || _hold.status === 'Do Not Donate'))
+      ? ` <span class="os-hold-badge" title="${escapeAttribute(_hold.status + (_hold.reason ? ' — ' + _hold.reason : '') + (_hold.by ? ' (' + _hold.by + ')' : ''))}">🔒 ${escapeHtml(_hold.status)}</span>`
+      : '';
     tr.innerHTML = `
       <td><span class="day-pill ${getDayClass(formatDayCode(row.date))}">${formatDate(row.date)}</span></td>
-      <td><button type="button" class="os-po-link" title="Audit this PO's location">${escapeHtml(row.po)}</button>${isAutoRow ? ' <span class="lock-note">Auto</span>' : ''}</td>
+      <td><button type="button" class="os-po-link" title="Audit this PO's location">${escapeHtml(row.po)}</button>${isAutoRow ? ' <span class="lock-note">Auto</span>' : ''}${heldTag}</td>
       <td>${escapeHtml(row.category || '—')}</td>
       <td><span class="os-qty-badge">+${Number(row.quantity || 0)}</span>${sizesHtml}${adjBadge}</td>
       <td><span class="os-badge ${statusClass}">${translateStatus(row.status)}</span></td>
