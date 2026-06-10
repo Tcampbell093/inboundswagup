@@ -78,32 +78,33 @@
   // the canonical list ever changes — the regular form's #overstockEntryLocation
   // <select> is populated by app.js with the official list.
   function getLocationSuggestions() {
-    // Primary source: scrape from the existing overstock form's location select
+    // Overstock locations come from their OWN editable master list (Settings →
+    // Overstock Locations, seeded E-1..E-24) — NOT the pallet "locations" list.
+    let out = [];
     try {
-      const select = document.getElementById('overstockEntryLocation');
-      if (select) {
-        const opts = Array.from(select.options)
-          .map(o => o.value)
-          .filter(v => v && v.trim()); // drop the placeholder empty option
-        if (opts.length) return opts;
-      }
+      const m = window.state?.masters?.overstockLocations;
+      if (Array.isArray(m) && m.length) out = m.slice();
     } catch (_) {}
-    // Secondary: master list (in case overstock form hasn't been touched yet)
+    if (!out.length) out = Array.from({ length: 24 }, (_, i) => `E-${i + 1}`);
+    // Keep any location already in use visible even if it's not in the list.
     try {
-      const fromMaster = window.state?.masters?.locations;
-      if (Array.isArray(fromMaster) && fromMaster.length) return fromMaster;
-    } catch (_) {}
-    // Last-resort fallback — scrape what exists today
-    const set = new Set();
-    try {
-      (window.state?.data?.overstockContainers || []).forEach(c => {
-        if (c.currentLocation) set.add(c.currentLocation);
-      });
-      (window.state?.data?.overstockEntries || []).forEach(r => {
-        if (r.location) set.add(r.location);
-      });
-    } catch (_) {}
-    return [...set].sort();
+      const set = new Set(out);
+      (window.state?.data?.overstockContainers || []).forEach(c => { if (c.currentLocation) set.add(c.currentLocation); });
+      return [...set];
+    } catch (_) { return out; }
+  }
+
+  // An already-stored container has a location — don't offer to change it.
+  // Hide the location picker and show its current location read-only. A new
+  // container (or one with no location yet) keeps the picker.
+  function toggleLocationField(existing) {
+    const picker = el('stockIntakeLocField');
+    const wrap = el('stockIntakeExistingLocWrap');
+    const valEl = el('stockIntakeExistingLoc');
+    const placed = !!(existing && existing.currentLocation);
+    if (picker) picker.hidden = placed;
+    if (wrap) wrap.hidden = !placed;
+    if (placed && valEl) valEl.textContent = '📍 ' + existing.currentLocation;
   }
 
   function getCurrentUser() {
@@ -453,21 +454,15 @@
     const codeInput = el('stockIntakeContainerInput');
     const locInput  = el('stockIntakeContainerLocation');
     const rawCode = (codeInput?.value || '').trim();
-    const rawLoc  = (locInput?.value || '').trim();
 
     if (!rawCode) {
       showToast('Enter a container code first.', 'error');
       codeInput?.focus();
       return;
     }
-    if (!rawLoc) {
-      showToast('Enter the container location.', 'error');
-      locInput?.focus();
-      return;
-    }
 
     // Normalize the code to OSC-XXXX format if it looks numeric, otherwise
-    // keep as-typed for non-OSC barcodes.
+    // keep as-typed for non-OSC barcodes. Done first so we can look it up.
     let normalized = rawCode.toUpperCase();
     try {
       if (typeof window.normalizeOverstockContainerScan === 'function') {
@@ -478,6 +473,17 @@
 
     // Look up existing
     let container = findContainerByCode(normalized);
+
+    // An already-stored container keeps its current location — we don't ask for
+    // a new one (it's already placed). Only a brand-new container, or one with
+    // no location yet, requires a location to be chosen.
+    const alreadyPlaced = !!(container && container.currentLocation);
+    const rawLoc = alreadyPlaced ? container.currentLocation : (locInput?.value || '').trim();
+    if (!alreadyPlaced && !rawLoc) {
+      showToast('Enter the container location.', 'error');
+      locInput?.focus();
+      return;
+    }
 
     if (!container) {
       // Confirm before creating
@@ -852,6 +858,15 @@
       const li = el('stockIntakeContainerLocation'); if (li && prefill.location) li.value = prefill.location;
     }
 
+    // Show the location picker for a new container, or hide it (read-only) if
+    // the (prefilled) code is an already-stored container.
+    try {
+      const _code = (el('stockIntakeContainerInput')?.value || '').trim();
+      let _norm = _code.toUpperCase();
+      try { if (typeof window.normalizeOverstockContainerScan === 'function') { const n = window.normalizeOverstockContainerScan(_code); if (n) _norm = n; } } catch (_) {}
+      toggleLocationField(_code ? findContainerByCode(_norm) : null);
+    } catch (_) { toggleLocationField(null); }
+
     showStep('container');
     renderStats();
     renderRecentList();
@@ -1011,6 +1026,7 @@
       const v = (ev.target.value || '').trim();
       if (v.length < 3) {
         renderContainerInfoPreview(null);
+        toggleLocationField(null);
         return;
       }
       let norm = v.toUpperCase();
@@ -1022,14 +1038,7 @@
       } catch (_) {}
       const existing = findContainerByCode(norm);
       renderContainerInfoPreview(existing);
-      // If the container has a known location, pre-fill it so the user doesn't
-      // have to retype every time they revisit a container.
-      if (existing && existing.currentLocation) {
-        const locInput = el('stockIntakeContainerLocation');
-        if (locInput && !locInput.value.trim()) {
-          locInput.value = existing.currentLocation;
-        }
-      }
+      toggleLocationField(existing);
     });
 
     // Item form submission

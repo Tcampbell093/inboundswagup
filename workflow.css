@@ -4883,3 +4883,5 @@ body.workflow-page .os-c2 #osResultsBody #overstockAuditResults {
 .workflow-page .os-hold-badge { display:inline-block; background:#fdecec; color:#b3261e; border:1px solid #f3c7c7; border-radius:999px; padding:1px 8px; font-size:10.5px; font-weight:800; white-space:nowrap; vertical-align:middle; }
 .workflow-page .os-au2-card-hold { margin-top:4px; font-size:10.5px; font-weight:800; color:#b3261e; }
 .workflow-page .os-au2-held { box-shadow: inset 0 0 0 2px #f0b6b6; }
+/* ── Stock intake: read-only location for an already-stored container ── */
+.workflow-page .si-existing-loc { padding:12px 14px; border-radius:12px; background:#eef5ff; border:1px solid #d4e4fb; font-weight:800; font-size:18px; color:#16263a; }
