@@ -19,7 +19,7 @@
       'attendancePage', 'workflowInboundPage', 'fulfillmentScanPage',
       'returnsPage', 'cycleCountPage', 'errorsPage',
       'assemblyPage', 'queuePage', 'assemblyFlightTrackerPage',
-      'inboundFlightTrackerPage',
+      'inboundFlightTrackerPage', 'overstockLookupPage',
       'sordPage', 'calendarPage', 'productivityPage', 'policyPage',
       'helpPage', 'importHubPage', 'historyPage'
     ],
@@ -44,7 +44,8 @@
       // need (or have access to) the home page. The first item in this
       // list is treated as their default landing page.
       'assemblyFlightTrackerPage',
-      'inboundFlightTrackerPage'
+      'inboundFlightTrackerPage',
+      'overstockLookupPage'
     ],
   };
 
