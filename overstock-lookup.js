@@ -87,9 +87,8 @@
     root.dataset.built = '1';
     root.innerHTML =
       '<div class="osl-tools">'
-      + '<input id="oslSearch" class="osl-input osl-search" type="text" placeholder="Search PO, category, location, person…" autocomplete="off"/>'
+      + '<input id="oslSearch" class="osl-input osl-search" type="text" placeholder="Search PO, category, status…" autocomplete="off"/>'
       + '<select id="oslCat" class="osl-select" aria-label="Category"></select>'
-      + '<select id="oslLoc" class="osl-select" aria-label="Location"></select>'
       + '<select id="oslStatus" class="osl-select" aria-label="Status"></select>'
       + '<select id="oslHold" class="osl-select" aria-label="Hold status">'
       + '<option value="">Any hold status</option><option>Available</option><option>On Hold</option><option>Do Not Donate</option><option>Released</option>'
@@ -98,19 +97,18 @@
       + '<span id="oslCount" class="osl-count"></span>'
       + '</div>'
       + '<div class="osl-tablewrap"><table class="osl-table"><thead><tr>'
-      + '<th>PO</th><th>Item / Category</th><th>Qty</th><th>Location</th><th>Status</th><th>Hold</th><th>Last Updated</th><th></th>'
+      + '<th>PO</th><th>Item / Category</th><th>Qty</th><th>Status</th><th>Hold</th><th>Last Updated</th><th></th>'
       + '</tr></thead><tbody id="oslBody"></tbody></table></div>';
 
     els.search = document.getElementById('oslSearch');
     els.cat = document.getElementById('oslCat');
-    els.loc = document.getElementById('oslLoc');
     els.status = document.getElementById('oslStatus');
     els.hold = document.getElementById('oslHold');
     els.body = document.getElementById('oslBody');
     els.count = document.getElementById('oslCount');
 
     els.search.addEventListener('input', renderTable);
-    [els.cat, els.loc, els.status, els.hold].forEach(function (s) { s.addEventListener('change', renderTable); });
+    [els.cat, els.status, els.hold].forEach(function (s) { s.addEventListener('change', renderTable); });
     document.getElementById('oslRefresh').addEventListener('click', loadList);
 
     buildModal();
@@ -125,28 +123,24 @@
   }
 
   function refreshFilterOptions() {
-    var cats = {}, locs = {}, stats = {};
+    var cats = {}, stats = {};
     state.items.forEach(function (it) {
       if (it.category) cats[it.category] = 1;
-      var loc = it.location || it.containerCode;
-      if (loc) locs[loc] = 1;
       if (it.status) stats[it.status] = 1;
     });
     fillSelect(els.cat, Object.keys(cats).sort(), 'Any category');
-    fillSelect(els.loc, Object.keys(locs).sort(), 'Any location');
     fillSelect(els.status, Object.keys(stats).sort(), 'Any status');
   }
 
   function applyFilters() {
     var q = (els.search.value || '').trim().toLowerCase();
-    var cat = els.cat.value, loc = els.loc.value, stat = els.status.value, hold = els.hold.value;
+    var cat = els.cat.value, stat = els.status.value, hold = els.hold.value;
     return state.items.filter(function (it) {
       if (cat && it.category !== cat) return false;
-      if (loc && it.location !== loc && it.containerCode !== loc) return false;
       if (stat && it.status !== stat) return false;
       if (hold && (it.holdStatus || 'Available') !== hold) return false;
       if (q) {
-        var hay = [it.po, it.category, it.location, it.containerCode, it.associate, it.status, it.holdStatus]
+        var hay = [it.po, it.category, it.status, it.holdStatus]
           .map(function (x) { return String(x || '').toLowerCase(); }).join(' ');
         if (hay.indexOf(q) === -1) return false;
       }
@@ -160,19 +154,17 @@
     els.count.textContent = state.loading ? 'Loading…'
       : rows.length + ' of ' + state.items.length + ' item' + (state.items.length === 1 ? '' : 's');
     if (!state.items.length) {
-      els.body.innerHTML = '<tr><td colspan="8" class="osl-empty">' + (state.loading ? 'Loading overstock…' : (state.loaded ? 'No overstock found.' : 'Open this page to load overstock.')) + '</td></tr>';
+      els.body.innerHTML = '<tr><td colspan="7" class="osl-empty">' + (state.loading ? 'Loading overstock…' : (state.loaded ? 'No overstock found.' : 'Open this page to load overstock.')) + '</td></tr>';
       return;
     }
-    if (!rows.length) { els.body.innerHTML = '<tr><td colspan="8" class="osl-empty">No items match your search.</td></tr>'; return; }
+    if (!rows.length) { els.body.innerHTML = '<tr><td colspan="7" class="osl-empty">No items match your search.</td></tr>'; return; }
     els.body.innerHTML = rows.map(function (it) {
       var hs = it.holdStatus || 'Available';
-      var locTxt = [it.location, it.containerCode].filter(Boolean).join(' · ') || '—';
       var cmt = it.commentCount ? '<span class="osl-cmtn">💬 ' + it.commentCount + '</span>' : '';
       return '<tr>'
         + '<td class="osl-po">' + esc(it.po || '—') + '</td>'
         + '<td>' + esc(it.category || 'Uncategorized') + cmt + '</td>'
         + '<td>' + Number(it.quantity || 0) + '</td>'
-        + '<td>' + esc(locTxt) + '</td>'
         + '<td>' + esc(it.status || '—') + '</td>'
         + '<td><span class="osl-chip ' + holdClass(hs) + '">' + esc(hs) + '</span></td>'
         + '<td>' + esc(fmtDate(it.updatedAt)) + '</td>'
@@ -240,13 +232,12 @@
   function renderDetail(it, hold, comments) {
     if (state.activeId !== it.id) return;
     var body = document.getElementById('oslMBody');
-    var locTxt = [it.location, it.containerCode].filter(Boolean).join(' · ') || '—';
     var hs = hold.status || 'Available';
     var html = ''
       + kv('PO', it.po || '—') + kv('Category', it.category || 'Uncategorized')
-      + kv('Quantity', Number(it.quantity || 0)) + kv('Location', locTxt)
+      + kv('Quantity', Number(it.quantity || 0))
       + kv('Status', it.status || '—') + kv('Action', it.action || '—')
-      + kv('Logged by', it.associate || '—') + kv('Last updated', fmtDate(it.updatedAt))
+      + kv('Last updated', fmtDate(it.updatedAt))
       + '<div class="osl-sec">Hold / Do Not Donate</div>'
       + '<div class="osl-kv"><span>Current</span><span><span class="osl-chip ' + holdClass(hs) + '">' + esc(hs) + '</span></span></div>'
       + (hold.by ? kv('Placed by', hold.by) : '')

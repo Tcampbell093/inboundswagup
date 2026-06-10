@@ -76,18 +76,17 @@ async function readOverstockEntries() {
   return entries.filter(e => e && e.id && !dead.has(String(e.id)));
 }
 
-// Project an entry down to the fields the viewer is allowed to see.
+// Project an entry down to the fields the viewer is allowed to see. Note:
+// physical warehouse location/container and the associate who logged it are
+// intentionally NOT exposed to office/external users.
 function projectEntry(e) {
   return {
     id: String(e.id),
     po: e.po != null ? String(e.po) : '',
     category: e.category || '',
     quantity: Number(e.quantity || 0),
-    location: e.location || '',
-    containerCode: e.containerCode || '',
     status: e.status || '',
     action: e.action || '',
-    associate: e.associate || '',
     date: e.date || '',
     updatedAt: Number(e.updatedAt || e.createdAt || 0),
   };
