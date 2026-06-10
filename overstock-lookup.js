@@ -74,7 +74,9 @@
       + '.osl-cmt-t{font-size:13px;color:#243b55;}.osl-cmt-m{font-size:10.5px;color:#8aa0bb;margin-top:3px;}'
       + '.osl-cmt-empty{font-size:12.5px;color:#9aa7b6;padding:6px 0;}'
       + '.osl-go{border:1px solid #1f9d57;background:#22a85f;color:#fff;font-weight:800;border-radius:9px;padding:9px 16px;cursor:pointer;font-size:13px;}'
-      + '.osl-go:hover{background:#1f9d57;}';
+      + '.osl-go:hover{background:#1f9d57;}'
+      + '.osl-link{display:inline-block;border:1px solid #b6cde4;background:#f4f8fc;color:#1d6fb8;font-weight:700;font-size:12.5px;border-radius:9px;padding:8px 14px;text-decoration:none;}'
+      + '.osl-link:hover{background:#e8f1fb;}';
     var st = document.createElement('style');
     st.id = 'oslStyles';
     st.textContent = css;
@@ -87,17 +89,20 @@
     root.dataset.built = '1';
     root.innerHTML =
       '<div class="osl-tools">'
-      + '<input id="oslSearch" class="osl-input osl-search" type="text" placeholder="Search PO, category, status…" autocomplete="off"/>'
+      + '<input id="oslSearch" class="osl-input osl-search" type="text" placeholder="Search PO, client, product, category…" autocomplete="off"/>'
       + '<select id="oslCat" class="osl-select" aria-label="Category"></select>'
       + '<select id="oslStatus" class="osl-select" aria-label="Status"></select>'
       + '<select id="oslHold" class="osl-select" aria-label="Hold status">'
       + '<option value="">Any hold status</option><option>Available</option><option>On Hold</option><option>Do Not Donate</option><option>Released</option>'
       + '</select>'
       + '<button id="oslRefresh" class="osl-btn" type="button">↻ Refresh</button>'
+      + '<button id="oslImport" class="osl-btn" type="button" hidden>⬆ Import cost report</button>'
+      + '<input id="oslImportFile" type="file" accept=".xlsx,.xls" hidden />'
+      + '<span id="oslImportStatus" class="osl-count" style="margin-left:0;color:#9a5b00;"></span>'
       + '<span id="oslCount" class="osl-count"></span>'
       + '</div>'
       + '<div class="osl-tablewrap"><table class="osl-table"><thead><tr>'
-      + '<th>PO</th><th>Item / Category</th><th>Qty</th><th>Status</th><th>Hold</th><th>Last Updated</th><th></th>'
+      + '<th>PO</th><th>Client</th><th>Item / Category</th><th>Qty</th><th>Cost</th><th>Status</th><th>Hold</th><th>Last Updated</th><th></th>'
       + '</tr></thead><tbody id="oslBody"></tbody></table></div>';
 
     els.search = document.getElementById('oslSearch');
@@ -111,7 +116,76 @@
     [els.cat, els.status, els.hold].forEach(function (s) { s.addEventListener('change', renderTable); });
     document.getElementById('oslRefresh').addEventListener('click', loadList);
 
+    // Import cost report — managers/admins only.
+    var importBtn = document.getElementById('oslImport');
+    var importFile = document.getElementById('oslImportFile');
+    if (importBtn && importFile && isElevated()) {
+      importBtn.hidden = false;
+      importBtn.addEventListener('click', function () { importFile.click(); });
+      importFile.addEventListener('change', function () {
+        if (importFile.files && importFile.files[0]) handleImport(importFile.files[0]);
+        importFile.value = '';
+      });
+    }
+
     buildModal();
+  }
+
+  function isElevated() {
+    try {
+      var r = ((window.hcCurrentUser && window.hcCurrentUser.role) || '').toLowerCase();
+      return r === 'admin' || r === 'manager';
+    } catch (_) { return false; }
+  }
+
+  function setImportStatus(t) { var e = document.getElementById('oslImportStatus'); if (e) e.textContent = t || ''; }
+
+  function handleImport(file) {
+    if (typeof XLSX === 'undefined') { alert('Spreadsheet reader not loaded — refresh the page and try again.'); return; }
+    setImportStatus('Reading…');
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        var ws = wb.Sheets[wb.SheetNames[0]];
+        var rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        var mapped = rows.map(function (r) {
+          return {
+            po: r['Purchase Order: Purchase Order Name'] || r['Purchase Order Name'] || r['PO'] || '',
+            cost: r['Item Cost'],
+            accountOwner: r['Account Owner'] || '',
+            psa: r['PSA'] || '',
+            clientName: r['Client Name'] || '',
+            accountProduct: r['Account Product'] || '',
+            poSfId: r['Purchase Order: ID'] || '',
+            soSfId: r['Sales_Order_Id'] || r['Sales Order Id'] || '',
+          };
+        }).filter(function (r) { return String(r.po || '').trim(); });
+        if (!mapped.length) { setImportStatus(''); alert('No rows found. Expected columns like "Purchase Order: Purchase Order Name", "Item Cost", "Client Name", "Purchase Order: ID", "Sales_Order_Id".'); return; }
+        uploadChunks(mapped);
+      } catch (err) { setImportStatus(''); alert('Could not read the file: ' + err.message); }
+    };
+    reader.onerror = function () { setImportStatus(''); alert('Could not read the file.'); };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function uploadChunks(rows) {
+    var CHUNK = 2500, total = rows.length, i = 0;
+    function next() {
+      if (i >= total) { setImportStatus('Imported ' + total + ' rows ✓'); loadList(); return; }
+      var chunk = rows.slice(i, i + CHUNK);
+      var replace = (i === 0);
+      i += CHUNK;
+      setImportStatus('Uploading ' + Math.min(i, total) + ' / ' + total + '…');
+      fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ action: 'importCostRef', replace: replace, rows: chunk }) })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (!res.ok) { setImportStatus(''); alert('Import failed: ' + ((res.j && res.j.error) || 'error') + (res.j && res.j.error === 'Manager/admin only' ? ' (only managers/admins can import).' : '')); return; }
+          next();
+        })
+        .catch(function (e) { setImportStatus(''); alert('Network error during import: ' + e.message); });
+    }
+    next();
   }
 
   function fillSelect(sel, values, anyLabel) {
@@ -140,7 +214,7 @@
       if (stat && it.status !== stat) return false;
       if (hold && (it.holdStatus || 'Available') !== hold) return false;
       if (q) {
-        var hay = [it.po, it.category, it.status, it.holdStatus]
+        var hay = [it.po, it.category, it.status, it.holdStatus, it.clientName, it.accountProduct, it.accountOwner, it.psa]
           .map(function (x) { return String(x || '').toLowerCase(); }).join(' ');
         if (hay.indexOf(q) === -1) return false;
       }
@@ -154,17 +228,20 @@
     els.count.textContent = state.loading ? 'Loading…'
       : rows.length + ' of ' + state.items.length + ' item' + (state.items.length === 1 ? '' : 's');
     if (!state.items.length) {
-      els.body.innerHTML = '<tr><td colspan="7" class="osl-empty">' + (state.loading ? 'Loading overstock…' : (state.loaded ? 'No overstock found.' : 'Open this page to load overstock.')) + '</td></tr>';
+      els.body.innerHTML = '<tr><td colspan="9" class="osl-empty">' + (state.loading ? 'Loading overstock…' : (state.loaded ? 'No overstock found.' : 'Open this page to load overstock.')) + '</td></tr>';
       return;
     }
-    if (!rows.length) { els.body.innerHTML = '<tr><td colspan="7" class="osl-empty">No items match your search.</td></tr>'; return; }
+    if (!rows.length) { els.body.innerHTML = '<tr><td colspan="9" class="osl-empty">No items match your search.</td></tr>'; return; }
     els.body.innerHTML = rows.map(function (it) {
       var hs = it.holdStatus || 'Available';
       var cmt = it.commentCount ? '<span class="osl-cmtn">💬 ' + it.commentCount + '</span>' : '';
+      var cost = (it.cost != null && it.cost !== '') ? '$' + Number(it.cost).toFixed(2) : '—';
       return '<tr>'
         + '<td class="osl-po">' + esc(it.po || '—') + '</td>'
+        + '<td>' + esc(it.clientName || '—') + '</td>'
         + '<td>' + esc(it.category || 'Uncategorized') + cmt + '</td>'
         + '<td>' + Number(it.quantity || 0) + '</td>'
+        + '<td>' + cost + '</td>'
         + '<td>' + esc(it.status || '—') + '</td>'
         + '<td><span class="osl-chip ' + holdClass(hs) + '">' + esc(hs) + '</span></td>'
         + '<td>' + esc(fmtDate(it.updatedAt)) + '</td>'
@@ -233,11 +310,30 @@
     if (state.activeId !== it.id) return;
     var body = document.getElementById('oslMBody');
     var hs = hold.status || 'Available';
+    var hasRef = (it.clientName || it.accountProduct || it.cost != null || it.accountOwner || it.psa || it.poSfId || it.soSfId);
+    var refHtml = '<div class="osl-sec">Reference (Salesforce)</div>';
+    if (hasRef) {
+      refHtml += (it.clientName ? kv('Client', it.clientName) : '')
+        + (it.accountProduct ? kv('Account product', it.accountProduct) : '')
+        + (it.cost != null && it.cost !== '' ? kv('Item cost', '$' + Number(it.cost).toFixed(2)) : '')
+        + (it.accountOwner ? kv('Account owner', it.accountOwner) : '')
+        + (it.psa ? kv('PSA', it.psa) : '');
+      if (it.poSfId || it.soSfId) {
+        refHtml += '<div class="osl-row" style="margin-top:10px;">'
+          + (it.poSfId ? '<a class="osl-link" target="_blank" rel="noopener" href="https://swagup.lightning.force.com/lightning/r/Purchase_Order__c/' + encodeURIComponent(it.poSfId) + '/view">Open Purchase Order ↗</a>' : '')
+          + (it.soSfId ? '<a class="osl-link" target="_blank" rel="noopener" href="https://swagup.lightning.force.com/lightning/r/SalesOrder__c/' + encodeURIComponent(it.soSfId) + '/view">Open Sales Order ↗</a>' : '')
+          + '</div>';
+      }
+    } else {
+      refHtml += '<div class="osl-cmt-empty">No cost-report match for this PO. Import the latest report to populate it.</div>';
+    }
+
     var html = ''
       + kv('PO', it.po || '—') + kv('Category', it.category || 'Uncategorized')
       + kv('Quantity', Number(it.quantity || 0))
       + kv('Status', it.status || '—') + kv('Action', it.action || '—')
       + kv('Last updated', fmtDate(it.updatedAt))
+      + refHtml
       + '<div class="osl-sec">Hold / Do Not Donate</div>'
       + '<div class="osl-kv"><span>Current</span><span><span class="osl-chip ' + holdClass(hs) + '">' + esc(hs) + '</span></span></div>'
       + (hold.by ? kv('Placed by', hold.by) : '')
