@@ -63,6 +63,7 @@
       + '#inventoryPage table.iv-table{width:100%;border-collapse:collapse;font-size:13.5px;}'
       + '#inventoryPage .iv-table th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#6b7e94;padding:11px 12px;border-bottom:1px solid #eef2f7;background:#f8fafc;white-space:nowrap;}'
       + '#inventoryPage .iv-table td{padding:10px 12px;border-bottom:1px solid #f2f5f9;color:#243b55;vertical-align:middle;}'
+      + '#inventoryPage .iv-table tbody tr{cursor:pointer;}'
       + '#inventoryPage .iv-table tr:hover td{background:#f9fbfe;cursor:pointer;}'
       + '#inventoryPage .iv-name{font-weight:700;color:#16263a;}'
       + '#inventoryPage .iv-chip{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap;}'
@@ -257,7 +258,7 @@
     if (!state.items.length) { els.body.innerHTML = '<tr><td colspan="9" class="iv-empty">' + (state.loading ? 'Loading…' : (state.loaded ? 'No inventory yet. Add an item or import your sheet.' : 'Open this page to load inventory.')) + '</td></tr>'; return; }
     if (!rows.length) { els.body.innerHTML = '<tr><td colspan="9" class="iv-empty">No items match.</td></tr>'; return; }
     els.body.innerHTML = rows.map(function (it) {
-      return '<tr data-id="' + it.id + '"' + (it.archived ? ' class="iv-archived"' : '') + '>'
+      return '<tr data-id="' + it.id + '" role="button" tabindex="0"' + (it.archived ? ' class="iv-archived"' : '') + '>'
         + '<td class="iv-name">' + esc(it.itemName) + (it.archived ? ' <span class="iv-chip iv-rev">archived</span>' : '') + (it.sku ? '<div style="font-size:11px;color:#8aa0bb;">' + esc(it.sku) + '</div>' : '') + '</td>'
         + '<td>' + esc(it.category || '—') + '</td>'
         + '<td>' + esc(it.department || '—') + '</td>'
@@ -628,7 +629,7 @@
     els.rcount.textContent = rows.length + ' request' + (rows.length === 1 ? '' : 's');
     if (!rows.length) { els.rbody.innerHTML = '<tr><td colspan="9" class="iv-empty">' + (state.reqLoading ? 'Loading…' : 'No requests.') + '</td></tr>'; return; }
     els.rbody.innerHTML = rows.map(function (r) {
-      return '<tr data-rid="' + r.id + '">'
+      return '<tr data-rid="' + r.id + '" role="button" tabindex="0">'
         + '<td class="iv-urg-' + esc(r.urgency) + '">' + esc(r.urgency) + '</td>'
         + '<td class="iv-name">' + esc(r.itemName) + '</td>'
         + '<td>' + esc(r.department || '—') + '</td>'
