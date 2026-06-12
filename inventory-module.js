@@ -226,7 +226,7 @@
       if (lo && it.location !== lo) return false;
       if (ve && it.vendor !== ve) return false;
       if (q) {
-        var hay = [it.itemName, it.sku, it.category, it.department, it.location, it.vendor, it.notes].map(function (x) { return String(x || '').toLowerCase(); }).join(' ');
+        var hay = [it.itemName, it.sku, it.category, it.department, it.location, it.spot, it.vendor, it.notes].map(function (x) { return String(x || '').toLowerCase(); }).join(' ');
         if (hay.indexOf(q) === -1) return false;
       }
       return true;
@@ -244,7 +244,7 @@
         + '<td class="iv-name">' + esc(it.itemName) + (it.archived ? ' <span class="iv-chip iv-rev">archived</span>' : '') + (it.sku ? '<div style="font-size:11px;color:#8aa0bb;">' + esc(it.sku) + '</div>' : '') + '</td>'
         + '<td>' + esc(it.category || '—') + '</td>'
         + '<td>' + esc(it.department || '—') + '</td>'
-        + '<td>' + esc(it.location || '—') + '</td>'
+        + '<td>' + esc(it.location || '—') + (it.spot ? '<div style="font-size:11px;color:#1d6fb8;font-weight:600;">📍 ' + esc(it.spot) + '</div>' : '') + '</td>'
         + '<td><b>' + (it.quantity == null ? '—' : Number(it.quantity)) + '</b>' + (it.unitType ? ' <span style="color:#8aa0bb;font-size:11px;">' + esc(it.unitType) + '</span>' : '') + '</td>'
         + '<td>' + (it.minStock || 0) + '</td>'
         + '<td><span class="iv-chip ' + statusClass(it.status) + '">' + esc(it.status) + '</span></td>'
@@ -295,7 +295,8 @@
       + fld('Item name', '<input id="ivfName" value="' + esc(it.itemName || '') + '"/>')
       + fld('Category', '<input id="ivfCat" list="ivCatList" value="' + esc(it.category || '') + '"/>')
       + fld('Department', '<input id="ivfDept" list="ivDeptList" value="' + esc(it.department || '') + '"/>')
-      + fld('Location', '<input id="ivfLoc" list="ivLocList" value="' + esc(it.location || '') + '"/>')
+      + fld('Location (area)', '<input id="ivfLoc" list="ivLocList" value="' + esc(it.location || '') + '"/>')
+      + fld('Specific spot / bin', '<input id="ivfSpot" placeholder="e.g. Q12-A1, Top shelf, Bin 3" value="' + esc(it.spot || '') + '"/>')
       + fld('Current quantity', '<input id="ivfQty" type="number" step="any" value="' + (it.quantity == null ? '' : esc(it.quantity)) + '"/>')
       + fld('Unit type', '<input id="ivfUnit" list="ivUnitList" value="' + esc(it.unitType || '') + '"/>')
       + fld('Minimum stock level', '<input id="ivfMin" type="number" step="any" value="' + (it.minStock != null ? esc(it.minStock) : '0') + '"/>')
@@ -308,7 +309,7 @@
   }
   function readFields() {
     return { itemName: val('ivfName').trim(), category: val('ivfCat').trim(), department: val('ivfDept').trim(),
-      location: val('ivfLoc').trim(), quantity: val('ivfQty'), unitType: val('ivfUnit').trim(),
+      location: val('ivfLoc').trim(), spot: val('ivfSpot').trim(), quantity: val('ivfQty'), unitType: val('ivfUnit').trim(),
       minStock: val('ivfMin'), vendor: val('ivfVendor').trim(), sku: val('ivfSku').trim(), orderLink: val('ivfLink').trim(), notes: val('ivfNotes') };
   }
   function openAddModal() {
@@ -360,7 +361,7 @@
 
     html += '<div class="iv-sec">Details</div>'
       + kv('Item', it.itemName) + kv('Category', it.category || '—') + kv('Department', it.department || '—')
-      + kv('Location', it.location || '—') + kv('Min stock', it.minStock || 0) + kv('Vendor', it.vendor || '—')
+      + kv('Location', it.location || '—') + kv('Specific spot', it.spot || '—') + kv('Min stock', it.minStock || 0) + kv('Vendor', it.vendor || '—')
       + kv('SKU', it.sku || '—') + kv('Last counted', fmtDateTime(it.lastCounted)) + kv('Last updated by', it.lastUpdatedBy || '—')
       + kv('Created', fmtDate(it.createdAt) + (it.createdBy ? ' · ' + it.createdBy : ''))
       + (it.notes ? '<div class="iv-sec">Notes</div><div style="white-space:pre-wrap;font-size:12.5px;color:#243b55;">' + esc(it.notes) + '</div>' : '');
@@ -435,7 +436,8 @@
     if (h.indexOf('threshold') >= 0 || /\bmin\b/.test(h) || h.indexOf('minimum') >= 0 || h.indexOf('reorder point') >= 0 || h.indexOf('reorder level') >= 0) return 'minStock';
     if (h.indexOf('category') >= 0 || h === 'type') return 'category';
     if (h.indexOf('department') >= 0 || h.indexOf('dept') >= 0 || h === 'owner') return 'department';
-    if (h.indexOf('location') >= 0 || h.indexOf('bin') >= 0 || h.indexOf('shelf') >= 0 || h.indexOf('area') >= 0 || h.indexOf('rack') >= 0) return 'location';
+    if (h.indexOf('specific') >= 0 || h.indexOf('spot') >= 0 || h.indexOf('bin') >= 0) return 'spot';
+    if (h.indexOf('location') >= 0 || h.indexOf('shelf') >= 0 || h.indexOf('area') >= 0 || h.indexOf('rack') >= 0) return 'location';
     if (h.indexOf('unit') >= 0 || h.indexOf('uom') >= 0) return 'unitType';
     if (h.indexOf('vendor') >= 0 || h.indexOf('supplier') >= 0) return 'vendor';
     if (h.indexOf('note') >= 0 || h.indexOf('comment') >= 0) return 'notes';
@@ -532,7 +534,7 @@
   function exportCsv() {
     var rows = applyFilters();
     if (!rows.length) { alert('Nothing to export.'); return; }
-    var cols = [['Item', 'itemName'], ['Category', 'category'], ['Department', 'department'], ['Location', 'location'],
+    var cols = [['Item', 'itemName'], ['Category', 'category'], ['Department', 'department'], ['Location', 'location'], ['Specific Spot', 'spot'],
       ['Quantity', 'quantity'], ['Unit', 'unitType'], ['Min Stock', 'minStock'], ['Status', 'status'],
       ['Vendor', 'vendor'], ['SKU', 'sku'], ['Last Counted', 'lastCounted'], ['Last Updated By', 'lastUpdatedBy'], ['Notes', 'notes']];
     var esc2 = function (v) { var s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
