@@ -17,7 +17,7 @@
   var UNITS = ['each', 'box', 'case', 'carton', 'roll', 'pack', 'bag', 'sleeve', 'sheet', 'pair', 'bundle'];
   var LOCATIONS = ['Supply Rack', 'Assembly Supplies', 'Fulfillment Supplies', 'Uline Box Area', 'Cleaning Supply Area', 'Mailer Section', 'Top Rack', 'Bottom Shelf', 'Unknown'];
 
-  var state = { items: [], summary: {}, role: '', loaded: false, loading: false, includeArchived: false, activeId: null };
+  var state = { items: [], summary: {}, role: '', loaded: false, loading: false, includeArchived: false, activeId: null, view: 'items', requests: [], reqLoading: false };
   var els = {};
 
   function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (m) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]; }); }
@@ -79,7 +79,14 @@
       + '.iv-danger{border:1px solid #f0c9c9;background:#fff;color:#c0392b;font-weight:700;border-radius:10px;padding:9px 14px;cursor:pointer;}'
       + '.iv-prev{max-height:240px;overflow:auto;border:1px solid #eef2f7;border-radius:10px;margin-top:8px;}'
       + '.iv-prev table{width:100%;border-collapse:collapse;font-size:12px;}'
-      + '.iv-prev th,.iv-prev td{padding:6px 8px;border-bottom:1px solid #f2f5f9;text-align:left;white-space:nowrap;}';
+      + '.iv-prev th,.iv-prev td{padding:6px 8px;border-bottom:1px solid #f2f5f9;text-align:left;white-space:nowrap;}'
+      + '#inventoryPage .iv-tabs{display:flex;gap:8px;margin:0 0 14px;flex-wrap:wrap;}'
+      + '#inventoryPage .iv-tab{border:1px solid #d6deea;background:#fff;color:#5a7088;font-weight:700;font-size:14px;border-radius:10px;padding:9px 16px;cursor:pointer;}'
+      + '#inventoryPage .iv-tab.on{background:#1d6fb8;border-color:#1d6fb8;color:#fff;}'
+      + '#inventoryPage .iv-link{color:#1d6fb8;font-weight:700;text-decoration:none;}#inventoryPage .iv-link:hover{text-decoration:underline;}'
+      + '#inventoryPage .iv-urg-Urgent,.iv-urg-Urgent{color:#b3261e;font-weight:800;}#inventoryPage .iv-urg-High,.iv-urg-High{color:#cf6b00;font-weight:800;}#inventoryPage .iv-urg-Normal,.iv-urg-Normal{color:#5a7088;}#inventoryPage .iv-urg-Low,.iv-urg-Low{color:#8aa0bb;}'
+      + '.iv-olink{display:inline-block;border:1px solid #b6cde4;background:#f4f8fc;color:#1d6fb8;font-weight:700;font-size:12.5px;border-radius:9px;padding:8px 14px;text-decoration:none;}.iv-olink:hover{background:#e8f1fb;}'
+      + '.iv-reqbtn{border:1px solid #e0a800;background:#fff7e0;color:#8a5a00;font-weight:800;border-radius:10px;padding:9px 14px;cursor:pointer;font-size:13px;}.iv-reqbtn:hover{background:#ffefc2;}';
     var s = document.createElement('style'); s.id = 'ivStyles'; s.textContent = c; document.head.appendChild(s);
   }
 
@@ -91,6 +98,8 @@
     root.dataset.built = '1';
     root.innerHTML =
       '<div class="iv-cards" id="ivCards"></div>'
+      + '<div class="iv-tabs"><button id="ivTabItems" class="iv-tab on" type="button">📦 Inventory</button><button id="ivTabReq" class="iv-tab" type="button">📋 Requests <span id="ivTabReqN"></span></button></div>'
+      + '<div id="ivItemsView">'
       + '<div class="iv-tools">'
       + '<input id="ivSearch" class="iv-input iv-search" type="text" placeholder="Search item, SKU, e.g. tape, bubble, 4x4x4, gloves…" autocomplete="off"/>'
       + '<select id="ivDept" class="iv-select"></select>'
@@ -108,8 +117,20 @@
       + '<span id="ivCount" class="iv-count"></span>'
       + '</div>'
       + '<div class="iv-tablewrap"><table class="iv-table"><thead><tr>'
-      + '<th>Item</th><th>Category</th><th>Department</th><th>Location</th><th>Qty</th><th>Min</th><th>Status</th><th>Vendor</th><th>Last Counted</th>'
+      + '<th>Item</th><th>Category</th><th>Department</th><th>Location</th><th>Qty</th><th>Min</th><th>Status</th><th>Order</th><th>Last Counted</th>'
       + '</tr></thead><tbody id="ivBody"></tbody></table></div>'
+      + '</div>' // end items view
+      + '<div id="ivRequestsView" hidden>'
+      + '<div class="iv-tools">'
+      + '<input id="ivRSearch" class="iv-input iv-search" type="text" placeholder="Search requests — item, department, requester…" autocomplete="off"/>'
+      + '<select id="ivRStatus" class="iv-select"><option value="open">Open requests</option><option value="">All statuses</option><option>Requested</option><option>Reviewing</option><option>Approved</option><option>Ordered</option><option>Shipped</option><option>Delivered</option><option>Denied</option><option>Canceled</option></select>'
+      + '<select id="ivRUrg" class="iv-select"><option value="">Any urgency</option><option>Urgent</option><option>High</option><option>Normal</option><option>Low</option></select>'
+      + '<div class="iv-spacer"></div><span id="ivRCount" class="iv-count"></span>'
+      + '</div>'
+      + '<div class="iv-tablewrap"><table class="iv-table"><thead><tr>'
+      + '<th>Urg</th><th>Item</th><th>Department</th><th>Qty</th><th>Requested by</th><th>Date</th><th>Status</th><th>Expected</th><th>Tracking</th>'
+      + '</tr></thead><tbody id="ivRBody"></tbody></table></div>'
+      + '</div>' // end requests view
       + dl('ivDeptList', DEPARTMENTS) + dl('ivCatList', CATEGORIES) + dl('ivUnitList', UNITS) + dl('ivLocList', LOCATIONS);
 
     els.search = document.getElementById('ivSearch');
@@ -129,8 +150,25 @@
     imp.addEventListener('click', function () { impFile.click(); });
     impFile.addEventListener('change', function () { if (impFile.files && impFile.files[0]) handleImportFile(impFile.files[0]); impFile.value = ''; });
 
+    // Requests view refs + listeners
+    els.rbody = document.getElementById('ivRBody'); els.rcount = document.getElementById('ivRCount');
+    els.rsearch = document.getElementById('ivRSearch'); els.rstatus = document.getElementById('ivRStatus'); els.rurg = document.getElementById('ivRUrg');
+    els.rsearch.addEventListener('input', renderRequests);
+    [els.rstatus, els.rurg].forEach(function (s) { s.addEventListener('change', renderRequests); });
+    document.getElementById('ivTabItems').addEventListener('click', function () { switchView('items'); });
+    document.getElementById('ivTabReq').addEventListener('click', function () { switchView('requests'); });
+
     buildModal();
     updateRoleUI();
+  }
+
+  function switchView(v) {
+    state.view = v;
+    document.getElementById('ivTabItems').classList.toggle('on', v === 'items');
+    document.getElementById('ivTabReq').classList.toggle('on', v === 'requests');
+    document.getElementById('ivItemsView').hidden = v !== 'items';
+    document.getElementById('ivRequestsView').hidden = v !== 'requests';
+    if (v === 'requests') loadRequests();
   }
 
   function updateRoleUI() {
@@ -162,15 +200,20 @@
 
   function renderCards() {
     var s = state.summary || {};
+    var n = document.getElementById('ivTabReqN'); if (n) n.textContent = (s.openRequests ? '(' + s.openRequests + ')' : '');
     els.cards.innerHTML =
-      card('', 'Total Items', s.total != null ? s.total : 0, '')
-      + card('low', 'Low Stock', s.low || 0, 'at or below min')
-      + card('out', 'Out of Stock', s.out || 0, 'zero on hand')
-      + card('rev', 'Needs Review', s.review || 0, 'unconfirmed count')
-      + card('', 'Last Count', fmtDate(s.lastCount), 'most recent');
-    function card(cls, lbl, val, sub) {
-      return '<div class="iv-card ' + cls + '"><div class="iv-card-lbl">' + esc(lbl) + '</div><div class="iv-card-val">' + esc(val) + '</div>' + (sub ? '<div class="iv-card-sub">' + esc(sub) + '</div>' : '') + '</div>';
+      card('', 'Total Items', s.total != null ? s.total : 0, '', 'items')
+      + card('low', 'Low Stock', s.low || 0, 'at or below min', 'items')
+      + card('out', 'Out of Stock', s.out || 0, 'zero on hand', 'items')
+      + card('rev', 'Needs Review', s.review || 0, 'unconfirmed count', 'items')
+      + card('', 'Open Requests', s.openRequests || 0, 'awaiting action', 'requests')
+      + card('low', 'Urgent Requests', s.urgentRequests || 0, 'high / urgent', 'requests')
+      + card('', 'Orders In Transit', s.inTransit || 0, 'ordered / shipped', 'requests')
+      + card('', 'Last Count', fmtDate(s.lastCount), 'most recent', '');
+    function card(cls, lbl, val, sub, go) {
+      return '<div class="iv-card ' + cls + '"' + (go ? ' data-go="' + go + '" style="cursor:pointer;"' : '') + '><div class="iv-card-lbl">' + esc(lbl) + '</div><div class="iv-card-val">' + esc(val) + '</div>' + (sub ? '<div class="iv-card-sub">' + esc(sub) + '</div>' : '') + '</div>';
     }
+    els.cards.querySelectorAll('[data-go]').forEach(function (c) { c.addEventListener('click', function () { switchView(c.getAttribute('data-go')); }); });
   }
 
   function applyFilters() {
@@ -205,7 +248,7 @@
         + '<td><b>' + (it.quantity == null ? '—' : Number(it.quantity)) + '</b>' + (it.unitType ? ' <span style="color:#8aa0bb;font-size:11px;">' + esc(it.unitType) + '</span>' : '') + '</td>'
         + '<td>' + (it.minStock || 0) + '</td>'
         + '<td><span class="iv-chip ' + statusClass(it.status) + '">' + esc(it.status) + '</span></td>'
-        + '<td>' + esc(it.vendor || '—') + '</td>'
+        + '<td>' + (it.orderLink ? '<a class="iv-link" href="' + esc(it.orderLink) + '" target="_blank" rel="noopener" onclick="event.stopPropagation();">Order ↗</a>' : '<span style="color:#c0ccda;">—</span>') + '</td>'
         + '<td>' + esc(fmtDate(it.lastCounted)) + '</td>'
         + '</tr>';
     }).join('');
@@ -259,13 +302,14 @@
       + fld('Vendor / Supplier', '<input id="ivfVendor" value="' + esc(it.vendor || '') + '"/>')
       + fld('Item number / SKU', '<input id="ivfSku" value="' + esc(it.sku || '') + '"/>')
       + '</div>'
+      + fld('Order / Purchase link', '<input id="ivfLink" type="url" placeholder="https://www.uline.com/… (vendor reorder page)" value="' + esc(it.orderLink || '') + '"/>')
       + fld('Notes', '<textarea id="ivfNotes" rows="2">' + esc(it.notes || '') + '</textarea>');
     function fld(l, inner) { return '<div class="iv-field"><label>' + esc(l) + '</label>' + inner + '</div>'; }
   }
   function readFields() {
     return { itemName: val('ivfName').trim(), category: val('ivfCat').trim(), department: val('ivfDept').trim(),
       location: val('ivfLoc').trim(), quantity: val('ivfQty'), unitType: val('ivfUnit').trim(),
-      minStock: val('ivfMin'), vendor: val('ivfVendor').trim(), sku: val('ivfSku').trim(), notes: val('ivfNotes') };
+      minStock: val('ivfMin'), vendor: val('ivfVendor').trim(), sku: val('ivfSku').trim(), orderLink: val('ivfLink').trim(), notes: val('ivfNotes') };
   }
   function openAddModal() {
     if (!canManage()) return;
@@ -298,6 +342,12 @@
       + '<span style="font-size:22px;font-weight:800;color:#16263a;">' + (it.quantity == null ? '—' : Number(it.quantity)) + ' <span style="font-size:13px;color:#8aa0bb;font-weight:600;">' + esc(it.unitType || '') + '</span></span>'
       + '</div>';
 
+    // Reorder + request actions
+    html += '<div class="iv-row" style="margin-top:12px;">'
+      + (it.orderLink ? '<a class="iv-olink" href="' + esc(it.orderLink) + '" target="_blank" rel="noopener">🛒 Open order link</a>' : '<span style="font-size:12.5px;color:#9aa7b6;">No order link added</span>')
+      + '<button class="iv-reqbtn" id="ivReqMore" type="button">📋 Request more</button>'
+      + '</div>';
+
     if (count) {
       html += '<div class="iv-sec">Update count</div>'
         + '<div class="iv-row"><div class="iv-seg" id="ivCntSeg"><button data-m="set" class="on">Set exact</button><button data-m="add">+ Add</button><button data-m="remove">− Remove</button></div>'
@@ -323,6 +373,8 @@
     }
 
     openModal(it.itemName, (it.category || 'Uncategorized') + ' · ' + (it.department || 'No dept') + ' · ' + (it.location || 'No location'), html);
+
+    document.getElementById('ivReqMore').addEventListener('click', function () { openRequestForm(it); });
 
     if (count) {
       var mode = 'set';
@@ -371,23 +423,50 @@
       .catch(function (e) { alert('Network error: ' + e.message); });
   }
 
-  // ── Import (Excel/CSV) ────────────────────────────────────
-  var HEADER_MAP = (function () {
-    function k(s) { return String(s).toLowerCase().replace(/[^a-z0-9]/g, ''); }
-    var m = {};
-    function add(field, names) { names.forEach(function (n) { m[k(n)] = field; }); }
-    add('itemName', ['item', 'item name', 'name', 'description', 'item description', 'product', 'supply']);
-    add('category', ['category', 'type']);
-    add('department', ['department', 'dept', 'owner']);
-    add('location', ['location', 'bin', 'shelf', 'area', 'rack']);
-    add('quantity', ['qty', 'quantity', 'count', 'on hand', 'onhand', 'current quantity', 'current qty', 'stock']);
-    add('unitType', ['unit', 'unit type', 'uom', 'units']);
-    add('minStock', ['min', 'min stock', 'minimum', 'minimum stock level', 'min stock level', 'reorder point', 'reorder', 'reorder level']);
-    add('vendor', ['vendor', 'supplier', 'vendor/supplier', 'vendorsupplier']);
-    add('sku', ['sku', 'item number', 'item #', 'item no', 'part number', 'part #', 'item number/sku', 'itemnumbersku', 'number']);
-    add('notes', ['notes', 'note', 'comment', 'comments']);
-    return { lookup: function (header) { return m[k(header)] || null; } };
-  })();
+  // ── Import (Excel/CSV) — flexible header matching ─────────
+  var HEADER_MAP = { lookup: function (header) {
+    var h = String(header == null ? '' : header).toLowerCase().trim();
+    if (!h) return null;
+    // SKU / item number first (so "Item #" doesn't get caught as the name).
+    if (/\bsku\b/.test(h) || h.indexOf('item #') >= 0 || h.indexOf('item#') >= 0 || /item\s*(no|num|number)/.test(h) || /\bpart\b/.test(h) || h === 'item #' || /^item\s*#?$/.test(h) && h.indexOf('#') >= 0) return 'sku';
+    if (h.indexOf('order link') >= 0 || h.indexOf('purchase link') >= 0 || h.indexOf('vendor link') >= 0 || /\b(link|url)\b/.test(h)) return 'orderLink';
+    if (h.indexOf('description') >= 0 || h === 'item' || h === 'name' || h === 'product' || h === 'supply') return 'itemName';
+    if ((h.indexOf('on hand') >= 0 || h === 'qty' || h === 'quantity' || h === 'count' || h === 'qoh' || h.indexOf('current qty') >= 0 || h.indexOf('current quantity') >= 0) && !/max|order/.test(h)) return 'quantity';
+    if (h.indexOf('threshold') >= 0 || /\bmin\b/.test(h) || h.indexOf('minimum') >= 0 || h.indexOf('reorder point') >= 0 || h.indexOf('reorder level') >= 0) return 'minStock';
+    if (h.indexOf('category') >= 0 || h === 'type') return 'category';
+    if (h.indexOf('department') >= 0 || h.indexOf('dept') >= 0 || h === 'owner') return 'department';
+    if (h.indexOf('location') >= 0 || h.indexOf('bin') >= 0 || h.indexOf('shelf') >= 0 || h.indexOf('area') >= 0 || h.indexOf('rack') >= 0) return 'location';
+    if (h.indexOf('unit') >= 0 || h.indexOf('uom') >= 0) return 'unitType';
+    if (h.indexOf('vendor') >= 0 || h.indexOf('supplier') >= 0) return 'vendor';
+    if (h.indexOf('note') >= 0 || h.indexOf('comment') >= 0) return 'notes';
+    return null;
+  } };
+
+  // Build a vendor reorder link from a Uline-style model code (S-####, H-####…).
+  function ulineLink(code) {
+    var c = String(code == null ? '' : code).replace(/\s+/g, '').toUpperCase();
+    return /^[A-Z]{1,3}-\d+[A-Z0-9-]*$/.test(c) ? 'https://www.uline.com/Search?keywords=' + encodeURIComponent(c) : '';
+  }
+  // Best-effort category guess from the item description.
+  function guessCategory(name) {
+    var n = String(name || '').toLowerCase();
+    if (/gift box/.test(n)) return 'Gift Boxes';
+    if (/crinkle/.test(n)) return 'Crinkle Paper';
+    if (/bubble/.test(n)) return 'Bubble Mailers';
+    if (/poly ?mailer|polyethylene mailer|indestructo|easy-fold mailer|mailer/.test(n)) return 'Poly Mailers';
+    if (/sticker/.test(n)) return 'Stickers';
+    if (/label/.test(n)) return 'Labels';
+    if (/\btape\b|handwrap|stretch|shrink|wrap/.test(n)) return 'Tape';
+    if (/marker|pen\b/.test(n)) return 'Markers/Pens';
+    if (/glove|gription/.test(n)) return 'Gloves';
+    if (/rubber ?band/.test(n)) return 'Rubber Bands';
+    if (/trash bag|broom|dust pan|microfiber|rag|cleaner|clean/.test(n)) return 'Cleaning Supplies';
+    if (/printer|thermal|paper/.test(n)) return 'Printer Supplies';
+    if (/box|corrugated|gaylord/.test(n)) return 'Boxes';
+    if (/bag|envelope/.test(n)) return 'Bags';
+    if (/blade|cutter|staple|knife/.test(n)) return 'General Supplies';
+    return '';
+  }
 
   function handleImportFile(file) {
     if (typeof XLSX === 'undefined') { alert('Spreadsheet reader not loaded — refresh and try again.'); return; }
@@ -402,8 +481,14 @@
         var map = {}; Object.keys(raw[0]).forEach(function (h) { var f = HEADER_MAP.lookup(h); if (f && !map[f]) map[f] = h; });
         if (!map.itemName) { alert('Could not find an item/name column. Headers seen: ' + Object.keys(raw[0]).join(', ')); return; }
         var rows = raw.map(function (r) {
-          var o = {}; for (var f in map) o[f] = r[map[f]]; return o;
-        }).filter(function (r) { return String(r.itemName || '').trim(); });
+          var o = {}; for (var f in map) o[f] = r[map[f]];
+          if (o.sku) o.sku = String(o.sku).replace(/\s+/g, ' ').trim();
+          // Generate a Uline reorder link from the code if none was provided.
+          if (!o.orderLink && o.sku) { var l = ulineLink(o.sku); if (l) o.orderLink = l; }
+          // Infer a category from the description if the sheet has none.
+          if (!o.category && o.itemName) { var g = guessCategory(o.itemName); if (g) o.category = g; }
+          return o;
+        }).filter(function (r) { return String(r.itemName || '').trim() && !/^#?REF/i.test(String(r.itemName).trim()); });
         showImportPreview(rows, map);
       } catch (err) { alert('Could not read the file: ' + err.message); }
     };
@@ -412,24 +497,30 @@
   }
 
   function showImportPreview(rows, map) {
-    var fields = ['itemName', 'category', 'department', 'location', 'quantity', 'unitType', 'minStock', 'vendor', 'sku'];
-    var shown = fields.filter(function (f) { return map[f]; });
+    var fields = ['itemName', 'sku', 'category', 'department', 'minStock', 'quantity', 'orderLink'];
+    var shown = fields.filter(function (f) { return map[f] || (f === 'orderLink' && rows.some(function (r) { return r.orderLink; })) || (f === 'category' && rows.some(function (r) { return r.category; })); });
     var head = '<tr>' + shown.map(function (f) { return '<th>' + esc(f) + '</th>'; }).join('') + '</tr>';
-    var bodyR = rows.slice(0, 8).map(function (r) { return '<tr>' + shown.map(function (f) { return '<td>' + esc(r[f]) + '</td>'; }).join('') + '</tr>'; }).join('');
-    openModal('Import inventory', rows.length + ' rows · matched columns: ' + shown.join(', '),
-      '<p style="font-size:13px;color:#5a7088;">New items are added; existing ones (matched by item name + location + SKU) are updated. No duplicates.</p>'
+    var bodyR = rows.slice(0, 8).map(function (r) { return '<tr>' + shown.map(function (f) { var v = r[f]; if (f === 'orderLink' && v) v = '✓ link'; return '<td>' + esc(v) + '</td>'; }).join('') + '</tr>'; }).join('');
+    var hasQty = !!map.quantity;
+    openModal('Import inventory', rows.length + ' rows · matched: ' + Object.keys(map).join(', '),
+      '<p style="font-size:13px;color:#5a7088;">New items are added; existing ones (matched by name + location + SKU) are updated — no duplicates. Uline order links are auto-built from item codes, and categories are guessed from the description.</p>'
+      + (hasQty ? '<label class="iv-count" style="display:flex;align-items:center;gap:6px;margin:6px 0;cursor:pointer;"><input type="checkbox" id="ivImpQty"/> Also import the current quantities (off = items start as “Needs Review” for a fresh count)</label>' : '')
       + '<div class="iv-prev"><table><thead>' + head + '</thead><tbody>' + bodyR + '</tbody></table></div>'
       + '<div class="iv-row" style="margin-top:14px;justify-content:flex-end;"><button class="iv-btn" id="ivImpCancel" type="button">Cancel</button><button class="iv-go" id="ivImpGo" type="button">Import ' + rows.length + ' rows</button></div>'
       + '<div id="ivImpStatus" class="iv-count" style="margin-top:8px;"></div>');
     document.getElementById('ivImpCancel').addEventListener('click', closeModal);
-    document.getElementById('ivImpGo').addEventListener('click', function () { runImport(rows); });
+    document.getElementById('ivImpGo').addEventListener('click', function () {
+      var keepQty = hasQty && document.getElementById('ivImpQty').checked;
+      var send = keepQty ? rows : rows.map(function (r) { var o = {}; for (var k in r) { if (k !== 'quantity') o[k] = r[k]; } return o; });
+      runImport(send);
+    });
   }
 
   function runImport(rows) {
     var CHUNK = 1000, i = 0, addedT = 0, updatedT = 0;
     var st = document.getElementById('ivImpStatus'); var go = document.getElementById('ivImpGo'); if (go) go.disabled = true;
     function next() {
-      if (i >= rows.length) { if (st) st.textContent = 'Done — added ' + addedT + ', updated ' + updatedT + '.'; loadData(); setTimeout(closeModal, 1200); return; }
+      if (i >= rows.length) { if (st) st.textContent = 'Done — added ' + addedT + ', updated ' + updatedT + '.'; loadData(); setTimeout(closeModal, 1400); return; }
       var chunk = rows.slice(i, i + CHUNK); i += CHUNK;
       if (st) st.textContent = 'Importing ' + Math.min(i, rows.length) + ' / ' + rows.length + '…';
       post({ action: 'import', rows: chunk }, function (res) { addedT += (res.added || 0); updatedT += (res.updated || 0); next(); });
@@ -451,6 +542,110 @@
     var url = URL.createObjectURL(blob); var a = document.createElement('a');
     a.href = url; a.download = 'inventory-' + new Date().toISOString().slice(0, 10) + '.csv';
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  // ── Request: create form (pre-filled from an item) ────────
+  function openRequestForm(it) {
+    it = it || {};
+    var html = '<p style="font-size:13px;color:#5a7088;margin-top:0;">Requesting <b>' + esc(it.itemName || '') + '</b>' + (it.department ? ' for <b>' + esc(it.department) + '</b>' : '') + '. The office manager will review it.</p>'
+      + '<div class="iv-grid2">'
+      + '<div class="iv-field"><label>Quantity needed</label><input id="ivrQty" type="number" step="any" placeholder="e.g. 10"/></div>'
+      + '<div class="iv-field"><label>Urgency</label><select id="ivrUrg"><option>Low</option><option selected>Normal</option><option>High</option><option>Urgent</option></select></div>'
+      + '</div>'
+      + '<div class="iv-field"><label>Reason / note</label><textarea id="ivrReason" rows="2" placeholder="Why is it needed?"></textarea></div>'
+      + '<div class="iv-row" style="justify-content:flex-end;margin-top:10px;"><button class="iv-btn" id="ivrCancel" type="button">Cancel</button><button class="iv-go" id="ivrSave" type="button">Submit request</button></div>';
+    openModal('Request more', it.itemName || '', html);
+    document.getElementById('ivrCancel').addEventListener('click', function () { if (it.id) openDetail(it.id); else closeModal(); });
+    document.getElementById('ivrSave').addEventListener('click', function () {
+      var qty = document.getElementById('ivrQty').value;
+      if (!String(qty).trim()) { alert('Enter a quantity.'); return; }
+      post({ action: 'requestCreate', request: {
+        itemId: it.id || null, itemName: it.itemName || '', category: it.category || '', department: it.department || '',
+        orderLink: it.orderLink || '', quantity: qty, urgency: document.getElementById('ivrUrg').value, reason: document.getElementById('ivrReason').value
+      } }, function () { closeModal(); loadData(); alert('Request submitted.'); });
+    });
+  }
+
+  // ── Requests view ─────────────────────────────────────────
+  function loadRequests() {
+    if (!els.rbody) return;
+    state.reqLoading = true; els.rbody.innerHTML = '<tr><td colspan="9" class="iv-empty">Loading…</td></tr>';
+    fetch(API + '?requests=1', { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) { state.reqLoading = false; if (!res.ok) { els.rbody.innerHTML = '<tr><td colspan="9" class="iv-empty">Could not load (' + esc((res.j && res.j.error) || 'error') + ').</td></tr>'; return; } state.requests = res.j.requests || []; renderRequests(); })
+      .catch(function (e) { state.reqLoading = false; els.rbody.innerHTML = '<tr><td colspan="9" class="iv-empty">Network error: ' + esc(e.message) + '</td></tr>'; });
+  }
+  var REQ_OPEN_C = ['Requested', 'Reviewing', 'Approved', 'Ordered', 'Shipped'];
+  function renderRequests() {
+    if (!els.rbody) return;
+    var q = (els.rsearch.value || '').trim().toLowerCase(), st = els.rstatus.value, ur = els.rurg.value;
+    var rows = state.requests.filter(function (r) {
+      if (st === 'open') { if (REQ_OPEN_C.indexOf(r.status) === -1) return false; }
+      else if (st && r.status !== st) return false;
+      if (ur && r.urgency !== ur) return false;
+      if (q) { var hay = [r.itemName, r.department, r.requestedBy, r.status, r.reason, r.tracking].map(function (x) { return String(x || '').toLowerCase(); }).join(' '); if (hay.indexOf(q) === -1) return false; }
+      return true;
+    });
+    els.rcount.textContent = rows.length + ' request' + (rows.length === 1 ? '' : 's');
+    if (!rows.length) { els.rbody.innerHTML = '<tr><td colspan="9" class="iv-empty">' + (state.reqLoading ? 'Loading…' : 'No requests.') + '</td></tr>'; return; }
+    els.rbody.innerHTML = rows.map(function (r) {
+      return '<tr data-rid="' + r.id + '">'
+        + '<td class="iv-urg-' + esc(r.urgency) + '">' + esc(r.urgency) + '</td>'
+        + '<td class="iv-name">' + esc(r.itemName) + '</td>'
+        + '<td>' + esc(r.department || '—') + '</td>'
+        + '<td>' + (r.quantity == null ? '—' : Number(r.quantity)) + '</td>'
+        + '<td>' + esc(r.requestedBy || '—') + '</td>'
+        + '<td>' + esc(fmtDate(r.createdAt)) + '</td>'
+        + '<td><span class="iv-chip ' + reqStatusClass(r.status) + '">' + esc(r.status) + '</span></td>'
+        + '<td>' + esc(r.expectedDate ? fmtDate(r.expectedDate) : '—') + '</td>'
+        + '<td>' + esc(r.tracking || '—') + '</td>'
+        + '</tr>';
+    }).join('');
+    els.rbody.querySelectorAll('[data-rid]').forEach(function (tr) { tr.addEventListener('click', function () { openRequestManage(Number(tr.getAttribute('data-rid'))); }); });
+  }
+  function reqStatusClass(s) { return s === 'Delivered' ? 'iv-in' : (s === 'Denied' || s === 'Canceled') ? 'iv-out' : (s === 'Ordered' || s === 'Shipped') ? 'iv-low' : 'iv-rev'; }
+
+  // ── Request: manage (office manager / admin) ──────────────
+  function openRequestManage(rid) {
+    var r = state.requests.filter(function (x) { return x.id === rid; })[0];
+    if (!r) return;
+    var manage = canManage();
+    var html = kv('Item', r.itemName) + kv('Department', r.department || '—') + kv('Quantity', r.quantity == null ? '—' : Number(r.quantity))
+      + kv('Urgency', r.urgency) + kv('Requested by', r.requestedBy || '—') + kv('Requested', fmtDateTime(r.createdAt))
+      + (r.reason ? kv('Reason', r.reason) : '')
+      + (r.orderLink ? '<div class="iv-row" style="margin:8px 0;"><a class="iv-olink" href="' + esc(r.orderLink) + '" target="_blank" rel="noopener">🛒 Open order link</a></div>' : '');
+
+    if (manage) {
+      html += '<div class="iv-sec">Manage request</div>'
+        + '<div class="iv-grid2">'
+        + '<div class="iv-field"><label>Status</label><select id="ivmStatus">' + ['Requested', 'Reviewing', 'Approved', 'Ordered', 'Shipped', 'Delivered', 'Denied', 'Canceled'].map(function (s) { return '<option' + (s === r.status ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select></div>'
+        + '<div class="iv-field"><label>Assigned to</label><input id="ivmOwner" value="' + esc(r.assignedTo || '') + '" placeholder="Office manager"/></div>'
+        + '<div class="iv-field"><label>Expected shipment date</label><input id="ivmDate" type="date" value="' + esc(r.expectedDate ? String(r.expectedDate).slice(0, 10) : '') + '"/></div>'
+        + '<div class="iv-field"><label>Tracking number</label><input id="ivmTrack" value="' + esc(r.tracking || '') + '"/></div>'
+        + '</div>'
+        + '<div class="iv-field"><label>Notes</label><textarea id="ivmNotes" rows="2">' + esc(r.notes || '') + '</textarea></div>'
+        + '<div class="iv-row" style="justify-content:flex-end;"><button class="iv-go" id="ivmSave" type="button">Save</button></div>';
+    } else {
+      html += '<div class="iv-sec">Status</div>' + kv('Status', r.status) + (r.expectedDate ? kv('Expected', fmtDate(r.expectedDate)) : '') + (r.tracking ? kv('Tracking', r.tracking) : '') + (r.notes ? '<div class="iv-sec">Notes</div><div style="white-space:pre-wrap;font-size:12.5px;">' + esc(r.notes) + '</div>' : '');
+    }
+    openModal('Request: ' + r.itemName, r.status + ' · ' + r.urgency, html);
+
+    if (manage) {
+      document.getElementById('ivmSave').addEventListener('click', function () {
+        var newStatus = document.getElementById('ivmStatus').value;
+        var fields = { status: newStatus, assignedTo: document.getElementById('ivmOwner').value, expectedDate: document.getElementById('ivmDate').value, tracking: document.getElementById('ivmTrack').value, notes: document.getElementById('ivmNotes').value };
+        post({ action: 'requestUpdate', id: rid, fields: fields }, function () {
+          // On Delivered, optionally bump the linked item's stock.
+          if (newStatus === 'Delivered' && r.itemId && r.quantity != null && r.status !== 'Delivered') {
+            if (confirm('Marked delivered. Add ' + Number(r.quantity) + ' to "' + r.itemName + '" inventory now?')) {
+              post({ action: 'count', id: r.itemId, mode: 'add', amount: Number(r.quantity), note: 'Received from request #' + rid }, function () { closeModal(); loadData(); loadRequests(); });
+              return;
+            }
+          }
+          closeModal(); loadData(); loadRequests();
+        });
+      });
+    }
   }
 
   // ── Activation ────────────────────────────────────────────
