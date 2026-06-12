@@ -219,6 +219,10 @@ exports.handler = async function handler(event) {
         urgentRequests: openReqs.filter(x => x.urgency === 'High' || x.urgency === 'Urgent').length,
         inTransit: rq.rows.filter(x => REQ_TRANSIT.includes(x.status)).length,
       };
+      // Popularity: how many times each item was requested in the last 30 days.
+      const rpm = await pool.query(`SELECT item_id, COUNT(*)::int AS n FROM inventory_requests WHERE item_id IS NOT NULL AND created_at >= NOW() - INTERVAL '30 days' GROUP BY item_id;`);
+      const rpmMap = new Map(rpm.rows.map(r => [String(r.item_id), r.n]));
+      items.forEach(i => { i.requestsMonth = rpmMap.get(String(i.id)) || 0; });
       return json(200, { items, summary, role });
     }
 
