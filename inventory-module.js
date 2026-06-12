@@ -51,8 +51,9 @@
       + '#inventoryPage .iv-card.low .iv-card-val{color:#9a5b00;} #inventoryPage .iv-card.out .iv-card-val{color:#b3261e;} #inventoryPage .iv-card.rev .iv-card-val{color:#5a7088;}'
       + '#inventoryPage .iv-card-sub{font-size:11.5px;color:#8aa0bb;margin-top:2px;}'
       + '#inventoryPage .iv-tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 12px;}'
-      + '#inventoryPage .iv-input,#inventoryPage .iv-select{padding:9px 12px;border:1px solid #d6deea;border-radius:10px;font:inherit;background:#fff;color:#16263a;}'
-      + '#inventoryPage .iv-input:focus,#inventoryPage .iv-select:focus{outline:none;border-color:#5b8fc7;box-shadow:0 0 0 3px rgba(91,143,199,.18);}'
+      + '.iv-input,.iv-select{padding:9px 12px;border:1px solid #d6deea;border-radius:10px;font:inherit;background:#fff;color:#16263a !important;-webkit-text-fill-color:#16263a;}'
+      + '.iv-input::placeholder{color:#9aa7b6;-webkit-text-fill-color:#9aa7b6;}'
+      + '.iv-input:focus,.iv-select:focus{outline:none;border-color:#5b8fc7;box-shadow:0 0 0 3px rgba(91,143,199,.18);}'
       + '#inventoryPage .iv-search{flex:1;min-width:200px;}'
       + '#inventoryPage .iv-btn{border:1px solid #cdd9e6;background:#f4f8fc;color:#2f4d6b;font-weight:700;font-size:13px;border-radius:10px;padding:9px 14px;cursor:pointer;font-family:inherit;}'
       + '#inventoryPage .iv-btn:hover{background:#e8f1fb;border-color:#b6cde4;}'
@@ -104,7 +105,10 @@
       + '.iv-tags{display:flex;flex-wrap:wrap;gap:6px;}'
       + '.iv-tag{display:inline-flex;align-items:center;gap:6px;background:#eef5ff;border:1px solid #d4e4fb;color:#1d4e7a;border-radius:999px;padding:4px 10px;font-size:12.5px;font-weight:700;}'
       + '.iv-tag button{border:none;background:transparent;color:#5a7aa6;font-size:15px;line-height:1;cursor:pointer;padding:0;}'
-      + '.iv-tag-ro{margin:0 0 2px 0;}';
+      + '.iv-tag-ro{margin:0 0 2px 0;}'
+      + '#inventoryPage .iv-namecell{display:flex;align-items:center;gap:9px;}'
+      + '#inventoryPage .iv-thumb{width:36px;height:36px;border-radius:8px;object-fit:cover;border:1px solid #e6ecf3;background:#f4f8fc;flex-shrink:0;}'
+      + '.iv-photo{max-width:100%;max-height:240px;border-radius:10px;border:1px solid #e6ecf3;display:block;}';
     var s = document.createElement('style'); s.id = 'ivStyles'; s.textContent = c; document.head.appendChild(s);
   }
 
@@ -259,7 +263,7 @@
     if (!rows.length) { els.body.innerHTML = '<tr><td colspan="9" class="iv-empty">No items match.</td></tr>'; return; }
     els.body.innerHTML = rows.map(function (it) {
       return '<tr data-id="' + it.id + '" role="button" tabindex="0"' + (it.archived ? ' class="iv-archived"' : '') + '>'
-        + '<td class="iv-name">' + esc(it.itemName) + (it.archived ? ' <span class="iv-chip iv-rev">archived</span>' : '') + (it.sku ? '<div style="font-size:11px;color:#8aa0bb;">' + esc(it.sku) + '</div>' : '') + '</td>'
+        + '<td><div class="iv-namecell">' + (it.photoVer ? '<img class="iv-thumb" loading="lazy" src="' + esc(photoUrl(it)) + '" alt="">' : '') + '<div><span class="iv-name">' + esc(it.itemName) + '</span>' + (it.archived ? ' <span class="iv-chip iv-rev">archived</span>' : '') + (it.sku ? '<div style="font-size:11px;color:#8aa0bb;">' + esc(it.sku) + '</div>' : '') + '</div></div></td>'
         + '<td>' + esc(it.category || '—') + '</td>'
         + '<td>' + esc(it.department || '—') + '</td>'
         + '<td title="' + esc(itemLocations(it).join(', ')) + '">' + locDisplay(itemLocations(it)) + '</td>'
@@ -379,6 +383,15 @@
       + '<span style="font-size:22px;font-weight:800;color:#16263a;">' + (it.quantity == null ? '—' : Number(it.quantity)) + ' <span style="font-size:13px;color:#8aa0bb;font-weight:600;">' + esc(it.unitType || '') + '</span></span>'
       + '</div>';
 
+    // Photo
+    html += '<div style="margin-top:12px;">'
+      + (it.photoVer ? '<img class="iv-photo" src="' + esc(photoUrl(it)) + '" alt="' + esc(it.itemName) + '">' : '')
+      + (count ? '<div class="iv-row" style="margin-top:8px;">'
+          + '<button class="iv-btn" id="ivPhotoSet" type="button">📷 ' + (it.photoVer ? 'Replace photo' : 'Add photo') + '</button>'
+          + (it.photoVer ? '<button class="iv-btn" id="ivPhotoDel" type="button">Remove photo</button>' : '')
+          + '</div>' : (it.photoVer ? '' : '<div style="font-size:12.5px;color:#9aa7b6;margin-top:6px;">No photo</div>'))
+      + '</div>';
+
     // Reorder + request actions
     html += '<div class="iv-row" style="margin-top:12px;">'
       + (it.orderLink ? '<a class="iv-olink" href="' + esc(it.orderLink) + '" target="_blank" rel="noopener">🛒 Open order link</a>' : '<span style="font-size:12.5px;color:#9aa7b6;">No order link added</span>')
@@ -413,6 +426,8 @@
     openModal(it.itemName, (it.category || 'Uncategorized') + ' · ' + (it.department || 'No dept') + ' · ' + (it.location || 'No location'), html);
 
     document.getElementById('ivReqMore').addEventListener('click', function () { openRequestForm(it); });
+    var pSet = document.getElementById('ivPhotoSet'); if (pSet) pSet.addEventListener('click', function () { pickPhoto(it.id); });
+    var pDel = document.getElementById('ivPhotoDel'); if (pDel) pDel.addEventListener('click', function () { if (confirm('Remove the photo for "' + it.itemName + '"?')) post({ action: 'removePhoto', itemId: it.id }, function () { loadData(); openDetailAfter(it.id); }); });
 
     if (count) {
       var mode = 'set';
@@ -449,6 +464,9 @@
     document.getElementById('ivEditSave').addEventListener('click', function () {
       var f = readFields();
       if (!f.itemName) { alert('Item name is required.'); return; }
+      // Only send quantity if it actually changed (avoids resetting last-counted
+      // when editing other fields).
+      if (String(f.quantity).trim() === (it.quantity == null ? '' : String(it.quantity))) delete f.quantity;
       post({ action: 'update', id: it.id, fields: f }, function () { loadData(); openDetailAfter(it.id); });
     });
   }
@@ -460,6 +478,37 @@
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (res) { if (!res.ok) { alert('Could not save: ' + ((res.j && res.j.error) || 'error')); return; } if (done) done(res.j); })
       .catch(function (e) { alert('Network error: ' + e.message); });
+  }
+
+  // ── Photos (thumbnail per item) ───────────────────────────
+  function photoUrl(it) { return API + '?photo=' + encodeURIComponent(it.id) + '&img=1&v=' + (it.photoVer || 0); }
+  function resizeImage(file, maxDim, cb) {
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var img = new Image();
+      img.onload = function () {
+        var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        var cw = Math.max(1, Math.round(img.width * scale)), ch = Math.max(1, Math.round(img.height * scale));
+        var canvas = document.createElement('canvas'); canvas.width = cw; canvas.height = ch;
+        canvas.getContext('2d').drawImage(img, 0, 0, cw, ch);
+        try { cb(canvas.toDataURL('image/jpeg', 0.72)); } catch (_) { alert('Could not process that image.'); }
+      };
+      img.onerror = function () { alert('That file is not a readable image.'); };
+      img.src = e.target.result;
+    };
+    reader.onerror = function () { alert('Could not read the file.'); };
+    reader.readAsDataURL(file);
+  }
+  function pickPhoto(itemId) {
+    var input = document.createElement('input');
+    input.type = 'file'; input.accept = 'image/*'; input.setAttribute('capture', 'environment'); input.style.display = 'none';
+    document.body.appendChild(input);
+    input.addEventListener('change', function () {
+      var f = input.files && input.files[0];
+      if (f) resizeImage(f, 280, function (dataUrl) { post({ action: 'setPhoto', itemId: itemId, photoData: dataUrl }, function () { loadData(); openDetailAfter(itemId); }); });
+      input.remove();
+    });
+    input.click();
   }
 
   // ── Import (Excel/CSV) — flexible header matching ─────────

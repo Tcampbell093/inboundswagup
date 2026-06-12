@@ -84,6 +84,14 @@ async function ensureSchema() {
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS inventory_requests_status_idx ON inventory_requests(status);`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inventory_photos (
+      item_id    BIGINT PRIMARY KEY,
+      photo_data TEXT NOT NULL,
+      taken_by   TEXT,
+      taken_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
   schemaReady = true;
 }
 
@@ -156,6 +164,20 @@ const numOrNull = (v) => {
 
 exports.handler = async function handler(event) {
   if (!process.env.DATABASE_URL) return json(500, { error: 'DATABASE_URL is not configured' });
+  const qs = event.queryStringParameters || {};
+
+  // Public thumbnail image endpoint (no auth) so a plain <img src> can lazy-load
+  // it. Supply photos aren't sensitive; writes (below) still require a login.
+  if (event.httpMethod === 'GET' && qs.photo && (qs.img === '1' || qs.img === 'true')) {
+    try {
+      await ensureSchema();
+      const r = await pool.query('SELECT photo_data FROM inventory_photos WHERE item_id=$1;', [qs.photo]);
+      if (!r.rows.length) return { statusCode: 404, body: 'not found' };
+      const m = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/.exec(r.rows[0].photo_data || '');
+      if (!m) return { statusCode: 415, body: 'bad image' };
+      return { statusCode: 200, headers: { 'Content-Type': m[1], 'Cache-Control': 'public, max-age=300' }, body: m[2], isBase64Encoded: true };
+    } catch (e) { return { statusCode: 500, body: e.message }; }
+  }
 
   const caller = await verifyUser(event);
   if (!caller) return json(401, { error: 'Authentication required' });
@@ -167,7 +189,6 @@ exports.handler = async function handler(event) {
     await ensureSchema();
 
     if (event.httpMethod === 'GET') {
-      const qs = event.queryStringParameters || {};
 
       // Requests list (for the Inventory Requests view).
       if (qs.requests === '1' || qs.requests === 'true') {
@@ -180,6 +201,10 @@ exports.handler = async function handler(event) {
         `SELECT * FROM inventory_items ${includeArchived ? '' : 'WHERE archived=false'} ORDER BY item_name ASC;`
       );
       const items = r.rows.map(rowToItem);
+      // Which items have a photo (+ a version stamp for cache-busting the <img>).
+      const ph = await pool.query(`SELECT item_id, EXTRACT(EPOCH FROM taken_at)*1000 AS ver FROM inventory_photos;`);
+      const photoMap = new Map(ph.rows.map(r => [String(r.item_id), Math.round(Number(r.ver))]));
+      items.forEach(i => { i.photoVer = photoMap.get(String(i.id)) || null; });
       const active = items.filter(i => !i.archived);
       // Request rollups for the dashboard cards.
       const rq = await pool.query(`SELECT status, urgency FROM inventory_requests;`);
@@ -247,6 +272,14 @@ exports.handler = async function handler(event) {
           sets.push(`${map[k]}=$${i++}`);
           vals.push(k === 'minStock' ? (numOrNull(f[k]) || 0) : f[k]);
         }
+      }
+      // Quantity edited here counts as a count: set it, clear "needs review",
+      // and stamp last-counted (so editing quantity behaves like Update count).
+      if (Object.prototype.hasOwnProperty.call(f, 'quantity')) {
+        const qv = numOrNull(f.quantity);
+        sets.push(`quantity=$${i++}`); vals.push(qv);
+        sets.push(`needs_review=$${i++}`); vals.push(qv == null);
+        if (qv != null) sets.push(`last_counted=NOW()`);
       }
       if (!sets.length) return json(400, { error: 'no fields to update' });
       sets.push(`last_updated_by=$${i++}`); vals.push(who(caller));
@@ -395,6 +428,30 @@ exports.handler = async function handler(event) {
       const r = await pool.query(`UPDATE inventory_requests SET ${sets.join(', ')} WHERE id=$${i} RETURNING *;`, vals);
       if (!r.rows.length) return json(404, { error: 'not found' });
       return json(200, { ok: true, request: reqToObj(r.rows[0]) });
+    }
+
+    // ── photo: set / replace (leads + managers) ──────────────────────────
+    if (action === 'setPhoto') {
+      if (!canCount) return json(403, { error: 'Not permitted' });
+      const id = body.itemId; const data = String(body.photoData || '');
+      if (!id) return json(400, { error: 'itemId required' });
+      if (!/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(data)) return json(400, { error: 'photoData must be a base64 image data URL' });
+      if (data.length > 700000) return json(413, { error: 'Image too large — please use the in-app capture (it resizes for you).' });
+      await pool.query(
+        `INSERT INTO inventory_photos (item_id, photo_data, taken_by, taken_at)
+         VALUES ($1,$2,$3,NOW())
+         ON CONFLICT (item_id) DO UPDATE SET photo_data=EXCLUDED.photo_data, taken_by=EXCLUDED.taken_by, taken_at=NOW();`,
+        [id, data, who(caller)]
+      );
+      return json(200, { ok: true, photoVer: Date.now() });
+    }
+
+    // ── photo: remove ────────────────────────────────────────────────────
+    if (action === 'removePhoto') {
+      if (!canCount) return json(403, { error: 'Not permitted' });
+      if (!body.itemId) return json(400, { error: 'itemId required' });
+      await pool.query(`DELETE FROM inventory_photos WHERE item_id=$1;`, [body.itemId]);
+      return json(200, { ok: true });
     }
 
     return json(400, { error: 'unknown action' });
