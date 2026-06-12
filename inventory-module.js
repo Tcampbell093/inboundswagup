@@ -270,7 +270,7 @@
         + '<td>' + esc(fmtDate(it.lastCounted)) + '</td>'
         + '</tr>';
     }).join('');
-    els.body.querySelectorAll('[data-id]').forEach(function (tr) { tr.addEventListener('click', function () { openDetail(Number(tr.getAttribute('data-id'))); }); });
+    els.body.querySelectorAll('[data-id]').forEach(function (tr) { tr.addEventListener('click', function () { openDetail(tr.getAttribute('data-id')); }); });
   }
 
   function loadData() {
@@ -369,7 +369,7 @@
 
   // ── Detail / edit / count ─────────────────────────────────
   function openDetail(id) {
-    var it = state.items.filter(function (x) { return x.id === id; })[0];
+    var it = state.items.filter(function (x) { return String(x.id) === String(id); })[0];
     if (!it) return;
     state.activeId = id;
     var manage = canManage(), count = canCount();
@@ -641,13 +641,13 @@
         + '<td>' + esc(r.tracking || '—') + '</td>'
         + '</tr>';
     }).join('');
-    els.rbody.querySelectorAll('[data-rid]').forEach(function (tr) { tr.addEventListener('click', function () { openRequestManage(Number(tr.getAttribute('data-rid'))); }); });
+    els.rbody.querySelectorAll('[data-rid]').forEach(function (tr) { tr.addEventListener('click', function () { openRequestManage(tr.getAttribute('data-rid')); }); });
   }
   function reqStatusClass(s) { return s === 'Delivered' ? 'iv-in' : (s === 'Denied' || s === 'Canceled') ? 'iv-out' : (s === 'Ordered' || s === 'Shipped') ? 'iv-low' : 'iv-rev'; }
 
   // ── Request: manage (office manager / admin) ──────────────
   function openRequestManage(rid) {
-    var r = state.requests.filter(function (x) { return x.id === rid; })[0];
+    var r = state.requests.filter(function (x) { return String(x.id) === String(rid); })[0];
     if (!r) return;
     var manage = canManage();
     var html = kv('Item', r.itemName) + kv('Department', r.department || '—') + kv('Quantity', r.quantity == null ? '—' : Number(r.quantity))
