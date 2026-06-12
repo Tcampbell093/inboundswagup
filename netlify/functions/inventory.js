@@ -42,6 +42,7 @@ async function ensureSchema() {
       category        TEXT,
       department      TEXT,
       location        TEXT,
+      spot            TEXT,
       quantity        NUMERIC,
       unit_type       TEXT,
       min_stock       NUMERIC DEFAULT 0,
@@ -59,6 +60,7 @@ async function ensureSchema() {
     );
   `);
   await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS order_link TEXT;`);
+  await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS spot TEXT;`);
   await pool.query(`CREATE INDEX IF NOT EXISTS inventory_items_active_idx ON inventory_items(archived);`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS inventory_requests (
@@ -114,6 +116,7 @@ function rowToItem(r) {
     category: r.category || '',
     department: r.department || '',
     location: r.location || '',
+    spot: r.spot || '',
     quantity: quantity,
     unitType: r.unit_type || '',
     minStock: r.min_stock == null ? 0 : Number(r.min_stock),
@@ -222,11 +225,11 @@ exports.handler = async function handler(event) {
       const q = numOrNull(it.quantity);
       const r = await pool.query(
         `INSERT INTO inventory_items
-           (item_name, category, department, location, quantity, unit_type, min_stock, vendor, sku, order_link, notes,
+           (item_name, category, department, location, spot, quantity, unit_type, min_stock, vendor, sku, order_link, notes,
             needs_review, last_counted, last_updated_by, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, ${q != null ? 'NOW()' : 'NULL'}, $13, $13)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, ${q != null ? 'NOW()' : 'NULL'}, $14, $14)
          RETURNING *;`,
-        [name, it.category || '', it.department || '', it.location || '', q, it.unitType || '',
+        [name, it.category || '', it.department || '', it.location || '', it.spot || '', q, it.unitType || '',
          numOrNull(it.minStock) || 0, it.vendor || '', it.sku || '', it.orderLink || '', it.notes || '', q == null, who(caller)]
       );
       return json(200, { ok: true, item: rowToItem(r.rows[0]) });
@@ -238,7 +241,7 @@ exports.handler = async function handler(event) {
       const id = body.id; const f = body.fields || {};
       if (!id) return json(400, { error: 'id required' });
       const sets = [], vals = []; let i = 1;
-      const map = { itemName: 'item_name', category: 'category', department: 'department', location: 'location',
+      const map = { itemName: 'item_name', category: 'category', department: 'department', location: 'location', spot: 'spot',
         unitType: 'unit_type', minStock: 'min_stock', vendor: 'vendor', sku: 'sku', orderLink: 'order_link', notes: 'notes' };
       for (const k in map) {
         if (Object.prototype.hasOwnProperty.call(f, k)) {
@@ -329,25 +332,25 @@ exports.handler = async function handler(event) {
           await pool.query(
             `UPDATE inventory_items SET
                category=COALESCE(NULLIF($1,''),category), department=COALESCE(NULLIF($2,''),department),
-               location=COALESCE(NULLIF($3,''),location), quantity=COALESCE($4,quantity),
-               unit_type=COALESCE(NULLIF($5,''),unit_type), min_stock=COALESCE($6,min_stock),
-               vendor=COALESCE(NULLIF($7,''),vendor), sku=COALESCE(NULLIF($8,''),sku),
-               order_link=COALESCE(NULLIF($9,''),order_link), notes=COALESCE(NULLIF($10,''),notes),
-               needs_review=CASE WHEN $4 IS NULL THEN needs_review ELSE false END,
-               last_counted=CASE WHEN $4 IS NULL THEN last_counted ELSE NOW() END,
-               last_updated_by=$11, updated_at=NOW()
-             WHERE id=$12;`,
-            [row.category || '', row.department || '', row.location || '', q, row.unitType || '',
+               location=COALESCE(NULLIF($3,''),location), spot=COALESCE(NULLIF($4,''),spot), quantity=COALESCE($5,quantity),
+               unit_type=COALESCE(NULLIF($6,''),unit_type), min_stock=COALESCE($7,min_stock),
+               vendor=COALESCE(NULLIF($8,''),vendor), sku=COALESCE(NULLIF($9,''),sku),
+               order_link=COALESCE(NULLIF($10,''),order_link), notes=COALESCE(NULLIF($11,''),notes),
+               needs_review=CASE WHEN $5 IS NULL THEN needs_review ELSE false END,
+               last_counted=CASE WHEN $5 IS NULL THEN last_counted ELSE NOW() END,
+               last_updated_by=$12, updated_at=NOW()
+             WHERE id=$13;`,
+            [row.category || '', row.department || '', row.location || '', row.spot || '', q, row.unitType || '',
              numOrNull(row.minStock), row.vendor || '', row.sku || '', row.orderLink || '', row.notes || '', w, id]
           );
           updated++;
         } else {
           const ins = await pool.query(
             `INSERT INTO inventory_items
-               (item_name, category, department, location, quantity, unit_type, min_stock, vendor, sku, order_link, notes,
+               (item_name, category, department, location, spot, quantity, unit_type, min_stock, vendor, sku, order_link, notes,
                 needs_review, last_counted, last_updated_by, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, ${q != null ? 'NOW()' : 'NULL'}, $12,$12) RETURNING id;`,
-            [name, row.category || '', row.department || '', row.location || '', q, row.unitType || '',
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, ${q != null ? 'NOW()' : 'NULL'}, $13,$13) RETURNING id;`,
+            [name, row.category || '', row.department || '', row.location || '', row.spot || '', q, row.unitType || '',
              numOrNull(row.minStock) || 0, row.vendor || '', row.sku || '', row.orderLink || '', row.notes || '', q == null, w]
           );
           byKey.set(key, ins.rows[0].id);
