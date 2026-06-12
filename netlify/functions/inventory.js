@@ -47,6 +47,7 @@ async function ensureSchema() {
       min_stock       NUMERIC DEFAULT 0,
       vendor          TEXT,
       sku             TEXT,
+      order_link      TEXT,
       notes           TEXT,
       needs_review    BOOLEAN NOT NULL DEFAULT false,
       archived        BOOLEAN NOT NULL DEFAULT false,
@@ -57,9 +58,37 @@ async function ensureSchema() {
       updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS order_link TEXT;`);
   await pool.query(`CREATE INDEX IF NOT EXISTS inventory_items_active_idx ON inventory_items(archived);`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inventory_requests (
+      id            BIGSERIAL PRIMARY KEY,
+      item_id       BIGINT,
+      item_name     TEXT NOT NULL,
+      category      TEXT,
+      department    TEXT,
+      quantity      NUMERIC,
+      urgency       TEXT NOT NULL DEFAULT 'Normal',
+      reason        TEXT,
+      status        TEXT NOT NULL DEFAULT 'Requested',
+      requested_by  TEXT,
+      assigned_to   TEXT,
+      expected_date DATE,
+      tracking      TEXT,
+      order_link    TEXT,
+      notes         TEXT,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS inventory_requests_status_idx ON inventory_requests(status);`);
   schemaReady = true;
 }
+
+const REQ_OPEN = ['Requested', 'Reviewing', 'Approved', 'Ordered', 'Shipped'];
+const REQ_TRANSIT = ['Ordered', 'Shipped'];
+const REQ_STATUSES = ['Requested', 'Reviewing', 'Approved', 'Ordered', 'Shipped', 'Delivered', 'Denied', 'Canceled'];
+const URGENCIES = ['Low', 'Normal', 'High', 'Urgent'];
 
 function who(caller) {
   const u = caller && caller.user;
@@ -90,6 +119,7 @@ function rowToItem(r) {
     minStock: r.min_stock == null ? 0 : Number(r.min_stock),
     vendor: r.vendor || '',
     sku: r.sku || '',
+    orderLink: r.order_link || '',
     notes: r.notes || '',
     needsReview: !!r.needs_review,
     archived: !!r.archived,
@@ -99,6 +129,17 @@ function rowToItem(r) {
     createdBy: r.created_by || '',
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+  };
+}
+
+function reqToObj(r) {
+  return {
+    id: r.id, itemId: r.item_id, itemName: r.item_name || '', category: r.category || '',
+    department: r.department || '', quantity: r.quantity == null ? null : Number(r.quantity),
+    urgency: r.urgency || 'Normal', reason: r.reason || '', status: r.status || 'Requested',
+    requestedBy: r.requested_by || '', assignedTo: r.assigned_to || '',
+    expectedDate: r.expected_date, tracking: r.tracking || '', orderLink: r.order_link || '',
+    notes: r.notes || '', createdAt: r.created_at, updatedAt: r.updated_at,
   };
 }
 
@@ -124,18 +165,31 @@ exports.handler = async function handler(event) {
 
     if (event.httpMethod === 'GET') {
       const qs = event.queryStringParameters || {};
+
+      // Requests list (for the Inventory Requests view).
+      if (qs.requests === '1' || qs.requests === 'true') {
+        const rr = await pool.query(`SELECT * FROM inventory_requests ORDER BY created_at DESC LIMIT 1000;`);
+        return json(200, { requests: rr.rows.map(reqToObj), role });
+      }
+
       const includeArchived = qs.includeArchived === '1' || qs.includeArchived === 'true';
       const r = await pool.query(
         `SELECT * FROM inventory_items ${includeArchived ? '' : 'WHERE archived=false'} ORDER BY item_name ASC;`
       );
       const items = r.rows.map(rowToItem);
       const active = items.filter(i => !i.archived);
+      // Request rollups for the dashboard cards.
+      const rq = await pool.query(`SELECT status, urgency FROM inventory_requests;`);
+      const openReqs = rq.rows.filter(x => REQ_OPEN.includes(x.status));
       const summary = {
         total: active.length,
         low: active.filter(i => i.status === 'Low Stock').length,
         out: active.filter(i => i.status === 'Out of Stock').length,
         review: active.filter(i => i.status === 'Needs Review').length,
         lastCount: active.reduce((m, i) => (i.lastCounted && (!m || i.lastCounted > m)) ? i.lastCounted : m, null),
+        openRequests: openReqs.length,
+        urgentRequests: openReqs.filter(x => x.urgency === 'High' || x.urgency === 'Urgent').length,
+        inTransit: rq.rows.filter(x => REQ_TRANSIT.includes(x.status)).length,
       };
       return json(200, { items, summary, role });
     }
@@ -168,12 +222,12 @@ exports.handler = async function handler(event) {
       const q = numOrNull(it.quantity);
       const r = await pool.query(
         `INSERT INTO inventory_items
-           (item_name, category, department, location, quantity, unit_type, min_stock, vendor, sku, notes,
+           (item_name, category, department, location, quantity, unit_type, min_stock, vendor, sku, order_link, notes,
             needs_review, last_counted, last_updated_by, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, ${q != null ? 'NOW()' : 'NULL'}, $12, $12)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, ${q != null ? 'NOW()' : 'NULL'}, $13, $13)
          RETURNING *;`,
         [name, it.category || '', it.department || '', it.location || '', q, it.unitType || '',
-         numOrNull(it.minStock) || 0, it.vendor || '', it.sku || '', it.notes || '', q == null, who(caller)]
+         numOrNull(it.minStock) || 0, it.vendor || '', it.sku || '', it.orderLink || '', it.notes || '', q == null, who(caller)]
       );
       return json(200, { ok: true, item: rowToItem(r.rows[0]) });
     }
@@ -185,7 +239,7 @@ exports.handler = async function handler(event) {
       if (!id) return json(400, { error: 'id required' });
       const sets = [], vals = []; let i = 1;
       const map = { itemName: 'item_name', category: 'category', department: 'department', location: 'location',
-        unitType: 'unit_type', minStock: 'min_stock', vendor: 'vendor', sku: 'sku', notes: 'notes' };
+        unitType: 'unit_type', minStock: 'min_stock', vendor: 'vendor', sku: 'sku', orderLink: 'order_link', notes: 'notes' };
       for (const k in map) {
         if (Object.prototype.hasOwnProperty.call(f, k)) {
           sets.push(`${map[k]}=$${i++}`);
@@ -278,29 +332,67 @@ exports.handler = async function handler(event) {
                location=COALESCE(NULLIF($3,''),location), quantity=COALESCE($4,quantity),
                unit_type=COALESCE(NULLIF($5,''),unit_type), min_stock=COALESCE($6,min_stock),
                vendor=COALESCE(NULLIF($7,''),vendor), sku=COALESCE(NULLIF($8,''),sku),
-               notes=COALESCE(NULLIF($9,''),notes),
+               order_link=COALESCE(NULLIF($9,''),order_link), notes=COALESCE(NULLIF($10,''),notes),
                needs_review=CASE WHEN $4 IS NULL THEN needs_review ELSE false END,
                last_counted=CASE WHEN $4 IS NULL THEN last_counted ELSE NOW() END,
-               last_updated_by=$10, updated_at=NOW()
-             WHERE id=$11;`,
+               last_updated_by=$11, updated_at=NOW()
+             WHERE id=$12;`,
             [row.category || '', row.department || '', row.location || '', q, row.unitType || '',
-             numOrNull(row.minStock), row.vendor || '', row.sku || '', row.notes || '', w, id]
+             numOrNull(row.minStock), row.vendor || '', row.sku || '', row.orderLink || '', row.notes || '', w, id]
           );
           updated++;
         } else {
           const ins = await pool.query(
             `INSERT INTO inventory_items
-               (item_name, category, department, location, quantity, unit_type, min_stock, vendor, sku, notes,
+               (item_name, category, department, location, quantity, unit_type, min_stock, vendor, sku, order_link, notes,
                 needs_review, last_counted, last_updated_by, created_by)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, ${q != null ? 'NOW()' : 'NULL'}, $12,$12) RETURNING id;`,
             [name, row.category || '', row.department || '', row.location || '', q, row.unitType || '',
-             numOrNull(row.minStock) || 0, row.vendor || '', row.sku || '', row.notes || '', q == null, w]
+             numOrNull(row.minStock) || 0, row.vendor || '', row.sku || '', row.orderLink || '', row.notes || '', q == null, w]
           );
           byKey.set(key, ins.rows[0].id);
           added++;
         }
       }
       return json(200, { ok: true, added, updated });
+    }
+
+    // ── request: create (any signed-in user) ─────────────────────────────
+    if (action === 'requestCreate') {
+      const rq = body.request || {};
+      const name = String(rq.itemName || '').trim();
+      if (!name) return json(400, { error: 'Item name is required' });
+      let urgency = String(rq.urgency || 'Normal'); if (!URGENCIES.includes(urgency)) urgency = 'Normal';
+      const r = await pool.query(
+        `INSERT INTO inventory_requests
+           (item_id, item_name, category, department, quantity, urgency, reason, order_link, requested_by, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Requested') RETURNING *;`,
+        [rq.itemId || null, name, rq.category || '', rq.department || '', numOrNull(rq.quantity), urgency,
+         rq.reason || '', rq.orderLink || '', who(caller)]
+      );
+      return json(200, { ok: true, request: reqToObj(r.rows[0]) });
+    }
+
+    // ── request: update (manager/admin = office manager) ─────────────────
+    if (action === 'requestUpdate') {
+      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      const id = body.id; const f = body.fields || {};
+      if (!id) return json(400, { error: 'id required' });
+      const sets = [], vals = []; let i = 1;
+      const map = { status: 'status', assignedTo: 'assigned_to', expectedDate: 'expected_date', tracking: 'tracking', notes: 'notes', urgency: 'urgency' };
+      for (const k in map) {
+        if (Object.prototype.hasOwnProperty.call(f, k)) {
+          if (k === 'status' && !REQ_STATUSES.includes(f[k])) return json(400, { error: 'invalid status' });
+          sets.push(`${map[k]}=$${i++}`);
+          vals.push(k === 'expectedDate' ? (f[k] || null) : f[k]);
+        }
+      }
+      if (!sets.length) return json(400, { error: 'no fields to update' });
+      sets.push(`updated_at=NOW()`);
+      vals.push(id);
+      const r = await pool.query(`UPDATE inventory_requests SET ${sets.join(', ')} WHERE id=$${i} RETURNING *;`, vals);
+      if (!r.rows.length) return json(404, { error: 'not found' });
+      return json(200, { ok: true, request: reqToObj(r.rows[0]) });
     }
 
     return json(400, { error: 'unknown action' });
