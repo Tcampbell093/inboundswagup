@@ -147,7 +147,7 @@ function reqToObj(r) {
 }
 
 const norm = (s) => String(s == null ? '' : s).trim().toLowerCase();
-const matchKey = (name, location, sku) => norm(name) + '|' + norm(location) + '|' + norm(sku);
+const matchKey = (name, sku) => norm(name) + '|' + norm(sku);
 const numOrNull = (v) => {
   if (v == null || v === '') return null;
   const n = Number(String(v).replace(/[^0-9.\-]/g, ''));
@@ -209,15 +209,14 @@ exports.handler = async function handler(event) {
       const name = String(it.itemName || '').trim();
       if (!name) return json(400, { error: 'Item name is required' });
 
-      // Duplicate guard (same name + department + location + sku).
+      // Duplicate guard (same name + department + sku — locations can differ).
       if (!body.force) {
         const dupQ = await pool.query(
           `SELECT * FROM inventory_items WHERE archived=false
              AND LOWER(TRIM(item_name))=LOWER(TRIM($1))
              AND LOWER(TRIM(COALESCE(department,'')))=LOWER(TRIM($2))
-             AND LOWER(TRIM(COALESCE(location,'')))=LOWER(TRIM($3))
-             AND LOWER(TRIM(COALESCE(sku,'')))=LOWER(TRIM($4)) LIMIT 1;`,
-          [name, it.department || '', it.location || '', it.sku || '']
+             AND LOWER(TRIM(COALESCE(sku,'')))=LOWER(TRIM($3)) LIMIT 1;`,
+          [name, it.department || '', it.sku || '']
         );
         if (dupQ.rows.length) return json(200, { duplicate: rowToItem(dupQ.rows[0]) });
       }
@@ -319,13 +318,13 @@ exports.handler = async function handler(event) {
       if (!canManage) return json(403, { error: 'Manager/admin only' });
       const rows = Array.isArray(body.rows) ? body.rows : [];
       const existing = await pool.query(`SELECT id, item_name, location, sku FROM inventory_items WHERE archived=false;`);
-      const byKey = new Map(existing.rows.map(r => [matchKey(r.item_name, r.location, r.sku), r.id]));
+      const byKey = new Map(existing.rows.map(r => [matchKey(r.item_name, r.sku), r.id]));
       let added = 0, updated = 0;
       const w = who(caller);
       for (const row of rows) {
         const name = String(row.itemName || '').trim();
         if (!name) continue;
-        const key = matchKey(name, row.location, row.sku);
+        const key = matchKey(name, row.sku);
         const q = numOrNull(row.quantity);
         const id = byKey.get(key);
         if (id) {

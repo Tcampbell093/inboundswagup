@@ -28,6 +28,19 @@
   function statusClass(s) { return s === 'In Stock' ? 'iv-in' : s === 'Low Stock' ? 'iv-low' : s === 'Out of Stock' ? 'iv-out' : 'iv-rev'; }
   function qtyText(it) { return it.quantity == null ? '—' : (Number(it.quantity) + (it.unitType ? ' ' + it.unitType : '')); }
 
+  // Locations are stored as a comma-separated string in `location`. Any legacy
+  // `spot` value is folded in so nothing is lost.
+  function itemLocations(it) {
+    var arr = String(it.location || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    if (it.spot && arr.map(function (x) { return x.toLowerCase(); }).indexOf(String(it.spot).toLowerCase()) === -1) arr.push(it.spot);
+    return arr;
+  }
+  function locDisplay(arr) {
+    if (!arr.length) return '<span style="color:#c0ccda;">—</span>';
+    if (arr.length === 1) return esc(arr[0]);
+    return esc(arr[0]) + ', ' + esc(arr[1]) + (arr.length > 2 ? ' <span style="color:#1d6fb8;font-weight:700;">+' + (arr.length - 2) + '</span>' : '');
+  }
+
   function injectStyles() {
     if (document.getElementById('ivStyles')) return;
     var c = ''
@@ -86,7 +99,11 @@
       + '#inventoryPage .iv-link{color:#1d6fb8;font-weight:700;text-decoration:none;}#inventoryPage .iv-link:hover{text-decoration:underline;}'
       + '#inventoryPage .iv-urg-Urgent,.iv-urg-Urgent{color:#b3261e;font-weight:800;}#inventoryPage .iv-urg-High,.iv-urg-High{color:#cf6b00;font-weight:800;}#inventoryPage .iv-urg-Normal,.iv-urg-Normal{color:#5a7088;}#inventoryPage .iv-urg-Low,.iv-urg-Low{color:#8aa0bb;}'
       + '.iv-olink{display:inline-block;border:1px solid #b6cde4;background:#f4f8fc;color:#1d6fb8;font-weight:700;font-size:12.5px;border-radius:9px;padding:8px 14px;text-decoration:none;}.iv-olink:hover{background:#e8f1fb;}'
-      + '.iv-reqbtn{border:1px solid #e0a800;background:#fff7e0;color:#8a5a00;font-weight:800;border-radius:10px;padding:9px 14px;cursor:pointer;font-size:13px;}.iv-reqbtn:hover{background:#ffefc2;}';
+      + '.iv-reqbtn{border:1px solid #e0a800;background:#fff7e0;color:#8a5a00;font-weight:800;border-radius:10px;padding:9px 14px;cursor:pointer;font-size:13px;}.iv-reqbtn:hover{background:#ffefc2;}'
+      + '.iv-tags{display:flex;flex-wrap:wrap;gap:6px;}'
+      + '.iv-tag{display:inline-flex;align-items:center;gap:6px;background:#eef5ff;border:1px solid #d4e4fb;color:#1d4e7a;border-radius:999px;padding:4px 10px;font-size:12.5px;font-weight:700;}'
+      + '.iv-tag button{border:none;background:transparent;color:#5a7aa6;font-size:15px;line-height:1;cursor:pointer;padding:0;}'
+      + '.iv-tag-ro{margin:0 0 2px 0;}';
     var s = document.createElement('style'); s.id = 'ivStyles'; s.textContent = c; document.head.appendChild(s);
   }
 
@@ -189,7 +206,7 @@
     state.items.forEach(function (it) {
       if (it.department) depts[it.department] = 1;
       if (it.category) cats[it.category] = 1;
-      if (it.location) locs[it.location] = 1;
+      itemLocations(it).forEach(function (l) { locs[l] = 1; });
       if (it.vendor) vends[it.vendor] = 1;
     });
     fillSelect(els.dept, Object.keys(depts).sort(), 'Any department');
@@ -223,7 +240,7 @@
       if (d && it.department !== d) return false;
       if (c && it.category !== c) return false;
       if (st && it.status !== st) return false;
-      if (lo && it.location !== lo) return false;
+      if (lo && itemLocations(it).indexOf(lo) === -1) return false;
       if (ve && it.vendor !== ve) return false;
       if (q) {
         var hay = [it.itemName, it.sku, it.category, it.department, it.location, it.spot, it.vendor, it.notes].map(function (x) { return String(x || '').toLowerCase(); }).join(' ');
@@ -244,7 +261,7 @@
         + '<td class="iv-name">' + esc(it.itemName) + (it.archived ? ' <span class="iv-chip iv-rev">archived</span>' : '') + (it.sku ? '<div style="font-size:11px;color:#8aa0bb;">' + esc(it.sku) + '</div>' : '') + '</td>'
         + '<td>' + esc(it.category || '—') + '</td>'
         + '<td>' + esc(it.department || '—') + '</td>'
-        + '<td>' + esc(it.location || '—') + (it.spot ? '<div style="font-size:11px;color:#1d6fb8;font-weight:600;">📍 ' + esc(it.spot) + '</div>' : '') + '</td>'
+        + '<td title="' + esc(itemLocations(it).join(', ')) + '">' + locDisplay(itemLocations(it)) + '</td>'
         + '<td><b>' + (it.quantity == null ? '—' : Number(it.quantity)) + '</b>' + (it.unitType ? ' <span style="color:#8aa0bb;font-size:11px;">' + esc(it.unitType) + '</span>' : '') + '</td>'
         + '<td>' + (it.minStock || 0) + '</td>'
         + '<td><span class="iv-chip ' + statusClass(it.status) + '">' + esc(it.status) + '</span></td>'
@@ -295,27 +312,45 @@
       + fld('Item name', '<input id="ivfName" value="' + esc(it.itemName || '') + '"/>')
       + fld('Category', '<input id="ivfCat" list="ivCatList" value="' + esc(it.category || '') + '"/>')
       + fld('Department', '<input id="ivfDept" list="ivDeptList" value="' + esc(it.department || '') + '"/>')
-      + fld('Location (area)', '<input id="ivfLoc" list="ivLocList" value="' + esc(it.location || '') + '"/>')
-      + fld('Specific spot / bin', '<input id="ivfSpot" placeholder="e.g. Q12-A1, Top shelf, Bin 3" value="' + esc(it.spot || '') + '"/>')
       + fld('Current quantity', '<input id="ivfQty" type="number" step="any" value="' + (it.quantity == null ? '' : esc(it.quantity)) + '"/>')
       + fld('Unit type', '<input id="ivfUnit" list="ivUnitList" value="' + esc(it.unitType || '') + '"/>')
       + fld('Minimum stock level', '<input id="ivfMin" type="number" step="any" value="' + (it.minStock != null ? esc(it.minStock) : '0') + '"/>')
       + fld('Vendor / Supplier', '<input id="ivfVendor" value="' + esc(it.vendor || '') + '"/>')
       + fld('Item number / SKU', '<input id="ivfSku" value="' + esc(it.sku || '') + '"/>')
       + '</div>'
+      + fld('Locations <span style="font-weight:400;color:#8aa0bb;">(add one or more — type and press Enter)</span>', '<div class="iv-tags" id="ivfLocs"></div><input id="ivfLocInput" class="iv-input" list="ivLocList" placeholder="e.g. Assembly Supply Rack, Q12-A1…" style="width:100%;box-sizing:border-box;margin-top:6px;"/>')
       + fld('Order / Purchase link', '<input id="ivfLink" type="url" placeholder="https://www.uline.com/… (vendor reorder page)" value="' + esc(it.orderLink || '') + '"/>')
       + fld('Notes', '<textarea id="ivfNotes" rows="2">' + esc(it.notes || '') + '</textarea>');
-    function fld(l, inner) { return '<div class="iv-field"><label>' + esc(l) + '</label>' + inner + '</div>'; }
+    function fld(l, inner) { return '<div class="iv-field"><label>' + l + '</label>' + inner + '</div>'; }
   }
+
+  function wireLocTags(arr) {
+    var wrap = document.getElementById('ivfLocs'); var input = document.getElementById('ivfLocInput');
+    if (!wrap || !input) return;
+    function exists(v) { return [].slice.call(wrap.querySelectorAll('[data-loc]')).some(function (e) { return e.getAttribute('data-loc').toLowerCase() === v.toLowerCase(); }); }
+    function chip(v) {
+      var s = document.createElement('span'); s.className = 'iv-tag'; s.setAttribute('data-loc', v);
+      s.innerHTML = esc(v) + ' <button type="button" aria-label="Remove">×</button>';
+      s.querySelector('button').addEventListener('click', function () { s.remove(); });
+      wrap.appendChild(s);
+    }
+    wrap.innerHTML = ''; (arr || []).forEach(function (v) { if (v) chip(v); });
+    function addFromInput() { (input.value || '').split(',').forEach(function (p) { var v = p.trim(); if (v && !exists(v)) chip(v); }); input.value = ''; }
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addFromInput(); } });
+    input.addEventListener('blur', addFromInput);
+  }
+  function readLocTags() { var wrap = document.getElementById('ivfLocs'); return wrap ? [].slice.call(wrap.querySelectorAll('[data-loc]')).map(function (e) { return e.getAttribute('data-loc'); }) : []; }
+
   function readFields() {
     return { itemName: val('ivfName').trim(), category: val('ivfCat').trim(), department: val('ivfDept').trim(),
-      location: val('ivfLoc').trim(), spot: val('ivfSpot').trim(), quantity: val('ivfQty'), unitType: val('ivfUnit').trim(),
+      location: readLocTags().join(', '), spot: '', quantity: val('ivfQty'), unitType: val('ivfUnit').trim(),
       minStock: val('ivfMin'), vendor: val('ivfVendor').trim(), sku: val('ivfSku').trim(), orderLink: val('ivfLink').trim(), notes: val('ivfNotes') };
   }
   function openAddModal() {
     if (!canManage()) return;
     openModal('Add inventory item', '', fieldsHtml(null)
       + '<div class="iv-row" style="margin-top:12px;justify-content:flex-end;"><button class="iv-btn" id="ivAddCancel" type="button">Cancel</button><button class="iv-go" id="ivAddSave" type="button">Add item</button></div>');
+    wireLocTags([]);
     document.getElementById('ivAddCancel').addEventListener('click', closeModal);
     document.getElementById('ivAddSave').addEventListener('click', function () { saveAdd(false); });
   }
@@ -361,7 +396,8 @@
 
     html += '<div class="iv-sec">Details</div>'
       + kv('Item', it.itemName) + kv('Category', it.category || '—') + kv('Department', it.department || '—')
-      + kv('Location', it.location || '—') + kv('Specific spot', it.spot || '—') + kv('Min stock', it.minStock || 0) + kv('Vendor', it.vendor || '—')
+      + '<div class="iv-kv"><span>Locations</span><span>' + (itemLocations(it).length ? itemLocations(it).map(function (l) { return '<span class="iv-tag iv-tag-ro">' + esc(l) + '</span>'; }).join(' ') : '—') + '</span></div>'
+      + kv('Min stock', it.minStock || 0) + kv('Vendor', it.vendor || '—')
       + kv('SKU', it.sku || '—') + kv('Last counted', fmtDateTime(it.lastCounted)) + kv('Last updated by', it.lastUpdatedBy || '—')
       + kv('Created', fmtDate(it.createdAt) + (it.createdBy ? ' · ' + it.createdBy : ''))
       + (it.notes ? '<div class="iv-sec">Notes</div><div style="white-space:pre-wrap;font-size:12.5px;color:#243b55;">' + esc(it.notes) + '</div>' : '');
@@ -407,6 +443,7 @@
   function openEdit(it) {
     openModal('Edit ' + it.itemName, 'Change details', fieldsHtml(it)
       + '<div class="iv-row" style="margin-top:12px;justify-content:flex-end;"><button class="iv-btn" id="ivEditCancel" type="button">Cancel</button><button class="iv-go" id="ivEditSave" type="button">Save</button></div>');
+    wireLocTags(itemLocations(it));
     document.getElementById('ivEditCancel').addEventListener('click', function () { openDetail(it.id); });
     document.getElementById('ivEditSave').addEventListener('click', function () {
       var f = readFields();
@@ -505,7 +542,7 @@
     var bodyR = rows.slice(0, 8).map(function (r) { return '<tr>' + shown.map(function (f) { var v = r[f]; if (f === 'orderLink' && v) v = '✓ link'; return '<td>' + esc(v) + '</td>'; }).join('') + '</tr>'; }).join('');
     var hasQty = !!map.quantity;
     openModal('Import inventory', rows.length + ' rows · matched: ' + Object.keys(map).join(', '),
-      '<p style="font-size:13px;color:#5a7088;">New items are added; existing ones (matched by name + location + SKU) are updated — no duplicates. Uline order links are auto-built from item codes, and categories are guessed from the description.</p>'
+      '<p style="font-size:13px;color:#5a7088;">New items are added; existing ones (matched by name + SKU) are updated — no duplicates. A Location column with comma-separated values imports as multiple locations. Uline order links are auto-built from item codes, and categories are guessed from the description.</p>'
       + (hasQty ? '<label class="iv-count" style="display:flex;align-items:center;gap:6px;margin:6px 0;cursor:pointer;"><input type="checkbox" id="ivImpQty"/> Also import the current quantities (off = items start as “Needs Review” for a fresh count)</label>' : '')
       + '<div class="iv-prev"><table><thead>' + head + '</thead><tbody>' + bodyR + '</tbody></table></div>'
       + '<div class="iv-row" style="margin-top:14px;justify-content:flex-end;"><button class="iv-btn" id="ivImpCancel" type="button">Cancel</button><button class="iv-go" id="ivImpGo" type="button">Import ' + rows.length + ' rows</button></div>'
@@ -534,12 +571,12 @@
   function exportCsv() {
     var rows = applyFilters();
     if (!rows.length) { alert('Nothing to export.'); return; }
-    var cols = [['Item', 'itemName'], ['Category', 'category'], ['Department', 'department'], ['Location', 'location'], ['Specific Spot', 'spot'],
+    var cols = [['Item', 'itemName'], ['Category', 'category'], ['Department', 'department'], ['Locations', '_locations'],
       ['Quantity', 'quantity'], ['Unit', 'unitType'], ['Min Stock', 'minStock'], ['Status', 'status'],
       ['Vendor', 'vendor'], ['SKU', 'sku'], ['Last Counted', 'lastCounted'], ['Last Updated By', 'lastUpdatedBy'], ['Notes', 'notes']];
     var esc2 = function (v) { var s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
     var lines = [cols.map(function (c) { return c[0]; }).join(',')];
-    rows.forEach(function (it) { lines.push(cols.map(function (c) { var v = it[c[1]]; if (c[1] === 'lastCounted') v = it.lastCounted ? new Date(it.lastCounted).toISOString().slice(0, 10) : ''; return esc2(v); }).join(',')); });
+    rows.forEach(function (it) { lines.push(cols.map(function (c) { var v = it[c[1]]; if (c[1] === '_locations') v = itemLocations(it).join('; '); else if (c[1] === 'lastCounted') v = it.lastCounted ? new Date(it.lastCounted).toISOString().slice(0, 10) : ''; return esc2(v); }).join(',')); });
     var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
     var url = URL.createObjectURL(blob); var a = document.createElement('a');
     a.href = url; a.download = 'inventory-' + new Date().toISOString().slice(0, 10) + '.csv';
