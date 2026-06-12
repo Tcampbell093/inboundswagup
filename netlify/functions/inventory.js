@@ -273,6 +273,14 @@ exports.handler = async function handler(event) {
           vals.push(k === 'minStock' ? (numOrNull(f[k]) || 0) : f[k]);
         }
       }
+      // Quantity edited here counts as a count: set it, clear "needs review",
+      // and stamp last-counted (so editing quantity behaves like Update count).
+      if (Object.prototype.hasOwnProperty.call(f, 'quantity')) {
+        const qv = numOrNull(f.quantity);
+        sets.push(`quantity=$${i++}`); vals.push(qv);
+        sets.push(`needs_review=$${i++}`); vals.push(qv == null);
+        if (qv != null) sets.push(`last_counted=NOW()`);
+      }
       if (!sets.length) return json(400, { error: 'no fields to update' });
       sets.push(`last_updated_by=$${i++}`); vals.push(who(caller));
       sets.push(`updated_at=NOW()`);

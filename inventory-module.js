@@ -51,8 +51,9 @@
       + '#inventoryPage .iv-card.low .iv-card-val{color:#9a5b00;} #inventoryPage .iv-card.out .iv-card-val{color:#b3261e;} #inventoryPage .iv-card.rev .iv-card-val{color:#5a7088;}'
       + '#inventoryPage .iv-card-sub{font-size:11.5px;color:#8aa0bb;margin-top:2px;}'
       + '#inventoryPage .iv-tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 12px;}'
-      + '#inventoryPage .iv-input,#inventoryPage .iv-select{padding:9px 12px;border:1px solid #d6deea;border-radius:10px;font:inherit;background:#fff;color:#16263a;}'
-      + '#inventoryPage .iv-input:focus,#inventoryPage .iv-select:focus{outline:none;border-color:#5b8fc7;box-shadow:0 0 0 3px rgba(91,143,199,.18);}'
+      + '.iv-input,.iv-select{padding:9px 12px;border:1px solid #d6deea;border-radius:10px;font:inherit;background:#fff;color:#16263a !important;-webkit-text-fill-color:#16263a;}'
+      + '.iv-input::placeholder{color:#9aa7b6;-webkit-text-fill-color:#9aa7b6;}'
+      + '.iv-input:focus,.iv-select:focus{outline:none;border-color:#5b8fc7;box-shadow:0 0 0 3px rgba(91,143,199,.18);}'
       + '#inventoryPage .iv-search{flex:1;min-width:200px;}'
       + '#inventoryPage .iv-btn{border:1px solid #cdd9e6;background:#f4f8fc;color:#2f4d6b;font-weight:700;font-size:13px;border-radius:10px;padding:9px 14px;cursor:pointer;font-family:inherit;}'
       + '#inventoryPage .iv-btn:hover{background:#e8f1fb;border-color:#b6cde4;}'
@@ -463,6 +464,9 @@
     document.getElementById('ivEditSave').addEventListener('click', function () {
       var f = readFields();
       if (!f.itemName) { alert('Item name is required.'); return; }
+      // Only send quantity if it actually changed (avoids resetting last-counted
+      // when editing other fields).
+      if (String(f.quantity).trim() === (it.quantity == null ? '' : String(it.quantity))) delete f.quantity;
       post({ action: 'update', id: it.id, fields: f }, function () { loadData(); openDetailAfter(it.id); });
     });
   }
