@@ -108,7 +108,14 @@
       + '.iv-tag-ro{margin:0 0 2px 0;}'
       + '#inventoryPage .iv-namecell{display:flex;align-items:center;gap:9px;}'
       + '#inventoryPage .iv-thumb{width:36px;height:36px;border-radius:8px;object-fit:cover;border:1px solid #e6ecf3;background:#f4f8fc;flex-shrink:0;}'
-      + '.iv-photo{max-width:100%;max-height:240px;border-radius:10px;border:1px solid #e6ecf3;display:block;}';
+      + '.iv-photo{max-width:100%;max-height:240px;border-radius:10px;border:1px solid #e6ecf3;display:block;}'
+      + '.iv-sublist{display:flex;flex-direction:column;gap:8px;margin-bottom:6px;}'
+      + '.iv-subrow{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #e3e9f1;border-radius:10px;padding:9px 12px;background:#fafcff;}'
+      + '.iv-subemail{font-size:13.5px;font-weight:700;color:#16263a;}'
+      + '.iv-sublabel{font-size:11.5px;color:#7c8da0;margin-top:1px;}'
+      + '.iv-subacts{display:flex;gap:6px;flex-shrink:0;}'
+      + '.iv-mini{border:1px solid #d6deea;background:#fff;color:#34536f;font-weight:700;font-size:12px;border-radius:8px;padding:6px 11px;cursor:pointer;}.iv-mini:hover{background:#eef3fa;}'
+      + '.iv-mini-danger{border-color:#f0c9c9;color:#c0392b;}.iv-mini-danger:hover{background:#fdeeee;}';
     var s = document.createElement('style'); s.id = 'ivStyles'; s.textContent = c; document.head.appendChild(s);
   }
 
@@ -157,6 +164,7 @@
       + '<input id="ivRSearch" class="iv-input iv-search" type="text" placeholder="Search requests — item, department, requester…" autocomplete="off"/>'
       + '<select id="ivRStatus" class="iv-select"><option value="open">Open requests</option><option value="">All statuses</option><option>Requested</option><option>Reviewing</option><option>Approved</option><option>Ordered</option><option>Shipped</option><option>Delivered</option><option>Denied</option><option>Canceled</option></select>'
       + '<select id="ivRUrg" class="iv-select"><option value="">Any urgency</option><option>Urgent</option><option>High</option><option>Normal</option><option>Low</option></select>'
+      + '<button id="ivNotify" class="iv-btn" type="button" hidden>🔔 Notifications</button>'
       + '<div class="iv-spacer"></div><span id="ivRCount" class="iv-count"></span>'
       + '</div>'
       + '<div class="iv-tablewrap"><table class="iv-table"><thead><tr>'
@@ -190,6 +198,7 @@
     [els.rstatus, els.rurg].forEach(function (s) { s.addEventListener('change', renderRequests); });
     document.getElementById('ivTabItems').addEventListener('click', function () { switchView('items'); });
     document.getElementById('ivTabReq').addEventListener('click', function () { switchView('requests'); });
+    document.getElementById('ivNotify').addEventListener('click', openNotifyModal);
 
     buildModal();
     updateRoleUI();
@@ -208,6 +217,8 @@
     var add = document.getElementById('ivAdd'), imp = document.getElementById('ivImport');
     if (add) add.hidden = !canManage();
     if (imp) imp.hidden = !canManage();
+    var notify = document.getElementById('ivNotify');
+    if (notify) notify.hidden = !canManage();
   }
 
   function fillSelect(sel, values, anyLabel) {
@@ -763,6 +774,61 @@
         });
       });
     }
+  }
+
+  // ── Notification subscribers (office manager email alerts) ─
+  function openNotifyModal() {
+    openModal('Request notifications', 'Who gets emailed when a new supply request is made', '<div class="iv-empty" style="padding:16px;">Loading…</div>');
+    fetch(API + '?subscriptions=1', { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) { document.getElementById('ivMBody').innerHTML = '<div class="iv-empty" style="padding:16px;">Could not load (' + esc((res.j && res.j.error) || 'error') + ').</div>'; return; }
+        renderNotify(res.j.subscriptions || [], !!res.j.emailConfigured);
+      })
+      .catch(function (e) { document.getElementById('ivMBody').innerHTML = '<div class="iv-empty" style="padding:16px;">Network error: ' + esc(e.message) + '</div>'; });
+  }
+
+  function renderNotify(subs, emailConfigured) {
+    var warn = emailConfigured ? ''
+      : '<div class="iv-note" style="margin-bottom:10px;background:#fff4e5;border:1px solid #f0c890;color:#7a4f10;padding:9px 12px;border-radius:8px;font-size:12.5px;">Email sending isn\'t fully configured yet. Subscribers still see an in-app alert; ask your administrator to finish email setup so messages arrive in inboxes.</div>';
+    var list = subs.length
+      ? '<div class="iv-sublist">' + subs.map(function (s) {
+          return '<div class="iv-subrow" data-sid="' + s.id + '">'
+            + '<div class="iv-subinfo"><div class="iv-subemail">' + esc(s.email) + (s.enabled ? '' : ' <span style="color:#b08;font-weight:600;font-size:11px;">(paused)</span>') + '</div>'
+            + (s.label ? '<div class="iv-sublabel">' + esc(s.label) + '</div>' : '') + '</div>'
+            + '<div class="iv-subacts">'
+            + '<button class="iv-mini" data-act="toggle" data-on="' + (s.enabled ? '0' : '1') + '">' + (s.enabled ? 'Pause' : 'Resume') + '</button>'
+            + '<button class="iv-mini iv-mini-danger" data-act="remove">Remove</button>'
+            + '</div></div>';
+        }).join('') + '</div>'
+      : '<div class="iv-empty" style="padding:12px;">No one is subscribed yet. Add an email below.</div>';
+    var html = warn
+      + '<p style="font-size:12.5px;color:#5a6b7d;margin:0 0 10px;">These people get an email (and an in-app alert) the moment any new supply request is submitted — so they don\'t need to keep the Command Tool open.</p>'
+      + list
+      + '<div class="iv-sec">Add someone</div>'
+      + '<div class="iv-grid2">'
+      + '<div class="iv-field"><label>Email address</label><input id="ivnEmail" type="email" placeholder="name@bdainc.com"/></div>'
+      + '<div class="iv-field"><label>Name / note <span style="font-weight:400;color:#8aa0bb;">(optional)</span></label><input id="ivnLabel" placeholder="Office Manager"/></div>'
+      + '</div>'
+      + '<div class="iv-row" style="justify-content:flex-end;"><button class="iv-go" id="ivnAdd" type="button">Add subscriber</button></div>';
+    document.getElementById('ivMBody').innerHTML = html;
+
+    document.getElementById('ivnAdd').addEventListener('click', function () {
+      var email = (document.getElementById('ivnEmail').value || '').trim();
+      var label = (document.getElementById('ivnLabel').value || '').trim();
+      if (!email) { alert('Enter an email address.'); return; }
+      post({ action: 'subAdd', email: email, label: label }, function () { openNotifyModal(); });
+    });
+    [].slice.call(document.querySelectorAll('#ivMBody .iv-subrow')).forEach(function (row) {
+      var sid = row.getAttribute('data-sid');
+      row.querySelectorAll('[data-act]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var act = btn.getAttribute('data-act');
+          if (act === 'toggle') { post({ action: 'subToggle', id: sid, enabled: btn.getAttribute('data-on') === '1' }, function () { openNotifyModal(); }); }
+          else if (act === 'remove') { if (confirm('Remove this subscriber? They will stop receiving request emails.')) post({ action: 'subRemove', id: sid }, function () { openNotifyModal(); }); }
+        });
+      });
+    });
   }
 
   // ── Activation ────────────────────────────────────────────
