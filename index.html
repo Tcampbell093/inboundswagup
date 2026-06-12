@@ -30,16 +30,16 @@
       if (!role || role === 'admin') return; // admin sees everything
 
       var ROLE_ACCESS_PRE = {
-        manager: ['homePage','attendancePage','workflowInboundPage','fulfillmentScanPage','returnsPage','cycleCountPage','errorsPage','assemblyPage','queuePage','assemblyFlightTrackerPage','inboundFlightTrackerPage','overstockLookupPage','sordPage','calendarPage','productivityPage','policyPage','helpPage','importHubPage','historyPage','settingsPage'],
-        l2:      ['homePage','workflowInboundPage','fulfillmentScanPage','returnsPage','cycleCountPage','assemblyPage','assemblyFlightTrackerPage','inboundFlightTrackerPage','calendarPage','policyPage','helpPage'],
-        l1:      ['homePage','workflowInboundPage','fulfillmentScanPage','returnsPage','cycleCountPage','assemblyPage','assemblyFlightTrackerPage','inboundFlightTrackerPage','calendarPage','policyPage','helpPage'],
+        manager: ['homePage','attendancePage','workflowInboundPage','fulfillmentScanPage','returnsPage','cycleCountPage','inventoryPage','errorsPage','assemblyPage','queuePage','assemblyFlightTrackerPage','inboundFlightTrackerPage','overstockLookupPage','sordPage','calendarPage','productivityPage','policyPage','helpPage','importHubPage','historyPage','settingsPage'],
+        l2:      ['homePage','workflowInboundPage','fulfillmentScanPage','returnsPage','cycleCountPage','inventoryPage','assemblyPage','assemblyFlightTrackerPage','inboundFlightTrackerPage','calendarPage','policyPage','helpPage'],
+        l1:      ['homePage','workflowInboundPage','fulfillmentScanPage','returnsPage','cycleCountPage','inventoryPage','assemblyPage','assemblyFlightTrackerPage','inboundFlightTrackerPage','calendarPage','policyPage','helpPage'],
         external:['assemblyFlightTrackerPage','inboundFlightTrackerPage','overstockLookupPage']
       };
       var allowed = ROLE_ACCESS_PRE[role] || ROLE_ACCESS_PRE.l1;
 
       // All pages that exist as nav buttons — anything in this list NOT
       // in the role's allowed list gets hidden via injected CSS.
-      var ALL_NAV_PAGES = ['homePage','importHubPage','attendancePage','workflowInboundPage','inboundFlightTrackerPage','overstockLookupPage','fulfillmentScanPage','returnsPage','cycleCountPage','errorsPage','assemblyPage','queuePage','assemblyFlightTrackerPage','sordPage','calendarPage','productivityPage','policyPage','historyPage','helpPage','settingsPage'];
+      var ALL_NAV_PAGES = ['homePage','importHubPage','attendancePage','workflowInboundPage','inboundFlightTrackerPage','overstockLookupPage','fulfillmentScanPage','returnsPage','cycleCountPage','inventoryPage','errorsPage','assemblyPage','queuePage','assemblyFlightTrackerPage','sordPage','calendarPage','productivityPage','policyPage','historyPage','helpPage','settingsPage'];
       var hideRules = ALL_NAV_PAGES
         .filter(function(p){ return allowed.indexOf(p) === -1; })
         .map(function(p){ return '.nav-btn[data-page="'+p+'"]'; })
@@ -55,7 +55,7 @@
       // "OVERVIEW" label with no buttons under it) until applyGuards runs.
       var GROUPS_TO_PAGES = {
         overview: ['homePage','importHubPage'],
-        floor:    ['attendancePage','workflowInboundPage','inboundFlightTrackerPage','overstockLookupPage','fulfillmentScanPage','returnsPage','cycleCountPage','errorsPage'],
+        floor:    ['attendancePage','workflowInboundPage','inboundFlightTrackerPage','overstockLookupPage','fulfillmentScanPage','returnsPage','cycleCountPage','inventoryPage','errorsPage'],
         assembly: ['assemblyPage','queuePage','assemblyFlightTrackerPage'],
         ops:      ['sordPage','calendarPage','productivityPage','policyPage','historyPage']
       };
@@ -216,6 +216,10 @@
           <button class="nav-btn" data-page="cycleCountPage" title="Cycle Count">
             <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M4 5h12M4 9h8M4 13h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="15" cy="14" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M13.5 14l1 1 2-2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span class="nav-label" data-i18n="nav.cycleCount">Cycle Count</span>
+          </button>
+          <button class="nav-btn" data-page="inventoryPage" title="Inventory — warehouse supplies">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M3 7l7-4 7 4-7 4-7-4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M3 7v6l7 4 7-4V7" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 11v6" stroke="currentColor" stroke-width="1.6"/></svg>
+            <span class="nav-label">Inventory</span>
           </button>
           <button class="nav-btn" data-page="errorsPage" title="Error Log">
             <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M10 3L2 17h16L10 3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 9v4M10 15v.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -2562,6 +2566,18 @@
       <div id="osLookupRoot"></div>
     </section>
 
+    <!-- Inventory — warehouse supplies. Rendered by inventory-module.js -->
+    <section id="inventoryPage" class="page">
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Warehouse Supplies</div>
+          <h2>Inventory</h2>
+          <p class="subtitle">Track supplies on hand — boxes, mailers, tape, labels, gloves, cleaning supplies and more. Walk the floor, count, and update quantities. Managers see what's low and what to reorder, by department.</p>
+        </div>
+      </div>
+      <div id="inventoryRoot"></div>
+    </section>
+
 <section id="workflowInboundPage" class="page">
       <div class="hero">
         <div>
@@ -2968,6 +2984,7 @@
 <script src="help.js"></script>
 <script src="cycle-count.js"></script>
 <script src="overstock-lookup.js"></script>
+<script src="inventory-module.js"></script>
 <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
 <script src="auth.js"></script>
 <script src="access.js"></script>

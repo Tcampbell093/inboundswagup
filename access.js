@@ -17,7 +17,7 @@
     manager: [
       'homePage',
       'attendancePage', 'workflowInboundPage', 'fulfillmentScanPage',
-      'returnsPage', 'cycleCountPage', 'errorsPage',
+      'returnsPage', 'cycleCountPage', 'inventoryPage', 'errorsPage',
       'assemblyPage', 'queuePage', 'assemblyFlightTrackerPage',
       'inboundFlightTrackerPage', 'overstockLookupPage',
       'sordPage', 'calendarPage', 'productivityPage', 'policyPage',
@@ -26,7 +26,7 @@
     l2: [
       'homePage',
       'workflowInboundPage', 'fulfillmentScanPage',
-      'returnsPage', 'cycleCountPage',
+      'returnsPage', 'cycleCountPage', 'inventoryPage',
       'assemblyPage', 'assemblyFlightTrackerPage',
       'inboundFlightTrackerPage',
       'calendarPage', 'policyPage', 'helpPage'
@@ -34,7 +34,7 @@
     l1: [
       'homePage',
       'workflowInboundPage', 'fulfillmentScanPage',
-      'returnsPage', 'cycleCountPage',
+      'returnsPage', 'cycleCountPage', 'inventoryPage',
       'assemblyPage', 'assemblyFlightTrackerPage',
       'inboundFlightTrackerPage',
       'calendarPage', 'policyPage', 'helpPage'
