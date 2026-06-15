@@ -61,7 +61,12 @@ async function ensureSchema() {
   `);
   await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS order_link TEXT;`);
   await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS spot TEXT;`);
+  // product_key links rows that are the SAME physical product stocked in
+  // different departments, so we can show a warehouse-wide total while each
+  // department keeps its own exclusive count. NULL = a standalone item.
+  await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS product_key TEXT;`);
   await pool.query(`CREATE INDEX IF NOT EXISTS inventory_items_active_idx ON inventory_items(archived);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS inventory_items_product_key_idx ON inventory_items(product_key);`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS inventory_requests (
       id            BIGSERIAL PRIMARY KEY,
@@ -167,6 +172,7 @@ function rowToItem(r) {
     sku: r.sku || '',
     orderLink: r.order_link || '',
     notes: r.notes || '',
+    productKey: r.product_key || '',
     needsReview: !!r.needs_review,
     archived: !!r.archived,
     status: computeStatus(quantity, r.min_stock, r.needs_review),
@@ -190,7 +196,9 @@ function reqToObj(r) {
 }
 
 const norm = (s) => String(s == null ? '' : s).trim().toLowerCase();
-const matchKey = (name, sku) => norm(name) + '|' + norm(sku);
+// Include department so the same item name in two departments imports as two
+// separate, exclusive rows (link them later for a warehouse total).
+const matchKey = (name, sku, dept) => norm(name) + '|' + norm(sku) + '|' + norm(dept);
 const numOrNull = (v) => {
   if (v == null || v === '') return null;
   const n = Number(String(v).replace(/[^0-9.\-]/g, ''));
@@ -357,6 +365,32 @@ exports.handler = async function handler(event) {
       const ph = await pool.query(`SELECT item_id, EXTRACT(EPOCH FROM taken_at)*1000 AS ver FROM inventory_photos;`);
       const photoMap = new Map(ph.rows.map(r => [String(r.item_id), Math.round(Number(r.ver))]));
       items.forEach(i => { i.photoVer = photoMap.get(String(i.id)) || null; });
+
+      // Warehouse roll-up: items sharing a product_key are the same product in
+      // different departments. Total across the (non-archived) group, while each
+      // row keeps its own department count. Standalone items get groupCount=1.
+      const groups = new Map();
+      items.forEach(i => {
+        if (i.archived || !i.productKey) return;
+        let g = groups.get(i.productKey);
+        if (!g) { g = { total: 0, count: 0, breakdown: [] }; groups.set(i.productKey, g); }
+        g.total += (i.quantity == null ? 0 : Number(i.quantity));
+        g.count += 1;
+        g.breakdown.push({ id: i.id, department: i.department || '', quantity: i.quantity, location: i.location || '' });
+      });
+      items.forEach(i => {
+        const g = i.productKey ? groups.get(i.productKey) : null;
+        if (g && g.count > 1) {
+          i.groupTotal = g.total;
+          i.groupCount = g.count;
+          i.groupBreakdown = g.breakdown.slice().sort((a, b) => String(a.department).localeCompare(String(b.department)));
+        } else {
+          i.groupTotal = i.quantity == null ? null : Number(i.quantity);
+          i.groupCount = 1;
+          i.groupBreakdown = null;
+        }
+      });
+
       const active = items.filter(i => !i.archived);
       // Request rollups for the dashboard cards.
       const rq = await pool.query(`SELECT status, urgency FROM inventory_requests;`);
@@ -428,6 +462,11 @@ exports.handler = async function handler(event) {
           sets.push(`${map[k]}=$${i++}`);
           vals.push(k === 'minStock' ? (numOrNull(f[k]) || 0) : f[k]);
         }
+      }
+      // Link / unlink this row to a product group (empty string clears it).
+      if (Object.prototype.hasOwnProperty.call(f, 'productKey')) {
+        sets.push(`product_key=$${i++}`);
+        vals.push(f.productKey ? String(f.productKey) : null);
       }
       // Quantity edited here counts as a count: set it, clear "needs review",
       // and stamp last-counted (so editing quantity behaves like Update count).
@@ -502,18 +541,58 @@ exports.handler = async function handler(event) {
       return json(200, { ok: true });
     }
 
+    // ── link products across departments ─────────────────────────────────
+    // Ties two or more item rows together as the same physical product so the
+    // app can show a warehouse-wide total. Each row keeps its own count.
+    if (action === 'link') {
+      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      const ids = (Array.isArray(body.ids) ? body.ids : []).map(x => String(x)).filter(Boolean);
+      if (ids.length < 2) return json(400, { error: 'Select at least two items to link' });
+      // Reuse a product_key already on one of the rows, else mint a new one, so
+      // linking into an existing group keeps everyone on the same key.
+      const cur = await pool.query(
+        `SELECT product_key FROM inventory_items WHERE id = ANY($1::bigint[]) AND product_key IS NOT NULL LIMIT 1;`, [ids]
+      );
+      const key = (cur.rows[0] && cur.rows[0].product_key) ||
+        ('pk_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+      await pool.query(
+        `UPDATE inventory_items SET product_key=$1, last_updated_by=$2, updated_at=NOW() WHERE id = ANY($3::bigint[]);`,
+        [key, who(caller), ids]
+      );
+      return json(200, { ok: true, productKey: key });
+    }
+
+    // ── unlink a row from its product group ───────────────────────────────
+    if (action === 'unlink') {
+      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      if (!body.id) return json(400, { error: 'id required' });
+      const r = await pool.query(`SELECT product_key FROM inventory_items WHERE id=$1;`, [body.id]);
+      if (!r.rows.length) return json(404, { error: 'not found' });
+      const key = r.rows[0].product_key;
+      await pool.query(`UPDATE inventory_items SET product_key=NULL, last_updated_by=$1, updated_at=NOW() WHERE id=$2;`, [who(caller), body.id]);
+      // A group of one is meaningless — if a lone row is left on that key, clear it too.
+      if (key) {
+        await pool.query(
+          `UPDATE inventory_items SET product_key=NULL
+             WHERE product_key=$1 AND (SELECT COUNT(*) FROM inventory_items WHERE product_key=$1) = 1;`,
+          [key]
+        );
+      }
+      return json(200, { ok: true });
+    }
+
     // ── import (add new, update matches) ─────────────────────────────────
     if (action === 'import') {
       if (!canManage) return json(403, { error: 'Manager/admin only' });
       const rows = Array.isArray(body.rows) ? body.rows : [];
-      const existing = await pool.query(`SELECT id, item_name, location, sku FROM inventory_items WHERE archived=false;`);
-      const byKey = new Map(existing.rows.map(r => [matchKey(r.item_name, r.sku), r.id]));
+      const existing = await pool.query(`SELECT id, item_name, location, sku, department FROM inventory_items WHERE archived=false;`);
+      const byKey = new Map(existing.rows.map(r => [matchKey(r.item_name, r.sku, r.department), r.id]));
       let added = 0, updated = 0;
       const w = who(caller);
       for (const row of rows) {
         const name = String(row.itemName || '').trim();
         if (!name) continue;
-        const key = matchKey(name, row.sku);
+        const key = matchKey(name, row.sku, row.department);
         const q = numOrNull(row.quantity);
         const id = byKey.get(key);
         if (id) {

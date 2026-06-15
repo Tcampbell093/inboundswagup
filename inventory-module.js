@@ -344,7 +344,7 @@
         + '<td>' + esc(it.category || '—') + '</td>'
         + '<td>' + esc(it.department || '—') + '</td>'
         + '<td title="' + esc(itemLocations(it).join(', ')) + '">' + locDisplay(itemLocations(it)) + '</td>'
-        + '<td><b>' + (it.quantity == null ? '—' : Number(it.quantity)) + '</b>' + (it.unitType ? ' <span style="color:#8aa0bb;font-size:11px;">' + esc(it.unitType) + '</span>' : '') + '</td>'
+        + '<td><b>' + (it.quantity == null ? '—' : Number(it.quantity)) + '</b>' + (it.unitType ? ' <span style="color:#8aa0bb;font-size:11px;">' + esc(it.unitType) + '</span>' : '') + (it.groupCount > 1 ? '<div style="font-size:11px;color:#2563eb;font-weight:700;" title="Total of this product across all departments">🏬 ' + it.groupTotal + ' total · ' + it.groupCount + ' depts</div>' : '') + '</td>'
         + '<td>' + (it.minStock || 0) + '</td>'
         + '<td><span class="iv-chip ' + statusClass(it.status) + '">' + esc(it.status) + '</span></td>'
         + '<td>' + (it.orderLink ? '<a class="iv-link" href="' + esc(it.orderLink) + '" target="_blank" rel="noopener" onclick="event.stopPropagation();">Order ↗</a>' : '<span style="color:#c0ccda;">—</span>') + '</td>'
@@ -485,6 +485,20 @@
         + '</div>';
     }
 
+    // Same product stocked in other departments — show the warehouse total
+    // and a per-department breakdown (each line jumps to that department's row).
+    if (it.groupCount > 1 && it.groupBreakdown) {
+      html += '<div class="iv-sec">Across departments</div>'
+        + '<div class="iv-kv" style="font-weight:800;color:#16263a;"><span>🏬 Warehouse total</span><span>' + esc(it.groupTotal) + ' ' + esc(it.unitType || '') + '</span></div>'
+        + it.groupBreakdown.map(function (b) {
+            var here = String(b.id) === String(it.id);
+            var label = (b.department || 'No dept') + (b.location ? ' · ' + b.location : '');
+            return '<div class="iv-kv"' + (here ? ' style="background:#eef4ff;border-radius:6px;"' : ' role="button" tabindex="0" data-jump="' + esc(b.id) + '" style="cursor:pointer;"') + '>'
+              + '<span>' + (here ? '➤ <b>' + esc(label) + '</b> (this one)' : esc(label)) + '</span>'
+              + '<span><b>' + (b.quantity == null ? '—' : esc(b.quantity)) + '</b></span></div>';
+          }).join('');
+    }
+
     html += '<div class="iv-sec">Details</div>'
       + kv('Item', it.itemName) + kv('Category', it.category || '—') + kv('Department', it.department || '—')
       + '<div class="iv-kv"><span>Locations</span><span>' + (itemLocations(it).length ? itemLocations(it).map(function (l) { return '<span class="iv-tag iv-tag-ro">' + esc(l) + '</span>'; }).join(' ') : '—') + '</span></div>'
@@ -496,6 +510,7 @@
     if (manage) {
       html += '<div class="iv-sec">Manage</div><div class="iv-row">'
         + '<button class="iv-btn" id="ivEdit" type="button">Edit fields</button>'
+        + '<button class="iv-btn" id="ivLinkBtn" type="button">🔗 ' + (it.groupCount > 1 ? 'Linked across departments' : 'Link to other department') + '</button>'
         + '<button class="iv-danger" id="ivArchBtn" type="button">' + (it.archived ? 'Unarchive' : 'Archive') + '</button>'
         + '</div>';
     }
@@ -503,6 +518,9 @@
     openModal(it.itemName, (it.category || 'Uncategorized') + ' · ' + (it.department || 'No dept') + ' · ' + (it.location || 'No location'), html);
 
     document.getElementById('ivReqMore').addEventListener('click', function () { openRequestForm(it); });
+    document.getElementById('ivMBody').querySelectorAll('[data-jump]').forEach(function (el) {
+      el.addEventListener('click', function () { openDetail(el.getAttribute('data-jump')); });
+    });
     var pSet = document.getElementById('ivPhotoSet'); if (pSet) pSet.addEventListener('click', function () { pickPhoto(it.id); });
     var pDel = document.getElementById('ivPhotoDel'); if (pDel) pDel.addEventListener('click', function () { if (confirm('Remove the photo for "' + it.itemName + '"?')) post({ action: 'removePhoto', itemId: it.id }, function () { loadData(); openDetailAfter(it.id); }); });
 
@@ -519,6 +537,7 @@
     }
     if (manage) {
       document.getElementById('ivEdit').addEventListener('click', function () { openEdit(it); });
+      document.getElementById('ivLinkBtn').addEventListener('click', function () { openLinkModal(it); });
       document.getElementById('ivArchBtn').addEventListener('click', function () {
         var act = it.archived ? 'unarchive' : 'archive';
         if (act === 'archive' && !confirm('Archive "' + it.itemName + '"? It will be hidden but not deleted.')) return;
@@ -545,6 +564,73 @@
       // when editing other fields).
       if (String(f.quantity).trim() === (it.quantity == null ? '' : String(it.quantity))) delete f.quantity;
       post({ action: 'update', id: it.id, fields: f }, function () { loadData(); openDetailAfter(it.id); });
+    });
+  }
+
+  // ── Link a product across departments ─────────────────────
+  function openLinkModal(it) {
+    if (!canManage()) return;
+    var nrm = function (s) { return String(s == null ? '' : s).trim().toLowerCase(); };
+    var myKey = it.productKey || '';
+    var members = myKey ? state.items.filter(function (x) { return x.productKey === myKey; }) : [];
+    var candidates = state.items.filter(function (x) {
+      return !x.archived && String(x.id) !== String(it.id) && !(myKey && x.productKey === myKey);
+    });
+    // Same-name, different-department items float to the top (and are pre-checked).
+    candidates.sort(function (a, b) {
+      var sa = nrm(a.itemName) === nrm(it.itemName) ? 0 : 1, sb = nrm(b.itemName) === nrm(it.itemName) ? 0 : 1;
+      return sa - sb || String(a.itemName).localeCompare(String(b.itemName));
+    });
+
+    function candRow(x) {
+      var sameName = nrm(x.itemName) === nrm(it.itemName);
+      var preCheck = sameName && !x.productKey;
+      return '<label class="iv-kv" data-cand="' + esc(x.id) + '" style="cursor:pointer;align-items:flex-start;">'
+        + '<span><input type="checkbox" class="ivLinkChk" value="' + esc(x.id) + '"' + (preCheck ? ' checked' : '') + ' style="margin-right:8px;"/>'
+        + esc(x.itemName)
+        + '<div style="font-size:11px;color:#8aa0bb;margin-left:24px;">' + esc(x.department || 'No dept')
+        + (x.productKey && x.productKey !== myKey ? ' · already grouped' : '') + '</div></span>'
+        + '<span><b>' + (x.quantity == null ? '—' : esc(x.quantity)) + '</b></span></label>';
+    }
+
+    var membersHtml = '';
+    if (myKey && members.length > 1) {
+      membersHtml = '<div class="iv-sec">Currently linked (' + members.length + ')</div>'
+        + members.map(function (m) {
+            return '<div class="iv-kv"><span>' + esc(m.department || 'No dept') + (String(m.id) === String(it.id) ? ' <b>(this one)</b>' : '') + '</span>'
+              + '<span><b>' + (m.quantity == null ? '—' : esc(m.quantity)) + '</b></span></div>';
+          }).join('')
+        + '<div class="iv-row" style="margin-top:6px;"><button class="iv-btn" id="ivUnlink" type="button">Remove “' + esc(it.department || 'this item') + '” from group</button></div>';
+    }
+
+    var html = '<p style="font-size:13px;color:#5a7088;margin-top:0;">Group the <b>same product</b> stocked in different departments so you get a <b>warehouse-wide total</b>. Each department keeps its own separate count.</p>'
+      + membersHtml
+      + '<div class="iv-sec">Add items to this product</div>'
+      + '<input id="ivLinkSearch" class="iv-input" type="text" placeholder="Search items to link…" style="width:100%;box-sizing:border-box;margin-bottom:8px;"/>'
+      + '<div id="ivLinkList" style="max-height:320px;overflow:auto;">'
+      + (candidates.length ? candidates.map(candRow).join('') : '<div style="color:#8aa0bb;font-size:13px;padding:8px;">No other items available to link.</div>')
+      + '</div>'
+      + '<div class="iv-row" style="margin-top:14px;justify-content:flex-end;"><button class="iv-btn" id="ivLinkCancel" type="button">Cancel</button><button class="iv-go" id="ivLinkSave" type="button">Link selected</button></div>';
+
+    openModal('Link product across departments', it.itemName, html);
+
+    document.getElementById('ivLinkCancel').addEventListener('click', function () { openDetail(it.id); });
+    var un = document.getElementById('ivUnlink');
+    if (un) un.addEventListener('click', function () { post({ action: 'unlink', id: it.id }, function () { loadData(); openDetailAfter(it.id); }); });
+    var search = document.getElementById('ivLinkSearch');
+    search.addEventListener('input', function () {
+      var q = nrm(search.value);
+      document.getElementById('ivLinkList').querySelectorAll('[data-cand]').forEach(function (el) {
+        var x = state.items.filter(function (y) { return String(y.id) === el.getAttribute('data-cand'); })[0] || {};
+        var hay = nrm((x.itemName || '') + ' ' + (x.department || '') + ' ' + (x.sku || ''));
+        el.style.display = (!q || hay.indexOf(q) >= 0) ? '' : 'none';
+      });
+    });
+    document.getElementById('ivLinkSave').addEventListener('click', function () {
+      var ids = [].slice.call(document.querySelectorAll('.ivLinkChk:checked')).map(function (c) { return c.value; });
+      if (!ids.length) { alert('Tick at least one item to link with this one.'); return; }
+      ids.push(String(it.id));
+      post({ action: 'link', ids: ids }, function () { loadData(); openDetailAfter(it.id); });
     });
   }
 
@@ -669,7 +755,7 @@
     var bodyR = rows.slice(0, 8).map(function (r) { return '<tr>' + shown.map(function (f) { var v = r[f]; if (f === 'orderLink' && v) v = '✓ link'; return '<td>' + esc(v) + '</td>'; }).join('') + '</tr>'; }).join('');
     var hasQty = !!map.quantity;
     openModal('Import inventory', rows.length + ' rows · matched: ' + Object.keys(map).join(', '),
-      '<p style="font-size:13px;color:#5a7088;">New items are added; existing ones (matched by name + SKU) are updated — no duplicates. A Location column with comma-separated values imports as multiple locations. Uline order links are auto-built from item codes, and categories are guessed from the description.</p>'
+      '<p style="font-size:13px;color:#5a7088;">New items are added; existing ones (matched by name + SKU + department) are updated — so the same item in two departments stays as two separate rows. A Location column with comma-separated values imports as multiple locations. Uline order links are auto-built from item codes, and categories are guessed from the description.</p>'
       + (hasQty ? '<label class="iv-count" style="display:flex;align-items:center;gap:6px;margin:6px 0;cursor:pointer;"><input type="checkbox" id="ivImpQty"/> Also import the current quantities (off = items start as “Needs Review” for a fresh count)</label>' : '')
       + '<div class="iv-prev"><table><thead>' + head + '</thead><tbody>' + bodyR + '</tbody></table></div>'
       + '<div class="iv-row" style="margin-top:14px;justify-content:flex-end;"><button class="iv-btn" id="ivImpCancel" type="button">Cancel</button><button class="iv-go" id="ivImpGo" type="button">Import ' + rows.length + ' rows</button></div>'
