@@ -92,6 +92,41 @@ async function ensureSchema() {
       taken_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  // Who gets emailed when a new request comes in (the office manager, etc.).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inventory_subscriptions (
+      id                BIGSERIAL PRIMARY KEY,
+      email             TEXT NOT NULL,
+      label             TEXT,
+      enabled           BOOLEAN NOT NULL DEFAULT true,
+      unsubscribe_token TEXT,
+      created_by        TEXT,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS inventory_subs_email_idx ON inventory_subscriptions(LOWER(email));`);
+  // Per-request send log (so we never email the same person twice for one request).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inventory_request_emails (
+      id         BIGSERIAL PRIMARY KEY,
+      request_id BIGINT NOT NULL,
+      email      TEXT NOT NULL,
+      status     TEXT,
+      error      TEXT,
+      sent_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (request_id, email)
+    );
+  `);
+  // Seed the office manager the first time, so notifications work out of the box.
+  const subCount = await pool.query(`SELECT COUNT(*)::int AS n FROM inventory_subscriptions;`);
+  if (subCount.rows[0].n === 0) {
+    await pool.query(
+      `INSERT INTO inventory_subscriptions (email, label, unsubscribe_token, created_by)
+       VALUES ($1, $2, MD5(RANDOM()::text || CLOCK_TIMESTAMP()::text), 'system')
+       ON CONFLICT DO NOTHING;`,
+      ['smadison@bdainc.com', 'Office Manager']
+    );
+  }
   schemaReady = true;
 }
 
@@ -162,6 +197,103 @@ const numOrNull = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 
+// ── Email notifications (Resend) ───────────────────────────────────────────
+// Same provider already used by the daily admin check. With the default test
+// sender (onboarding@resend.dev) Resend only delivers to the Resend account
+// owner; set INVENTORY_NOTIFY_FROM to an address on a verified domain
+// (e.g. "Houston Control <inventory@bdainc.com>") to reach everyone.
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const NOTIFY_FROM = process.env.INVENTORY_NOTIFY_FROM || process.env.FROM_EMAIL || 'Houston Control <onboarding@resend.dev>';
+const SITE_URL = (process.env.SITE_URL || 'https://inboundswagup.netlify.app').replace(/\/+$/, '');
+
+function htmlEscape(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+async function sendEmail(to, subject, html) {
+  if (!RESEND_API_KEY) { console.warn('inventory: RESEND_API_KEY not set — skipping email to', to); return { ok: false, error: 'no api key' }; }
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: NOTIFY_FROM, to, subject, html }),
+    });
+    if (!res.ok) { const err = await res.text(); console.error('inventory Resend error:', res.status, err); return { ok: false, error: `${res.status} ${err}`.slice(0, 480) }; }
+    return { ok: true };
+  } catch (e) { console.error('inventory email exception:', e.message); return { ok: false, error: e.message }; }
+}
+
+// Build the email body for a new request.
+function buildRequestEmail(req, token) {
+  const urgent = req.urgency === 'High' || req.urgency === 'Urgent';
+  const qty = (req.quantity == null || req.quantity === '') ? '—' : req.quantity;
+  const rows = [
+    ['Item', req.itemName],
+    ['Quantity', qty],
+    ['Urgency', req.urgency || 'Normal'],
+    ['Department', req.department || '—'],
+    ['Category', req.category || '—'],
+    ['Reason', req.reason || '—'],
+    ['Requested by', req.requestedBy || 'unknown'],
+  ].map(([k, v]) =>
+    `<tr><td style="padding:6px 12px;color:#5a6b7d;font-size:13px;white-space:nowrap;vertical-align:top">${htmlEscape(k)}</td>` +
+    `<td style="padding:6px 12px;color:#16263a;font-size:14px;font-weight:600">${htmlEscape(v)}</td></tr>`
+  ).join('');
+  const orderBtn = req.orderLink
+    ? `<a href="${htmlEscape(req.orderLink)}" style="display:inline-block;margin:4px 8px 4px 0;padding:9px 16px;background:#0b5cab;color:#fff;border-radius:6px;text-decoration:none;font-size:14px;font-weight:600">Open order link</a>`
+    : '';
+  const appBtn = `<a href="${htmlEscape(SITE_URL)}/#inventoryPage" style="display:inline-block;margin:4px 8px 4px 0;padding:9px 16px;background:#11324f;color:#fff;border-radius:6px;text-decoration:none;font-size:14px;font-weight:600">View in Command Tool</a>`;
+  const unsub = token
+    ? `<p style="margin:18px 0 0;font-size:11px;color:#9aa7b4">You're receiving this because you subscribed to inventory request alerts. <a href="${htmlEscape(SITE_URL)}/.netlify/functions/inventory?unsub=${encodeURIComponent(token)}" style="color:#9aa7b4">Unsubscribe</a>.</p>`
+    : '';
+  const subject = `${urgent ? '🔴 ' : ''}New supply request: ${req.itemName}${qty !== '—' ? ` (×${qty})` : ''}`;
+  const html =
+    `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:540px;margin:0 auto;padding:8px">` +
+      `<div style="background:#11324f;border-radius:10px 10px 0 0;padding:16px 20px"><div style="color:#fff;font-size:17px;font-weight:700">New inventory request</div>` +
+      `<div style="color:#9fc3e8;font-size:13px;margin-top:2px">Houston Control · ${urgent ? `<span style="color:#ffb3b3;font-weight:700">${htmlEscape(req.urgency)} priority</span>` : 'a new supply request was submitted'}</div></div>` +
+      `<div style="border:1px solid #e3e8ee;border-top:none;border-radius:0 0 10px 10px;padding:16px 8px"><table style="width:100%;border-collapse:collapse">${rows}</table>` +
+      `<div style="padding:12px 12px 4px">${orderBtn}${appBtn}</div>${unsub}</div></div>`;
+  return { subject, html };
+}
+
+// Email every enabled subscriber about a newly created request. Best-effort:
+// never throws (request creation must succeed regardless). Each subscriber also
+// gets an in-app notification as a fallback for when email delivery isn't set up.
+async function notifyNewRequest(req, caller) {
+  try {
+    const callerEmail = norm(caller && caller.email);
+    const subs = await pool.query(`SELECT email, unsubscribe_token FROM inventory_subscriptions WHERE enabled=true;`);
+    for (const s of subs.rows) {
+      const email = String(s.email || '').trim();
+      if (!email) continue;
+      // In-app notification fallback (always, even if email fails / isn't set up).
+      try {
+        await pool.query(
+          `INSERT INTO hc_notifications (type, target_email, message) VALUES ('inventory_request', $1, $2);`,
+          [email, `New supply request: ${req.itemName}${req.quantity ? ` (×${req.quantity})` : ''} — ${req.urgency || 'Normal'} priority, by ${req.requestedBy || 'unknown'}`]
+        );
+      } catch (e) { /* hc_notifications may not exist in some envs — ignore */ }
+      // Skip emailing the person who just made the request.
+      if (callerEmail && norm(email) === callerEmail) continue;
+      // Dedupe: don't email the same person twice for one request.
+      const claim = await pool.query(
+        `INSERT INTO inventory_request_emails (request_id, email, status) VALUES ($1, $2, 'sending')
+         ON CONFLICT (request_id, email) DO NOTHING RETURNING id;`,
+        [req.id, email]
+      );
+      if (!claim.rows.length) continue;
+      const { subject, html } = buildRequestEmail(req, s.unsubscribe_token);
+      const result = await sendEmail(email, subject, html);
+      await pool.query(
+        `UPDATE inventory_request_emails SET status=$1, error=$2, sent_at=NOW() WHERE request_id=$3 AND email=$4;`,
+        [result.ok ? 'sent' : 'failed', result.ok ? null : (result.error || 'unknown').slice(0, 480), req.id, email]
+      );
+    }
+  } catch (e) { console.error('inventory notifyNewRequest error:', e.message); }
+}
+
 exports.handler = async function handler(event) {
   if (!process.env.DATABASE_URL) return json(500, { error: 'DATABASE_URL is not configured' });
   const qs = event.queryStringParameters || {};
@@ -179,6 +311,18 @@ exports.handler = async function handler(event) {
     } catch (e) { return { statusCode: 500, body: e.message }; }
   }
 
+  // Public one-click unsubscribe (from the email footer link, no login needed).
+  if (event.httpMethod === 'GET' && qs.unsub) {
+    const page = (msg) => ({ statusCode: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+      body: `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:460px;margin:60px auto;padding:24px;text-align:center;color:#16263a"><h2 style="margin:0 0 8px">Houston Control</h2><p style="font-size:15px;color:#445">${msg}</p></div>` });
+    try {
+      await ensureSchema();
+      const r = await pool.query(`UPDATE inventory_subscriptions SET enabled=false WHERE unsubscribe_token=$1 RETURNING email;`, [String(qs.unsub)]);
+      if (!r.rows.length) return page('That unsubscribe link is no longer valid. You may already be unsubscribed.');
+      return page(`You've been unsubscribed. <b>${r.rows[0].email.replace(/[<>&]/g, '')}</b> will no longer receive inventory request emails.`);
+    } catch (e) { return page('Sorry — something went wrong. Please contact your administrator.'); }
+  }
+
   const caller = await verifyUser(event);
   if (!caller) return json(401, { error: 'Authentication required' });
   const role = caller.role;
@@ -194,6 +338,14 @@ exports.handler = async function handler(event) {
       if (qs.requests === '1' || qs.requests === 'true') {
         const rr = await pool.query(`SELECT * FROM inventory_requests ORDER BY created_at DESC LIMIT 1000;`);
         return json(200, { requests: rr.rows.map(reqToObj), role });
+      }
+
+      // Notification subscribers list (manager/admin only).
+      if (qs.subscriptions === '1' || qs.subscriptions === 'true') {
+        if (!canManage) return json(403, { error: 'Manager/admin only' });
+        const sr = await pool.query(`SELECT id, email, label, enabled, created_by, created_at FROM inventory_subscriptions ORDER BY LOWER(email) ASC;`);
+        const subs = sr.rows.map(s => ({ id: s.id, email: s.email, label: s.label || '', enabled: !!s.enabled, createdBy: s.created_by || '', createdAt: s.created_at }));
+        return json(200, { subscriptions: subs, emailConfigured: !!RESEND_API_KEY, role });
       }
 
       const includeArchived = qs.includeArchived === '1' || qs.includeArchived === 'true';
@@ -219,6 +371,10 @@ exports.handler = async function handler(event) {
         urgentRequests: openReqs.filter(x => x.urgency === 'High' || x.urgency === 'Urgent').length,
         inTransit: rq.rows.filter(x => REQ_TRANSIT.includes(x.status)).length,
       };
+      // Popularity: how many times each item was requested in the last 30 days.
+      const rpm = await pool.query(`SELECT item_id, COUNT(*)::int AS n FROM inventory_requests WHERE item_id IS NOT NULL AND created_at >= NOW() - INTERVAL '30 days' GROUP BY item_id;`);
+      const rpmMap = new Map(rpm.rows.map(r => [String(r.item_id), r.n]));
+      items.forEach(i => { i.requestsMonth = rpmMap.get(String(i.id)) || 0; });
       return json(200, { items, summary, role });
     }
 
@@ -405,7 +561,10 @@ exports.handler = async function handler(event) {
         [rq.itemId || null, name, rq.category || '', rq.department || '', numOrNull(rq.quantity), urgency,
          rq.reason || '', rq.orderLink || '', who(caller)]
       );
-      return json(200, { ok: true, request: reqToObj(r.rows[0]) });
+      const created = reqToObj(r.rows[0]);
+      // Notify subscribers (email + in-app). Best-effort — never blocks the request.
+      await notifyNewRequest(created, caller);
+      return json(200, { ok: true, request: created });
     }
 
     // ── request: update (manager/admin = office manager) ─────────────────
@@ -428,6 +587,36 @@ exports.handler = async function handler(event) {
       const r = await pool.query(`UPDATE inventory_requests SET ${sets.join(', ')} WHERE id=$${i} RETURNING *;`, vals);
       if (!r.rows.length) return json(404, { error: 'not found' });
       return json(200, { ok: true, request: reqToObj(r.rows[0]) });
+    }
+
+    // ── notification subscribers (manager/admin) ─────────────────────────
+    if (action === 'subAdd') {
+      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      const email = String(body.email || '').trim();
+      const label = String(body.label || '').trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(400, { error: 'Please enter a valid email address' });
+      const r = await pool.query(
+        `INSERT INTO inventory_subscriptions (email, label, unsubscribe_token, created_by)
+         VALUES ($1, $2, MD5(RANDOM()::text || CLOCK_TIMESTAMP()::text), $3)
+         ON CONFLICT (LOWER(email)) DO UPDATE SET enabled=true, label=COALESCE(NULLIF(EXCLUDED.label,''), inventory_subscriptions.label)
+         RETURNING id, email, label, enabled;`,
+        [email, label, who(caller)]
+      );
+      const s = r.rows[0];
+      return json(200, { ok: true, subscription: { id: s.id, email: s.email, label: s.label || '', enabled: !!s.enabled } });
+    }
+    if (action === 'subToggle') {
+      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      if (!body.id) return json(400, { error: 'id required' });
+      const r = await pool.query(`UPDATE inventory_subscriptions SET enabled=$1 WHERE id=$2 RETURNING id, enabled;`, [body.enabled !== false, body.id]);
+      if (!r.rows.length) return json(404, { error: 'not found' });
+      return json(200, { ok: true, id: r.rows[0].id, enabled: !!r.rows[0].enabled });
+    }
+    if (action === 'subRemove') {
+      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      if (!body.id) return json(400, { error: 'id required' });
+      await pool.query(`DELETE FROM inventory_subscriptions WHERE id=$1;`, [body.id]);
+      return json(200, { ok: true });
     }
 
     // ── photo: set / replace (leads + managers) ──────────────────────────
