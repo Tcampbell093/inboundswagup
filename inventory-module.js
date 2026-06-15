@@ -55,10 +55,17 @@
       + '.iv-input::placeholder{color:#9aa7b6;-webkit-text-fill-color:#9aa7b6;}'
       + '.iv-input:focus,.iv-select:focus{outline:none;border-color:#5b8fc7;box-shadow:0 0 0 3px rgba(91,143,199,.18);}'
       + '#inventoryPage .iv-search{flex:1;min-width:200px;}'
+      + '#inventoryPage .iv-tools>.iv-select{flex:0 1 auto;width:auto;min-width:150px;max-width:260px;}'
       + '#inventoryPage .iv-btn{border:1px solid #cdd9e6;background:#f4f8fc;color:#2f4d6b;font-weight:700;font-size:13px;border-radius:10px;padding:9px 14px;cursor:pointer;font-family:inherit;}'
       + '#inventoryPage .iv-btn:hover{background:#e8f1fb;border-color:#b6cde4;}'
       + '#inventoryPage .iv-btn-primary{background:#1d6fb8;border-color:#1d6fb8;color:#fff;}#inventoryPage .iv-btn-primary:hover{background:#195f9e;}'
       + '#inventoryPage .iv-spacer{margin-left:auto;}'
+      + '#inventoryPage .iv-fbadge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;margin-left:7px;border-radius:999px;background:#1d6fb8;color:#fff;font-size:11px;font-weight:800;}'
+      + '#inventoryPage .iv-btn.active,#inventoryPage .iv-btn.on{background:#e8f1fb;border-color:#9cc2e6;color:#19568f;}'
+      + '#inventoryPage .iv-filterpanel{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 12px;padding:12px;background:#f6f9fc;border:1px solid #e3ecf4;border-radius:12px;}'
+      + '#inventoryPage .iv-filterpanel .iv-select{flex:1 1 170px;min-width:150px;max-width:230px;}'
+      + '#inventoryPage .iv-archtoggle{display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;}'
+      + '#inventoryPage .iv-link-btn{border:none;background:transparent;color:#1d6fb8;font-weight:700;font-size:13px;cursor:pointer;padding:6px 4px;font-family:inherit;}#inventoryPage .iv-link-btn:hover{text-decoration:underline;}'
       + '#inventoryPage .iv-count{font-size:13px;color:#5a7088;font-weight:600;}'
       + '#inventoryPage .iv-tablewrap{overflow-x:auto;border:1px solid #e6ecf3;border-radius:14px;background:#fff;}'
       + '#inventoryPage table.iv-table{width:100%;border-collapse:collapse;font-size:13.5px;}'
@@ -131,11 +138,7 @@
       + '<div id="ivItemsView">'
       + '<div class="iv-tools">'
       + '<input id="ivSearch" class="iv-input iv-search" type="text" placeholder="Search item, SKU, e.g. tape, bubble, 4x4x4, gloves…" autocomplete="off"/>'
-      + '<select id="ivDept" class="iv-select"></select>'
-      + '<select id="ivCat" class="iv-select"></select>'
-      + '<select id="ivStatus" class="iv-select"><option value="">Any status</option><option>In Stock</option><option>Low Stock</option><option>Out of Stock</option><option>Needs Review</option></select>'
-      + '<select id="ivLoc" class="iv-select"></select>'
-      + '<select id="ivVendor" class="iv-select"></select>'
+      + '<button id="ivFilterToggle" class="iv-btn" type="button" aria-expanded="false">⚙ Filters<span id="ivFilterCount" class="iv-fbadge" hidden></span></button>'
       + '<select id="ivSort" class="iv-select" aria-label="Sort">'
       + '<option value="name">Sort: Name A–Z</option>'
       + '<option value="popular">Sort: Most requested / mo</option>'
@@ -146,7 +149,6 @@
       + '<option value="dept">Sort: Department</option>'
       + '<option value="category">Sort: Category</option>'
       + '</select>'
-      + '<label class="iv-count" style="display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" id="ivArch"/> Show archived</label>'
       + '<div class="iv-spacer"></div>'
       + '<button id="ivAdd" class="iv-btn iv-btn-primary" type="button" hidden>+ Add item</button>'
       + '<button id="ivImport" class="iv-btn" type="button" hidden>⬆ Import</button>'
@@ -154,6 +156,16 @@
       + '<button id="ivExport" class="iv-btn" type="button">⬇ Export</button>'
       + '<button id="ivRefresh" class="iv-btn" type="button">↻</button>'
       + '<span id="ivCount" class="iv-count"></span>'
+      + '</div>'
+      + '<div id="ivFilterPanel" class="iv-filterpanel" hidden>'
+      + '<select id="ivDept" class="iv-select"></select>'
+      + '<select id="ivCat" class="iv-select"></select>'
+      + '<select id="ivStatus" class="iv-select"><option value="">Any status</option><option>In Stock</option><option>Low Stock</option><option>Out of Stock</option><option>Needs Review</option></select>'
+      + '<select id="ivLoc" class="iv-select"></select>'
+      + '<select id="ivVendor" class="iv-select"></select>'
+      + '<label class="iv-count iv-archtoggle"><input type="checkbox" id="ivArch"/> Show archived</label>'
+      + '<div class="iv-spacer"></div>'
+      + '<button id="ivClearFilters" class="iv-link-btn" type="button">Clear filters</button>'
       + '</div>'
       + '<div class="iv-tablewrap"><table class="iv-table"><thead><tr>'
       + '<th>Item</th><th>Category</th><th>Department</th><th>Location</th><th>Qty</th><th>Min</th><th>Status</th><th>Order</th><th>Last Counted</th>'
@@ -183,6 +195,23 @@
     [els.dept, els.cat, els.status, els.loc, els.vendor].forEach(function (s) { s.addEventListener('change', renderTable); });
     els.sort.addEventListener('change', function () { state.sort = els.sort.value; renderTable(); });
     els.arch.addEventListener('change', function () { state.includeArchived = els.arch.checked; loadData(); });
+
+    // Collapsible filter panel (toggle, clear, active-count badge).
+    els.filterToggle = document.getElementById('ivFilterToggle');
+    els.filterPanel = document.getElementById('ivFilterPanel');
+    els.filterBadge = document.getElementById('ivFilterCount');
+    els.filterToggle.addEventListener('click', function () {
+      var open = els.filterPanel.hidden;
+      els.filterPanel.hidden = !open;
+      els.filterToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      els.filterToggle.classList.toggle('on', open);
+    });
+    document.getElementById('ivClearFilters').addEventListener('click', function () {
+      var wasArch = els.arch.checked;
+      [els.dept, els.cat, els.status, els.loc, els.vendor].forEach(function (s) { s.value = ''; });
+      els.arch.checked = false;
+      if (wasArch) { state.includeArchived = false; loadData(); } else { renderTable(); }
+    });
     document.getElementById('ivRefresh').addEventListener('click', loadData);
     document.getElementById('ivExport').addEventListener('click', exportCsv);
     document.getElementById('ivAdd').addEventListener('click', openAddModal);
@@ -294,8 +323,17 @@
     return out;
   }
 
+  function updateFilterBadge() {
+    if (!els.filterBadge) return;
+    var n = [els.dept, els.cat, els.status, els.loc, els.vendor].filter(function (s) { return s && s.value; }).length
+      + (els.arch && els.arch.checked ? 1 : 0);
+    if (n) { els.filterBadge.textContent = n; els.filterBadge.hidden = false; els.filterToggle.classList.add('active'); }
+    else { els.filterBadge.hidden = true; els.filterToggle.classList.remove('active'); }
+  }
+
   function renderTable() {
     if (!els.body) return;
+    updateFilterBadge();
     var rows = sortRows(applyFilters());
     els.count.textContent = state.loading ? 'Loading…' : rows.length + ' of ' + state.items.length + ' item' + (state.items.length === 1 ? '' : 's');
     if (!state.items.length) { els.body.innerHTML = '<tr><td colspan="9" class="iv-empty">' + (state.loading ? 'Loading…' : (state.loaded ? 'No inventory yet. Add an item or import your sheet.' : 'Open this page to load inventory.')) + '</td></tr>'; return; }
