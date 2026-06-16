@@ -1135,9 +1135,9 @@
         out.innerHTML = '<div style="background:' + bg + ';border:1px solid ' + bd + ';color:' + fg + ';border-radius:9px;padding:10px 12px;font-size:12.5px;">'
           + '<div style="font-weight:800;margin-bottom:4px;">' + icon + ' ' + esc(res.reason || (ok ? 'Sent.' : 'Failed.')) + '</div>'
           + '<div style="color:#5a6b7d;font-size:11.5px;line-height:1.7;">'
-          + 'API key in Netlify: <b>' + (d.apiKeySet ? 'set' : 'NOT set') + '</b><br>'
-          + 'Sending from: <b>' + esc(d.from || '—') + '</b>' + (d.usingTestSender ? ' <i>(Resend test sender — limited delivery)</i>' : '')
-          + (d.to ? '<br>Sent to: <b>' + esc(d.to) + '</b>' : '')
+          + 'Method: <b>' + (d.channel === 'gmail' ? 'Gmail' : d.channel === 'resend' ? 'Resend' : 'none configured yet') + '</b><br>'
+          + 'Sending from: <b>' + esc(d.from || '—') + '</b>' + (d.usingTestSender ? ' <i>(Resend test sender — limited delivery)</i>' : '') + '<br>'
+          + (d.to ? 'Sent to: <b>' + esc(d.to) + '</b>' : '')
           + (res.error ? '<br>Raw error: <code>' + esc(res.error) + '</code>' : '')
           + '</div></div>';
       });

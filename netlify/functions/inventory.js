@@ -205,14 +205,33 @@ const numOrNull = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 
-// ── Email notifications (Resend) ───────────────────────────────────────────
-// Same provider already used by the daily admin check. With the default test
-// sender (onboarding@resend.dev) Resend only delivers to the Resend account
-// owner; set INVENTORY_NOTIFY_FROM to an address on a verified domain
-// (e.g. "Houston Control <inventory@bdainc.com>") to reach everyone.
+// ── Email notifications ────────────────────────────────────────────────────
+// Two possible channels, picked automatically:
+//   1. Gmail (preferred) — set GMAIL_USER + GMAIL_APP_PASSWORD (a 16-char Google
+//      App Password). Sends through Gmail's SMTP; delivers to anyone, no domain
+//      verification needed. From shows as "Houston Control <that gmail>".
+//   2. Resend (fallback) — RESEND_API_KEY. With the default onboarding@resend.dev
+//      sender it only reaches the Resend account owner unless a domain is verified
+//      and INVENTORY_NOTIFY_FROM is set.
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const NOTIFY_FROM = process.env.INVENTORY_NOTIFY_FROM || process.env.FROM_EMAIL || 'Houston Control <onboarding@resend.dev>';
+const GMAIL_USER = (process.env.GMAIL_USER || '').trim();
+// App passwords are often shown with spaces ("abcd efgh ijkl mnop") — strip them.
+const GMAIL_APP_PASSWORD = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+const GMAIL_FROM = process.env.GMAIL_FROM || (GMAIL_USER ? `Houston Control <${GMAIL_USER}>` : '');
 const SITE_URL = (process.env.SITE_URL || 'https://inboundswagup.netlify.app').replace(/\/+$/, '');
+
+function gmailConfigured() { return !!(GMAIL_USER && GMAIL_APP_PASSWORD); }
+function emailChannel() { return gmailConfigured() ? 'gmail' : (RESEND_API_KEY ? 'resend' : 'none'); }
+function effectiveFrom() { return gmailConfigured() ? GMAIL_FROM : NOTIFY_FROM; }
+
+let _mailer = null;
+function getMailer() {
+  if (_mailer) return _mailer;
+  const nodemailer = require('nodemailer');
+  _mailer = nodemailer.createTransport({ service: 'gmail', auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD } });
+  return _mailer;
+}
 
 function htmlEscape(v) {
   return String(v == null ? '' : v)
@@ -221,28 +240,50 @@ function htmlEscape(v) {
 }
 
 async function sendEmail(to, subject, html) {
-  if (!RESEND_API_KEY) { console.warn('inventory: RESEND_API_KEY not set — skipping email to', to); return { ok: false, error: 'no api key' }; }
+  // 1) Gmail SMTP when configured.
+  if (gmailConfigured()) {
+    try {
+      await getMailer().sendMail({ from: GMAIL_FROM, to, subject, html });
+      return { ok: true, channel: 'gmail' };
+    } catch (e) {
+      console.error('inventory Gmail send error:', e.message);
+      return { ok: false, channel: 'gmail', error: e.message };
+    }
+  }
+  // 2) Resend fallback.
+  if (!RESEND_API_KEY) { console.warn('inventory: no email channel configured — skipping email to', to); return { ok: false, channel: 'none', error: 'no api key' }; }
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ from: NOTIFY_FROM, to, subject, html }),
     });
-    if (!res.ok) { const err = await res.text(); console.error('inventory Resend error:', res.status, err); return { ok: false, error: `${res.status} ${err}`.slice(0, 480) }; }
-    return { ok: true };
-  } catch (e) { console.error('inventory email exception:', e.message); return { ok: false, error: e.message }; }
+    if (!res.ok) { const err = await res.text(); console.error('inventory Resend error:', res.status, err); return { ok: false, channel: 'resend', error: `${res.status} ${err}`.slice(0, 480) }; }
+    return { ok: true, channel: 'resend' };
+  } catch (e) { console.error('inventory email exception:', e.message); return { ok: false, channel: 'resend', error: e.message }; }
 }
 
-// Translate a raw Resend/sendEmail error into a plain-English cause + fix.
-function interpretResendError(err) {
-  const e = String(err || '').toLowerCase();
-  if (!err) return 'Unknown error — no detail returned by Resend.';
-  if (e.includes('no api key')) return 'RESEND_API_KEY is not set in Netlify, so no email is ever sent. Add it under Site configuration → Environment variables, then redeploy.';
-  if (e.includes('401') || e.includes('unauthorized') || e.includes('invalid api key') || e.includes('restricted')) return 'The Resend API key is missing or invalid. Check the RESEND_API_KEY value in Netlify.';
-  if (e.includes('403') || e.includes('testing emails') || e.includes('your own email') || e.includes('only send')) return 'Resend is in test mode: the default sender onboarding@resend.dev can ONLY deliver to your Resend account owner\'s email. Verify a domain in Resend and set INVENTORY_NOTIFY_FROM to send to anyone else.';
-  if (e.includes('422') || e.includes('not verified') || e.includes('domain')) return 'Resend rejected the "from" address because its domain is not verified. Verify your domain in Resend and set INVENTORY_NOTIFY_FROM to an address on it (e.g. inventory@bdainc.com).';
-  if (e.includes('429') || e.includes('rate')) return 'Resend rate limit reached — wait a moment and try again.';
-  return 'Resend error: ' + err;
+// Translate a send failure into a plain-English cause + fix, per channel.
+function interpretSendError(result) {
+  const ch = result && result.channel;
+  const e = String((result && result.error) || '').toLowerCase();
+  if (ch === 'gmail') {
+    if (e.includes('invalid login') || e.includes('username and password not accepted') || e.includes('eauth') || e.includes('badcredentials') || e.includes('535')) {
+      return 'Gmail rejected the login. Make sure GMAIL_USER is the full address and GMAIL_APP_PASSWORD is a 16-character Google App Password (not the normal password), with 2-Step Verification turned on for that account.';
+    }
+    if (e.includes('etimedout') || e.includes('econn') || e.includes('timeout')) return 'Could not reach Gmail’s mail server — try again in a moment.';
+    if (e.includes('limit') || e.includes('rate')) return 'Gmail send limit reached for now — try again later.';
+    return 'Gmail error: ' + ((result && result.error) || 'unknown');
+  }
+  // Resend / none
+  const err = (result && result.error) || '';
+  const re = String(err).toLowerCase();
+  if (!err || re.includes('no api key')) return 'No email channel is configured. Add GMAIL_USER + GMAIL_APP_PASSWORD in Netlify (recommended), then redeploy.';
+  if (re.includes('401') || re.includes('unauthorized') || re.includes('invalid api key') || re.includes('restricted')) return 'The Resend API key is missing or invalid. Check the RESEND_API_KEY value in Netlify.';
+  if (re.includes('403') || re.includes('testing emails') || re.includes('your own email') || re.includes('only send')) return 'Resend is in test mode: onboarding@resend.dev only delivers to the Resend account owner. Use Gmail (GMAIL_USER/GMAIL_APP_PASSWORD) instead, or verify a domain in Resend.';
+  if (re.includes('422') || re.includes('not verified') || re.includes('domain')) return 'Resend rejected the "from" address because its domain is not verified.';
+  if (re.includes('429') || re.includes('rate')) return 'Resend rate limit reached — wait a moment and try again.';
+  return 'Email error: ' + err;
 }
 
 // Build the email body for a new request.
@@ -727,27 +768,33 @@ exports.handler = async function handler(event) {
       if (!canManage) return json(403, { error: 'Manager/admin only' });
       const to = String((body.to || '').trim() || caller.email || '').toLowerCase();
       if (!to) return json(400, { error: 'No recipient address' });
+      const channel = emailChannel();
+      const from = effectiveFrom();
       const diag = {
+        channel,
+        gmailConfigured: gmailConfigured(),
         apiKeySet: !!RESEND_API_KEY,
-        from: NOTIFY_FROM,
-        usingTestSender: /onboarding@resend\.dev/i.test(NOTIFY_FROM),
+        from: from || '—',
+        usingTestSender: channel === 'resend' && /onboarding@resend\.dev/i.test(NOTIFY_FROM),
         to,
       };
-      if (!RESEND_API_KEY) {
-        return json(200, { ok: false, diag, error: 'no api key', reason: interpretResendError('no api key') });
+      if (channel === 'none') {
+        return json(200, { ok: false, diag, error: 'no channel', reason: 'No email channel is configured yet. Add GMAIL_USER and GMAIL_APP_PASSWORD in Netlify (recommended), then redeploy and try again.' });
       }
       const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:480px;margin:0 auto;padding:16px">`
         + `<h2 style="color:#11324f;margin:0 0 8px">✅ Houston Control test email</h2>`
-        + `<p style="color:#374151;font-size:14px;line-height:1.6">If you can read this, email delivery is working. Sent to <b>${htmlEscape(to)}</b> from <b>${htmlEscape(NOTIFY_FROM)}</b>.</p>`
+        + `<p style="color:#374151;font-size:14px;line-height:1.6">If you can read this, email delivery is working. Sent to <b>${htmlEscape(to)}</b> from <b>${htmlEscape(from)}</b>.</p>`
         + `<p style="color:#9aa7b4;font-size:12px">One-off diagnostic from Inventory → notification settings.</p></div>`;
       const result = await sendEmail(to, 'Houston Control — test email ✅', html);
       return json(200, {
         ok: result.ok, diag, error: result.error || null,
         reason: result.ok
-          ? (diag.usingTestSender
-              ? 'Resend accepted it — but you are using the onboarding@resend.dev test sender, which only delivers to your Resend account owner address. Verify a domain in Resend and set INVENTORY_NOTIFY_FROM to reach everyone. Check your inbox/spam now.'
-              : 'Sent successfully. Check your inbox (and spam) in the next minute.')
-          : interpretResendError(result.error),
+          ? (channel === 'gmail'
+              ? 'Sent via Gmail. Check the inbox (and spam) in the next minute.'
+              : diag.usingTestSender
+                ? 'Resend accepted it — but the onboarding@resend.dev test sender only delivers to your Resend account owner. Switch to Gmail (GMAIL_USER/GMAIL_APP_PASSWORD) to reach everyone.'
+                : 'Sent successfully. Check the inbox (and spam) in the next minute.')
+          : interpretSendError(result),
       });
     }
 
