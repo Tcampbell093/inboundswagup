@@ -446,7 +446,19 @@ exports.handler = async function handler(event) {
         [name, it.category || '', it.department || '', it.location || '', it.spot || '', q, it.unitType || '',
          numOrNull(it.minStock) || 0, it.vendor || '', it.sku || '', it.orderLink || '', it.notes || '', q == null, who(caller)]
       );
-      return json(200, { ok: true, item: rowToItem(r.rows[0]) });
+      const newItem = r.rows[0];
+
+      // Optional: link this new department's row to an existing product (chosen
+      // from the add-time suggestions), so they roll up to a warehouse total.
+      if (body.linkTo) {
+        const lk = await pool.query(`SELECT product_key FROM inventory_items WHERE id=$1 LIMIT 1;`, [body.linkTo]);
+        if (lk.rows.length) {
+          const key = lk.rows[0].product_key || ('pk_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+          await pool.query(`UPDATE inventory_items SET product_key=$1, updated_at=NOW() WHERE id = ANY($2::bigint[]);`, [key, [newItem.id, body.linkTo]]);
+          newItem.product_key = key;
+        }
+      }
+      return json(200, { ok: true, item: rowToItem(newItem) });
     }
 
     // ── update editable fields ───────────────────────────────────────────
