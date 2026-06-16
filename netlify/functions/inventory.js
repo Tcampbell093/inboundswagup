@@ -233,6 +233,18 @@ async function sendEmail(to, subject, html) {
   } catch (e) { console.error('inventory email exception:', e.message); return { ok: false, error: e.message }; }
 }
 
+// Translate a raw Resend/sendEmail error into a plain-English cause + fix.
+function interpretResendError(err) {
+  const e = String(err || '').toLowerCase();
+  if (!err) return 'Unknown error — no detail returned by Resend.';
+  if (e.includes('no api key')) return 'RESEND_API_KEY is not set in Netlify, so no email is ever sent. Add it under Site configuration → Environment variables, then redeploy.';
+  if (e.includes('401') || e.includes('unauthorized') || e.includes('invalid api key') || e.includes('restricted')) return 'The Resend API key is missing or invalid. Check the RESEND_API_KEY value in Netlify.';
+  if (e.includes('403') || e.includes('testing emails') || e.includes('your own email') || e.includes('only send')) return 'Resend is in test mode: the default sender onboarding@resend.dev can ONLY deliver to your Resend account owner\'s email. Verify a domain in Resend and set INVENTORY_NOTIFY_FROM to send to anyone else.';
+  if (e.includes('422') || e.includes('not verified') || e.includes('domain')) return 'Resend rejected the "from" address because its domain is not verified. Verify your domain in Resend and set INVENTORY_NOTIFY_FROM to an address on it (e.g. inventory@bdainc.com).';
+  if (e.includes('429') || e.includes('rate')) return 'Resend rate limit reached — wait a moment and try again.';
+  return 'Resend error: ' + err;
+}
+
 // Build the email body for a new request.
 function buildRequestEmail(req, token) {
   const urgent = req.urgency === 'High' || req.urgency === 'Urgent';
@@ -708,6 +720,35 @@ exports.handler = async function handler(event) {
       if (!body.id) return json(400, { error: 'id required' });
       await pool.query(`DELETE FROM inventory_subscriptions WHERE id=$1;`, [body.id]);
       return json(200, { ok: true });
+    }
+
+    // ── email diagnostic: send a one-off test + report exactly what happened ──
+    if (action === 'emailTest') {
+      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      const to = String((body.to || '').trim() || caller.email || '').toLowerCase();
+      if (!to) return json(400, { error: 'No recipient address' });
+      const diag = {
+        apiKeySet: !!RESEND_API_KEY,
+        from: NOTIFY_FROM,
+        usingTestSender: /onboarding@resend\.dev/i.test(NOTIFY_FROM),
+        to,
+      };
+      if (!RESEND_API_KEY) {
+        return json(200, { ok: false, diag, error: 'no api key', reason: interpretResendError('no api key') });
+      }
+      const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:480px;margin:0 auto;padding:16px">`
+        + `<h2 style="color:#11324f;margin:0 0 8px">✅ Houston Control test email</h2>`
+        + `<p style="color:#374151;font-size:14px;line-height:1.6">If you can read this, email delivery is working. Sent to <b>${htmlEscape(to)}</b> from <b>${htmlEscape(NOTIFY_FROM)}</b>.</p>`
+        + `<p style="color:#9aa7b4;font-size:12px">One-off diagnostic from Inventory → notification settings.</p></div>`;
+      const result = await sendEmail(to, 'Houston Control — test email ✅', html);
+      return json(200, {
+        ok: result.ok, diag, error: result.error || null,
+        reason: result.ok
+          ? (diag.usingTestSender
+              ? 'Resend accepted it — but you are using the onboarding@resend.dev test sender, which only delivers to your Resend account owner address. Verify a domain in Resend and set INVENTORY_NOTIFY_FROM to reach everyone. Check your inbox/spam now.'
+              : 'Sent successfully. Check your inbox (and spam) in the next minute.')
+          : interpretResendError(result.error),
+      });
     }
 
     // ── photo: set / replace (leads + managers) ──────────────────────────
