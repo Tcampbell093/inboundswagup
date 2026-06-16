@@ -17,7 +17,7 @@
   var UNITS = ['each', 'box', 'case', 'carton', 'roll', 'pack', 'bag', 'sleeve', 'sheet', 'pair', 'bundle'];
   var LOCATIONS = ['Supply Rack', 'Assembly Supplies', 'Fulfillment Supplies', 'Uline Box Area', 'Cleaning Supply Area', 'Mailer Section', 'Top Rack', 'Bottom Shelf', 'Unknown'];
 
-  var state = { items: [], summary: {}, role: '', loaded: false, loading: false, includeArchived: false, activeId: null, view: 'items', requests: [], reqLoading: false, sort: 'name' };
+  var state = { items: [], summary: {}, role: '', loaded: false, loading: false, includeArchived: false, activeId: null, view: 'items', deptView: '', addLinkTo: null, requests: [], reqLoading: false, sort: 'name' };
   var els = {};
 
   function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (m) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]; }); }
@@ -122,7 +122,24 @@
       + '.iv-sublabel{font-size:11.5px;color:#7c8da0;margin-top:1px;}'
       + '.iv-subacts{display:flex;gap:6px;flex-shrink:0;}'
       + '.iv-mini{border:1px solid #d6deea;background:#fff;color:#34536f;font-weight:700;font-size:12px;border-radius:8px;padding:6px 11px;cursor:pointer;}.iv-mini:hover{background:#eef3fa;}'
-      + '.iv-mini-danger{border-color:#f0c9c9;color:#c0392b;}.iv-mini-danger:hover{background:#fdeeee;}';
+      + '.iv-mini-danger{border-color:#f0c9c9;color:#c0392b;}.iv-mini-danger:hover{background:#fdeeee;}'
+      // Department / total view chips
+      + '#inventoryPage .iv-deptviews{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin:0 0 12px;}'
+      + '#inventoryPage .iv-dvlabel{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#8aa0bb;margin-right:2px;}'
+      + '#inventoryPage .iv-dv{border:1px solid #d6deea;background:#fff;color:#41607d;font-weight:700;font-size:13px;border-radius:999px;padding:7px 14px;cursor:pointer;font-family:inherit;}'
+      + '#inventoryPage .iv-dv:hover{background:#eef3fa;}'
+      + '#inventoryPage .iv-dv.on{background:#1d6fb8;border-color:#1d6fb8;color:#fff;}'
+      + '#inventoryPage .iv-dv-total.on{background:#0a7c4e;border-color:#0a7c4e;}'
+      // Add-item typeahead suggestions
+      + '.iv-sug{position:relative;}'
+      + '.iv-suglist{position:absolute;left:0;right:0;top:100%;z-index:30;background:#fff;border:1px solid #cdd9e6;border-radius:10px;box-shadow:0 12px 30px rgba(10,20,35,.18);max-height:240px;overflow:auto;margin-top:4px;}'
+      + '.iv-sugitem{padding:9px 12px;cursor:pointer;border-bottom:1px solid #f2f5f9;}'
+      + '.iv-sugitem:last-child{border-bottom:none;}'
+      + '.iv-sugitem:hover,.iv-sugitem.hi{background:#eef4ff;}'
+      + '.iv-sugname{font-weight:700;color:#16263a;font-size:13.5px;}'
+      + '.iv-sugmeta{font-size:11.5px;color:#8aa0bb;margin-top:2px;}'
+      + '.iv-linkbanner{background:#e7f7ef;border:1px solid #bfe6d2;color:#0a7c4e;border-radius:10px;padding:9px 12px;font-size:12.5px;font-weight:700;margin:0 0 11px;display:flex;justify-content:space-between;align-items:center;gap:8px;}'
+      + '.iv-linkbanner button{border:none;background:transparent;color:#0a7c4e;font-weight:800;cursor:pointer;font-size:16px;line-height:1;}';
     var s = document.createElement('style'); s.id = 'ivStyles'; s.textContent = c; document.head.appendChild(s);
   }
 
@@ -167,6 +184,7 @@
       + '<div class="iv-spacer"></div>'
       + '<button id="ivClearFilters" class="iv-link-btn" type="button">Clear filters</button>'
       + '</div>'
+      + '<div id="ivDeptViews" class="iv-deptviews"></div>'
       + '<div class="iv-tablewrap"><table class="iv-table"><thead><tr>'
       + '<th>Item</th><th>Category</th><th>Department</th><th>Location</th><th>Qty</th><th>Min</th><th>Status</th><th>Order</th><th>Last Counted</th>'
       + '</tr></thead><tbody id="ivBody"></tbody></table></div>'
@@ -190,6 +208,7 @@
     els.status = document.getElementById('ivStatus'); els.loc = document.getElementById('ivLoc'); els.vendor = document.getElementById('ivVendor'); els.sort = document.getElementById('ivSort');
     els.arch = document.getElementById('ivArch'); els.body = document.getElementById('ivBody');
     els.count = document.getElementById('ivCount'); els.cards = document.getElementById('ivCards');
+    els.deptViews = document.getElementById('ivDeptViews');
 
     els.search.addEventListener('input', renderTable);
     [els.dept, els.cat, els.status, els.loc, els.vendor].forEach(function (s) { s.addEventListener('change', renderTable); });
@@ -265,6 +284,7 @@
       itemLocations(it).forEach(function (l) { locs[l] = 1; });
       if (it.vendor) vends[it.vendor] = 1;
     });
+    renderDeptViews(Object.keys(depts).sort());
     fillSelect(els.dept, Object.keys(depts).sort(), 'Any department');
     fillSelect(els.cat, Object.keys(cats).sort(), 'Any category');
     fillSelect(els.loc, Object.keys(locs).sort(), 'Any location');
@@ -289,10 +309,26 @@
     els.cards.querySelectorAll('[data-go]').forEach(function (c) { c.addEventListener('click', function () { switchView(c.getAttribute('data-go')); }); });
   }
 
+  // Department / Total view chips. "All" = every row, "Total" = one row per
+  // product rolled up across departments, or a single department's stock.
+  function renderDeptViews(depts) {
+    if (!els.deptViews) return;
+    if (state.deptView && state.deptView !== '__total__' && depts.indexOf(state.deptView) === -1) state.deptView = '';
+    var chips = '<span class="iv-dvlabel">View</span>'
+      + '<button class="iv-dv' + (state.deptView === '' ? ' on' : '') + '" data-dv="" type="button">All items</button>'
+      + '<button class="iv-dv iv-dv-total' + (state.deptView === '__total__' ? ' on' : '') + '" data-dv="__total__" type="button">🏬 Total by product</button>'
+      + depts.map(function (d) { return '<button class="iv-dv' + (state.deptView === d ? ' on' : '') + '" data-dv="' + esc(d) + '" type="button">' + esc(d) + '</button>'; }).join('');
+    els.deptViews.innerHTML = chips;
+    els.deptViews.querySelectorAll('[data-dv]').forEach(function (b) {
+      b.addEventListener('click', function () { state.deptView = b.getAttribute('data-dv'); renderDeptViews(depts); renderTable(); });
+    });
+  }
+
   function applyFilters() {
     var q = (els.search.value || '').trim().toLowerCase();
     var d = els.dept.value, c = els.cat.value, st = els.status.value, lo = els.loc.value, ve = els.vendor.value;
     return state.items.filter(function (it) {
+      if (state.deptView && state.deptView !== '__total__' && it.department !== state.deptView) return false;
       if (d && it.department !== d) return false;
       if (c && it.category !== c) return false;
       if (st && it.status !== st) return false;
@@ -334,6 +370,7 @@
   function renderTable() {
     if (!els.body) return;
     updateFilterBadge();
+    if (state.deptView === '__total__') { renderTotalTable(); return; }
     var rows = sortRows(applyFilters());
     els.count.textContent = state.loading ? 'Loading…' : rows.length + ' of ' + state.items.length + ' item' + (state.items.length === 1 ? '' : 's');
     if (!state.items.length) { els.body.innerHTML = '<tr><td colspan="9" class="iv-empty">' + (state.loading ? 'Loading…' : (state.loaded ? 'No inventory yet. Add an item or import your sheet.' : 'Open this page to load inventory.')) + '</td></tr>'; return; }
@@ -349,6 +386,57 @@
         + '<td><span class="iv-chip ' + statusClass(it.status) + '">' + esc(it.status) + '</span></td>'
         + '<td>' + (it.orderLink ? '<a class="iv-link" href="' + esc(it.orderLink) + '" target="_blank" rel="noopener" onclick="event.stopPropagation();">Order ↗</a>' : '<span style="color:#c0ccda;">—</span>') + '</td>'
         + '<td>' + esc(fmtDate(it.lastCounted)) + '</td>'
+        + '</tr>';
+    }).join('');
+    els.body.querySelectorAll('[data-id]').forEach(function (tr) { tr.addEventListener('click', function () { openDetail(tr.getAttribute('data-id')); }); });
+  }
+
+  // "Total by product" view: one row per product, rolled up across departments.
+  // Grouped products show the warehouse total + the departments they live in;
+  // standalone items show as themselves. Click a row to open its detail.
+  function renderTotalTable() {
+    var q = (els.search.value || '').trim().toLowerCase();
+    var c = els.cat.value, ve = els.vendor.value;
+    var seen = {}, rows = [];
+    state.items.forEach(function (it) {
+      if (it.archived) return;
+      if (c && it.category !== c) return;
+      if (ve && it.vendor !== ve) return;
+      if (q) { var hay = [it.itemName, it.sku, it.category, it.vendor].map(function (x) { return String(x || '').toLowerCase(); }).join(' '); if (hay.indexOf(q) === -1) return; }
+      var grouped = it.groupCount > 1 && it.productKey;
+      var key = grouped ? ('grp:' + it.productKey) : ('solo:' + it.id);
+      if (seen[key]) return; seen[key] = 1;
+      if (grouped) {
+        rows.push({ rep: it, name: it.itemName, category: it.category, total: it.groupTotal, unit: it.unitType,
+          depts: it.groupBreakdown.map(function (b) { return b.department || 'No dept'; }), count: it.groupCount, orderLink: it.orderLink, grouped: true });
+      } else {
+        rows.push({ rep: it, name: it.itemName, category: it.category, total: (it.quantity == null ? null : Number(it.quantity)), unit: it.unitType,
+          depts: [it.department || 'No dept'], count: 1, orderLink: it.orderLink, status: it.status, min: it.minStock, locs: itemLocations(it), grouped: false });
+      }
+    });
+    var s = state.sort;
+    rows.sort(function (a, b) {
+      if (s === 'qty-asc') return (a.total == null ? Infinity : a.total) - (b.total == null ? Infinity : b.total) || a.name.localeCompare(b.name);
+      if (s === 'qty-desc') return (b.total == null ? -Infinity : b.total) - (a.total == null ? -Infinity : a.total) || a.name.localeCompare(b.name);
+      if (s === 'category') return String(a.category || '').localeCompare(String(b.category || '')) || a.name.localeCompare(b.name);
+      return a.name.localeCompare(b.name);
+    });
+    els.count.textContent = state.loading ? 'Loading…' : rows.length + ' product' + (rows.length === 1 ? '' : 's') + ' · totals across departments';
+    if (!rows.length) { els.body.innerHTML = '<tr><td colspan="9" class="iv-empty">' + (state.loading ? 'Loading…' : 'No products to total.') + '</td></tr>'; return; }
+    els.body.innerHTML = rows.map(function (r) {
+      var deptCell = r.grouped
+        ? esc(r.depts.join(', ')) + ' <span class="iv-chip iv-rev">' + r.count + ' depts</span>'
+        : esc(r.depts[0] || '—');
+      return '<tr data-id="' + r.rep.id + '" role="button" tabindex="0">'
+        + '<td><div class="iv-namecell">' + (r.rep.photoVer ? '<img class="iv-thumb" loading="lazy" src="' + esc(photoUrl(r.rep)) + '" alt="">' : '') + '<div><span class="iv-name">' + esc(r.name) + '</span>' + (r.grouped ? '<div style="font-size:11px;color:#0a7c4e;font-weight:700;">🏬 warehouse total</div>' : '') + '</div></div></td>'
+        + '<td>' + esc(r.category || '—') + '</td>'
+        + '<td>' + deptCell + '</td>'
+        + '<td>' + (r.grouped ? '<span style="color:#c0ccda;">—</span>' : locDisplay(r.locs)) + '</td>'
+        + '<td><b>' + (r.total == null ? '—' : r.total) + '</b>' + (r.unit ? ' <span style="color:#8aa0bb;font-size:11px;">' + esc(r.unit) + '</span>' : '') + '</td>'
+        + '<td>' + (r.grouped ? '<span style="color:#c0ccda;">—</span>' : (r.min || 0)) + '</td>'
+        + '<td>' + (r.grouped ? '<span style="color:#c0ccda;">—</span>' : '<span class="iv-chip ' + statusClass(r.status) + '">' + esc(r.status) + '</span>') + '</td>'
+        + '<td>' + (r.orderLink ? '<a class="iv-link" href="' + esc(r.orderLink) + '" target="_blank" rel="noopener" onclick="event.stopPropagation();">Order ↗</a>' : '<span style="color:#c0ccda;">—</span>') + '</td>'
+        + '<td>' + (r.grouped ? '<span style="color:#c0ccda;">—</span>' : esc(fmtDate(r.rep.lastCounted))) + '</td>'
         + '</tr>';
     }).join('');
     els.body.querySelectorAll('[data-id]').forEach(function (tr) { tr.addEventListener('click', function () { openDetail(tr.getAttribute('data-id')); }); });
@@ -391,7 +479,7 @@
   function fieldsHtml(it) {
     it = it || {};
     return '<div class="iv-grid2">'
-      + fld('Item name', '<input id="ivfName" value="' + esc(it.itemName || '') + '"/>')
+      + '<div class="iv-field iv-sug" id="ivNameField"><label>Item name</label><input id="ivfName" autocomplete="off" value="' + esc(it.itemName || '') + '"/></div>'
       + fld('Category', '<input id="ivfCat" list="ivCatList" value="' + esc(it.category || '') + '"/>')
       + fld('Department', '<input id="ivfDept" list="ivDeptList" value="' + esc(it.department || '') + '"/>')
       + fld('Current quantity', '<input id="ivfQty" type="number" step="any" value="' + (it.quantity == null ? '' : esc(it.quantity)) + '"/>')
@@ -430,20 +518,83 @@
   }
   function openAddModal() {
     if (!canManage()) return;
-    openModal('Add inventory item', '', fieldsHtml(null)
+    state.addLinkTo = null;
+    openModal('Add inventory item', '', '<div id="ivLinkBanner"></div>' + fieldsHtml(null)
       + '<div class="iv-row" style="margin-top:12px;justify-content:flex-end;"><button class="iv-btn" id="ivAddCancel" type="button">Cancel</button><button class="iv-go" id="ivAddSave" type="button">Add item</button></div>');
     wireLocTags([]);
+    wireAddSuggest();
     document.getElementById('ivAddCancel').addEventListener('click', closeModal);
     document.getElementById('ivAddSave').addEventListener('click', function () { saveAdd(false); });
   }
+
+  // As the user types an item name, suggest existing products so a second
+  // department can reuse one (pre-filling details + linking) instead of starting
+  // from scratch. Picking a suggestion sets state.addLinkTo so the new row joins
+  // that product's group and rolls up to the warehouse total.
+  function wireAddSuggest() {
+    var nameInput = document.getElementById('ivfName');
+    var field = document.getElementById('ivNameField');
+    if (!nameInput || !field) return;
+    var list = document.createElement('div'); list.className = 'iv-suglist'; list.style.display = 'none';
+    field.appendChild(list);
+    function hide() { list.style.display = 'none'; }
+    function qtyLabel(it) { return it.quantity == null ? '—' : it.quantity; }
+    function render() {
+      var q = (nameInput.value || '').trim().toLowerCase();
+      if (q.length < 2 || state.addLinkTo) { hide(); return; }
+      var seen = {}, matches = [];
+      state.items.forEach(function (it) {
+        if (it.archived) return;
+        if ((String(it.itemName || '') + ' ' + String(it.sku || '')).toLowerCase().indexOf(q) === -1) return;
+        var key = it.productKey || ('name:' + String(it.itemName || '').toLowerCase());
+        if (seen[key]) return; seen[key] = 1;
+        matches.push(it);
+      });
+      matches = matches.slice(0, 7);
+      if (!matches.length) { hide(); return; }
+      list.innerHTML = matches.map(function (it) {
+        var total = it.groupCount > 1 ? it.groupTotal : qtyLabel(it);
+        var where = it.groupCount > 1
+          ? it.groupBreakdown.map(function (b) { return (b.department || 'No dept') + ': ' + (b.quantity == null ? '—' : b.quantity); }).join(' · ')
+          : (it.department || 'No dept') + ': ' + qtyLabel(it);
+        return '<div class="iv-sugitem" data-id="' + esc(it.id) + '"><div class="iv-sugname">' + esc(it.itemName) + (it.sku ? ' · ' + esc(it.sku) : '') + '</div>'
+          + '<div class="iv-sugmeta">' + esc(where) + '  ·  total ' + esc(total) + '</div></div>';
+      }).join('');
+      list.style.display = '';
+      list.querySelectorAll('[data-id]').forEach(function (el) {
+        el.addEventListener('mousedown', function (e) { e.preventDefault(); choose(el.getAttribute('data-id')); });
+      });
+    }
+    function setVal(id, v) { var e = document.getElementById(id); if (e != null && v != null && v !== '') e.value = v; }
+    function choose(id) {
+      var it = state.items.filter(function (x) { return String(x.id) === String(id); })[0];
+      if (!it) return;
+      setVal('ivfName', it.itemName); setVal('ivfCat', it.category); setVal('ivfUnit', it.unitType);
+      setVal('ivfVendor', it.vendor); setVal('ivfSku', it.sku); setVal('ivfLink', it.orderLink);
+      if (it.minStock != null) setVal('ivfMin', it.minStock);
+      state.addLinkTo = it.id;
+      var b = document.getElementById('ivLinkBanner');
+      if (b) {
+        var where = it.groupCount > 1 ? (it.groupCount + ' departments · total ' + it.groupTotal) : ((it.department || 'No dept') + ': ' + qtyLabel(it));
+        b.innerHTML = '<div class="iv-linkbanner"><span>🔗 Linking to existing product “' + esc(it.itemName) + '” (' + esc(where) + '). Now set this row’s <b>department</b> and <b>quantity</b> below.</span><button type="button" id="ivUnlinkAdd" title="Don’t link">✕</button></div>';
+        document.getElementById('ivUnlinkAdd').addEventListener('click', function () { state.addLinkTo = null; b.innerHTML = ''; });
+      }
+      hide();
+    }
+    nameInput.addEventListener('input', render);
+    nameInput.addEventListener('focus', render);
+    nameInput.addEventListener('blur', function () { setTimeout(hide, 150); });
+  }
+
   function saveAdd(force) {
     var item = readFields();
     if (!item.itemName) { alert('Item name is required.'); return; }
-    post({ action: 'add', item: item, force: force }, function (res) {
+    post({ action: 'add', item: item, force: force, linkTo: state.addLinkTo || undefined }, function (res) {
       if (res.duplicate) {
         if (confirm('A similar item already exists:\n\n' + res.duplicate.itemName + ' · ' + (res.duplicate.department || '—') + ' · ' + (res.duplicate.location || '—') + ' (' + (res.duplicate.quantity == null ? '—' : res.duplicate.quantity) + ')\n\nAdd as a separate item anyway?')) saveAdd(true);
         return;
       }
+      state.addLinkTo = null;
       closeModal(); loadData();
     });
   }
