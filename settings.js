@@ -123,9 +123,11 @@
     const moduleOverrides = [
       { key: 'workflowInboundPage', label: 'QA Inbound' },
       { key: 'inboundFlightTrackerPage', label: 'Inbound Flight Tracker' },
+      { key: 'overstockLookupPage', label: 'Overstock Lookup' },
       { key: 'fulfillmentScanPage', label: 'Fulfillment Scan-Out' },
       { key: 'returnsPage', label: 'Returns' },
       { key: 'cycleCountPage', label: 'Cycle Count' },
+      { key: 'inventoryPage', label: 'Inventory' },
       { key: 'assemblyPage', label: 'Assembly Planner' },
       { key: 'assemblyFlightTrackerPage', label: 'Assembly Flight Tracker' },
       { key: 'queuePage', label: 'Pack Builder Queue' },
@@ -189,7 +191,7 @@
             return `
               <div style="background:var(--blue1);border:1px solid var(--blue2);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
                 <span style="font-size:13px;font-weight:600;">${m.label}</span>
-                <select data-override="${m.key}" style="font-size:12px;padding:4px 6px;border-radius:6px;border:1px solid var(--blue2);background:var(--bg);">
+                <select data-override="${m.key}" style="font-size:12px;font-weight:700;padding:4px 6px;border-radius:6px;border:1px solid var(--blue2);background:#fff;color:#0f172a;">
                   <option value="" ${override!==true && override!==false?'selected':''}>Default</option>
                   <option value="true" ${override===true?'selected':''}>✓ Allow</option>
                   <option value="false" ${override===false?'selected':''}>✕ Deny</option>
@@ -208,7 +210,7 @@
         </div>
         <div>
           <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px;">Expiry Date</label>
-          <input type="date" id="drawerTempAdminExpiry" value="${user.tempAdminExpiry ? user.tempAdminExpiry.split('T')[0] : ''}" style="padding:8px;border-radius:8px;border:1px solid var(--blue2);background:var(--bg);font-size:13px;width:100%;">
+          <input type="date" id="drawerTempAdminExpiry" value="${user.tempAdminExpiry ? user.tempAdminExpiry.split('T')[0] : ''}" style="padding:8px;border-radius:8px;border:1px solid var(--blue2);background:#fff;color:#0f172a;font-size:13px;width:100%;">
         </div>
       </div>
 
