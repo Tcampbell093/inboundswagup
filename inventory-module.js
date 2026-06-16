@@ -1077,9 +1077,14 @@
             + '</div></div>';
         }).join('') + '</div>'
       : '<div class="iv-empty" style="padding:12px;">No one is subscribed yet. Add an email below.</div>';
+    var myEmail = (window.hcCurrentUser && window.hcCurrentUser.email) || '';
     var html = warn
       + '<p style="font-size:12.5px;color:#5a6b7d;margin:0 0 10px;">These people get an email (and an in-app alert) the moment any new supply request is submitted — so they don\'t need to keep the Command Tool open.</p>'
       + list
+      + '<div class="iv-sec">Test email delivery</div>'
+      + '<p style="font-size:12.5px;color:#5a6b7d;margin:0 0 8px;">Send a one-off test to confirm emails actually go out — and see the exact reason if they don\'t.</p>'
+      + '<div class="iv-row"><input id="ivnTestTo" class="iv-input" style="flex:1;min-width:180px;" type="email" placeholder="you@example.com" value="' + esc(myEmail) + '"/><button class="iv-btn" id="ivnTest" type="button">Send test email</button></div>'
+      + '<div id="ivnTestResult" style="margin-top:8px;"></div>'
       + '<div class="iv-sec">Add someone</div>'
       + '<div class="iv-grid2">'
       + '<div class="iv-field"><label>Email address</label><input id="ivnEmail" type="email" placeholder="name@bdainc.com"/></div>'
@@ -1087,6 +1092,8 @@
       + '</div>'
       + '<div class="iv-row" style="justify-content:flex-end;"><button class="iv-go" id="ivnAdd" type="button">Add subscriber</button></div>';
     document.getElementById('ivMBody').innerHTML = html;
+
+    wireEmailTest();
 
     document.getElementById('ivnAdd').addEventListener('click', function () {
       var email = (document.getElementById('ivnEmail').value || '').trim();
@@ -1102,6 +1109,37 @@
           if (act === 'toggle') { post({ action: 'subToggle', id: sid, enabled: btn.getAttribute('data-on') === '1' }, function () { openNotifyModal(); }); }
           else if (act === 'remove') { if (confirm('Remove this subscriber? They will stop receiving request emails.')) post({ action: 'subRemove', id: sid }, function () { openNotifyModal(); }); }
         });
+      });
+    });
+  }
+
+  // Send-test-email diagnostic: calls the backend, then shows a plain-English
+  // verdict plus the exact config it used (API key present? which sender?).
+  function wireEmailTest() {
+    var btn = document.getElementById('ivnTest');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var to = (document.getElementById('ivnTestTo').value || '').trim();
+      var out = document.getElementById('ivnTestResult');
+      btn.disabled = true; var old = btn.textContent; btn.textContent = 'Sending…';
+      out.innerHTML = '';
+      post({ action: 'emailTest', to: to || undefined }, function (res) {
+        btn.disabled = false; btn.textContent = old;
+        var d = res.diag || {};
+        var ok = !!res.ok;
+        var warnOnly = ok && d.usingTestSender; // accepted, but limited delivery
+        var bg = ok && !warnOnly ? '#e7f7ef' : warnOnly ? '#fff4e5' : '#fdecec';
+        var bd = ok && !warnOnly ? '#bfe6d2' : warnOnly ? '#f0c890' : '#f3c2c2';
+        var fg = ok && !warnOnly ? '#0a7c4e' : warnOnly ? '#7a4f10' : '#b3261e';
+        var icon = ok && !warnOnly ? '✅' : warnOnly ? '⚠️' : '❌';
+        out.innerHTML = '<div style="background:' + bg + ';border:1px solid ' + bd + ';color:' + fg + ';border-radius:9px;padding:10px 12px;font-size:12.5px;">'
+          + '<div style="font-weight:800;margin-bottom:4px;">' + icon + ' ' + esc(res.reason || (ok ? 'Sent.' : 'Failed.')) + '</div>'
+          + '<div style="color:#5a6b7d;font-size:11.5px;line-height:1.7;">'
+          + 'API key in Netlify: <b>' + (d.apiKeySet ? 'set' : 'NOT set') + '</b><br>'
+          + 'Sending from: <b>' + esc(d.from || '—') + '</b>' + (d.usingTestSender ? ' <i>(Resend test sender — limited delivery)</i>' : '')
+          + (d.to ? '<br>Sent to: <b>' + esc(d.to) + '</b>' : '')
+          + (res.error ? '<br>Raw error: <code>' + esc(res.error) + '</code>' : '')
+          + '</div></div>';
       });
     });
   }
