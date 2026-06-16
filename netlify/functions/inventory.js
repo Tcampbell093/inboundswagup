@@ -327,7 +327,6 @@ function buildRequestEmail(req, token) {
 async function notifyNewRequest(req, caller) {
   let subs;
   try {
-    const callerEmail = norm(caller && caller.email);
     subs = (await pool.query(`SELECT email, unsubscribe_token FROM inventory_subscriptions WHERE enabled=true;`)).rows;
     for (const s of subs) {
       const email = String(s.email || '').trim();
@@ -341,9 +340,8 @@ async function notifyNewRequest(req, caller) {
           );
         } catch (e) { /* hc_notifications may not exist in some envs — ignore */ }
 
-        // Don't email the person who just made the request.
-        if (callerEmail && norm(email) === callerEmail) continue;
-
+        // Email every enabled subscriber, including the person who filed the
+        // request (they asked for a copy of their own requests).
         // Send first — delivery must not depend on the tracking/log table.
         const { subject, html } = buildRequestEmail(req, s.unsubscribe_token);
         const result = await sendEmail(email, subject, html);
