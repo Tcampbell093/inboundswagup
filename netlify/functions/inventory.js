@@ -322,35 +322,42 @@ function buildRequestEmail(req, token) {
 // Email every enabled subscriber about a newly created request. Best-effort:
 // never throws (request creation must succeed regardless). Each subscriber also
 // gets an in-app notification as a fallback for when email delivery isn't set up.
+// Every step is isolated so one subscriber's (or the log table's) failure can
+// never stop the others from being emailed.
 async function notifyNewRequest(req, caller) {
+  let subs;
   try {
     const callerEmail = norm(caller && caller.email);
-    const subs = await pool.query(`SELECT email, unsubscribe_token FROM inventory_subscriptions WHERE enabled=true;`);
-    for (const s of subs.rows) {
+    subs = (await pool.query(`SELECT email, unsubscribe_token FROM inventory_subscriptions WHERE enabled=true;`)).rows;
+    for (const s of subs) {
       const email = String(s.email || '').trim();
       if (!email) continue;
-      // In-app notification fallback (always, even if email fails / isn't set up).
       try {
-        await pool.query(
-          `INSERT INTO hc_notifications (type, target_email, message) VALUES ('inventory_request', $1, $2);`,
-          [email, `New supply request: ${req.itemName}${req.quantity ? ` (×${req.quantity})` : ''} — ${req.urgency || 'Normal'} priority, by ${req.requestedBy || 'unknown'}`]
-        );
-      } catch (e) { /* hc_notifications may not exist in some envs — ignore */ }
-      // Skip emailing the person who just made the request.
-      if (callerEmail && norm(email) === callerEmail) continue;
-      // Dedupe: don't email the same person twice for one request.
-      const claim = await pool.query(
-        `INSERT INTO inventory_request_emails (request_id, email, status) VALUES ($1, $2, 'sending')
-         ON CONFLICT (request_id, email) DO NOTHING RETURNING id;`,
-        [req.id, email]
-      );
-      if (!claim.rows.length) continue;
-      const { subject, html } = buildRequestEmail(req, s.unsubscribe_token);
-      const result = await sendEmail(email, subject, html);
-      await pool.query(
-        `UPDATE inventory_request_emails SET status=$1, error=$2, sent_at=NOW() WHERE request_id=$3 AND email=$4;`,
-        [result.ok ? 'sent' : 'failed', result.ok ? null : (result.error || 'unknown').slice(0, 480), req.id, email]
-      );
+        // In-app notification fallback (always, even if email fails / isn't set up).
+        try {
+          await pool.query(
+            `INSERT INTO hc_notifications (type, target_email, message) VALUES ('inventory_request', $1, $2);`,
+            [email, `New supply request: ${req.itemName}${req.quantity ? ` (×${req.quantity})` : ''} — ${req.urgency || 'Normal'} priority, by ${req.requestedBy || 'unknown'}`]
+          );
+        } catch (e) { /* hc_notifications may not exist in some envs — ignore */ }
+
+        // Don't email the person who just made the request.
+        if (callerEmail && norm(email) === callerEmail) continue;
+
+        // Send first — delivery must not depend on the tracking/log table.
+        const { subject, html } = buildRequestEmail(req, s.unsubscribe_token);
+        const result = await sendEmail(email, subject, html);
+
+        // Log the outcome (best-effort — a logging failure must not hide a send).
+        try {
+          await pool.query(
+            `INSERT INTO inventory_request_emails (request_id, email, status, error) VALUES ($1,$2,$3,$4);`,
+            [req.id, email, result.ok ? 'sent' : 'failed', result.ok ? null : (result.error || 'unknown').slice(0, 480)]
+          );
+        } catch (e) { console.warn('inventory: request-email log write failed:', e.message); }
+      } catch (e) {
+        console.error('inventory notify subscriber error', email, e.message);
+      }
     }
   } catch (e) { console.error('inventory notifyNewRequest error:', e.message); }
 }
@@ -406,7 +413,25 @@ exports.handler = async function handler(event) {
         if (!canManage) return json(403, { error: 'Manager/admin only' });
         const sr = await pool.query(`SELECT id, email, label, enabled, created_by, created_at FROM inventory_subscriptions ORDER BY LOWER(email) ASC;`);
         const subs = sr.rows.map(s => ({ id: s.id, email: s.email, label: s.label || '', enabled: !!s.enabled, createdBy: s.created_by || '', createdAt: s.created_at }));
-        return json(200, { subscriptions: subs, emailConfigured: !!RESEND_API_KEY, role });
+        return json(200, { subscriptions: subs, emailConfigured: emailChannel() !== 'none', channel: emailChannel(), role });
+      }
+
+      // Recent request-email send attempts — the audit trail behind the
+      // notification emails, so an admin can see exactly who was emailed and
+      // whether each send succeeded or failed (and why).
+      if (qs.emailLog === '1' || qs.emailLog === 'true') {
+        if (!canManage) return json(403, { error: 'Manager/admin only' });
+        const lr = await pool.query(
+          `SELECT e.email, e.status, e.error, e.sent_at, r.item_name
+             FROM inventory_request_emails e
+             LEFT JOIN inventory_requests r ON r.id = e.request_id
+            ORDER BY e.sent_at DESC LIMIT 25;`
+        );
+        const entries = lr.rows.map(x => ({
+          email: x.email, status: x.status || '', error: x.error || '',
+          item: x.item_name || '', sentAt: x.sent_at,
+        }));
+        return json(200, { entries, channel: emailChannel(), role });
       }
 
       const includeArchived = qs.includeArchived === '1' || qs.includeArchived === 'true';

@@ -1085,6 +1085,9 @@
       + '<p style="font-size:12.5px;color:#5a6b7d;margin:0 0 8px;">Send a one-off test to confirm emails actually go out — and see the exact reason if they don\'t.</p>'
       + '<div class="iv-row"><input id="ivnTestTo" class="iv-input" style="flex:1;min-width:180px;" type="email" placeholder="you@example.com" value="' + esc(myEmail) + '"/><button class="iv-btn" id="ivnTest" type="button">Send test email</button></div>'
       + '<div id="ivnTestResult" style="margin-top:8px;"></div>'
+      + '<div class="iv-sec">Recent email attempts</div>'
+      + '<p style="font-size:12px;color:#8aa0bb;margin:0 0 6px;">The last request emails the system tried to send (newest first). Confirms requests actually go out — and shows the reason if one failed.</p>'
+      + '<div id="ivnLog" style="font-size:12px;color:#5a6b7d;">Loading…</div>'
       + '<div class="iv-sec">Add someone</div>'
       + '<div class="iv-grid2">'
       + '<div class="iv-field"><label>Email address</label><input id="ivnEmail" type="email" placeholder="name@bdainc.com"/></div>'
@@ -1094,6 +1097,7 @@
     document.getElementById('ivMBody').innerHTML = html;
 
     wireEmailTest();
+    loadEmailLog();
 
     document.getElementById('ivnAdd').addEventListener('click', function () {
       var email = (document.getElementById('ivnEmail').value || '').trim();
@@ -1142,6 +1146,32 @@
           + '</div></div>';
       });
     });
+  }
+
+  // Show the recent request-email send attempts (the audit trail).
+  function loadEmailLog() {
+    var box = document.getElementById('ivnLog');
+    if (!box) return;
+    fetch(API + '?emailLog=1', { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!document.getElementById('ivnLog')) return;
+        if (!res.ok) { box.innerHTML = '<span style="color:#b3261e;">Could not load (' + esc((res.j && res.j.error) || 'error') + ').</span>'; return; }
+        var entries = (res.j && res.j.entries) || [];
+        if (!entries.length) { box.innerHTML = '<span style="color:#8aa0bb;">No request emails have been attempted yet. Create a new request to test.</span>'; return; }
+        box.innerHTML = entries.map(function (e) {
+          var ok = e.status === 'sent';
+          var color = ok ? '#0a7c4e' : '#b3261e';
+          var icon = ok ? '✅' : '❌';
+          var when = e.sentAt ? fmtDateTime(e.sentAt) : '';
+          return '<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid #f2f5f9;">'
+            + '<span><b style="color:' + color + ';">' + icon + ' ' + esc(e.email) + '</b>'
+            + (e.item ? ' <span style="color:#8aa0bb;">· ' + esc(e.item) + '</span>' : '')
+            + (!ok && e.error ? '<div style="color:#b3261e;font-size:11px;margin-top:2px;">' + esc(e.error) + '</div>' : '')
+            + '</span><span style="color:#8aa0bb;white-space:nowrap;">' + esc(when) + '</span></div>';
+        }).join('');
+      })
+      .catch(function (ex) { if (document.getElementById('ivnLog')) box.innerHTML = '<span style="color:#b3261e;">Network error.</span>'; });
   }
 
   // ── Activation ────────────────────────────────────────────
