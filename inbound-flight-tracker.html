@@ -220,6 +220,11 @@
     </div>
   </div>
 
+  <!-- Loaded FIRST so it wraps window.fetch and attaches the signed-in
+       user's Bearer token to /.netlify/functions/ calls. Required because
+       this page runs in an iframe with its own window.fetch (the parent's
+       auth-fetch wrapper does not reach across the frame boundary). -->
+  <script src="auth-fetch.js"></script>
   <script src="inbound-flight-tracker.js"></script>
 </body>
 </html>
