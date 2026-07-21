@@ -254,8 +254,8 @@
             const identityName = (user.user_metadata && (user.user_metadata.full_name || user.user_metadata.name)) || user.email;
             return fetch('/.netlify/functions/users?action=upsert', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: user.id, email: user.email, name: identityName })
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + data.token },
+              body: JSON.stringify({ name: identityName })
             })
             .then(function(r) { return r.json(); })
             .then(function(dbUser) {

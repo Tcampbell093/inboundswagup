@@ -38,6 +38,10 @@ async function safeRows(sql, params = []) {
 }
 
 exports.handler = async function handler(event) {
+  // Always-on authorization: trend feed includes cost/dollar aggregates —
+  // admin/manager only. Read-only; no writes anywhere in this handler.
+  const _a = await require('./_auth').authorize(event, ['admin', 'manager']);
+  if (!_a.ok) return json(_a.code, _a.body);
   if (!process.env.DATABASE_URL) return json(500, { error: 'DATABASE_URL is not configured' });
 
   // Optional window (days). Defaults to ~6 months; capped to keep payload sane.

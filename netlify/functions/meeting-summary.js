@@ -4,6 +4,13 @@
    ========================================================= */
 
 exports.handler = async function(event) {
+  // Always-on authorization: this proxies prompts to Gemini on the company API
+  // key — admin/manager only, so it can't be abused by anonymous callers.
+  const _a = await require('./_auth').authorize(event, ['admin', 'manager']);
+  if (!_a.ok) {
+    return { statusCode: _a.code, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(_a.body) };
+  }
+
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method not allowed' };
   }

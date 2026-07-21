@@ -76,20 +76,44 @@ async function readAll() {
 }
 
 exports.handler = async function handler(event) {
-  const _g = await require('./_auth').guard(event, 'employees');
-  if (!_g.allow) return json(_g.code, _g.body);
   if (!process.env.DATABASE_URL) {
     return json(500, { error: 'DATABASE_URL is not configured' });
   }
 
+  const method = event.httpMethod;
+  // Always-on authorization (independent of the env-flag guard).
+  //   GET  — admin/manager receive full HR records; l1/l2 receive only a
+  //          floor-safe roster; external is denied (403).
+  //   POST — admin/manager only (create/replace/update employee data).
+  const allowedRoles = method === 'POST'
+    ? ['admin', 'manager']
+    : ['admin', 'manager', 'l1', 'l2'];
+  const _a = await require('./_auth').authorize(event, allowedRoles);
+  if (!_a.ok) return json(_a.code, _a.body);
+  const role = _a.caller.effectiveRole || _a.caller.role;
+
   try {
     await ensureSchema();
 
-    if (event.httpMethod === 'GET') {
-      return json(200, await readAll());
+    if (method === 'GET') {
+      const all = await readAll();
+      // Managers/admins get the complete records. L1/L2 get a floor-safe
+      // roster only — name, department, active — with birthday, hourlyRate and
+      // any other HR-sensitive fields stripped out. (No existing floor
+      // consumer reads employee `id`; names key every floor lookup, so `id`
+      // is intentionally omitted.)
+      if (role === 'admin' || role === 'manager') return json(200, all);
+      return json(200, {
+        employees: (all.employees || []).map(e => ({
+          name: e.name,
+          department: e.department,
+          active: e.active,
+        })),
+        updated_at: all.updated_at,
+      });
     }
 
-    if (event.httpMethod === 'POST') {
+    if (method === 'POST') {
       const body = JSON.parse(event.body || '{}');
       const employees = normalizeEmployees(Array.isArray(body.employees) ? body.employees : []);
       const result = await pool.query(
