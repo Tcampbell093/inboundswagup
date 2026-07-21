@@ -156,6 +156,7 @@
         role:      data.role || 'l1',
         overrides: data.overrides || {},
         tempAdmin: data.tempAdmin || false,
+        tempAdminExpiry: data.tempAdminExpiry || null,
         token:     data.token || null,
       };
 
@@ -223,7 +224,8 @@
         window.hcCurrentUser = {
           id: s.id, email: s.email, name: s.name,
           role: s.role || 'l1', overrides: s.overrides || {},
-          tempAdmin: s.tempAdmin || false, token: s.token,
+          tempAdmin: s.tempAdmin || false, tempAdminExpiry: s.tempAdminExpiry || null,
+          token: s.token,
         };
         if (userDisplay) {
           const label = { admin:'Admin', manager:'Manager', l2:'Associate L2', l1:'Associate L1', external:'External' }[s.role] || 'Associate';
@@ -276,6 +278,7 @@
                 role:      dbUser.role || 'l1',
                 overrides: dbUser.overrides || {},
                 tempAdmin: dbUser.tempAdmin || false,
+                tempAdminExpiry: dbUser.tempAdminExpiry || null,
                 suspended: dbUser.suspended || false,
                 token:     data.token,
                 // Carry renewal fields forward so background refresh keeps working.

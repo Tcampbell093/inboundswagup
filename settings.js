@@ -486,7 +486,11 @@
         // this only decides whether to fetch. Managers are intentionally
         // excluded, matching access.js (which hides the Settings nav for them).
         const user = window.hcCurrentUser;
-        if (user && (user.role === 'admin' || user.tempAdmin === true)) {
+        // Active temp-admins count as admin; an EXPIRED grant does not.
+        // Mirrors access.js tempAdminActive() and the server-side _auth check.
+        const activeTempAdmin = !!user && user.tempAdmin === true &&
+          (!user.tempAdminExpiry || new Date(user.tempAdminExpiry).getTime() > Date.now());
+        if (user && (user.role === 'admin' || activeTempAdmin)) {
           loadUsers();
           loadAuditLog();
         }

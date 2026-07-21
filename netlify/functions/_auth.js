@@ -126,23 +126,88 @@ async function requireRole(event, allowedRoles) {
   return caller;
 }
 
+// Strict resolver behind the always-on authorize() path. Fails CLOSED — it is
+// deliberately NOT the fail-open verifyUser() used by guard()/inventory. It
+// requires a valid Identity token, a reachable database, an invited (matching)
+// hc_users row, and a non-suspended user, and it NEVER falls back to Identity
+// app_metadata for the role. Returns a discriminated result:
+//   { kind:'unauthenticated' }  -> 401 (missing/invalid token)
+//   { kind:'db_unavailable' }   -> 503 (DATABASE_URL missing or lookup failed)
+//   { kind:'forbidden' }        -> 403 (valid identity, but not invited/suspended)
+//   { kind:'ok', caller }       -> proceed
+async function strictResolve(event) {
+  const token = bearer(event);
+  if (!token) return { kind: 'unauthenticated' };
+
+  let user;
+  try {
+    const res = await fetch(IDENTITY_USER_URL, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return { kind: 'unauthenticated' };
+    user = await res.json();
+  } catch (_) {
+    return { kind: 'unauthenticated' };
+  }
+  if (!user || !user.email) return { kind: 'unauthenticated' };
+
+  // The database is mandatory here — no Identity-metadata fallback. If we can't
+  // build a pool (DATABASE_URL missing) the caller cannot be authorized.
+  const p = pool();
+  if (!p) return { kind: 'db_unavailable' };
+
+  let row;
+  try {
+    const r = await p.query(
+      'SELECT role, suspended, temp_admin, temp_admin_expiry FROM hc_users WHERE LOWER(email)=LOWER($1)',
+      [user.email]
+    );
+    row = r.rows[0];
+  } catch (e) {
+    // Fail closed: a DB blip must not open the endpoint.
+    console.warn('_auth.authorize: hc_users lookup failed (failing closed):', e.message);
+    return { kind: 'db_unavailable' };
+  }
+
+  // A valid Google identity with no hc_users row is a non-invited user.
+  if (!row) return { kind: 'forbidden' };
+  if (row.suspended) return { kind: 'forbidden' };
+
+  const role = String(row.role || 'l1').trim().toLowerCase();
+  const tempAdmin = !!row.temp_admin;
+  const tempAdminExpiry = row.temp_admin_expiry || null;
+  // Active only when the grant exists AND (has no expiry OR expiry is future).
+  const tempAdminActive =
+    tempAdmin && (!tempAdminExpiry || new Date(tempAdminExpiry).getTime() > Date.now());
+  const effectiveRole = tempAdminActive ? 'admin' : role;
+
+  return {
+    kind: 'ok',
+    caller: {
+      user, email: user.email, role, effectiveRole,
+      tempAdmin, tempAdminExpiry, tempAdminActive, token,
+    },
+  };
+}
+
 // Always-on authorization for P0-hardened endpoints. UNLIKE guard(), this
 // never consults FUNCTIONS_REQUIRE_AUTH / REQUIRE_AUTH_<NAME> — it ALWAYS
-// enforces, so an endpoint that uses it can't be silently left open by a
-// missing environment flag. Returns:
+// enforces — and it fails CLOSED (see strictResolve). Returns:
 //   { ok:true,  caller }               -> proceed (caller always present)
 //   { ok:false, code:401, body:{...} } -> no valid signed-in identity
-//   { ok:false, code:403, body:{...} } -> valid identity, wrong role
+//   { ok:false, code:403, body:{...} } -> valid identity: not invited,
+//                                         suspended, or wrong role
+//   { ok:false, code:503, body:{...} } -> database could not be checked
 // Role checks use the caller's effective role, so an active temp-admin passes
 // wherever 'admin' is allowed and an expired one does not.
 async function authorize(event, allowedRoles) {
-  const caller = await verifyUser(event);
-  if (!caller) return { ok: false, code: 401, body: { error: 'Authentication required' } };
-  const role = caller.effectiveRole || caller.role;
+  const r = await strictResolve(event);
+  if (r.kind === 'unauthenticated') return { ok: false, code: 401, body: { error: 'Authentication required' } };
+  if (r.kind === 'db_unavailable') return { ok: false, code: 503, body: { error: 'Authorization temporarily unavailable' } };
+  if (r.kind === 'forbidden')      return { ok: false, code: 403, body: { error: 'Forbidden' } };
+  const role = r.caller.effectiveRole || r.caller.role;
   if (allowedRoles && allowedRoles.length && !allowedRoles.includes(role)) {
     return { ok: false, code: 403, body: { error: 'Forbidden — insufficient role' } };
   }
-  return { ok: true, caller };
+  return { ok: true, caller: r.caller };
 }
 
 // Is auth enforcement turned on for this endpoint? Controlled by env vars so it

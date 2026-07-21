@@ -64,6 +64,17 @@
     return String(r || '').trim().toLowerCase();
   }
 
+  // Temp-admin access counts only while the grant is active: tempAdmin is true
+  // AND the expiry is either absent or still in the future. An expired grant
+  // must NOT confer administrator navigation. Mirrors the server-side check in
+  // netlify/functions/_auth.js.
+  function tempAdminActive(user) {
+    if (!user || !user.tempAdmin) return false;
+    if (!user.tempAdminExpiry) return true;
+    const t = new Date(user.tempAdminExpiry).getTime();
+    return isFinite(t) && t > Date.now();
+  }
+
   // The first allowed page in a role's list is treated as the default
   // landing page. For external, that's the assembly flight tracker.
   function defaultPageForRole(role) {
@@ -89,8 +100,8 @@
       return result;
     }
 
-    // Temp admin gets full access
-    if (user.tempAdmin) return true;
+    // Active (unexpired) temp admin gets full access
+    if (tempAdminActive(user)) return true;
 
     const role = normRole(user.role);
     const allowed = ROLE_ACCESS[role] || ROLE_ACCESS['l1'];
@@ -105,7 +116,7 @@
   function isReadOnly(page) {
     const user = window.hcCurrentUser;
     if (!user) return false;
-    if (user.tempAdmin) return false;
+    if (tempAdminActive(user)) return false;
     const ro = READ_ONLY[normRole(user.role)] || [];
     return ro.includes(page);
   }
