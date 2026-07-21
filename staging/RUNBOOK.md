@@ -50,21 +50,23 @@ git push -u origin staging
 3. **External providers → enable Google** (login is Google OAuth).
 4. Note the Identity base URL: `https://inboundswagup-staging.netlify.app/.netlify/identity`.
 
-> **Invitations — scope for staging:** Houston's *automated* invite/email
-> integrations stay disabled (leave `RESEND_API_KEY`, `GMAIL_*`, and `NETLIFY_PAT`
-> unset — see `ENVIRONMENT.md`). You **may** use **manual** Netlify Identity
-> invitations from this dashboard, but **only** for staging test accounts you own
-> or control. Those manual invitations may generate Netlify's own invitation
-> emails, which is expected. **Never invite real employees or production users**
-> into staging just to test.
+> **Invitations — scope for staging:** Houston's *automated, app-driven* invite
+> route is turned off by setting **`APP_INVITES_ENABLED=false`** (Step 5), and its
+> email integrations stay disabled (leave `RESEND_API_KEY`, `GMAIL_*` unset).
+> `NETLIFY_PAT` unset alone does **not** disable that route — `APP_INVITES_ENABLED=false`
+> is the real switch. You **may** still use **manual** Netlify Identity invitations
+> from this dashboard, but **only** for staging test accounts you own or control.
+> Those manual invitations may generate Netlify's own invitation emails, which is
+> expected. **Never invite real employees or production users** into staging just to test.
 
 ## Step 5 — Set staging environment variables (names only — see ENVIRONMENT.md)
 In the **staging** site's environment settings, set:
 - `DATABASE_URL` = staging Neon pooled string
 - `IDENTITY_URL` = `https://inboundswagup-staging.netlify.app/.netlify/identity`
+- `APP_INVITES_ENABLED` = `false`  ← disables the app's Settings "Invite user" route
 - `FUNCTIONS_REQUIRE_AUTH` = `true`
 - `WORKFLOW_SYNC_REQUIRE_AUTH` = `true`
-- (optional) `SITE_URL` = staging URL
+- (recommended) `SITE_URL` = staging URL — used for links in any app-generated email
 
 **Leave unset** (keeps integrations off): `RESEND_API_KEY`, `NETLIFY_PAT`, `GMAIL_*`,
 `INVENTORY_NOTIFY_FROM`, `FROM_EMAIL`, `GEMINI_API_KEY`, `ADMIN_EMAIL`, `BACKUP_EMAIL`.

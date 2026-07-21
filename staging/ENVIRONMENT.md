@@ -17,6 +17,7 @@ Isolation model for staging:
 |---|---|---|
 | `DATABASE_URL` | Postgres/Neon connection string | The **staging** Neon pooled connection string. Never the production value. |
 | `IDENTITY_URL` | Netlify Identity (GoTrue) base origin, e.g. `https://<site>/.netlify/identity` | Set to the **staging** site's Identity base so backend token verification uses staging Identity. Unset → defaults to the production URL (do **not** rely on the default in staging). Backend reads this in `_auth.js`, `users.js`, `chat.js`, `notifications.js`, `system-reset.js`, `workflow-sync.js`. |
+| `APP_INVITES_ENABLED` | Kill-switch for the app's Settings "Invite user" route (`users?action=invite`) | **Set to `false` in staging.** Then the invite route returns a clear 403 **before** any `hc_users` write, Resend email, or Netlify Identity user creation. Absent/any other value → enabled (production behavior unchanged). This — **not** `NETLIFY_PAT` — is what gates the app's invite path. |
 
 > The **frontend** (`auth.js`, `login.html`) derives its Identity origin from
 > `window.location.origin` at runtime, so it automatically uses the staging
@@ -42,7 +43,7 @@ they are absent). Do not set them for this phase.
 | Name | Disables |
 |---|---|
 | `RESEND_API_KEY` | Houston's **automated, app-driven** invite / temp-admin-expiry emails |
-| `NETLIFY_PAT` | Houston's **automated** invite path that programmatically creates Netlify Identity users |
+| `NETLIFY_PAT` | A Netlify admin token used by the invite flow to create Identity users. **Note:** leaving it unset does *not* by itself disable the invite route — the route still writes `hc_users`. Use `APP_INVITES_ENABLED=false` (above) to actually stop the app's invite route. |
 | `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `GMAIL_FROM` | Gmail-based notifications |
 | `INVENTORY_NOTIFY_FROM`, `FROM_EMAIL` | Inventory / notification sender addresses |
 | `GEMINI_API_KEY` | `meeting-summary` AI proxy |
@@ -50,9 +51,13 @@ they are absent). Do not set them for this phase.
 
 ### Invitations — what stays off vs. what's allowed
 
-- **Houston's automated invite/email integrations stay DISABLED** in staging: leave
-  `RESEND_API_KEY`, the Gmail credentials (`GMAIL_*`), and `NETLIFY_PAT` **unset**.
-  With these unset, the app's Settings "Invite user" flow and its automated emails do not run.
+- **Set `APP_INVITES_ENABLED=false`** in staging. This is the real switch that
+  turns off the app's Settings "Invite user" route (it returns 403 before any DB
+  write, email, or Identity user creation).
+- **Houston's automated invite/email integrations stay DISABLED** in staging: also
+  leave `RESEND_API_KEY` and the Gmail credentials (`GMAIL_*`) **unset**.
+- `NETLIFY_PAT` unset alone does **not** disable the invite route (the route still
+  writes `hc_users`); `APP_INVITES_ENABLED=false` is what stops it.
 - **Manual Netlify Identity invitations ARE allowed** — but only for **staging test
   accounts you own or control**. Invite them from the staging site's Identity dashboard
   (Identity → Invite users), not through the app.
