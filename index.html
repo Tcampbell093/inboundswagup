@@ -629,7 +629,10 @@
               <h2 style="font-size:18px;font-weight:800;margin:0;">User Management</h2>
               <p style="font-size:13px;color:var(--muted);margin:4px 0 0;">Invite users, assign roles, and manage module access</p>
             </div>
-            <button class="btn" id="settingsInviteBtn" type="button" onclick="window.hcSettings.openInviteModal()">+ Invite User</button>
+            <div style="display:flex;gap:8px;">
+              <button class="btn secondary" id="settingsRefreshBtn" type="button" onclick="window.hcSettings.refresh()">↻ Refresh</button>
+              <button class="btn" id="settingsInviteBtn" type="button" onclick="window.hcSettings.openInviteModal()">+ Invite User</button>
+            </div>
           </div>
           <div id="settingsUserList" style="font-size:14px;color:var(--muted);padding:16px;text-align:center;background:var(--blue1);border-radius:10px;">
             Loading…
