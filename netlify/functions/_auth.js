@@ -157,7 +157,7 @@ async function strictResolve(event) {
   let row;
   try {
     const r = await p.query(
-      'SELECT role, suspended, temp_admin, temp_admin_expiry FROM hc_users WHERE LOWER(email)=LOWER($1)',
+      'SELECT role, suspended, invited, temp_admin, temp_admin_expiry FROM hc_users WHERE LOWER(email)=LOWER($1)',
       [user.email]
     );
     row = r.rows[0];
@@ -169,6 +169,8 @@ async function strictResolve(event) {
 
   // A valid Google identity with no hc_users row is a non-invited user.
   if (!row) return { kind: 'forbidden' };
+  // An explicitly de-invited row (invited === false) is also denied.
+  if (row.invited === false) return { kind: 'forbidden' };
   if (row.suspended) return { kind: 'forbidden' };
 
   const role = String(row.role || 'l1').trim().toLowerCase();
