@@ -27,7 +27,22 @@
       //    sync with ROLE_ACCESS in access.js — if access lists change there,
       //    update them here too. Casing-normalized to match access.js.
       var role = String(data.role || '').trim().toLowerCase();
-      if (!role || role === 'admin') return; // admin sees everything
+
+      // Active temporary administrator = tempAdmin === true AND (no expiry OR a
+      // valid future expiry). Such a user gets ADMIN pre-render visibility, so
+      // we inject no restrictions. Expired/invalid temp-admin does NOT qualify.
+      // Mirrors access.js tempAdminActive() and the server-side _auth check.
+      var tempActive = data.tempAdmin === true && (function () {
+        if (!data.tempAdminExpiry) return true;
+        var t = new Date(data.tempAdminExpiry).getTime();
+        return isFinite(t) && t > Date.now();
+      })();
+
+      if (role === 'admin' || tempActive) return; // full nav — inject nothing
+
+      // Saved per-user module overrides (booleans). Honored during pre-render so
+      // a positive override isn't briefly hidden and a negative one is hidden.
+      var overrides = (data.overrides && typeof data.overrides === 'object') ? data.overrides : {};
 
       var ROLE_ACCESS_PRE = {
         manager: ['homePage','attendancePage','workflowInboundPage','fulfillmentScanPage','returnsPage','cycleCountPage','inventoryPage','errorsPage','assemblyPage','queuePage','assemblyFlightTrackerPage','inboundFlightTrackerPage','overstockLookupPage','sordPage','calendarPage','productivityPage','policyPage','helpPage','importHubPage','historyPage'],
@@ -37,22 +52,29 @@
       };
       var allowed = ROLE_ACCESS_PRE[role] || ROLE_ACCESS_PRE.l1;
 
-      // All pages that exist as nav buttons — anything in this list NOT
-      // in the role's allowed list gets hidden via injected CSS.
+      // Per-page pre-render decision: a saved boolean override wins; otherwise
+      // fall back to the role list. The async access.js guard is the final say.
+      function allowedPre(p) {
+        if (typeof overrides[p] === 'boolean') return overrides[p];
+        return allowed.indexOf(p) !== -1;
+      }
+
+      // All pages that exist as nav buttons — anything NOT allowed (per role or
+      // override) gets hidden via injected CSS.
       var ALL_NAV_PAGES = ['homePage','importHubPage','attendancePage','workflowInboundPage','inboundFlightTrackerPage','overstockLookupPage','fulfillmentScanPage','returnsPage','cycleCountPage','inventoryPage','errorsPage','assemblyPage','queuePage','assemblyFlightTrackerPage','sordPage','calendarPage','productivityPage','policyPage','historyPage','helpPage','settingsPage'];
       var hideRules = ALL_NAV_PAGES
-        .filter(function(p){ return allowed.indexOf(p) === -1; })
+        .filter(function(p){ return !allowedPre(p); })
         .map(function(p){ return '.nav-btn[data-page="'+p+'"]'; })
         .join(',');
       if (hideRules) {
         var navStyle = document.createElement('style');
+        navStyle.id = 'hc-prerender-nav-style';
         navStyle.textContent = hideRules + '{display:none!important;}';
         document.head.appendChild(navStyle);
       }
 
-      // Also pre-hide nav groups that would have no visible buttons under
-      // this role. Without this, you see empty group headers (e.g. an
-      // "OVERVIEW" label with no buttons under it) until applyGuards runs.
+      // Also pre-hide nav groups that would have no visible buttons. Without
+      // this, you see empty group headers until applyGuards runs.
       var GROUPS_TO_PAGES = {
         overview: ['homePage','importHubPage'],
         floor:    ['attendancePage','workflowInboundPage','inboundFlightTrackerPage','overstockLookupPage','fulfillmentScanPage','returnsPage','cycleCountPage','inventoryPage','errorsPage'],
@@ -60,10 +82,11 @@
         ops:      ['sordPage','calendarPage','productivityPage','policyPage','historyPage']
       };
       var emptyGroups = Object.keys(GROUPS_TO_PAGES).filter(function(g){
-        return !GROUPS_TO_PAGES[g].some(function(p){ return allowed.indexOf(p) !== -1; });
+        return !GROUPS_TO_PAGES[g].some(function(p){ return allowedPre(p); });
       });
       if (emptyGroups.length) {
         var groupStyle = document.createElement('style');
+        groupStyle.id = 'hc-prerender-group-style';
         groupStyle.textContent = emptyGroups
           .map(function(g){ return '.nav-group[data-group="'+g+'"]'; })
           .join(',') + '{display:none!important;}';

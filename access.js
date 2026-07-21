@@ -127,6 +127,17 @@
     const user = window.hcCurrentUser;
     if (!user) return;
 
+    // Remove the synchronous pre-render style elements FIRST. They inject
+    // `display:none !important` based only on the saved role and cannot be
+    // overridden by the `hidden`/`aria-hidden` attributes we set below — which
+    // stranded, e.g., an active L1 temp-admin with Settings/Attendance/Queue/
+    // Import Hub permanently invisible even though canAccess() allows them.
+    // Clearing them makes this function the sole authority over nav visibility.
+    ['hc-prerender-nav-style', 'hc-prerender-group-style'].forEach(function(id) {
+      const el = document.getElementById(id);
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    });
+
     // Get all nav buttons with a data-page attribute
     const navBtns = document.querySelectorAll('.nav-btn[data-page]');
 
