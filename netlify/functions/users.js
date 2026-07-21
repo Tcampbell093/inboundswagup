@@ -9,8 +9,21 @@ const NETLIFY_API = 'https://api.netlify.com/api/v1';
 const SITE_ID     = process.env.SITE_ID || 'e0682cfd-2c71-4105-b217-1dc6863a3747';
 const NETLIFY_PAT = process.env.NETLIFY_PAT;
 
-// Identity API uses a different base URL
-const IDENTITY_API = `https://inboundswagup.netlify.app/.netlify/identity`;
+// Identity API base URL — configurable per environment; production is the
+// safe default so unset envs keep production behavior unchanged.
+const IDENTITY_API = process.env.IDENTITY_URL || 'https://inboundswagup.netlify.app/.netlify/identity';
+
+// Public site URL used in outbound links (e.g. the invite email). Production is
+// the safe default so a staging deploy can't accidentally link users to prod.
+const SITE_URL = (process.env.SITE_URL || 'https://inboundswagup.netlify.app').replace(/\/+$/, '');
+
+// App-driven invitations (Settings "Invite user" → hc_users write + Resend email
+// + Netlify Identity user creation) can be disabled per environment. Enabled
+// unless APP_INVITES_ENABLED is explicitly 'false', so production (variable
+// absent) is unchanged. NOTE: this switch — not NETLIFY_PAT — is what gates the
+// app's invite route. Manual invitations via the Netlify Identity dashboard are
+// unaffected by it.
+const APP_INVITES_ENABLED = String(process.env.APP_INVITES_ENABLED || '').toLowerCase() !== 'false';
 
 // Shared, always-on authorization (independent of the env-flag guard).
 const { authorize, verifyIdentity } = require('./_auth');
@@ -120,6 +133,13 @@ exports.handler = async function(event, context) {
     if (!_a.ok) return json(_a.code, _a.body);
     const caller = _a.caller;
 
+    // Environment kill-switch for app-driven invites (e.g. staging sets
+    // APP_INVITES_ENABLED=false). Refuse HERE — before any hc_users write,
+    // Resend email, or Netlify Identity user creation.
+    if (!APP_INVITES_ENABLED) {
+      return json(403, { error: 'App-driven invitations are disabled in this environment (APP_INVITES_ENABLED=false).' });
+    }
+
     const body = JSON.parse(event.body || '{}');
     const { email: rawEmail, role = 'l1', name = '' } = body;
     if (!rawEmail) return json(400, { error: 'Email required' });
@@ -167,7 +187,7 @@ exports.handler = async function(event, context) {
               ${caller.user.email} has invited you to join <strong>Houston Control</strong> as <strong>${roleLabel}</strong>.
             </p>
             <p style="margin-top:20px;">
-              <a href="https://inboundswagup.netlify.app/login.html"
+              <a href="${SITE_URL}/login.html"
                 style="background:#185FA5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;">
                 Sign in with Google →
               </a>
@@ -336,7 +356,7 @@ exports.handler = async function(event, context) {
     let identityUser;
     try {
       const res = await fetch(
-        `https://inboundswagup.netlify.app/.netlify/identity/user`,
+        `${IDENTITY_API}/user`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!res.ok) return json(401, { error: 'Token verification failed' });

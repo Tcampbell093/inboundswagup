@@ -24,7 +24,9 @@ const EDITOR_TTL_MS = 3 * 60 * 1000; // 3 minutes — stale editor entries auto-
 // plumbing ship and be verified on a real tablet BEFORE enforcement is
 // switched on, so a misconfiguration can't lock the whole warehouse out.
 const REQUIRE_AUTH = String(process.env.WORKFLOW_SYNC_REQUIRE_AUTH || '').toLowerCase() === 'true';
-const IDENTITY_USER_URL = 'https://inboundswagup.netlify.app/.netlify/identity/user';
+// Per-environment Identity origin; production URL is the safe default.
+const IDENTITY_URL = process.env.IDENTITY_URL || 'https://inboundswagup.netlify.app/.netlify/identity';
+const IDENTITY_USER_URL = process.env.IDENTITY_USER_URL || (IDENTITY_URL + '/user');
 
 // Verify the caller's Identity token and confirm they're a known, allowed
 // user. Returns the Identity user object on success, or null on any failure.

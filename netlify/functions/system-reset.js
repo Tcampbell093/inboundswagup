@@ -12,7 +12,8 @@ const pool = new Pool({
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : undefined,
 });
 
-const GOTRUE_URL = 'https://inboundswagup.netlify.app/.netlify/identity';
+// Per-environment Identity origin; production URL is the safe default.
+const GOTRUE_URL = process.env.IDENTITY_URL || 'https://inboundswagup.netlify.app/.netlify/identity';
 
 function json(code, body) {
   return {

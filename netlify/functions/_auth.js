@@ -14,9 +14,14 @@
 
 const { Pool } = require('pg');
 
+// Identity origin is configurable per environment via IDENTITY_URL (the
+// GoTrue base, e.g. https://<site>/.netlify/identity). The production URL is
+// the default, so unset envs keep production behavior unchanged. IDENTITY_USER_URL
+// remains supported as an explicit override of just the /user endpoint.
+const IDENTITY_URL =
+  process.env.IDENTITY_URL || 'https://inboundswagup.netlify.app/.netlify/identity';
 const IDENTITY_USER_URL =
-  process.env.IDENTITY_USER_URL ||
-  'https://inboundswagup.netlify.app/.netlify/identity/user';
+  process.env.IDENTITY_USER_URL || (IDENTITY_URL + '/user');
 
 let _pool = null;
 function pool() {
