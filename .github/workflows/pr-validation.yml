@@ -1,8 +1,10 @@
 name: PR validation
 
-# Runs automatically on pull requests targeting main. This is a pure,
-# offline validation gate — it must NEVER need production secrets, connect to a
-# database, change Netlify, send email, call production APIs, or write anywhere.
+# Runs automatically on pull requests targeting main. The application checks are
+# production-isolated with no application external calls: no production secrets,
+# no database access, no Netlify modifications, no emails, no production API
+# calls, no application writes. (GitHub Actions itself uses network for the
+# checkout and Node setup steps — that is infrastructure, not application access.)
 on:
   pull_request:
     branches: [main]
@@ -11,22 +13,28 @@ on:
 permissions:
   contents: read
 
+# Cancel any in-progress run for the same PR so stale/stuck runs don't pile up.
+concurrency:
+  group: pr-validation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   validate:
-    name: Validate PR (offline checks only)
+    name: Validate PR (offline application checks)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout (full history for diff check)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Set up Node.js (LTS)
+      - name: Set up Node.js 24 (LTS)
         uses: actions/setup-node@v4
         with:
-          node-version: '20'   # stable current LTS
+          node-version: '24'   # Node.js 24 LTS
 
-      - name: JavaScript syntax validation
+      - name: JavaScript syntax validation (all tracked JS)
         run: node staging/check-syntax.js
 
       - name: index.html / login.html inline-script parsing

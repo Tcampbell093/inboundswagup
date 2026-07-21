@@ -1,35 +1,62 @@
 /* =========================================================================
-   check-syntax.js — JavaScript syntax validation for the app files covered by
-   the release checks. Runs `node --check` on each. Offline, no deps, no writes.
-   Run: node staging/check-syntax.js
+   check-syntax.js — JavaScript syntax validation for the whole application.
+
+   Discovers EVERY tracked *.js / *.mjs / *.cjs via `git ls-files` (so untracked
+   local artifacts such as node_modules/, .netlify/, and generated version.js
+   are never included), sorts deterministically, and runs `node --check` on each.
+   node --check infers module kind by extension (.mjs = ESM, .cjs/.js = CJS).
+
+   Production-isolated: no network, no database, no secrets, no writes — it only
+   parses source files. Run: node staging/check-syntax.js
    ========================================================================= */
 
 const { execFileSync } = require('child_process');
-const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const list = [];
 
-// All Netlify functions.
-const fnDir = path.join(root, 'netlify', 'functions');
-for (const f of fs.readdirSync(fnDir)) {
-  if (f.endsWith('.js')) list.push(path.join('netlify', 'functions', f));
+// Files that are GENUINELY generated or vendored and cannot be parsed directly.
+// Keep EMPTY unless a real case appears — never silently drop normal Houston
+// application files. Each entry MUST carry a reason. As of this commit every
+// tracked JS/MJS/CJS parses cleanly, so there are no exclusions.
+const EXCLUDE = new Map([
+  // ['path/to/vendor.min.js', 'third-party minified bundle — not directly parseable'],
+]);
+
+// Representative application modules that MUST always be discovered. If any is
+// missing, discovery has regressed (e.g. a broken glob) — fail loudly.
+const MUST_INCLUDE = ['script.js', 'assembly.js', 'queue.js', 'settings.js', 'access.js'];
+
+// ── Discover tracked JS via git, NUL-delimited + deterministically sorted ──
+const out = execFileSync('git', ['ls-files', '-z', '*.js', '*.mjs', '*.cjs'], { cwd: root });
+let files = out.toString('utf8').split('\0').filter(Boolean).sort();
+
+// Regression assertions on the discovered set.
+const missing = MUST_INCLUDE.filter((f) => !files.includes(f));
+if (missing.length) {
+  console.error('Discovery regression — expected modules not found: ' + missing.join(', '));
+  process.exit(1);
 }
-// Core front-end app files exercised by the release checks.
-for (const f of ['auth.js', 'access.js', 'settings.js', 'auth-fetch.js', 'navigation.js']) {
-  if (fs.existsSync(path.join(root, f))) list.push(f);
-}
-// The staging test/check scripts themselves.
-for (const f of fs.readdirSync(path.join(root, 'staging'))) {
-  if (f.endsWith('.js')) list.push(path.join('staging', f));
+if (!files.some((f) => /^netlify\/functions\/.+\.js$/.test(f))) {
+  console.error('Discovery regression — no Netlify function was discovered.');
+  process.exit(1);
 }
 
+// Apply documented exclusions.
+const excluded = [];
+files = files.filter((f) => { if (EXCLUDE.has(f)) { excluded.push(f); return false; } return true; });
+
+// Must discover something.
+if (files.length === 0) {
+  console.error('No JavaScript files discovered — aborting (expected many).');
+  process.exit(1);
+}
+
+// ── Validate each file ──
 let fail = 0;
-for (const rel of list) {
+for (const rel of files) {
   try {
     execFileSync(process.execPath, ['--check', path.join(root, rel)], { stdio: 'pipe' });
-    console.log('OK    ' + rel);
   } catch (e) {
     fail++;
     console.log('FAIL  ' + rel);
@@ -37,5 +64,12 @@ for (const rel of list) {
     console.log('      ' + msg.split('\n').slice(0, 3).join('\n      '));
   }
 }
-console.log('\n' + (fail === 0 ? 'SYNTAX OK (' + list.length + ' files)' : fail + ' FILE(S) FAILED SYNTAX'));
+
+if (excluded.length) {
+  console.log('Excluded (documented): ' + excluded.map((f) => f + ' — ' + EXCLUDE.get(f)).join('; '));
+} else {
+  console.log('Exclusions: none.');
+}
+console.log('Checked ' + files.length + ' tracked JS file(s).');
+console.log(fail === 0 ? 'SYNTAX OK' : fail + ' FILE(S) FAILED SYNTAX');
 if (fail) process.exit(1);
