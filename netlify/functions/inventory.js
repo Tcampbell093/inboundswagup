@@ -324,10 +324,12 @@ function buildRequestEmail(req, token) {
 // gets an in-app notification as a fallback for when email delivery isn't set up.
 // Every step is isolated so one subscriber's (or the log table's) failure can
 // never stop the others from being emailed.
-async function notifyNewRequest(req, caller) {
+async function notifyNewRequest(req) {
   let subs;
   try {
-    const callerEmail = norm(caller && caller.email);
+    // Email EVERY enabled subscriber about the new request — including the
+    // person who submitted it, if they are subscribed. (Previously the
+    // requester was excluded from their own request's email.)
     subs = (await pool.query(`SELECT email, unsubscribe_token FROM inventory_subscriptions WHERE enabled=true;`)).rows;
     for (const s of subs) {
       const email = String(s.email || '').trim();
@@ -340,9 +342,6 @@ async function notifyNewRequest(req, caller) {
             [email, `New supply request: ${req.itemName}${req.quantity ? ` (×${req.quantity})` : ''} — ${req.urgency || 'Normal'} priority, by ${req.requestedBy || 'unknown'}`]
           );
         } catch (e) { /* hc_notifications may not exist in some envs — ignore */ }
-
-        // Don't email the person who just made the request.
-        if (callerEmail && norm(email) === callerEmail) continue;
 
         // Send first — delivery must not depend on the tracking/log table.
         const { subject, html } = buildRequestEmail(req, s.unsubscribe_token);
@@ -732,7 +731,7 @@ exports.handler = async function handler(event) {
       );
       const created = reqToObj(r.rows[0]);
       // Notify subscribers (email + in-app). Best-effort — never blocks the request.
-      await notifyNewRequest(created, caller);
+      await notifyNewRequest(created);
       return json(200, { ok: true, request: created });
     }
 

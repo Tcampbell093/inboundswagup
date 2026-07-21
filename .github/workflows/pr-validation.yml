@@ -47,6 +47,7 @@ jobs:
           node staging/external-nav.test.js
           node staging/prerender-nav.test.js
           node staging/settings-reload.test.js
+          node staging/inventory-requester-email.test.js
 
       - name: Whitespace / conflict-marker check (PR diff)
         run: |
