@@ -3004,10 +3004,12 @@
         email: user.email || ''
       }, '*');
     }
-    if (user.role === 'external') {
-      const nav = document.querySelector('[data-page="assemblyFlightTrackerPage"]');
-      if (nav) nav.click();
-    }
+    // NOTE: This bridge only synchronizes the role into the iframe. It must NOT
+    // perform any navigation. Landing an External user on their default page
+    // (Assembly Flight Tracker) is handled ONCE by the access/navigation system
+    // (see access.js guardCurrentPage). Clicking a nav button here caused
+    // External users to be yanked back to Assembly on every timer/iframe-load
+    // tick, so they could never stay on Inbound Flight Tracker or Overstock.
   }
   setTimeout(sendRoleToIframe, 800);
   const _ftIframe = document.getElementById('assemblyFlightTrackerIframe');

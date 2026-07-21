@@ -165,21 +165,38 @@
   // saved-state restore), redirect them to their role's default landing
   // page — NOT always 'homePage'. External users have no homePage access,
   // so falling back to 'homePage' would leave them stranded.
+  // Read the page the app is currently showing. Prefer the URL hash; if there
+  // is none (e.g. initial authenticated load), fall back to the DOM's active
+  // page. Returns '' when no destination can be determined ("missing").
+  function currentDestination() {
+    const hash = (window.location.hash || '').replace('#', '');
+    if (hash) return hash;
+    const active = document.querySelector('.page.active');
+    return (active && active.id) ? active.id : '';
+  }
+
   function guardCurrentPage() {
     const user = window.hcCurrentUser;
     if (!user) return;
-    const hash = window.location.hash.replace('#', '');
-    if (!hash) return; // empty hash: let the app's default-load logic decide
-    if (canAccess(hash)) return; // allowed — nothing to do
 
-    const dest = defaultPageForRole(user.role);
-    console.warn('HC Access: blocked', hash, '→ redirecting to', dest);
-    // Use activatePage if available so the click/saved state stays in sync;
+    const dest = currentDestination();
+
+    // Only redirect when the destination is MISSING or UNAUTHORIZED. An allowed
+    // destination (including an External user's Inbound Flight Tracker or
+    // Overstock Lookup) is left exactly where it is — never bounced back to the
+    // role default.
+    if (dest && canAccess(dest)) return;
+
+    const target = defaultPageForRole(user.role);
+    if (dest === target) return; // already at the default — avoid any loop
+    console.warn('HC Access:', dest ? ('blocked ' + dest) : 'no destination',
+                 '→ redirecting to', target);
+    // Use goToPage if available so the click/saved state stays in sync;
     // fall back to hash mutation otherwise.
     if (typeof window.goToPage === 'function') {
-      window.goToPage(dest);
+      window.goToPage(target);
     } else {
-      window.location.hash = dest;
+      window.location.hash = target;
     }
   }
 
