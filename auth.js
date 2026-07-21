@@ -7,7 +7,13 @@
 
   const USER_KEY    = 'qaWorkflowCurrentUserV2';
   const HC_USER_KEY = 'hcAuthUser';
-  const API_URL     = 'https://inboundswagup.netlify.app/.netlify/identity';
+  // Netlify Identity is served from the site's own origin, so deriving the base
+  // from the current origin isolates each environment (production, staging,
+  // deploy previews) automatically. Production served at its canonical origin
+  // yields the same URL as before; the literal production origin is the fallback.
+  const API_URL     = ((typeof window !== 'undefined' && window.location && window.location.origin)
+    ? window.location.origin
+    : 'https://inboundswagup.netlify.app') + '/.netlify/identity';
 
   window.hcCurrentUser = null;
 

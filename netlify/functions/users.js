@@ -9,8 +9,9 @@ const NETLIFY_API = 'https://api.netlify.com/api/v1';
 const SITE_ID     = process.env.SITE_ID || 'e0682cfd-2c71-4105-b217-1dc6863a3747';
 const NETLIFY_PAT = process.env.NETLIFY_PAT;
 
-// Identity API uses a different base URL
-const IDENTITY_API = `https://inboundswagup.netlify.app/.netlify/identity`;
+// Identity API base URL — configurable per environment; production is the
+// safe default so unset envs keep production behavior unchanged.
+const IDENTITY_API = process.env.IDENTITY_URL || 'https://inboundswagup.netlify.app/.netlify/identity';
 
 // Shared, always-on authorization (independent of the env-flag guard).
 const { authorize, verifyIdentity } = require('./_auth');
@@ -336,7 +337,7 @@ exports.handler = async function(event, context) {
     let identityUser;
     try {
       const res = await fetch(
-        `https://inboundswagup.netlify.app/.netlify/identity/user`,
+        `${IDENTITY_API}/user`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!res.ok) return json(401, { error: 'Token verification failed' });

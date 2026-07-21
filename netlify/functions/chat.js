@@ -22,7 +22,8 @@ const pool = new Pool({
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : undefined,
 });
 
-const IDENTITY_URL = 'https://inboundswagup.netlify.app/.netlify/identity';
+// Per-environment Identity origin; production URL is the safe default.
+const IDENTITY_URL = process.env.IDENTITY_URL || 'https://inboundswagup.netlify.app/.netlify/identity';
 const MAX_BODY = 4000; // characters per message
 
 function json(code, body) {
