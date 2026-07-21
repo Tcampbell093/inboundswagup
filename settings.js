@@ -38,6 +38,12 @@
   let allUsers = [];
   let selectedUserId = null;
 
+  // Request guards: prevent overlapping fetches and ignore stale responses.
+  let usersInFlight = false;
+  let usersSeq = 0;
+  let auditInFlight = false;
+  let auditSeq = 0;
+
   // ── DOM refs ──────────────────────────────────────────────
   function el(id) { return document.getElementById(id); }
 
@@ -45,16 +51,22 @@
   async function loadUsers() {
     const list = el('settingsUserList');
     if (!list) return;
+    if (usersInFlight) return;              // overlap prevention: one at a time
+    usersInFlight = true;
+    const seq = ++usersSeq;                 // token to detect superseded responses
     list.innerHTML = '<div style="text-align:center;padding:24px;color:var(--muted);">Loading users…</div>';
 
     try {
       const res = await fetch(`${USERS_API}?action=list`, { headers: authHeaders() });
       const data = await res.json();
+      if (seq !== usersSeq) return;         // a newer load started — ignore this stale result
       if (!res.ok) throw new Error(data.error || 'Failed to load users');
       allUsers = data.users || [];
       renderUserTable();
     } catch(e) {
-      list.innerHTML = `<div style="text-align:center;padding:24px;color:#e55;">Error: ${stEsc(e.message)}</div>`;
+      if (seq === usersSeq) list.innerHTML = `<div style="text-align:center;padding:24px;color:#e55;">Error: ${stEsc(e.message)}</div>`;
+    } finally {
+      usersInFlight = false;
     }
   }
 
@@ -389,11 +401,15 @@
   async function loadAuditLog() {
     const logEl = el('settingsAuditLog');
     if (!logEl) return;
+    if (auditInFlight) return;              // overlap prevention: one at a time
+    auditInFlight = true;
+    const seq = ++auditSeq;                 // token to detect superseded responses
     logEl.innerHTML = '<div style="text-align:center;padding:16px;color:var(--muted);">Loading…</div>';
 
     try {
       const res = await fetch(`${USERS_API}?action=audit`, { headers: authHeaders() });
       const data = await res.json();
+      if (seq !== auditSeq) return;         // a newer load started — ignore this stale result
       if (!res.ok) throw new Error(data.error || 'Failed to load audit log');
 
       if (!data.entries?.length) {
@@ -426,7 +442,9 @@
         </table>
       `;
     } catch(e) {
-      logEl.innerHTML = `<div style="text-align:center;padding:16px;color:#e55;">Error: ${stEsc(e.message)}</div>`;
+      if (seq === auditSeq) logEl.innerHTML = `<div style="text-align:center;padding:16px;color:#e55;">Error: ${stEsc(e.message)}</div>`;
+    } finally {
+      auditInFlight = false;
     }
   }
 
@@ -476,27 +494,68 @@
   }
 
   // ── Auto-load when Settings page becomes active ───────────
+  // Settings + user administration are administrator-only. Active temp-admins
+  // count as admin; the server (users.js) is the real gate — this only decides
+  // whether to fetch. Managers are intentionally excluded, matching access.js.
+  function canAdminSettings() {
+    const user = window.hcCurrentUser;
+    if (!user) return false;
+    // Active temp-admins count as admin; an EXPIRED grant does not. Mirrors
+    // access.js tempAdminActive() and the server-side _auth check.
+    const activeTempAdmin = user.tempAdmin === true &&
+      (!user.tempAdminExpiry || new Date(user.tempAdminExpiry).getTime() > Date.now());
+    return user.role === 'admin' || activeTempAdmin;
+  }
+
+  // Load everything the Settings page shows. Called ONCE per open, and by the
+  // explicit Refresh button. The per-request guards in loadUsers/loadAuditLog
+  // prevent overlapping fetches.
+  function loadSettingsData() {
+    renderBuildInfo();
+    if (canAdminSettings()) {
+      loadUsers();
+      loadAuditLog();
+    }
+  }
+
+  // Public: force a refresh of the user list + audit log (Refresh button).
+  function refresh() {
+    if (!canAdminSettings()) return;
+    loadUsers();
+    loadAuditLog();
+  }
+
+  // Track whether Settings is currently the active page, so we load its data
+  // only on the inactive → active transition (once per open) and NEVER on
+  // unrelated class mutations. The previous implementation observed
+  // document.body with subtree:true, so ANY class change anywhere in the app
+  // re-fetched users + audit while Settings was open — causing the repeated
+  // collapse / expand / layout flashing.
+  let settingsActive = false;
+
+  function syncSettingsActive() {
+    const page = el('settingsPage');
+    const isActive = !!page && page.classList.contains('active');
+    if (isActive && !settingsActive) {
+      settingsActive = true;
+      loadSettingsData();          // load exactly once on open
+    } else if (!isActive && settingsActive) {
+      settingsActive = false;      // reset so the next open loads once again
+    }
+    // isActive && settingsActive → already open and loaded: do nothing.
+  }
+
   function watchForSettingsPage() {
-    const observer = new MutationObserver(function() {
-      const page = document.getElementById('settingsPage');
-      if (page && page.classList.contains('active')) {
-        renderBuildInfo();
-        // Settings + user administration are administrator-only. Active
-        // temp-admins count as admin; the server (users.js) is the real gate —
-        // this only decides whether to fetch. Managers are intentionally
-        // excluded, matching access.js (which hides the Settings nav for them).
-        const user = window.hcCurrentUser;
-        // Active temp-admins count as admin; an EXPIRED grant does not.
-        // Mirrors access.js tempAdminActive() and the server-side _auth check.
-        const activeTempAdmin = !!user && user.tempAdmin === true &&
-          (!user.tempAdminExpiry || new Date(user.tempAdminExpiry).getTime() > Date.now());
-        if (user && (user.role === 'admin' || activeTempAdmin)) {
-          loadUsers();
-          loadAuditLog();
-        }
-      }
-    });
-    observer.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['class'] });
+    const page = el('settingsPage');
+    if (!page) return;
+    // Observe ONLY the Settings page element's own class attribute — not
+    // document.body / subtree. Class changes elsewhere can no longer trigger
+    // a Settings reload.
+    const observer = new MutationObserver(syncSettingsActive);
+    observer.observe(page, { attributes: true, attributeFilter: ['class'] });
+    // Handle the case where Settings is already active at init (restored from
+    // saved state / hash) so it still loads once.
+    syncSettingsActive();
   }
 
   // ── Language toggle (Settings card) ───────────────────────
@@ -528,6 +587,7 @@
   window.hcSettings = {
     loadUsers,
     loadAuditLog,
+    refresh,
     openUserDrawer,
     saveUser,
     deleteUser,
