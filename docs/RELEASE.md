@@ -1,0 +1,38 @@
+# Houston Control — release flow
+
+The approved path from change to production. Each arrow is a gate; do not skip.
+
+```
+feature branch
+   → draft PR (base: main)
+   → automated checks (GitHub Actions: PR validation)
+   → staging deployment (staging branch → inboundswagup-staging)
+   → manual staging smoke test
+   → explicit merge authorization (maintainer)
+   → production deployment (merge to main → inboundswagup)
+   → production smoke test
+```
+
+## Steps
+
+1. **Feature branch** — branch from the current `main` (`agent/...` or `claude/...`). Never commit to `main` directly.
+2. **Draft PR** — open a draft PR targeting `main`. Fill in the checklist in the PR template.
+3. **Automated checks** — the `PR validation` workflow (`.github/workflows/pr-validation.yml`) runs automatically on the PR. It is **offline only**: it uses no production secrets, makes no database connection, no Netlify change, sends no email, makes no production API calls, and performs no writes. It runs:
+   - JavaScript syntax validation (`staging/check-syntax.js`)
+   - `index.html` / `login.html` inline-script parsing (`staging/check-inline-scripts.js`)
+   - staging regression tests (`staging/*.test.js`)
+   - a whitespace / conflict-marker check on the PR diff (`git diff --check`)
+   All of these are runnable locally with `npm test`.
+4. **Staging deployment** — fast-forward the `staging` branch to the reviewed PR head commit (only when it is a clean fast-forward; never force-push). The isolated `inboundswagup-staging` Netlify site auto-deploys from `staging`. Staging has its own database and Identity — no production data is touched.
+5. **Manual staging smoke test** — exercise the affected flows on the staging site while signed in with staging test accounts (see `staging/RUNBOOK.md`). Write/delete testing is safe on staging.
+6. **Explicit merge authorization** — a maintainer explicitly authorizes the production merge. Verify: PR open & mergeable, PR head == reviewed commit, base `main` == expected known-good commit, `staging` == reviewed commit.
+7. **Production deployment** — merge the PR into `main` with a normal GitHub merge commit. Merging `main` triggers Netlify's own production deploy of `inboundswagup`. No manual `--prod` deploy is run.
+8. **Production smoke test** — after the production deploy completes, verify the affected flow on `https://inboundswagup.netlify.app`. If anything regresses, revert with `git revert <merge-sha>` via a new PR.
+
+## Guarantees
+- The CI gate never has access to secrets/production. It only parses and runs offline tests.
+- Staging and production are fully isolated (separate Netlify sites, separate Neon databases, separate Netlify Identity).
+- `main` is only advanced through reviewed, authorized merges.
+
+## Branch protection
+Recommended `main` branch-protection settings are documented in the P1B PR description for separate authorization. They are **not** applied by this change.

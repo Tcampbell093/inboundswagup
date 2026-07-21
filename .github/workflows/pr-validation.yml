@@ -1,0 +1,46 @@
+name: PR validation
+
+# Runs automatically on pull requests targeting main. This is a pure,
+# offline validation gate — it must NEVER need production secrets, connect to a
+# database, change Netlify, send email, call production APIs, or write anywhere.
+on:
+  pull_request:
+    branches: [main]
+
+# Read-only token; no secrets are used anywhere in this workflow.
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate PR (offline checks only)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for diff check)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'   # stable current LTS
+
+      - name: JavaScript syntax validation
+        run: node staging/check-syntax.js
+
+      - name: index.html / login.html inline-script parsing
+        run: node staging/check-inline-scripts.js
+
+      - name: Staging regression tests
+        run: |
+          node staging/identity-origin.test.js
+          node staging/invite-disabled.test.js
+          node staging/external-nav.test.js
+          node staging/prerender-nav.test.js
+          node staging/settings-reload.test.js
+
+      - name: Whitespace / conflict-marker check (PR diff)
+        run: |
+          git fetch origin "${GITHUB_BASE_REF}" --depth=1
+          git diff --check "origin/${GITHUB_BASE_REF}...HEAD"
