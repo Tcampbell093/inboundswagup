@@ -38,8 +38,15 @@ async function ensureTable() {
 }
 
 exports.handler = async function(event) {
-  const _g = await require('./_auth').guard(event, 'flight-tracker-photos');
-  if (!_g.allow) return json(_g.code, _g.body);
+  // Always-on authorization. Every method needs a valid signed-in user.
+  // GET/POST are open to any Houston role (incl. external stakeholders who
+  // upload confirmation photos); DELETE is restricted to admin/manager and
+  // enforced HERE on the server (not just in the browser).
+  const allowedRoles = event.httpMethod === 'DELETE'
+    ? ['admin', 'manager']
+    : ['admin', 'manager', 'l1', 'l2', 'external'];
+  const _a = await require('./_auth').authorize(event, allowedRoles);
+  if (!_a.ok) return json(_a.code, _a.body);
   await ensureTable();
 
   // GET with ?id=123 — fetch actual image data for a specific photo
@@ -106,7 +113,8 @@ exports.handler = async function(event) {
     return json(200, { ok: true, id: result.rows[0].id, taken_at: result.rows[0].taken_at });
   }
 
-  // DELETE — remove a specific photo (admin/manager only - enforced client side for now)
+  // DELETE — remove a specific photo. Restricted to admin/manager and
+  // enforced server-side by the authorize() check at the top of this handler.
   if (event.httpMethod === 'DELETE') {
     const id = event.queryStringParameters?.id;
     if (!id) return json(400, { error: 'id required' });

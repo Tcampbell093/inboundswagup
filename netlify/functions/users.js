@@ -12,6 +12,12 @@ const NETLIFY_PAT = process.env.NETLIFY_PAT;
 // Identity API uses a different base URL
 const IDENTITY_API = `https://inboundswagup.netlify.app/.netlify/identity`;
 
+// Shared, always-on authorization (independent of the env-flag guard).
+const { authorize, verifyIdentity } = require('./_auth');
+
+// Roles a caller is allowed to assign. Any submitted role must be in this set.
+const VALID_ROLES = ['admin', 'manager', 'l2', 'l1', 'external'];
+
 function json(code, body) {
   return {
     statusCode: code,
@@ -46,50 +52,12 @@ async function ensureNetlifyIdentityUser(context, email) {
   }
 }
 
-// ── Verify caller is admin or manager ────────────────────────
-async function verifyAdmin(event) {
-  const auth = event.headers['authorization'] || event.headers['Authorization'] || '';
-  const token = auth.replace('Bearer ', '').trim();
-  if (!token) {
-    console.error('HC Users: no authorization token in request');
-    return null;
-  }
-
-  const res = await fetch(
-    `https://inboundswagup.netlify.app/.netlify/identity/user`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!res.ok) {
-    console.error('HC Users: token verification failed', res.status);
-    return null;
-  }
-  const user = await res.json();
-
-  // ── Check role from hc_users (Neon) first — source of truth ──
-  let role = 'l1';
-  try {
-    const dbRes = await pool.query('SELECT role FROM hc_users WHERE LOWER(email)=LOWER($1)', [user.email]);
-    if (dbRes.rows.length > 0 && dbRes.rows[0].role) {
-      role = dbRes.rows[0].role;
-    } else {
-      // Fall back to Netlify Identity app_metadata
-      role = user?.app_metadata?.role
-          || (user?.app_metadata?.roles && user.app_metadata.roles[0])
-          || 'l1';
-    }
-  } catch(e) {
-    // DB unavailable — fall back to Identity metadata
-    role = user?.app_metadata?.role
-        || (user?.app_metadata?.roles && user.app_metadata.roles[0])
-        || 'l1';
-  }
-
-  if (!['admin', 'manager'].includes(role)) {
-    console.error('HC Users: insufficient role', role, 'for', user.email);
-    return null;
-  }
-  return { user, role, token };
-}
+// Authorization is delegated to the shared always-on helper:
+//   reads  (list, audit) → authorize(event, ['admin','manager'])
+//   writes (invite, delete, update, and all account mutations) → ['admin']
+// This removes the old verifyAdmin(), which allowed managers to mutate
+// accounts — the manager→admin escalation path. Active temp-admins are
+// treated as admin by the shared helper; expired ones are not.
 
 // ── Write audit log entry ─────────────────────────────────────
 async function writeAudit(actor, target, action, detail) {
@@ -120,8 +88,9 @@ exports.handler = async function(event, context) {
 
   // ── GET /users?action=list ─────────────────────────────────
   if (method === 'GET' && action === 'list') {
-    const caller = await verifyAdmin(event);
-    if (!caller) return json(401, { error: 'Unauthorized' });
+    const _a = await authorize(event, ['admin', 'manager']);
+    if (!_a.ok) return json(_a.code, _a.body);
+    const caller = _a.caller;
 
     // Read users directly from Neon — no Netlify API needed
     const result = await pool.query(
@@ -147,12 +116,14 @@ exports.handler = async function(event, context) {
 
   // ── POST /users?action=invite ──────────────────────────────
   if (method === 'POST' && action === 'invite') {
-    const caller = await verifyAdmin(event);
-    if (!caller) return json(401, { error: 'Unauthorized' });
+    const _a = await authorize(event, ['admin']);
+    if (!_a.ok) return json(_a.code, _a.body);
+    const caller = _a.caller;
 
     const body = JSON.parse(event.body || '{}');
     const { email: rawEmail, role = 'l1', name = '' } = body;
     if (!rawEmail) return json(400, { error: 'Email required' });
+    if (!VALID_ROLES.includes(role)) return json(400, { error: 'Invalid role' });
     // Normalize to lowercase so it matches the email Google returns at sign-in
     // (Google sends lowercase). Storing/looking up mixed-case caused invited
     // users to read as "not invited" when they logged in.
@@ -225,8 +196,9 @@ exports.handler = async function(event, context) {
   // We deliberately do NOT delete the underlying Netlify Identity user —
   // re-inviting them is the recovery path if this was a mistake.
   if (method === 'POST' && action === 'delete') {
-    const caller = await verifyAdmin(event);
-    if (!caller) return json(401, { error: 'Unauthorized' });
+    const _a = await authorize(event, ['admin']);
+    if (!_a.ok) return json(_a.code, _a.body);
+    const caller = _a.caller;
 
     let body;
     try { body = JSON.parse(event.body || '{}'); } catch { return json(400, { error: 'Invalid JSON' }); }
@@ -257,11 +229,17 @@ exports.handler = async function(event, context) {
 
   // ── POST /users?action=update ──────────────────────────────
   if (method === 'POST' && action === 'update') {
-    const caller = await verifyAdmin(event);
-    if (!caller) return json(401, { error: 'Unauthorized' });
+    const _a = await authorize(event, ['admin']);
+    if (!_a.ok) return json(_a.code, _a.body);
+    const caller = _a.caller;
 
     const body = JSON.parse(event.body || '{}');
     const { userId, role, overrides, suspended, tempAdmin, tempAdminExpiry, targetEmail } = body;
+
+    // Validate any submitted role against the supported allowlist.
+    if (role !== undefined && !VALID_ROLES.includes(role)) {
+      return json(400, { error: 'Invalid role' });
+    }
 
     // userId can be email or id — find the user
     const email = targetEmail || userId;
@@ -297,13 +275,17 @@ exports.handler = async function(event, context) {
 
   // ── POST /users?action=upsert — called on every login ───────
   if (method === 'POST' && action === 'upsert') {
-    let body;
-    try { body = JSON.parse(event.body || '{}'); } catch { return json(400, { error: 'Invalid JSON' }); }
-    const { id, email: rawEmail, name } = body;
-    if (!rawEmail) return json(400, { error: 'email required' });
-    // Google returns lowercase; match case-insensitively so an invite stored
-    // with different capitalization still authorizes the user.
-    const email = String(rawEmail).trim().toLowerCase();
+    // Identity MUST come from the verified token, never from the request body.
+    // A caller can only look up / touch their OWN login record.
+    const ident = await verifyIdentity(event);
+    if (!ident) return json(401, { error: 'Authentication required' });
+    const email = String(ident.email).trim().toLowerCase();
+
+    // The only body field we honor is the display name — and it only ever
+    // writes the caller's own row. id/email in the body are ignored.
+    let body = {};
+    try { body = JSON.parse(event.body || '{}'); } catch { body = {}; }
+    const name = body && body.name ? String(body.name) : '';
 
     // Add invited column if missing
     await pool.query(`ALTER TABLE hc_users ADD COLUMN IF NOT EXISTS invited BOOLEAN DEFAULT true`);
@@ -382,8 +364,8 @@ exports.handler = async function(event, context) {
 
   // ── GET /users?action=audit ────────────────────────────────
   if (method === 'GET' && action === 'audit') {
-    const caller = await verifyAdmin(event);
-    if (!caller) return json(401, { error: 'Unauthorized' });
+    const _a = await authorize(event, ['admin', 'manager']);
+    if (!_a.ok) return json(_a.code, _a.body);
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS access_audit (

@@ -17,6 +17,10 @@ function json(code, body) {
 }
 
 exports.handler = async function(event) {
+  // Always-on authentication: internal PO/operational data (incl. worker
+  // names). Available to admin/manager/l1/l2; external is excluded.
+  const _a = await require('./_auth').authorize(event, ['admin', 'manager', 'l1', 'l2']);
+  if (!_a.ok) return json(_a.code, _a.body);
   if (event.httpMethod !== 'GET') return json(405, { error: 'GET only' });
   const po = ((event.queryStringParameters || {}).po || '').trim();
   if (!po) return json(400, { error: 'po param required' });

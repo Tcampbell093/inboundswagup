@@ -102,8 +102,10 @@ async function readAll() {
 }
 
 exports.handler = async function handler(event) {
-  const _g = await require('./_auth').guard(event, 'attendance');
-  if (!_g.allow) return json(_g.code, _g.body);
+  // Always-on authorization: attendance records (marks, demerits) are
+  // HR/discipline data — admin/manager only for both read and write.
+  const _a = await require('./_auth').authorize(event, ['admin', 'manager']);
+  if (!_a.ok) return json(_a.code, _a.body);
   if (!process.env.DATABASE_URL) {
     return json(500, { error: 'DATABASE_URL is not configured' });
   }
