@@ -2,6 +2,12 @@
   "name": "warehouse-ops-hub",
   "private": true,
   "version": "1.0.0",
+  "scripts": {
+    "test:syntax": "node staging/check-syntax.js",
+    "test:inline": "node staging/check-inline-scripts.js",
+    "test:staging": "node staging/identity-origin.test.js && node staging/invite-disabled.test.js && node staging/external-nav.test.js && node staging/prerender-nav.test.js && node staging/settings-reload.test.js",
+    "test": "npm run test:syntax && npm run test:inline && npm run test:staging"
+  },
   "dependencies": {
     "jszip": "^3.10.1",
     "nodemailer": "^6.9.14",

@@ -1,0 +1,54 @@
+name: PR validation
+
+# Runs automatically on pull requests targeting main. The application checks are
+# production-isolated with no application external calls: no production secrets,
+# no database access, no Netlify modifications, no emails, no production API
+# calls, no application writes. (GitHub Actions itself uses network for the
+# checkout and Node setup steps — that is infrastructure, not application access.)
+on:
+  pull_request:
+    branches: [main]
+
+# Read-only token; no secrets are used anywhere in this workflow.
+permissions:
+  contents: read
+
+# Cancel any in-progress run for the same PR so stale/stuck runs don't pile up.
+concurrency:
+  group: pr-validation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate PR (offline application checks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (full history for diff check)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js 24 (LTS)
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '24'   # Node.js 24 LTS
+
+      - name: JavaScript syntax validation (all tracked JS)
+        run: node staging/check-syntax.js
+
+      - name: index.html / login.html inline-script parsing
+        run: node staging/check-inline-scripts.js
+
+      - name: Staging regression tests
+        run: |
+          node staging/identity-origin.test.js
+          node staging/invite-disabled.test.js
+          node staging/external-nav.test.js
+          node staging/prerender-nav.test.js
+          node staging/settings-reload.test.js
+
+      - name: Whitespace / conflict-marker check (PR diff)
+        run: |
+          git fetch origin "${GITHUB_BASE_REF}" --depth=1
+          git diff --check "origin/${GITHUB_BASE_REF}...HEAD"
