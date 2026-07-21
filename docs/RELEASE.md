@@ -36,6 +36,7 @@ feature branch
 
 ## Guarantees
 - The CI gate never has access to secrets/production. Its application checks are production-isolated with no application external calls — they only parse source and run offline tests. (Actions' own checkout/Node-setup use GitHub-hosted network access; that is infrastructure, not application access.)
+- **Supply-chain:** external GitHub Actions dependencies are pinned to full immutable release commit SHAs (not floating tags) — `actions/checkout` (`v6.0.2`) and `actions/setup-node` (`v6.4.0`) — so a moved/compromised tag cannot silently change what CI runs.
 - Staging and production are fully isolated (separate Netlify sites, separate Neon databases, separate Netlify Identity).
 - `main` is only advanced through reviewed, authorized merges.
 
