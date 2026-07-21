@@ -21,7 +21,7 @@ role testing. Production is never touched.
 - Fully isolated Netlify Identity on the staging site
 - Deploy branch: **`staging`**
 - Env vars entered **manually** in Netlify
-- **No** email / invites / Gmail / Resend / Gemini / backups yet
+- **No automated, app-driven** email / invites / Gmail / Resend / Gemini / backups (those env vars stay unset). Manual Netlify Identity invitations for your own test accounts are allowed (see Step 4).
 - **Synthetic** test data only
 
 ## Step 1 — Create the `staging` branch
@@ -46,9 +46,17 @@ git push -u origin staging
 
 ## Step 4 — Enable isolated Netlify Identity on the staging site
 1. Staging site → **Identity → Enable Identity** (this is a *separate* Identity instance from production).
-2. **Registration = Invite only** (prevents open signup).
+2. **Registration = Invite only** (prevents open signup) — keep this on.
 3. **External providers → enable Google** (login is Google OAuth).
 4. Note the Identity base URL: `https://inboundswagup-staging.netlify.app/.netlify/identity`.
+
+> **Invitations — scope for staging:** Houston's *automated* invite/email
+> integrations stay disabled (leave `RESEND_API_KEY`, `GMAIL_*`, and `NETLIFY_PAT`
+> unset — see `ENVIRONMENT.md`). You **may** use **manual** Netlify Identity
+> invitations from this dashboard, but **only** for staging test accounts you own
+> or control. Those manual invitations may generate Netlify's own invitation
+> emails, which is expected. **Never invite real employees or production users**
+> into staging just to test.
 
 ## Step 5 — Set staging environment variables (names only — see ENVIRONMENT.md)
 In the **staging** site's environment settings, set:
@@ -74,7 +82,7 @@ Never copy production secret values.
    CREATE TABLE __staging_confirmed ();   -- opt-in guard; staging only
    ```
 3. Run `staging-seed.sql`. Confirm the row-count summary at the end.
-4. Invite the same test Google accounts into the staging **Identity** (Identity → Invite users), so they can sign in. Roles come from `hc_users` (seeded), not Identity.
+4. Invite the same test Google accounts into the staging **Identity** (Identity → Invite users), so they can sign in. Roles come from `hc_users` (seeded), not Identity. Invite **only accounts you own/control** — this manual step may send Netlify invitation emails to those addresses. Registration stays **Invite only**; never invite real employees or production users.
 
 ## Step 8 — Role-testing checklist (browser, against the staging URL)
 Sign in as each account and confirm nav + a representative endpoint result.

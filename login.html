@@ -63,11 +63,16 @@
 (function() {
   // Netlify Identity is served from the site's own origin, so deriving the base
   // from the current origin isolates each environment (production, staging,
-  // deploy previews) automatically. Production served at its canonical origin
-  // yields the same URL as before; the literal production origin is the fallback.
-  const API_URL = ((typeof window !== 'undefined' && window.location && window.location.origin)
-    ? window.location.origin
-    : 'https://inboundswagup.netlify.app') + '/.netlify/identity';
+  // deploy previews) automatically. Only trust the origin for real http(s)
+  // pages — under file:// the origin is absent or the string "null", so fall
+  // back to the production origin (never "null/.netlify/identity").
+  const API_URL = (function () {
+    var loc = (typeof window !== 'undefined') ? window.location : null;
+    var origin = loc && loc.origin;
+    var proto  = loc && loc.protocol;
+    var useOrigin = (proto === 'https:' || proto === 'http:') && !!origin && origin !== 'null';
+    return (useOrigin ? origin : 'https://inboundswagup.netlify.app') + '/.netlify/identity';
+  })();
   const USER_KEY = 'qaWorkflowCurrentUserV2';
   const HC_USER_KEY = 'hcAuthUser';
 

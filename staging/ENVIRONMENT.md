@@ -41,12 +41,25 @@ they are absent). Do not set them for this phase.
 
 | Name | Disables |
 |---|---|
-| `RESEND_API_KEY` | Invite / temp-admin-expiry emails |
-| `NETLIFY_PAT` | Invite path that creates users in Netlify Identity |
+| `RESEND_API_KEY` | Houston's **automated, app-driven** invite / temp-admin-expiry emails |
+| `NETLIFY_PAT` | Houston's **automated** invite path that programmatically creates Netlify Identity users |
 | `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `GMAIL_FROM` | Gmail-based notifications |
 | `INVENTORY_NOTIFY_FROM`, `FROM_EMAIL` | Inventory / notification sender addresses |
 | `GEMINI_API_KEY` | `meeting-summary` AI proxy |
 | `ADMIN_EMAIL`, `BACKUP_EMAIL` | Recipients for backups / temp-admin notices (scheduled functions stay harmless against the empty DB) |
+
+### Invitations — what stays off vs. what's allowed
+
+- **Houston's automated invite/email integrations stay DISABLED** in staging: leave
+  `RESEND_API_KEY`, the Gmail credentials (`GMAIL_*`), and `NETLIFY_PAT` **unset**.
+  With these unset, the app's Settings "Invite user" flow and its automated emails do not run.
+- **Manual Netlify Identity invitations ARE allowed** — but only for **staging test
+  accounts you own or control**. Invite them from the staging site's Identity dashboard
+  (Identity → Invite users), not through the app.
+- **These manual Identity invitations may generate Netlify's own invitation emails** to
+  those addresses. That is expected and fine for accounts you own.
+- **Registration stays "Invite only"** on the staging Identity instance.
+- **Never invite real employees or production users** into staging merely for testing.
 
 ## Build-injected (no action needed)
 
