@@ -43,7 +43,7 @@ they are absent). Do not set them for this phase.
 | Name | Disables |
 |---|---|
 | `RESEND_API_KEY` | Houston's **automated, app-driven** invite / temp-admin-expiry emails |
-| `NETLIFY_PAT` | A Netlify admin token used by the invite flow to create Identity users. **Note:** leaving it unset does *not* by itself disable the invite route — the route still writes `hc_users`. Use `APP_INVITES_ENABLED=false` (above) to actually stop the app's invite route. |
+| `NETLIFY_PAT` | A Netlify personal access token. **Currently unused by the invite path.** The invite route creates Netlify Identity users using Netlify's *injected function Identity context token* (`context.clientContext.identity`), not this variable. Leaving `NETLIFY_PAT` unset therefore does **not** disable the route. Use `APP_INVITES_ENABLED=false` (above) to actually stop the app's invite route. |
 | `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `GMAIL_FROM` | Gmail-based notifications |
 | `INVENTORY_NOTIFY_FROM`, `FROM_EMAIL` | Inventory / notification sender addresses |
 | `GEMINI_API_KEY` | `meeting-summary` AI proxy |
@@ -56,8 +56,10 @@ they are absent). Do not set them for this phase.
   write, email, or Identity user creation).
 - **Houston's automated invite/email integrations stay DISABLED** in staging: also
   leave `RESEND_API_KEY` and the Gmail credentials (`GMAIL_*`) **unset**.
-- `NETLIFY_PAT` unset alone does **not** disable the invite route (the route still
-  writes `hc_users`); `APP_INVITES_ENABLED=false` is what stops it.
+- `NETLIFY_PAT` is **currently unused** by the invite route — the route creates
+  Identity users via Netlify's injected function Identity context token
+  (`context.clientContext.identity`), not `NETLIFY_PAT`. So leaving `NETLIFY_PAT`
+  unset does **not** disable the route; `APP_INVITES_ENABLED=false` is what stops it.
 - **Manual Netlify Identity invitations ARE allowed** — but only for **staging test
   accounts you own or control**. Invite them from the staging site's Identity dashboard
   (Identity → Invite users), not through the app.

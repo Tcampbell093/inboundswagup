@@ -53,8 +53,10 @@ git push -u origin staging
 > **Invitations — scope for staging:** Houston's *automated, app-driven* invite
 > route is turned off by setting **`APP_INVITES_ENABLED=false`** (Step 5), and its
 > email integrations stay disabled (leave `RESEND_API_KEY`, `GMAIL_*` unset).
-> `NETLIFY_PAT` unset alone does **not** disable that route — `APP_INVITES_ENABLED=false`
-> is the real switch. You **may** still use **manual** Netlify Identity invitations
+> `NETLIFY_PAT` is currently unused by that route — it creates Identity users via
+> Netlify's injected function Identity context token (`context.clientContext.identity`),
+> not `NETLIFY_PAT` — so leaving it unset does **not** disable the route.
+> `APP_INVITES_ENABLED=false` is the real switch. You **may** still use **manual** Netlify Identity invitations
 > from this dashboard, but **only** for staging test accounts you own or control.
 > Those manual invitations may generate Netlify's own invitation emails, which is
 > expected. **Never invite real employees or production users** into staging just to test.
