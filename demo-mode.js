@@ -79,14 +79,15 @@
   };
 
   // ── Seed synthetic operational data (before modules initialize) ──────────
-  // Employees across the five departments.
+  // Employees across the five departments. Define EMP_SEED first, THEN save it
+  // (the previous order saved it before assignment, storing "undefined").
+  var EMP_SEED = ROSTER.map(function (r) {
+    return { name: r.name, adpName: '', department: r.department, birthday: '', size: '', active: true };
+  });
   setJSON('ops_hub_employees_v1', EMP_SEED);
 
   // Attendance — today, a reasonable mix (no severe discipline).
   var MARKS = { present: 'Present', late: 'Late', excused: 'Excused', callout: 'Call Out' };
-  var EMP_SEED = ROSTER.map(function (r) {
-    return { name: r.name, adpName: '', department: r.department, birthday: '', size: '', active: true };
-  });
   var attendance = [
     { employeeName: 'Alex Rivera',  department: 'Assembly',    mark: MARKS.present },
     { employeeName: 'Jamie Carter', department: 'Assembly',    mark: MARKS.present },
