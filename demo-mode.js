@@ -136,7 +136,7 @@
       accountOwner: 'Demo Team', priority: !!o.priority, sourceQueue: 'ready', sourceStatus: o.status || ''
     };
   }
-  setJSON('ops_hub_assembly_board_v2', [
+  var BOARD_SEED = [
     boardRow({ pb: 1001, so: 2401, account: 'Northstar Labs',     qty: 120, products: 4, ihd: addDays(2),  subtotal: 8450.00,  stage: 'aa',     priority: true,  status: 'Priority' }),
     boardRow({ pb: 1002, so: 2402, account: 'Atlas Health Group', qty: 80,  products: 3, ihd: addDays(-1), subtotal: 5210.50,  stage: 'print',  status: 'At Risk' }),
     boardRow({ pb: 1003, so: 2403, account: 'Harbor Creative',    qty: 200, products: 6, ihd: addDays(4),  subtotal: 12980.00, stage: 'picked', status: 'On Track' }),
@@ -144,7 +144,8 @@
     boardRow({ pb: 1005, so: 2405, account: 'Blue Peak Partners', qty: 45,  products: 5, ihd: addDays(1),  subtotal: 2760.75,  stage: 'dpmo',   status: 'QA Check' }),
     boardRow({ pb: 1006, so: 2406, account: 'Summit Works',       qty: 150, products: 4, ihd: addDays(-2), subtotal: 9600.00,  stage: 'done',   status: 'Completed' }),
     boardRow({ pb: 1007, so: 2407, account: 'Northstar Labs',     qty: 90,  products: 3, ihd: addDays(5),  subtotal: 4380.00,  stage: 'aa',     status: 'On Track' })
-  ]);
+  ];
+  setJSON('ops_hub_assembly_board_v2', BOARD_SEED);
 
   // ── Queues ───────────────────────────────────────────────────────────────
   function qRow(o) {
@@ -152,23 +153,59 @@
       qty: o.qty, products: o.products, units: o.qty * o.products, ihd: o.ihd, accountOwner: 'Demo Team',
       pdfUrl: '', status: o.status || 'Ready', subtotal: o.subtotal, revenue: o.subtotal };
   }
-  setJSON('ops_hub_available_queue_v1', [
+  var AVAIL_SEED = [
     qRow({ pb: 1101, so: 2501, account: 'Harbor Creative',    qty: 110, products: 3, ihd: addDays(3), subtotal: 6100.00, status: 'Ready', priority: true }),
     qRow({ pb: 1102, so: 2502, account: 'Redwood Systems',    qty: 75,  products: 2, ihd: addDays(4), subtotal: 3550.00, status: 'Ready' }),
     qRow({ pb: 1103, so: 2503, account: 'Blue Peak Partners', qty: 130, products: 5, ihd: addDays(6), subtotal: 7420.00, status: 'Ready' })
-  ]);
-  setJSON('ops_hub_scheduled_queue_v1', [
-    (function () { var r = qRow({ pb: 1104, so: 2504, account: 'Atlas Health Group', qty: 95, products: 4, ihd: addDays(2), subtotal: 5240.00, status: 'Scheduled' });
-      r.scheduledFor = addDays(1); r.scheduledAt = '09:00'; r.scheduleNote = 'AM line'; r.sourceQueue = 'ready'; r.sourceStatus = 'Ready'; return r; })()
-  ]);
-  setJSON('ops_hub_incomplete_queue_v1', [
+  ];
+  // Scheduled queue = the SAME board pack-builders placed onto the day
+  // calendar. This is what the Assembly Flight Tracker renders, so it stays
+  // 1:1 with the Assembly Planner board (identical PB/SO/client/qty/units/
+  // stage/priority/IHD) and lines up with the stakeholder comments below.
+  var SCHED_PLAN = {
+    1001: { day: iso(TODAY),  at: '09:00' },
+    1002: { day: iso(TODAY),  at: '10:30' },
+    1003: { day: addDays(1),  at: '08:30' },
+    1004: { day: addDays(1),  at: '13:00' },
+    1005: { day: addDays(2),  at: '09:00' },
+    1006: { day: addDays(-1), at: '14:00' },
+    1007: { day: addDays(2),  at: '11:00' }
+  };
+  var SCHED_SEED = BOARD_SEED.map(function (b) {
+    var num = String(b.pb).replace('DEMO-PB-', '');
+    var plan = SCHED_PLAN[num] || { day: iso(TODAY), at: '09:00' };
+    var r = {};
+    for (var k in b) { if (Object.prototype.hasOwnProperty.call(b, k)) r[k] = b[k]; }
+    r.id = nextId();
+    r.scheduledFor = plan.day;
+    r.scheduledAt = plan.at;
+    r.scheduleNote = '';
+    r.sourceQueue = 'ready';
+    r.sourceStatus = b.status;
+    r.accountOwner = 'Demo Team';
+    return r;
+  });
+  var INCOMPLETE_SEED = [
     qRow({ pb: 1105, so: 2505, account: 'Summit Works', qty: 50, products: 2, ihd: addDays(1), subtotal: 2100.00, status: 'Held — Missing Items' })
-  ]);
-  setJSON('ops_hub_revenue_reference_v1', [
+  ];
+  var REV_SEED = [
     { id: nextId(), salesOrder: so(2401), originalSubtotal: 8450.00,  ihd: addDays(2), account: 'Northstar Labs' },
     { id: nextId(), salesOrder: so(2403), originalSubtotal: 12980.00, ihd: addDays(4), account: 'Harbor Creative' },
     { id: nextId(), salesOrder: so(2406), originalSubtotal: 9600.00,  ihd: addDays(-2), account: 'Summit Works' }
-  ]);
+  ];
+  setJSON('ops_hub_available_queue_v1', AVAIL_SEED);
+  setJSON('ops_hub_scheduled_queue_v1', SCHED_SEED);
+  setJSON('ops_hub_incomplete_queue_v1', INCOMPLETE_SEED);
+  setJSON('ops_hub_revenue_reference_v1', REV_SEED);
+
+  // ── Assembly Flight Tracker: synthetic stakeholder comments per PB ────────
+  // Keyed to the SAME DEMO-PB-*/DEMO-SO-* records shown on the Assembly board.
+  var AF_COMMENTS = [
+    { id: 9001, pb_id: '', pb_name: pb(1001), so: so(2401), account: 'Northstar Labs',     author_name: 'Stakeholder', category: 'priority',     body: 'Priority requested for afternoon launch.',                created_at: iso(TODAY), read_by: [] },
+    { id: 9002, pb_id: '', pb_name: pb(1004), so: so(2404), account: 'Redwood Systems',    author_name: 'Stakeholder', category: 'instructions', body: 'Waiting on one remaining component.',                       created_at: iso(TODAY), read_by: [] },
+    { id: 9003, pb_id: '', pb_name: pb(1005), so: so(2405), account: 'Blue Peak Partners', author_name: 'Stakeholder', category: 'general',      body: 'DPMO review completed; ready for closeout.',               created_at: iso(TODAY), read_by: [] },
+    { id: 9004, pb_id: '', pb_name: pb(1006), so: so(2406), account: 'Summit Works',       author_name: 'Stakeholder', category: 'general',      body: 'Please confirm final completion before carrier pickup.',   created_at: addDays(-1), read_by: [] }
+  ];
 
   // ── Synthetic inventory (served via network intercept; no local fallback) ─
   function invItem(o) {
@@ -194,6 +231,60 @@
     review: 0, openRequests: 0
   };
 
+  // ── Shared synthetic INBOUND dataset ─────────────────────────────────────
+  // ONE source of truth for BOTH QA Inbound and the Inbound Flight Tracker.
+  // Pallet.status drives the tracker stage: draft→At Dock, receiving→Receiving,
+  // prep→Prep/Routed (QA), done→Complete; a PO `case` = a blocked exception.
+  function poNumStr(n) { return 'DEMO-PO-' + n; }
+  function inPo(o) {
+    return {
+      id: 'po-' + o.n, po: poNumStr(o.n), poNum: poNumStr(o.n),
+      client: o.client, vendor: o.vendor || (o.client + ' Vendor'), category: o.category || 'Apparel',
+      orderedQty: o.ordered, receivedQty: (o.received == null ? null : o.received),
+      prepReceivedQty: (o.prep == null ? null : o.prep),
+      boxes: o.boxes || 0, destination: o.destination || '', stsQty: o.sts || 0, ltsQty: o.lts || 0,
+      receivingDone: !!o.receivingDone, prepVerified: !!o.prepVerified,
+      arrivalDate: o.arrival, requiredDate: o.required, createdAt: Date.now() - (o.ageHrs || 2) * 3600000,
+      case: o.exception ? { openedAt: Date.now() - 3600000, openedBy: o.exceptionBy || 'Morgan Patel', openedAtStage: 'receiving', link: '', ref: '', note: o.exception, status: 'open' } : null
+    };
+  }
+  function inPallet(o) {
+    return { id: 'plt-' + o.id, label: o.label, status: o.status, date: o.date, arrivalDate: o.date, pos: o.pos };
+  }
+  var INBOUND_PALLETS = [
+    inPallet({ id: 401, label: 'PLT-401', status: 'draft', date: iso(TODAY), pos: [
+      inPo({ n: 4101, client: 'Northstar Labs',     ordered: 500, received: null, boxes: 40, category: 'Apparel',   arrival: iso(TODAY), required: iso(TODAY) })
+    ]}),
+    inPallet({ id: 402, label: 'PLT-402', status: 'receiving', date: iso(TODAY), pos: [
+      inPo({ n: 4102, client: 'Atlas Health Group', ordered: 300, received: 180, prep: 0,  boxes: 24, category: 'Drinkware', arrival: iso(TODAY), required: addDays(1) }),
+      inPo({ n: 4103, client: 'Harbor Creative',    ordered: 240, received: 240, prep: 0,  boxes: 20, category: 'Bags',      arrival: iso(TODAY), required: addDays(3), receivingDone: true })
+    ]}),
+    inPallet({ id: 403, label: 'PLT-403', status: 'prep', date: addDays(-1), pos: [
+      inPo({ n: 4104, client: 'Redwood Systems',    ordered: 150, received: 150, prep: 150, boxes: 12, category: 'Tech',      arrival: addDays(-1), required: addDays(2), receivingDone: true }),
+      inPo({ n: 4105, client: 'Blue Peak Partners', ordered: 200, received: 200, prep: 200, boxes: 16, category: 'Apparel',   arrival: addDays(-1), required: addDays(4), receivingDone: true, prepVerified: true, destination: 'STS', sts: 200 })
+    ]}),
+    inPallet({ id: 404, label: 'PLT-404', status: 'prep', date: iso(TODAY), pos: [
+      inPo({ n: 4106, client: 'Summit Works',       ordered: 260, received: 254, prep: 254, boxes: 22, category: 'Bags',      arrival: iso(TODAY), required: addDays(1), receivingDone: true, exception: 'Damaged carton — 6 units short', exceptionBy: 'Morgan Patel' })
+    ]}),
+    inPallet({ id: 405, label: 'PLT-405', status: 'done', date: addDays(-1), pos: [
+      inPo({ n: 4107, client: 'Northstar Labs',     ordered: 400, received: 388, prep: 388, boxes: 30, category: 'Drinkware', arrival: addDays(-2), required: addDays(-1), receivingDone: true, prepVerified: true, destination: 'LTS', lts: 388 }),
+      inPo({ n: 4108, client: 'Harbor Creative',    ordered: 320, received: 320, prep: 320, boxes: 26, category: 'Apparel',   arrival: addDays(-2), required: addDays(-1), receivingDone: true, prepVerified: true, destination: 'STS', sts: 320 })
+    ]})
+  ];
+  var INBOUND_DATA = { pallets: INBOUND_PALLETS };
+  var INBOUND_MASTERS = { associates: ROSTER.map(function (r) { return r.name; }), destinations: ['STS', 'LTS'], categories: ['Apparel', 'Drinkware', 'Bags', 'Tech'] };
+  // Local fallback for the inbound tracker / QA Inbound.
+  setJSON('qaV5SeparatedWorkflowData_v4fixed', { data: INBOUND_DATA, masters: INBOUND_MASTERS, pallets: INBOUND_PALLETS });
+
+  // Inbound priority flags + stakeholder comments (per PO number).
+  var INBOUND_PRIORITIES = [
+    { po_num: poNumStr(4101), note: 'Priority — afternoon launch', set_by: 'Alex Rivera', set_at: iso(TODAY) }
+  ];
+  var INBOUND_COMMENTS = [
+    { id: 8001, po_num: poNumStr(4101), author_name: 'Stakeholder', category: 'priority', body: 'Priority requested for afternoon launch.', created_at: iso(TODAY), read_by: [] },
+    { id: 8002, po_num: poNumStr(4106), author_name: 'Stakeholder', category: 'general',  body: 'Damaged carton flagged — please confirm final count.', created_at: iso(TODAY), read_by: [] }
+  ];
+
   // ── Network kill-switch ──────────────────────────────────────────────────
   // Intercept anything that would reach a backend, auth provider, email, or LLM.
   var BLOCK = /(\/\.netlify\/(functions|identity))|identity\.netlify\.com|googleapis\.com|accounts\.google|gstatic\.com\/.*identity|api\.resend\.com|generativelanguage/i;
@@ -206,6 +297,8 @@
     var u = String(url).toLowerCase();
     if (u.indexOf('/.netlify/identity/user') > -1) return resp({ id: 'demo-alex-rivera', email: 'alex.rivera@demo.local', user_metadata: { full_name: 'Alex Rivera' }, app_metadata: { role: 'manager' } }, 200);
     if (u.indexOf('/.netlify/identity') > -1) return resp({}, 200); // authorize/logout/token
+    var NOW_ISO = TODAY.toISOString();
+    var isMeta = (u.indexOf('meta=1') > -1 || u.indexOf('meta=true') > -1);
     if (u.indexOf('/functions/inventory') > -1) return resp({ items: INVENTORY, summary: INV_SUMMARY, role: 'manager', ok: true }, 200);
     // Employees & attendance are served as synthetic SUCCESS so the app's
     // loaders populate their in-memory state directly (robust against any
@@ -214,12 +307,39 @@
     if (u.indexOf('/functions/attendance') > -1) return resp({ records: ATT_SEED, moves: [], updated_at: null, ok: true }, 200);
     if (u.indexOf('/functions/chat') > -1) return resp({ users: [], messages: [], unread: {}, maxId: 0 }, 200);
     if (u.indexOf('/functions/notifications') > -1) return resp({ notifications: [], ok: true }, 200);
-    if (u.indexOf('/functions/flight-tracker-comments') > -1) return resp({ count: 0, comments: [] }, 200);
+
+    // ── QA Inbound + Inbound Flight Tracker (shared inbound dataset) ────────
+    if (u.indexOf('/functions/workflow-sync') > -1) {
+      if (isMeta) return resp({ updated_at: NOW_ISO, activeEditors: {} }, 200);
+      return resp({ data: INBOUND_DATA, masters: INBOUND_MASTERS, active_editors: {}, updated_at: NOW_ISO, ok: true }, 200);
+    }
+    if (u.indexOf('/functions/inbound-po-priorities') > -1) {
+      if (method === 'GET') return resp({ priorities: INBOUND_PRIORITIES }, 200);
+      return resp({ ok: true, priority: { note: '', set_by: 'Alex Rivera', set_at: NOW_ISO } }, 200);
+    }
+    if (u.indexOf('/functions/inbound-po-comments') > -1) {
+      if (u.indexOf('unread_for') > -1) return resp({ count: 0 }, 200);
+      if (method === 'GET') return resp({ comments: INBOUND_COMMENTS }, 200);
+      return resp({ ok: true, comment: {} }, 200);
+    }
+
+    // ── Assembly Flight Tracker (shares the Assembly Planner records) ──────
+    if (u.indexOf('/functions/assembly') > -1) {
+      if (isMeta) return resp({ updated_at: NOW_ISO }, 200);
+      if (method === 'GET') return resp({ state: { board: BOARD_SEED, available: AVAIL_SEED, scheduled: SCHED_SEED, incomplete: INCOMPLETE_SEED, held: [], revenue: REV_SEED }, updated_at: NOW_ISO }, 200);
+      return resp({ ok: true, state: { board: BOARD_SEED, available: AVAIL_SEED, scheduled: SCHED_SEED, incomplete: INCOMPLETE_SEED, held: [], revenue: REV_SEED }, updated_at: NOW_ISO }, 200);
+    }
+    if (u.indexOf('/functions/flight-tracker-comments') > -1) {
+      if (u.indexOf('unread_for') > -1) return resp({ count: 0 }, 200);
+      if (method === 'GET') return resp({ comments: AF_COMMENTS }, 200);
+      return resp({ ok: true, comment: {} }, 200); // POST/PATCH no-op
+    }
     if (u.indexOf('/functions/flight-tracker-photos') > -1) return resp({ photos: [], counts: {} }, 200);
+
     if (u.indexOf('/functions/users') > -1) return resp({ role: 'manager', name: 'Alex Rivera', overrides: {}, tempAdmin: false, suspended: false, users: [{ id: 'demo-alex-rivera', email: 'alex.rivera@demo.local', name: 'Alex Rivera', role: 'manager', suspended: false }], entries: [] }, 200);
     if (u.indexOf('/functions/') > -1) {
-      // Sync GETs fail cleanly so each module falls back to seeded local data;
-      // writes are accepted as harmless no-ops (nothing leaves the browser).
+      // Any other sync GET fails cleanly so its module falls back to seeded
+      // local data; writes are accepted as harmless no-ops.
       if (method === 'GET') return resp({ error: 'demo-offline', __demo: true }, 503);
       return resp({ ok: true, __demo: true }, 200);
     }
