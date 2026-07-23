@@ -4,6 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Warehouse Operations Hub</title>
+<!-- Isolated synthetic-data IT demo mode. No-op unless ?demo=1 (or a persisted
+     demo flag) is present; must load before the pre-render/auth/app scripts. -->
+<script src="demo-mode.js"></script>
 <script>
   /* Synchronous auth + nav pre-check — runs before any visible HTML paints.
      Two jobs: (1) hide the login overlay for authenticated users, and (2)
