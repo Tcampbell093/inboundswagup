@@ -5,29 +5,33 @@
    history on every call — there is no stored order pointer, so roster
    adds, terminations, and leaves can't corrupt the rotation.
 
-   Ranking rules (see ROTATION_SPEC.md §3):
+   Ranking rules (see docs/ROTATION_SPEC.md §3):
      • count tasks (garbage): fewest turns in the rolling window first,
        tie-break longest time since last turn. Skipped turns do NOT count,
        so a skipped person stays at the front of the ranking.
      • hours tasks (labor_share): fewest out-of-department hours first —
        loaned hours + project hours COMBINED, not a count of loans. Open
-       blocks count their elapsed time so far. Tie-break longest since
-       last time out.
+       blocks count elapsed time, capped at that day's shift end so a
+       block missed by the autoclose job can't balloon overnight. Tie-break
+       longest since last time out.
      • Ranking is within department, never warehouse-wide. With no
        ?department= the response carries every department, each ranked
        separately.
 
-   Roster comes from employees_sync_state (active employees only);
-   employees with no history rank first (zero total, never assigned).
+   Identity: history is keyed by hc_rotation_people.id. The roster (from
+   employees_sync_state) contributes only names; each is resolved through
+   hc_rotation_person_aliases READ-ONLY here — people are created on write
+   (phase 3+), never by this endpoint. A roster name with no person yet
+   simply has no history and ranks first on zero.
 
    Auth: always-on authorize() with no role restriction — every invited,
    non-suspended hc_users account can read. Visibility to associates is
-   the point of the module; writes (assign/skip/loan) are separate
-   functions with their own gating. Read-only: no writes here.
+   the point of the module. Read-only: no writes here.
    ========================================================================= */
 
 const { Pool } = require('pg');
 const { ensureRotationSchema } = require('./_rotation-schema');
+const { nameKey } = require('./_rotation-people');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -43,6 +47,22 @@ function json(statusCode, body) {
 }
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+// Shift end for the open-block cap, configurable per environment.
+const SHIFT_END = process.env.ROTATION_SHIFT_END || '17:00';
+const SHIFT_TZ = process.env.ROTATION_TZ || 'America/New_York';
+
+// When a block is still open, elapsed time stops accruing at the block's
+// own service-date shift end (the moment rotation-autoclose should have
+// stamped). A block opened after shift end is an anomaly the autoclose
+// will sweep; until then it accrues real elapsed time rather than a
+// negative interval. $SHIFT_END_SQL expects $2 = 'HH:MM', $3 = timezone.
+const ELAPSED_END_SQL = `
+  CASE WHEN actual_end IS NOT NULL THEN actual_end
+       WHEN ((service_date::text || ' ' || $2)::timestamp AT TIME ZONE $3) > actual_start
+         THEN LEAST(NOW(), ((service_date::text || ' ' || $2)::timestamp AT TIME ZONE $3))
+       ELSE NOW() END`;
+const HOURS_SQL = `GREATEST(0, EXTRACT(EPOCH FROM ((${ELAPSED_END_SQL}) - actual_start)) / 3600.0)`;
 
 /* ---- pure ranking helpers (exported for staging tests) ---------------- */
 
@@ -90,56 +110,69 @@ async function loadRoster() {
   return (Array.isArray(raw) ? raw : [])
     .filter((e) => e && e.active !== false && String(e.name || '').trim())
     .map((e) => ({
-      id: String(e.id || '').trim() || String(e.name).trim(),
+      // Roster ids are stripped to "" by the app's sync, so the name is the
+      // only usable roster key; person identity is resolved via aliases.
+      id: String(e.name).trim(),
       name: String(e.name).trim(),
       department: String(e.department || 'Receiving').trim(),
     }));
 }
 
-// Turn counts per employee for a count-unit task. Counts follow the person
+// name_key -> person_id for the whole alias table (small: one row per
+// roster spelling ever seen). Read-only — resolution that CREATES people
+// belongs to write endpoints via resolvePersonId().
+async function loadAliasMap() {
+  const r = await pool.query(`SELECT name_key, person_id FROM hc_rotation_person_aliases;`);
+  const map = {};
+  for (const row of r.rows) map[row.name_key] = row.person_id;
+  return map;
+}
+
+// Turn counts per person for a count-unit task. Counts follow the person
 // across transfers (a turn served while in another department still counts
 // toward their total); the department snapshot column is for reporting.
 async function loadTurnStats(taskCode, windowDays) {
   const r = await pool.query(
-    `SELECT employee_id,
+    `SELECT person_id,
             COUNT(*) FILTER (WHERE status IN ('assigned','completed'))::int AS turns,
             MAX(service_date) FILTER (WHERE status IN ('assigned','completed')) AS last_turn
        FROM hc_rotation_turns
       WHERE task_code = $1
         AND service_date >= CURRENT_DATE - $2::int
-      GROUP BY employee_id;`,
+      GROUP BY person_id;`,
     [taskCode, windowDays]
   );
   const stats = {};
   for (const row of r.rows) {
     const last = row.last_turn ? row.last_turn.toISOString().slice(0, 10) : null;
-    stats[row.employee_id] = { total: row.turns, last, turns: row.turns, last_turn: last };
+    stats[row.person_id] = { total: row.turns, last, turns: row.turns, last_turn: last };
   }
   return stats;
 }
 
-// Out-of-department hours per employee: loans and projects combined.
-// Open blocks (no actual_end) count elapsed time so far; planned blocks
-// that never started count 0 but still update "last out" for tie-breaks.
+// Out-of-department hours per person: loans and projects combined. Open
+// blocks count elapsed time capped at shift end (see ELAPSED_END_SQL);
+// planned blocks that never started count 0 but still update "last out"
+// for tie-breaks.
 async function loadHourStats(windowDays) {
   const r = await pool.query(
-    `SELECT employee_id,
-            COALESCE(SUM(GREATEST(0, EXTRACT(EPOCH FROM (COALESCE(actual_end, NOW()) - actual_start)) / 3600.0))
+    `SELECT person_id,
+            COALESCE(SUM(${HOURS_SQL})
               FILTER (WHERE actual_start IS NOT NULL AND block_type = 'loan'), 0)    AS loaned_hours,
-            COALESCE(SUM(GREATEST(0, EXTRACT(EPOCH FROM (COALESCE(actual_end, NOW()) - actual_start)) / 3600.0))
+            COALESCE(SUM(${HOURS_SQL})
               FILTER (WHERE actual_start IS NOT NULL AND block_type = 'project'), 0) AS project_hours,
             COUNT(*) FILTER (WHERE actual_start IS NOT NULL AND actual_end IS NULL)::int AS open_blocks,
             MAX(service_date) AS last_out
        FROM hc_assignment_blocks
       WHERE service_date >= CURRENT_DATE - $1::int
-      GROUP BY employee_id;`,
-    [windowDays]
+      GROUP BY person_id;`,
+    [windowDays, SHIFT_END, SHIFT_TZ]
   );
   const stats = {};
   for (const row of r.rows) {
     const loaned = round2(row.loaned_hours);
     const project = round2(row.project_hours);
-    stats[row.employee_id] = {
+    stats[row.person_id] = {
       total: round2(loaned + project),
       last: row.last_out ? row.last_out.toISOString().slice(0, 10) : null,
       loaned_hours: loaned,
@@ -156,12 +189,12 @@ async function loadHourStats(windowDays) {
 async function loadDeptHoursOut(windowDays) {
   const r = await pool.query(
     `SELECT home_department,
-            COALESCE(SUM(GREATEST(0, EXTRACT(EPOCH FROM (COALESCE(actual_end, NOW()) - actual_start)) / 3600.0))
+            COALESCE(SUM(${HOURS_SQL})
               FILTER (WHERE actual_start IS NOT NULL), 0) AS hours_out
        FROM hc_assignment_blocks
       WHERE service_date >= CURRENT_DATE - $1::int
       GROUP BY home_department;`,
-    [windowDays]
+    [windowDays, SHIFT_END, SHIFT_TZ]
   );
   const totals = {};
   for (const row of r.rows) totals[row.home_department] = round2(row.hours_out);
@@ -177,11 +210,21 @@ async function buildRanking({ task, department, windowDays }) {
   )).rows[0];
   if (!taskRow) return { error: `Unknown task '${task}'` };
 
-  const roster = await loadRoster();
-  const statsById = taskRow.unit === 'hours'
+  const [roster, aliasMap] = await Promise.all([loadRoster(), loadAliasMap()]);
+  const statsByPerson = taskRow.unit === 'hours'
     ? await loadHourStats(windowDays)
     : await loadTurnStats(taskRow.code, windowDays);
   const deptHoursOut = taskRow.unit === 'hours' ? await loadDeptHoursOut(windowDays) : null;
+
+  // Re-key person stats onto roster entries via the alias table. A roster
+  // name with no person yet has no history: zero total, ranks first.
+  const statsById = {};
+  const personByRosterId = {};
+  for (const emp of roster) {
+    const personId = aliasMap[nameKey(emp.name)];
+    personByRosterId[emp.id] = personId != null ? personId : null;
+    if (personId != null && statsByPerson[personId]) statsById[emp.id] = statsByPerson[personId];
+  }
 
   // Group the roster per department (never rank warehouse-wide), then rank
   // each group independently. Department match is case-insensitive.
@@ -196,12 +239,16 @@ async function buildRanking({ task, department, windowDays }) {
   const departments = [...byDept.keys()].sort((a, b) => a.localeCompare(b)).map((dept) => {
     const ranking = rankRoster(byDept.get(dept), statsById).map((row) => {
       const { total, last, ...rest } = row;
+      const base = {
+        rank: rest.rank,
+        person_id: personByRosterId[rest.employee_id],
+        name: rest.name,
+        department: rest.department,
+      };
       return taskRow.unit === 'hours'
-        ? { rank: rest.rank, employee_id: rest.employee_id, name: rest.name, department: rest.department,
-            loaned_hours: rest.loaned_hours || 0, project_hours: rest.project_hours || 0,
+        ? { ...base, loaned_hours: rest.loaned_hours || 0, project_hours: rest.project_hours || 0,
             combined_hours: rest.combined_hours || 0, open_blocks: rest.open_blocks || 0, last_out: last }
-        : { rank: rest.rank, employee_id: rest.employee_id, name: rest.name, department: rest.department,
-            turns: rest.turns || 0, last_turn: last };
+        : { ...base, turns: rest.turns || 0, last_turn: last };
     });
     const entry = { department: dept, ranking };
     if (deptHoursOut) entry.totals = { hours_out: deptHoursOut[dept] || 0 };
