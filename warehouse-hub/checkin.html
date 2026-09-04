@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="theme-color" content="#123d34" />
+<title>FairShift Cleaning Check-In</title>
+<style>
+:root{--bg:#f7f7f1;--paper:#fffefb;--ink:#123d34;--muted:#69746e;--line:#dde3dc;--orange:#f36e2d;--green:#1d7863;--red:#8f2d22}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 85% 10%,rgba(243,110,45,.1),transparent 28%),var(--bg);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}a{color:inherit}.wrap{width:min(720px,calc(100% - 28px));margin:auto}.top{height:68px;border-bottom:1px solid var(--line);display:flex;align-items:center;background:rgba(247,247,241,.94)}.top .wrap{display:flex;justify-content:space-between;align-items:center}.brand{font-size:12px;text-transform:uppercase;letter-spacing:.1em;font-weight:900;color:#65716b}.back{text-decoration:none;font-size:13px;font-weight:800}.hero{padding:48px 0 22px}.kicker{font-size:12px;text-transform:uppercase;letter-spacing:.13em;font-weight:900;color:#c05026}.hero h1{font-size:clamp(42px,8vw,68px);line-height:.94;letter-spacing:-.055em;margin:10px 0 14px}.hero p{color:var(--muted);line-height:1.55;font-size:16px}.card{background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:22px;padding:22px;box-shadow:0 14px 36px rgba(18,61,52,.08);margin:18px 0}.head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.head h2{margin:4px 0 0;font-size:26px}.label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;font-weight:900;color:var(--muted)}.status{font-size:11px;font-weight:900;border-radius:999px;padding:7px 9px;background:#fff1e9;color:#b95226;white-space:nowrap}.status.completed{background:#eaf6f1;color:var(--green)}.status.in_progress{background:#edf4fa;color:#2a5f89}.status.missed{background:#f5ecea;color:var(--red)}.details{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0}.detail{border:1px solid var(--line);border-radius:14px;padding:12px;background:var(--paper)}.detail small{display:block;color:var(--muted);font-size:11px;margin-bottom:4px}.detail strong{font-size:14px}.field{display:grid;gap:6px;margin-top:12px}.field label{font-size:12px;font-weight:850;color:#5e6a64}.field input{width:100%;border:1px solid #cdd5ce;background:#fff;border-radius:11px;padding:12px;color:var(--ink);font-size:16px}.action{width:100%;border:0;border-radius:12px;background:var(--ink);color:white;padding:13px 16px;font-weight:900;margin-top:14px;cursor:pointer}.action:disabled{opacity:.55;cursor:not-allowed}.alert{display:none;border-radius:12px;padding:11px 12px;margin:12px 0;font-size:13px;line-height:1.45}.alert.error{display:block;background:#f7e9e6;color:var(--red)}.alert.success{display:block;background:#eaf6f1;color:var(--green)}.complete{padding:16px;border-radius:14px;background:#eaf6f1;color:var(--green);font-weight:800;margin-top:16px}.note{font-size:13px;color:var(--muted);line-height:1.5;margin-top:14px}.loading{padding:28px;text-align:center;color:var(--muted)}@media(max-width:560px){.details{grid-template-columns:1fr}.hero{padding-top:34px}.card{padding:18px}}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap"><div class="brand">FairShift · Verified Cleaning</div><a class="back" href="/warehouse-hub/">← Operations Hub</a></div></header>
+<main class="wrap">
+<section class="hero"><div class="kicker">Cleaning check-in</div><h1>Start it. Clean it. Finish it.</h1><p>This check-in stays inside the Warehouse Hub while updating the real FairShift assignment and fairness credit.</p></section>
+<section class="card" id="card"><div class="loading">Loading today’s FairShift assignment…</div></section>
+</main>
+<script>
+(() => {
+  const API='/.netlify/functions/fairshift-checkin-proxy';
+  const card=document.getElementById('card');
+  const params=new URLSearchParams(location.search);
+  const assignmentId=Number(params.get('assignment'));
+  const esc=(v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const statusLabel=s=>({scheduled:'Scheduled',alternate_assigned:'Alternate assigned',in_progress:'In progress',completed:'Completed',missed:'Missed'}[s]||s||'Scheduled');
+  async function getAssignment(){
+    if(!assignmentId) throw new Error('The cleaning assignment link is missing an assignment ID.');
+    const r=await fetch(`${API}?assignmentId=${encodeURIComponent(assignmentId)}`,{cache:'no-store'});
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Unable to load the FairShift assignment.'); return j.assignment;
+  }
+  function render(a,message='',isError=false){
+    const done=a.dutyStatus==='completed', missed=a.dutyStatus==='missed', action=a.dutyStatus==='in_progress'?'finish':'start';
+    card.innerHTML=`<div class="head"><div><div class="label">Today’s assignment</div><h2>${esc(a.area)}</h2></div><span class="status ${esc(a.dutyStatus)}">${esc(statusLabel(a.dutyStatus))}</span></div>
+      <div class="details"><div class="detail"><small>Cleaner</small><strong>${esc(a.activeEmployeeName)}</strong></div><div class="detail"><small>Scheduled</small><strong>${esc(a.scheduledEmployeeName)}</strong></div><div class="detail"><small>Date</small><strong>${esc(a.assignmentDate)}</strong></div></div>
+      ${message?`<div class="alert ${isError?'error':'success'}">${esc(message)}</div>`:''}
+      ${done?'<div class="complete">Completed ✓ &nbsp; 15 FairShift minutes credited.</div>':missed?'<div class="alert error">This duty is closed as missed. No credit was added.</div>':!a.pinConfigured?`<div class="alert error">A manager needs to set a cleaning PIN for ${esc(a.activeEmployeeName)} in FairShift before this can be started.</div>`:`<form id="form"><div class="field"><label>Employee name</label><input id="name" value="${esc(a.activeEmployeeName)}" autocomplete="name"></div><div class="field"><label>Cleaning PIN</label><input id="pin" type="password" inputmode="numeric" maxlength="8" placeholder="4–8 digits" autocomplete="off"></div><button class="action" id="submit" type="submit">${action==='start'?'Start cleaning':'Finish cleaning · +15 min'}</button></form>`}
+      <div class="note">FairShift remains the source of truth. Finishing here updates the same FairShift cleaning record used for fairness tracking.</div>`;
+    const form=document.getElementById('form'); if(form) form.addEventListener('submit',submit);
+  }
+  async function submit(e){
+    e.preventDefault(); const btn=document.getElementById('submit'); const name=document.getElementById('name').value.trim(); const pin=document.getElementById('pin').value.trim();
+    if(!/^\d{4,8}$/.test(pin)){ const a=await getAssignment(); render(a,'Enter your 4–8 digit cleaning PIN.',true); return; }
+    btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const a=await getAssignment(); const action=a.dutyStatus==='in_progress'?'finish':'start';
+      const r=await fetch(API,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,assignmentId,employeeName:name,pin})});
+      const j=await r.json(); if(!r.ok) throw new Error(j.error||'Check-in failed.');
+      const updated=await getAssignment(); render(updated,action==='start'?'Cleaning started. Finish here when the area is done.':'Cleaning completed. 15 FairShift minutes were added.');
+    }catch(err){ try{const a=await getAssignment();render(a,err.message||'Check-in failed.',true);}catch{card.innerHTML=`<div class="alert error">${esc(err.message||'Check-in failed.')}</div>`;} }
+  }
+  getAssignment().then(a=>render(a)).catch(err=>{card.innerHTML=`<div class="alert error">${esc(err.message||'Unable to load cleaning assignment.')}</div><p class="note"><a href="/warehouse-hub/">Return to the Warehouse Hub</a></p>`;});
+})();
+</script>
+</body>
+</html>
