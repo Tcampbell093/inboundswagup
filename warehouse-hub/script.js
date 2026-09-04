@@ -9,7 +9,7 @@
   let adminData=null;
   let checkinTarget=null;
 
-  const escapeHtml=(v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const escapeHtml=(v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
   const ymd=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const parseDate=(s)=>{ const [y,m,d]=String(s).split('-').map(Number); return new Date(y,m-1,d,12,0,0); };
   const fmtDay=(s)=>parseDate(s).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
@@ -65,8 +65,26 @@
   async function deleteAdmin(body){ if(!confirm('Delete this item?'))return; try{await adminFetch(body);await refreshAdmin('Deleted.');}catch(e){showMessage('managerMessage',e.message||'Delete failed.',true);} }
   async function refreshAdmin(msg){adminData=await adminFetch();renderAdmin();await loadFeed();if(msg)showMessage('managerMessage',msg);}
   function formObject(form){const fd=new FormData(form);const out={};fd.forEach((v,k)=>out[k]=v);form.querySelectorAll('input[type=checkbox]').forEach(i=>out[i.name]=i.checked);return out;}
-  $('announcementForm').addEventListener('submit',async(e)=>{e.preventDefault();try{await adminFetch({action:'upsertAnnouncement',...formObject(e.currentTarget)});e.currentTarget.reset();await refreshAdmin('Announcement posted.');}catch(err){showMessage('managerMessage',err.message||'Could not post announcement.',true);}});
-  $('policyForm').addEventListener('submit',async(e)=>{e.preventDefault();try{await adminFetch({action:'upsertPolicy',...formObject(e.currentTarget)});e.currentTarget.reset();await refreshAdmin('Policy update published.');}catch(err){showMessage('managerMessage',err.message||'Could not publish policy.',true);}});
+  $('announcementForm').addEventListener('submit',async(e)=>{
+    e.preventDefault();
+    const form=e.currentTarget;
+    const payload=formObject(form);
+    try{
+      await adminFetch({action:'upsertAnnouncement',...payload});
+      form.reset();
+      await refreshAdmin('Announcement posted.');
+    }catch(err){showMessage('managerMessage',err.message||'Could not post announcement.',true);}
+  });
+  $('policyForm').addEventListener('submit',async(e)=>{
+    e.preventDefault();
+    const form=e.currentTarget;
+    const payload=formObject(form);
+    try{
+      await adminFetch({action:'upsertPolicy',...payload});
+      form.reset();
+      await refreshAdmin('Policy update published.');
+    }catch(err){showMessage('managerMessage',err.message||'Could not publish policy.',true);}
+  });
 
   setDefaultDates(); loadFeed();
 })();
