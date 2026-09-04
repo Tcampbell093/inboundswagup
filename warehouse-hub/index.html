@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#123d34" />
+<title>Warehouse Operations Hub</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="topbar"><div class="topbar-inner">
+  <div class="brand"><div class="brandmark">◇</div> Operations Hub</div>
+  <div class="top-actions"><div class="toolcount"><span class="dot"></span> 6 live tools</div><button class="manage-btn" id="manageBtn" type="button">Manage</button></div>
+</div></div>
+<main class="wrap">
+  <section class="hero">
+    <div><div class="kicker">✣ One link for the whole team</div><h1>Warehouse<br>operations, all in<br>one place.</h1><p>Open the tool you need without searching through old messages. Bookmark this page and use it as the starting point for daily warehouse work.</p><a class="primary" href="#today">See today’s updates ↗</a></div>
+    <div class="flow-card"><div class="flow"><div class="flowtop">◇ &nbsp; Operations hub &nbsp; ✓</div><div class="flowline"></div><div class="flowbottom"><div class="flowitem">♙<b>Labor</b></div><div class="flowitem">▤<b>Control</b></div><div class="flowitem">▧<b>Workbooks</b></div></div></div></div>
+  </section>
+
+  <section class="section" id="today">
+    <div class="section-head">
+      <div><div class="eyebrow" id="sectionEyebrow">Today at a glance</div><h2 id="sectionTitle">What the team needs to know</h2></div>
+      <div class="head-right"><div class="section-note" id="sectionNote">Cleaning responsibilities, announcements, and policy updates in one place.</div><div class="view-switch" role="tablist" aria-label="Today or week view"><button class="view-dot active" id="todayDot" type="button" role="tab" aria-selected="true" aria-controls="todayView" title="Today view"><span class="sr-only">Today view</span></button><button class="view-dot" id="weekDot" type="button" role="tab" aria-selected="false" aria-controls="weekView" title="Week view"><span class="sr-only">Week view</span></button></div></div>
+    </div>
+
+    <div class="view-panel active" id="todayView" role="tabpanel" aria-labelledby="todayDot">
+      <div class="dashboard-grid">
+        <div class="card"><div class="card-title"><h3>Today’s cleaning</h3><span class="smallpill">FairShift</span></div><div class="cleaning-list" id="todayCleaning"></div><div class="cleaning-footer"><span>Standard completion credit: 15 min</span><a class="linkbtn" href="https://rotations.thandoyordani.chatgpt.site/" target="_blank" rel="noopener">Open FairShift ↗</a></div></div>
+        <div class="stack"><div class="card"><div class="card-title"><h3>Announcements</h3><span class="smallpill" id="announcementCount">0 active</span></div><div id="todayAnnouncements"></div></div><div class="card"><div class="card-title"><h3>Policy updates</h3><span class="smallpill" id="policyCount">0 current</span></div><div id="todayPolicies"></div></div></div>
+      </div>
+    </div>
+
+    <div class="view-panel" id="weekView" role="tabpanel" aria-labelledby="weekDot">
+      <div class="card week-card"><div class="week-toolbar"><div><h3 id="weekTitle">This week</h3><div class="week-range">Cleaning assignments, announcements, and policy updates in one weekly view.</div></div><span class="smallpill">5 work days</span></div><div class="week-calendar" id="weekCalendar" aria-label="Weekly warehouse calendar"></div><div class="week-legend"><span class="legend-item"><span class="legend-dot clean"></span> Cleaning</span><span class="legend-item"><span class="legend-dot announce"></span> Announcements</span><span class="legend-item"><span class="legend-dot policy"></span> Policies</span></div></div>
+    </div>
+  </section>
+
+  <section class="section tools" id="tools"><div class="section-head"><div><div class="eyebrow">Daily tools</div><h2>Choose where you need to go</h2></div><div class="section-note">Each tool opens in a new tab, so this hub stays easy to return to.</div></div><div class="tool-grid">
+    <a class="tool-card" href="https://rotations.thandoyordani.chatgpt.site/" target="_blank" rel="noopener"><div class="tool-top"><div class="iconbox">♙</div><div class="open">Open ↗</div></div><div class="tool-label">Labor planning</div><h3>FairShift Rotations</h3><p>Plan team rotations, cleaning schedules, time off, and fair task assignments.</p></a>
+    <a class="tool-card green" href="https://inboundswagup.netlify.app/" target="_blank" rel="noopener"><div class="tool-top"><div class="iconbox">▤</div><div class="open">Open ↗</div></div><div class="tool-label">Warehouse control</div><h3>Houston Control</h3><p>Run inbound operations, review active work, and keep the production flow moving.</p></a>
+    <a class="tool-card blue" href="https://bdainc4-my.sharepoint.com/:x:/g/personal/tcampbell_bdainc_com/IQD_GU-9_SKKT4sl4mS0LhsaAffnMZexMAS3Q" target="_blank" rel="noopener"><div class="tool-top"><div class="iconbox">▧</div><div class="open">Open ↗</div></div><div class="tool-label">Shared workbook</div><h3>Daily Receiving Recap</h3><p>Open the shared Excel workbook used for daily receiving updates and recaps.</p></a>
+    <a class="tool-card green" href="https://bdainc4-my.sharepoint.com/:x:/r/personal/jmateo_bdainc_com/_layouts/15/Doc.aspx?action=edit&sourcedoc=%7B2678bff3-263f-4512-bdf5-81a2de97afab%7D&wdExp=TEAMS-TREATMENT&web=1" target="_blank" rel="noopener"><div class="tool-top"><div class="iconbox">▤</div><div class="open">Open ↗</div></div><div class="tool-label">Assembly workbook</div><h3>Assembly Screen</h3><p>Open the shared Assembly screen used by the team for current assembly work.</p></a>
+    <a class="tool-card blue" href="https://bdainc4-my.sharepoint.com/:x:/r/personal/cescobar_bdainc_com/_layouts/15/Doc.aspx?sourcedoc=%7B7B48C5B8-6820-490A-814A-5DF46CDD8974%7D&file=Daily%20Returns%202025%20A.M..xlsx&fromShare=true&action=default&mobileredirect=true" target="_blank" rel="noopener"><div class="tool-top"><div class="iconbox">▧</div><div class="open">Open ↗</div></div><div class="tool-label">Returns workbook</div><h3>Daily Returns</h3><p>Open the shared Returns workbook used for daily return tracking and updates.</p></a>
+    <a class="tool-card" href="https://assemblyflighttracker.netlify.app/" target="_blank" rel="noopener"><div class="tool-top"><div class="iconbox">◫</div><div class="open">Open ↗</div></div><div class="tool-label">Assembly visibility</div><h3>Assembly Flight Tracker</h3><p>Open the assembly progress view for schedule and production visibility.</p></a>
+  </div></section>
+</main>
+<footer><div class="wrap">Warehouse Operations Hub • Internal operations launcher</div></footer>
+
+<dialog class="dialog" id="checkinDialog"><div class="dialog-head"><h3>Cleaning check-in</h3><button class="close" data-close="checkinDialog" type="button">×</button></div><div class="dialog-body"><div class="checkin-box"><div class="message" id="checkinMessage"></div><p id="checkinAssignment" class="policy-meta"></p><div class="field"><label for="checkinName">Employee name</label><input id="checkinName" autocomplete="name" /></div><div class="field"><label for="checkinPin">PIN</label><input id="checkinPin" type="password" inputmode="numeric" maxlength="8" autocomplete="off" /></div><button class="action" id="checkinSubmit" type="button">Start cleaning</button></div></div></dialog>
+
+<dialog class="dialog" id="managerDialog"><div class="dialog-head"><h3>Manage Hub updates</h3><button class="close" data-close="managerDialog" type="button">×</button></div><div class="dialog-body"><div class="message" id="managerMessage"></div><div class="manager-grid">
+  <section class="manager-section"><h4>Announcement</h4><form id="announcementForm"><div class="field"><label>Title</label><input name="title" required maxlength="120" /></div><div class="field"><label>Message</label><textarea name="message" required maxlength="1200"></textarea></div><div class="form-row"><div class="field"><label>Start date</label><input name="startDate" type="date" required /></div><div class="field"><label>End date (optional)</label><input name="endDate" type="date" /></div></div><div class="field"><label>Department</label><input name="department" value="All teams" maxlength="80" /></div><label class="check"><input name="pinned" type="checkbox" /> Pin this announcement</label><button class="action" type="submit">Post announcement</button></form><div class="admin-list" id="announcementAdminList"></div></section>
+  <section class="manager-section"><h4>Policy update</h4><form id="policyForm"><div class="field"><label>Title</label><input name="title" required maxlength="140" /></div><div class="field"><label>Summary</label><textarea name="summary" required maxlength="1600"></textarea></div><div class="field"><label>Effective date</label><input name="effectiveDate" type="date" required /></div><label class="check"><input name="readRequired" type="checkbox" /> Mark as read required</label><button class="action" type="submit">Publish policy</button></form><div class="admin-list" id="policyAdminList"></div></section>
+  <section class="manager-section"><h4>Cleaning assignment</h4><form id="cleaningForm"><div class="form-row"><div class="field"><label>Date</label><input name="date" type="date" required /></div><div class="field"><label>Area</label><select name="area"><option>QA Receiving</option><option>QA Prep</option><option>Assembly</option></select></div></div><div class="field"><label>Employee</label><input name="employeeName" required maxlength="100" /></div><div class="field"><label>Cleaning area / task (optional)</label><input name="task" maxlength="240" /></div><button class="action" type="submit">Add assignment</button></form><div class="admin-list" id="cleaningAdminList"></div></section>
+  <section class="manager-section"><h4>Employee PIN</h4><form id="employeeForm"><div class="field"><label>Employee name</label><input name="name" required maxlength="100" /></div><div class="field"><label>Department</label><input name="department" maxlength="100" /></div><div class="field"><label>New PIN</label><input name="pin" inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" required /></div><button class="action" type="submit">Save employee</button></form><div class="admin-list" id="employeeAdminList"></div><p class="policy-meta" style="margin-top:12px">PINs are hashed on the server; the Hub never returns them to the browser.</p></section>
+</div></div></dialog>
+<script src="script.js"></script>
+</body>
+</html>
