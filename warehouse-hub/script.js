@@ -1,3 +1,4 @@
+// Build refresh after manager key change.
 (() => {
   const API = '/.netlify/functions/hub-feed';
   const FAIRSHIFT = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
