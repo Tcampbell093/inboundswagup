@@ -10,7 +10,7 @@
 <body>
 <div class="topbar"><div class="topbar-inner">
   <div class="brand"><div class="brandmark">◇</div> Operations Hub</div>
-  <div class="top-actions"><div class="toolcount"><span class="dot"></span> 11 live tools</div><button class="manage-btn" id="manageBtn" type="button">Manage</button></div>
+  <div class="top-actions"><div class="toolcount"><span class="dot"></span> 13 live tools</div><div class="toolcount" id="currentDate" aria-label="Today's date">Today</div><button class="manage-btn" id="manageBtn" type="button">Manage</button></div>
 </div></div>
 <main class="wrap">
   <section class="hero">
@@ -59,6 +59,15 @@
   <section class="manager-section"><h4>Policy update</h4><form id="policyForm"><div class="field"><label>Title</label><input name="title" required maxlength="140" /></div><div class="field"><label>Summary</label><textarea name="summary" required maxlength="1600"></textarea></div><div class="field"><label>Effective date</label><input name="effectiveDate" type="date" required /></div><label class="check"><input name="readRequired" type="checkbox" /> Mark as read required</label><button class="action" type="submit">Publish policy</button></form><div class="admin-list" id="policyAdminList"></div></section>
   <section class="manager-section"><h4>FairShift cleaning</h4><p class="policy-meta">FairShift is the live source for cleaning assignments and fairness credit. Manage the rotation there; associate PINs are also managed from its cleaning check-in page.</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px"><a class="action" href="https://fairshift-rotations.thandoyordani.chatgpt.site/" target="_blank" rel="noopener">Open FairShift ↗</a><a class="action secondary" href="https://fairshift-rotations.thandoyordani.chatgpt.site/checkin" target="_blank" rel="noopener">Cleaning PINs ↗</a></div></section>
 </div></div></dialog>
+<script>
+(() => {
+  const el = document.getElementById('currentDate');
+  if (!el) return;
+  el.textContent = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric'
+  }).format(new Date());
+})();
+</script>
 <script src="script.js"></script>
 </body>
 </html>
