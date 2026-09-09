@@ -23,6 +23,13 @@ interface OverstockExcelPayload {
 
 function main(workbook: ExcelScript.Workbook, payloadJson: string): string {
   const payload = JSON.parse(payloadJson || '{}') as OverstockExcelPayload;
+
+  // Deliberately do not erase Daily Log cells when an Overstock item is deleted.
+  // Daily Log is an audit/history workbook, so deletion events are retained there.
+  if (payload.event === 'entry.deleted' || payload.event === 'container.deleted') {
+    return JSON.stringify({ ok: true, event: payload.event, updated: 0, unresolved: [], skipped: 'audit-preserve-delete' });
+  }
+
   const table = workbook.getTable('DailyLog');
   if (!table) throw new Error('Excel table DailyLog was not found.');
 
@@ -83,7 +90,6 @@ function main(workbook: ExcelScript.Workbook, payloadJson: string): string {
     }
   }
 
-  // Write the data body back once, which is much faster than cell-by-cell writes.
-  body.setValues(values);
+  if (updated > 0) body.setValues(values);
   return JSON.stringify({ ok: true, event: payload.event, updated, unresolved });
 }
