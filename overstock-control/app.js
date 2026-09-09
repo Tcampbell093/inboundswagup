@@ -1,7 +1,7 @@
 (() => {
   const API = '/api/overstock-control';
   const $ = (id) => document.getElementById(id);
-  let snapshot = { entries: [], containers: [], categories: [], locations: [], associates: [], updatedAt: null };
+  let snapshot = { entries: [], containers: [], categories: [], locations: [], associates: [], updatedAt: null, excelSync: { configured: false } };
   let toastTimer = null;
 
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -14,7 +14,7 @@
     el.classList.toggle('error', error);
     el.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
   }
 
   function formObject(form) {
@@ -34,7 +34,7 @@
   function entryMatches(e, q) {
     if (!q) return true;
     const c = containerById(e.containerId);
-    return [e.po,e.category,e.status,e.action,e.associate,e.location,e.containerCode,c?.code,c?.currentLocation].some(v => norm(v).includes(q));
+    return [e.po,e.deliveryId,e.category,e.status,e.action,e.note,e.associate,e.location,e.containerCode,c?.code,c?.currentLocation].some(v => norm(v).includes(q));
   }
 
   function containerMatches(c, q) {
@@ -44,6 +44,18 @@
 
   function renderDate() {
     $('currentDate').textContent = new Intl.DateTimeFormat('en-US', { timeZone:'America/New_York', weekday:'short', month:'short', day:'numeric' }).format(new Date());
+  }
+
+  function renderExcelSync() {
+    const pill = $('excelSyncPill');
+    if (!pill) return;
+    const connected = snapshot.excelSync?.configured === true;
+    pill.textContent = connected ? 'Excel write-back · Connected' : 'Excel write-back · Setup needed';
+    pill.classList.toggle('connected', connected);
+    pill.classList.toggle('disconnected', !connected);
+    pill.title = connected
+      ? 'Changes from Overstock Control can be sent to the DailyLog table in New Daily Rec..xlsx.'
+      : 'The Overstock side is ready. Connect the Power Automate webhook to enable automatic Excel updates.';
   }
 
   function renderStats() {
@@ -63,12 +75,13 @@
       const c = containerById(e.containerId);
       const location = c?.currentLocation || e.location || 'No location';
       const code = c?.code || e.containerCode || 'No box';
+      const delivery = e.deliveryId ? ` · ${esc(e.deliveryId)}` : '';
       return `<article class="inventory-row">
-        <div><div class="inv-po">PO ${esc(e.po || '—')}</div><div class="inv-meta">${esc(e.associate || 'Unknown associate')} · ${fmtDate(Number(e.updatedAt||e.createdAt||0))}</div></div>
+        <div><div class="inv-po">PO ${esc(e.po || '—')}</div><div class="inv-meta">${esc(e.associate || 'Unknown associate')}${delivery} · ${fmtDate(Number(e.updatedAt||e.createdAt||0))}</div></div>
         <div><span class="chip blue">${esc(code)}</span><div class="inv-meta">${esc(location)}</div></div>
         <div><strong>${Number(e.quantity||0).toLocaleString()}</strong><div class="inv-meta">units</div></div>
         <div><span class="chip">${esc(e.category || 'Uncategorized')}</span></div>
-        <div><span class="chip green">${esc(e.status || '—')}</span><div class="inv-meta">${esc(e.action || '')}</div></div>
+        <div><span class="chip green">${esc(e.status || '—')}</span><div class="inv-meta">${esc(e.action || '')}</div>${e.note ? `<div class="inv-meta">${esc(e.note)}</div>` : ''}</div>
         <div class="row-actions"><button class="mini" type="button" data-edit-entry="${esc(e.id)}">Edit</button></div>
       </article>`;
     }).join('') : '<div class="empty">No Overstock entries match this search.</div>';
@@ -109,7 +122,7 @@
     $('actionList').innerHTML = options(snapshot.entries.map(e=>e.action));
   }
 
-  function renderAll() { renderStats(); refreshSelects(); renderInventory(); renderContainers(); }
+  function renderAll() { renderExcelSync(); renderStats(); refreshSelects(); renderInventory(); renderContainers(); }
 
   function setTab(tab) {
     document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
@@ -123,6 +136,12 @@
     const j=await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(j.error||`Request failed (${r.status})`);
     return j;
+  }
+
+  function completedMessage(base, result) {
+    if (!result?.excelWrite?.configured) return base;
+    if (result.excelWrite.ok) return `${base} Excel sync sent.`;
+    return `${base} Saved in Overstock, but Excel sync failed.`;
   }
 
   async function load(showNotice=false) {
@@ -154,37 +173,37 @@
   async function deleteContainer(id) {
     const c=containerById(id); if(!c)return;
     if(!confirm(`Delete ${c.code||'this container'}?`))return;
-    try{const j=await request({action:'deleteContainer',id});snapshot={...snapshot,...j};renderAll();toast('Container deleted.');}catch(e){toast(e.message,true);}
+    try{const j=await request({action:'deleteContainer',id});snapshot={...snapshot,...j};renderAll();toast(completedMessage('Container deleted.',j));}catch(e){toast(e.message,true);}
   }
 
   function openEditEntry(id) {
     const e=snapshot.entries.find(x=>String(x.id)===String(id)); if(!e)return;
     const f=$('editForm');
     refreshSelects();
-    f.elements.id.value=e.id||'';f.elements.po.value=e.po||'';f.elements.containerId.value=e.containerId||'';f.elements.quantity.value=Number(e.quantity||0);f.elements.category.value=e.category||'';f.elements.status.value=e.status||'';f.elements.action.value=e.action||'';f.elements.associate.value=e.associate||'';
+    f.elements.id.value=e.id||'';f.elements.po.value=e.po||'';f.elements.deliveryId.value=e.deliveryId||'';f.elements.containerId.value=e.containerId||'';f.elements.quantity.value=Number(e.quantity||0);f.elements.category.value=e.category||'';f.elements.status.value=e.status||'';f.elements.action.value=e.action||'';f.elements.associate.value=e.associate||'';f.elements.note.value=e.note||'';
     $('editDialog').showModal();
   }
 
   $('entryForm').addEventListener('submit',async e=>{
     e.preventDefault(); const f=e.currentTarget; const d=formObject(f); const c=containerById(d.containerId); if(!c)return toast('Choose a container.',true);
-    const entry={id:d.id||undefined,po:d.po,quantity:Number(d.quantity||0),category:d.category,status:d.status,action:d.action,associate:d.associate,containerId:d.containerId,containerCode:c.code,location:c.currentLocation,date:new Date().toISOString().slice(0,10),sourceType:'overstock-standalone'};
-    try{const j=await request({action:'upsertEntry',entry});snapshot={...snapshot,...j};clearEntryForm();renderAll();toast(d.id?'Item updated.':'Item added to Overstock.');}catch(err){toast(err.message,true);}
+    const entry={id:d.id||undefined,po:d.po,deliveryId:d.deliveryId,quantity:Number(d.quantity||0),category:d.category,status:d.status,action:d.action,note:d.note,associate:d.associate,containerId:d.containerId,containerCode:c.code,location:c.currentLocation,date:new Date().toISOString().slice(0,10),sourceType:'overstock-standalone'};
+    try{const j=await request({action:'upsertEntry',entry});snapshot={...snapshot,...j};clearEntryForm();renderAll();toast(completedMessage(d.id?'Item updated.':'Item added to Overstock.',j),j.excelWrite?.configured && !j.excelWrite?.ok);}catch(err){toast(err.message,true);}
   });
 
   $('containerForm').addEventListener('submit',async e=>{
     e.preventDefault();const f=e.currentTarget;const d=formObject(f);const container={id:d.id||undefined,code:d.code,currentLocation:d.currentLocation,status:d.status,notes:d.notes};
-    try{const j=await request({action:'upsertContainer',container});snapshot={...snapshot,...j};clearContainerForm();renderAll();toast(d.id?'Container updated.':'Container created.');}catch(err){toast(err.message,true);}
+    try{const j=await request({action:'upsertContainer',container});snapshot={...snapshot,...j};clearContainerForm();renderAll();toast(completedMessage(d.id?'Container updated.':'Container created.',j),j.excelWrite?.configured && !j.excelWrite?.ok);}catch(err){toast(err.message,true);}
   });
 
   $('editForm').addEventListener('submit',async e=>{
     e.preventDefault();const d=formObject(e.currentTarget);const old=snapshot.entries.find(x=>String(x.id)===String(d.id));const c=containerById(d.containerId);if(!old||!c)return;
-    const entry={...old,id:d.id,po:d.po,containerId:d.containerId,containerCode:c.code,location:c.currentLocation,quantity:Number(d.quantity||0),category:d.category,status:d.status,action:d.action,associate:d.associate};
-    try{const j=await request({action:'upsertEntry',entry});snapshot={...snapshot,...j};$('editDialog').close();renderAll();toast('Item updated.');}catch(err){toast(err.message,true);}
+    const entry={...old,id:d.id,po:d.po,deliveryId:d.deliveryId,containerId:d.containerId,containerCode:c.code,location:c.currentLocation,quantity:Number(d.quantity||0),category:d.category,status:d.status,action:d.action,note:d.note,associate:d.associate};
+    try{const j=await request({action:'upsertEntry',entry});snapshot={...snapshot,...j};$('editDialog').close();renderAll();toast(completedMessage('Item updated.',j),j.excelWrite?.configured && !j.excelWrite?.ok);}catch(err){toast(err.message,true);}
   });
 
   $('deleteEntryBtn').addEventListener('click',async()=>{
     const id=$('editForm').elements.id.value;const e=snapshot.entries.find(x=>String(x.id)===String(id));if(!e||!confirm(`Delete PO ${e.po}?`))return;
-    try{const j=await request({action:'deleteEntry',id});snapshot={...snapshot,...j};$('editDialog').close();renderAll();toast('Item deleted.');}catch(err){toast(err.message,true);}
+    try{const j=await request({action:'deleteEntry',id});snapshot={...snapshot,...j};$('editDialog').close();renderAll();toast(completedMessage('Item deleted.',j),j.excelWrite?.configured && !j.excelWrite?.ok);}catch(err){toast(err.message,true);}
   });
 
   document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close)?.close());
