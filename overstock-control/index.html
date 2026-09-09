@@ -12,7 +12,7 @@
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand"><span class="brandmark">◫</span><span>Overstock Control</span></div>
-      <div class="top-actions"><span class="live"><i></i> Live Houston data</span><span id="currentDate" class="date-pill"></span><a class="hub-link" href="/warehouse-hub/">Work Hub ↗</a></div>
+      <div class="top-actions"><span class="live"><i></i> Live Houston data</span><span id="excelSyncPill" class="excel-sync-pill">Excel sync…</span><span id="currentDate" class="date-pill"></span><a class="hub-link" href="/warehouse-hub/">Work Hub ↗</a></div>
     </div>
   </header>
 
@@ -21,7 +21,7 @@
       <div>
         <div class="eyebrow">Standalone Overstock</div>
         <h1>Everything Overstock,<br>without the rest of Houston.</h1>
-        <p>This view uses the same live Overstock records already captured in Houston. Changes made here appear back in Houston too.</p>
+        <p>This view uses the same live Overstock records already captured in Houston. Changes made here appear back in Houston too. When Excel write-back is connected, container locations and item details can also update the Daily Log automatically.</p>
       </div>
       <button id="refreshBtn" class="btn secondary" type="button">↻ Refresh</button>
     </section>
@@ -39,7 +39,7 @@
         <button class="tab" data-tab="containers" type="button">Containers</button>
         <button class="tab" data-tab="add" type="button">Quick Add</button>
       </div>
-      <label class="search"><span>⌕</span><input id="searchInput" placeholder="Search PO, box, location, associate…" /></label>
+      <label class="search"><span>⌕</span><input id="searchInput" placeholder="Search PO, delivery, box, location, associate…" /></label>
     </section>
 
     <section class="panel active" id="panel-inventory">
@@ -55,18 +55,19 @@
     <section class="panel" id="panel-add">
       <div class="quick-grid">
         <form id="entryForm" class="form-card">
-          <div class="form-title"><span>01</span><div><h2>Add an item</h2><p>Writes directly to the same Overstock records Houston uses.</p></div></div>
+          <div class="form-title"><span>01</span><div><h2>Add an item</h2><p>Writes to Houston and, when connected, the Daily Log Excel table.</p></div></div>
           <input type="hidden" name="id" />
           <div class="field"><label>Associate</label><input name="associate" list="associateList" placeholder="Who is logging this?" /></div>
           <div class="field"><label>Container</label><select name="containerId" required></select></div>
-          <div class="two"><div class="field"><label>PO number</label><input name="po" inputmode="numeric" required placeholder="257798" /></div><div class="field"><label>Quantity</label><input name="quantity" type="number" min="0" step="1" required value="1" /></div></div>
-          <div class="two"><div class="field"><label>Category</label><input name="category" list="categoryList" placeholder="Apparel" /></div><div class="field"><label>Status</label><input name="status" list="statusList" value="Not Donation" /></div></div>
-          <div class="field"><label>Action</label><input name="action" list="actionList" value="Required" /></div>
+          <div class="two"><div class="field"><label>PO number</label><input name="po" inputmode="numeric" required placeholder="304978" /></div><div class="field"><label>Delivery ID <small>(recommended)</small></label><input name="deliveryId" placeholder="304978-P1" autocapitalize="characters" /></div></div>
+          <div class="two"><div class="field"><label>Quantity</label><input name="quantity" type="number" min="0" step="1" required value="1" /></div><div class="field"><label>Category</label><input name="category" list="categoryList" placeholder="Apparel" /></div></div>
+          <div class="two"><div class="field"><label>Status</label><input name="status" list="statusList" value="Not Donation" /></div><div class="field"><label>Disposition / Action</label><input name="action" list="actionList" value="Required" /></div></div>
+          <div class="field"><label>Overstock note</label><textarea name="note" placeholder="Optional reason or note"></textarea></div>
           <div class="form-actions"><button class="btn" type="submit" id="entrySaveBtn">Add item</button><button class="btn secondary" id="entryClearBtn" type="button">Clear</button></div>
         </form>
 
         <form id="containerForm" class="form-card">
-          <div class="form-title"><span>02</span><div><h2>Create or edit a container</h2><p>Leave the code blank and the next OSC number is generated automatically.</p></div></div>
+          <div class="form-title"><span>02</span><div><h2>Create or edit a container</h2><p>Changing a location updates every Overstock item in that box and can write the same location back to Excel.</p></div></div>
           <input type="hidden" name="id" />
           <div class="field"><label>Container code</label><input name="code" placeholder="OSC-003" autocapitalize="characters" /></div>
           <div class="field"><label>Location</label><input name="currentLocation" list="locationList" placeholder="E-1" autocapitalize="characters" /></div>
@@ -88,17 +89,17 @@
     <div class="dialog-head"><h3>Edit Overstock item</h3><button type="button" data-close="editDialog">×</button></div>
     <form id="editForm" class="dialog-body">
       <input type="hidden" name="id" />
-      <div class="field"><label>PO number</label><input name="po" required /></div>
+      <div class="two"><div class="field"><label>PO number</label><input name="po" required /></div><div class="field"><label>Delivery ID</label><input name="deliveryId" placeholder="304978-P1" /></div></div>
       <div class="field"><label>Container</label><select name="containerId" required></select></div>
       <div class="two"><div class="field"><label>Quantity</label><input name="quantity" type="number" min="0" step="1" /></div><div class="field"><label>Category</label><input name="category" list="categoryList" /></div></div>
-      <div class="two"><div class="field"><label>Status</label><input name="status" list="statusList" /></div><div class="field"><label>Action</label><input name="action" list="actionList" /></div></div>
+      <div class="two"><div class="field"><label>Status</label><input name="status" list="statusList" /></div><div class="field"><label>Disposition / Action</label><input name="action" list="actionList" /></div></div>
       <div class="field"><label>Associate</label><input name="associate" list="associateList" /></div>
+      <div class="field"><label>Overstock note</label><textarea name="note" placeholder="Optional reason or note"></textarea></div>
       <div class="dialog-actions"><button class="btn" type="submit">Save changes</button><button class="btn danger" id="deleteEntryBtn" type="button">Delete item</button></div>
     </form>
   </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="app.js"></script>
-  <!-- standalone overstock deployment refresh -->
 </body>
 </html>
