@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#123d34" />
+  <meta name="robots" content="noindex" />
+  <title>Overstock Control</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand"><span class="brandmark">◫</span><span>Overstock Control</span></div>
+      <div class="top-actions"><span class="live"><i></i> Live Houston data</span><span id="currentDate" class="date-pill"></span><a class="hub-link" href="/warehouse-hub/">Work Hub ↗</a></div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <div>
+        <div class="eyebrow">Standalone Overstock</div>
+        <h1>Everything Overstock,<br>without the rest of Houston.</h1>
+        <p>This view uses the same live Overstock records already captured in Houston. Changes made here appear back in Houston too.</p>
+      </div>
+      <button id="refreshBtn" class="btn secondary" type="button">↻ Refresh</button>
+    </section>
+
+    <section class="stats" aria-label="Overstock summary">
+      <article><span>Active units</span><strong id="statUnits">0</strong></article>
+      <article><span>Entries</span><strong id="statEntries">0</strong></article>
+      <article><span>Open boxes</span><strong id="statOpen">0</strong></article>
+      <article><span>Locations used</span><strong id="statLocations">0</strong></article>
+    </section>
+
+    <section class="toolbar">
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="inventory" type="button">Inventory</button>
+        <button class="tab" data-tab="containers" type="button">Containers</button>
+        <button class="tab" data-tab="add" type="button">Quick Add</button>
+      </div>
+      <label class="search"><span>⌕</span><input id="searchInput" placeholder="Search PO, box, location, associate…" /></label>
+    </section>
+
+    <section class="panel active" id="panel-inventory">
+      <div class="panel-head"><div><h2>Overstock inventory</h2><p id="inventoryMeta">Loading…</p></div></div>
+      <div id="inventoryList" class="inventory-list"></div>
+    </section>
+
+    <section class="panel" id="panel-containers">
+      <div class="panel-head"><div><h2>Containers</h2><p>Open, stored, and previously created Overstock boxes.</p></div><button id="newContainerBtn" class="btn" type="button">+ New container</button></div>
+      <div id="containerGrid" class="container-grid"></div>
+    </section>
+
+    <section class="panel" id="panel-add">
+      <div class="quick-grid">
+        <form id="entryForm" class="form-card">
+          <div class="form-title"><span>01</span><div><h2>Add an item</h2><p>Writes directly to the same Overstock records Houston uses.</p></div></div>
+          <input type="hidden" name="id" />
+          <div class="field"><label>Associate</label><input name="associate" list="associateList" placeholder="Who is logging this?" /></div>
+          <div class="field"><label>Container</label><select name="containerId" required></select></div>
+          <div class="two"><div class="field"><label>PO number</label><input name="po" inputmode="numeric" required placeholder="257798" /></div><div class="field"><label>Quantity</label><input name="quantity" type="number" min="0" step="1" required value="1" /></div></div>
+          <div class="two"><div class="field"><label>Category</label><input name="category" list="categoryList" placeholder="Apparel" /></div><div class="field"><label>Status</label><input name="status" list="statusList" value="Not Donation" /></div></div>
+          <div class="field"><label>Action</label><input name="action" list="actionList" value="Required" /></div>
+          <div class="form-actions"><button class="btn" type="submit" id="entrySaveBtn">Add item</button><button class="btn secondary" id="entryClearBtn" type="button">Clear</button></div>
+        </form>
+
+        <form id="containerForm" class="form-card">
+          <div class="form-title"><span>02</span><div><h2>Create or edit a container</h2><p>Leave the code blank and the next OSC number is generated automatically.</p></div></div>
+          <input type="hidden" name="id" />
+          <div class="field"><label>Container code</label><input name="code" placeholder="OSC-003" autocapitalize="characters" /></div>
+          <div class="field"><label>Location</label><input name="currentLocation" list="locationList" placeholder="E-1" autocapitalize="characters" /></div>
+          <div class="field"><label>Status</label><select name="status"><option>Open</option><option>Stored</option><option>Closed</option></select></div>
+          <div class="field"><label>Notes</label><textarea name="notes" placeholder="Optional notes"></textarea></div>
+          <div class="form-actions"><button class="btn" type="submit" id="containerSaveBtn">Create container</button><button class="btn secondary" id="containerClearBtn" type="button">Clear</button></div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <datalist id="associateList"></datalist>
+  <datalist id="categoryList"></datalist>
+  <datalist id="locationList"></datalist>
+  <datalist id="statusList"></datalist>
+  <datalist id="actionList"></datalist>
+
+  <dialog id="editDialog" class="dialog">
+    <div class="dialog-head"><h3>Edit Overstock item</h3><button type="button" data-close="editDialog">×</button></div>
+    <form id="editForm" class="dialog-body">
+      <input type="hidden" name="id" />
+      <div class="field"><label>PO number</label><input name="po" required /></div>
+      <div class="field"><label>Container</label><select name="containerId" required></select></div>
+      <div class="two"><div class="field"><label>Quantity</label><input name="quantity" type="number" min="0" step="1" /></div><div class="field"><label>Category</label><input name="category" list="categoryList" /></div></div>
+      <div class="two"><div class="field"><label>Status</label><input name="status" list="statusList" /></div><div class="field"><label>Action</label><input name="action" list="actionList" /></div></div>
+      <div class="field"><label>Associate</label><input name="associate" list="associateList" /></div>
+      <div class="dialog-actions"><button class="btn" type="submit">Save changes</button><button class="btn danger" id="deleteEntryBtn" type="button">Delete item</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
