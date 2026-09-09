@@ -1,1 +1,0 @@
-See docs/overstock-excel-sync.md for setup and integrations/overstock-excel-office-script.ts for the workbook script.
