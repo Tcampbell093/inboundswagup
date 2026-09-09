@@ -24,8 +24,8 @@ interface OverstockExcelPayload {
 function main(workbook: ExcelScript.Workbook, payloadJson: string): string {
   const payload = JSON.parse(payloadJson || '{}') as OverstockExcelPayload;
 
-  // Deliberately do not erase Daily Log cells when an Overstock item is deleted.
-  // Daily Log is an audit/history workbook, so deletion events are retained there.
+  // Daily Log is an audit/history workbook. A delete in Overstock does not
+  // clear historical Excel fields automatically.
   if (payload.event === 'entry.deleted' || payload.event === 'container.deleted') {
     return JSON.stringify({ ok: true, event: payload.event, updated: 0, unresolved: [], skipped: 'audit-preserve-delete' });
   }
@@ -62,10 +62,16 @@ function main(workbook: ExcelScript.Workbook, payloadJson: string): string {
     // Prefer Delivery ID because one PO can arrive in multiple deliveries.
     let matches: number[] = [];
     if (deliveryId && deliveryCol >= 0) {
-      matches = values.map((row, i) => String(row[deliveryCol] ?? '').trim().toUpperCase() === deliveryId.toUpperCase() ? i : -1).filter(i => i >= 0);
+      matches = values
+        .map((row, i) => String(row[deliveryCol] ?? '').trim().toUpperCase() === deliveryId.toUpperCase() ? i : -1)
+        .filter(i => i >= 0);
     }
+
     if (!matches.length && po) {
-      const poMatches = values.map((row, i) => String(row[poCol] ?? '').trim().toUpperCase() === po.toUpperCase() ? i : -1).filter(i => i >= 0);
+      const poMatches = values
+        .map((row, i) => String(row[poCol] ?? '').trim().toUpperCase() === po.toUpperCase() ? i : -1)
+        .filter(i => i >= 0);
+
       // A bare PO is safe only when it identifies one DailyLog row.
       if (poMatches.length === 1) matches = poMatches;
       else if (poMatches.length > 1) {
@@ -80,16 +86,26 @@ function main(workbook: ExcelScript.Workbook, payloadJson: string): string {
     }
 
     for (const rowIndex of matches) {
-      const row = values[rowIndex];
-      if (qtyCol >= 0 && change.quantity !== undefined && change.quantity !== null) row[qtyCol] = Number(change.quantity) || 0;
-      if (locCol >= 0 && change.location !== undefined) row[locCol] = String(change.location ?? '');
-      if (containerCol >= 0 && change.containerCode !== undefined) row[containerCol] = String(change.containerCode ?? '');
-      if (dispositionCol >= 0 && change.disposition !== undefined) row[dispositionCol] = String(change.disposition ?? '');
-      if (noteCol >= 0 && change.note !== undefined) row[noteCol] = String(change.note ?? '');
+      // Write ONLY the Overstock input columns. Do not rewrite the whole table:
+      // DailyLog contains formula/auto columns that must remain formulas.
+      if (qtyCol >= 0 && change.quantity !== undefined && change.quantity !== null) {
+        body.getCell(rowIndex, qtyCol).setValue(Number(change.quantity) || 0);
+      }
+      if (locCol >= 0 && change.location !== undefined) {
+        body.getCell(rowIndex, locCol).setValue(String(change.location ?? ''));
+      }
+      if (containerCol >= 0 && change.containerCode !== undefined) {
+        body.getCell(rowIndex, containerCol).setValue(String(change.containerCode ?? ''));
+      }
+      if (dispositionCol >= 0 && change.disposition !== undefined) {
+        body.getCell(rowIndex, dispositionCol).setValue(String(change.disposition ?? ''));
+      }
+      if (noteCol >= 0 && change.note !== undefined) {
+        body.getCell(rowIndex, noteCol).setValue(String(change.note ?? ''));
+      }
       updated += 1;
     }
   }
 
-  if (updated > 0) body.setValues(values);
   return JSON.stringify({ ok: true, event: payload.event, updated, unresolved });
 }
