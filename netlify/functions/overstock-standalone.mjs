@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 const { Pool } = pg;
 let poolInstance = null;
 const TOMBSTONE_TTL_MS = 24 * 60 * 60 * 1000;
+const EXCEL_WEBHOOK_TIMEOUT_MS = 8000;
 
 function env(name) {
   return globalThis.Netlify?.env?.get(name) || '';
@@ -60,10 +61,12 @@ function cleanEntry(raw, existing = null) {
     ...source,
     id,
     po: str(raw.po ?? source.po, 120),
+    deliveryId: str(raw.deliveryId ?? source.deliveryId, 120),
     category: str(raw.category ?? source.category, 120),
     quantity: Math.max(0, Math.round(num(raw.quantity ?? source.quantity, 0))),
     status: str(raw.status ?? source.status, 120) || 'Not Donation',
     action: str(raw.action ?? source.action, 120) || 'Required',
+    note: str(raw.note ?? source.note, 1000),
     date: str(raw.date ?? source.date, 40) || new Date().toISOString().slice(0, 10),
     location: str(raw.location ?? source.location, 120),
     associate: str(raw.associate ?? source.associate, 120),
@@ -115,6 +118,57 @@ function filterDeleted(data) {
   };
 }
 
+function excelConnectionState() {
+  return {
+    configured: Boolean(env('OVERSTOCK_EXCEL_WEBHOOK_URL')),
+    provider: 'Power Automate',
+    workbook: 'New Daily Rec..xlsx',
+    table: 'DailyLog',
+    direction: 'Overstock → Excel',
+  };
+}
+
+function excelRow(entry) {
+  return {
+    po: str(entry?.po, 120),
+    deliveryId: str(entry?.deliveryId, 120),
+    quantity: Math.max(0, Math.round(num(entry?.quantity, 0))),
+    location: str(entry?.location, 120),
+    containerCode: str(entry?.containerCode, 120),
+    disposition: str(entry?.action, 120),
+    note: str(entry?.note, 1000),
+  };
+}
+
+async function sendExcelEvent(event) {
+  const webhookUrl = env('OVERSTOCK_EXCEL_WEBHOOK_URL');
+  if (!webhookUrl) return { configured: false, ok: false, status: 'not-connected' };
+
+  let parsed;
+  try { parsed = new URL(webhookUrl); } catch { return { configured: true, ok: false, status: 'invalid-webhook-url' }; }
+  if (parsed.protocol !== 'https:') return { configured: true, ok: false, status: 'invalid-webhook-url' };
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), EXCEL_WEBHOOK_TIMEOUT_MS);
+  try {
+    const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain, */*' };
+    const syncKey = env('OVERSTOCK_EXCEL_WEBHOOK_SECRET');
+    if (syncKey) headers['x-overstock-sync-key'] = syncKey;
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(event),
+      signal: controller.signal,
+    });
+    const text = str(await response.text().catch(() => ''), 500);
+    return { configured: true, ok: response.ok, status: response.status, response: text };
+  } catch (error) {
+    return { configured: true, ok: false, status: error?.name === 'AbortError' ? 'timeout' : 'request-failed', error: str(error?.message, 300) };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function readSnapshot(db) {
   const r = await db.query(`SELECT data_json, masters_json, updated_at FROM workflow_sync_state WHERE state_key='default' LIMIT 1`);
   const row = r.rows[0] || { data_json: {}, masters_json: {}, updated_at: null };
@@ -133,12 +187,14 @@ async function readSnapshot(db) {
     categories,
     associates,
     updatedAt: row.updated_at,
+    excelSync: excelConnectionState(),
   };
 }
 
 async function mutate(action, body) {
   const db = pool();
   const client = await db.connect();
+  let excelEvent = null;
   try {
     await client.query('BEGIN');
     const r = await client.query(`SELECT data_json FROM workflow_sync_state WHERE state_key='default' LIMIT 1 FOR UPDATE`);
@@ -164,11 +220,24 @@ async function mutate(action, body) {
       saved.location = container.currentLocation || saved.location;
       if (idx >= 0) entries[idx] = saved; else entries.push(saved);
       entryTombs = entryTombs.filter(t => t.id !== saved.id);
+      excelEvent = {
+        event: 'entry.upserted',
+        source: 'overstock-control',
+        occurredAt: new Date().toISOString(),
+        rows: [excelRow(saved)],
+      };
     } else if (action === 'deleteEntry') {
       const id = str(body.id, 160);
       if (!id) throw new Error('Entry id is required.');
+      const existing = entries.find(e => String(e.id) === id) || null;
       entries = entries.filter(e => String(e.id) !== id);
       entryTombs = normalizeTombs([...entryTombs, { id, ts: now }]);
+      excelEvent = {
+        event: 'entry.deleted',
+        source: 'overstock-control',
+        occurredAt: new Date().toISOString(),
+        rows: existing ? [excelRow(existing)] : [],
+      };
     } else if (action === 'upsertContainer') {
       const incoming = { ...(body.container || {}) };
       const idx = containers.findIndex(c => String(c?.id || '') === String(incoming.id || ''));
@@ -181,12 +250,30 @@ async function mutate(action, body) {
       if (idx >= 0) containers[idx] = saved; else containers.push(saved);
       containerTombs = containerTombs.filter(t => t.id !== saved.id);
       entries = entries.map(e => String(e.containerId) === saved.id ? { ...e, containerCode: saved.code, location: saved.currentLocation, updatedAt: now } : e);
+      excelEvent = {
+        event: 'container.updated',
+        source: 'overstock-control',
+        occurredAt: new Date().toISOString(),
+        containerCode: saved.code,
+        location: saved.currentLocation,
+        previousLocation: str(existing?.currentLocation, 120),
+        rows: entries.filter(e => String(e.containerId) === saved.id).map(excelRow),
+      };
     } else if (action === 'deleteContainer') {
       const id = str(body.id, 160);
       if (!id) throw new Error('Container id is required.');
       if (entries.some(e => String(e.containerId) === id)) throw new Error('Move or remove the items in this container before deleting it.');
+      const existing = containers.find(c => String(c.id) === id) || null;
       containers = containers.filter(c => String(c.id) !== id);
       containerTombs = normalizeTombs([...containerTombs, { id, ts: now }]);
+      excelEvent = {
+        event: 'container.deleted',
+        source: 'overstock-control',
+        occurredAt: new Date().toISOString(),
+        containerCode: str(existing?.code, 120),
+        location: str(existing?.currentLocation, 120),
+        rows: [],
+      };
     } else {
       throw new Error('Unsupported action.');
     }
@@ -201,7 +288,7 @@ async function mutate(action, body) {
       [JSON.stringify(data)],
     );
     await client.query('COMMIT');
-    return readSnapshot(db);
+    return { snapshot: await readSnapshot(db), excelEvent };
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch {}
     throw error;
@@ -215,8 +302,21 @@ export default async (request) => {
     if (request.method === 'GET') return json(200, await readSnapshot(pool()));
     if (request.method !== 'POST') return json(405, { error: 'Method not allowed.' });
     const body = await request.json().catch(() => ({}));
-    const result = await mutate(str(body.action, 50), body);
-    return json(200, { ok: true, ...result });
+    const action = str(body.action, 50);
+
+    if (action === 'testExcelSync') {
+      const excelWrite = await sendExcelEvent({
+        event: 'sync.test',
+        source: 'overstock-control',
+        occurredAt: new Date().toISOString(),
+        rows: [],
+      });
+      return json(200, { ok: true, excelWrite, excelSync: excelConnectionState() });
+    }
+
+    const result = await mutate(action, body);
+    const excelWrite = result.excelEvent ? await sendExcelEvent(result.excelEvent) : { configured: false, ok: false, status: 'no-event' };
+    return json(200, { ok: true, ...result.snapshot, excelWrite });
   } catch (error) {
     return json(400, { error: str(error?.message || 'Unexpected error.', 300) });
   }
