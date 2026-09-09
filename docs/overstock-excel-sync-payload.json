@@ -1,0 +1,18 @@
+{
+  "event": "container.updated",
+  "source": "overstock-control",
+  "occurredAt": "2026-09-09T00:00:00.000Z",
+  "containerCode": "OSC-014",
+  "location": "E-7",
+  "rows": [
+    {
+      "po": "304978",
+      "deliveryId": "304978-P1",
+      "quantity": 14,
+      "location": "E-7",
+      "containerCode": "OSC-014",
+      "disposition": "Required",
+      "note": ""
+    }
+  ]
+}
