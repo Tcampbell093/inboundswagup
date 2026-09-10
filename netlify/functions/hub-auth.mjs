@@ -124,10 +124,15 @@ async function fairShiftRequest(path, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
+    const syncKey = env('FAIRSHIFT_HUB_PIN_SYNC_KEY');
     const response = await fetch(`${FAIRSHIFT_BASE}${path}`, {
       ...options,
       signal: controller.signal,
-      headers: { Accept: 'application/json', ...(options.headers || {}) },
+      headers: {
+        Accept: 'application/json',
+        ...(syncKey ? { 'x-hub-pin-key': syncKey } : {}),
+        ...(options.headers || {}),
+      },
     });
     const body = await response.json().catch(() => ({}));
     return { ok: response.ok, status: response.status, body };
