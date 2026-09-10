@@ -71,7 +71,15 @@
         body: JSON.stringify({ action, assignmentId }),
       });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || 'Cleaning check-in failed.');
+      if (!response.ok) {
+        if (response.status === 401) {
+          await window.HubAssociate?.refresh?.().catch?.(() => {});
+          setNote(row, `Sign in as ${person} again to continue.`, 'bad');
+          window.HubAssociate?.open?.(person);
+          return;
+        }
+        throw new Error(body.error || 'Cleaning check-in failed.');
+      }
 
       if (statusEl) {
         statusEl.classList.remove('scheduled', 'in_progress', 'completed', 'missed');
