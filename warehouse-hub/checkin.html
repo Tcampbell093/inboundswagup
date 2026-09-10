@@ -51,5 +51,6 @@
   getAssignment().then(a=>render(a)).catch(err=>{card.innerHTML=`<div class="alert error">${esc(err.message||'Unable to load cleaning assignment.')}</div><p class="note"><a href="/warehouse-hub/">Return to the Warehouse Hub</a></p>`;});
 })();
 </script>
+<script src="checkin-session.js"></script>
 </body>
 </html>
