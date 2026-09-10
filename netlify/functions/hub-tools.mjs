@@ -4,8 +4,20 @@ import crypto from 'node:crypto';
 const { Pool } = pg;
 let poolInstance = null;
 
+const PASSWORD_TOOL = {
+  id: 'passwords-access',
+  title: 'Passwords & Access',
+  url: 'https://start.1password.com/signin/team',
+  label: 'Password manager',
+  description: 'Open 1Password to access saved work logins, autofill credentials, and recover account access.',
+  accent: 'green',
+  icon: '🔐',
+  sortOrder: 15,
+};
+
 const SEED_TOOLS = [
   { id: 'fairshift-rotations', title: 'FairShift Rotations', url: 'https://fairshift-rotations.thandoyordani.chatgpt.site/', label: 'Labor planning', description: 'Plan team rotations, cleaning schedules, time off, and fair task assignments.', accent: 'orange', icon: '♙', sortOrder: 10 },
+  PASSWORD_TOOL,
   { id: 'houston-control', title: 'Houston Control', url: 'https://inboundswagup.netlify.app/', label: 'Warehouse control', description: 'Run inbound operations, review active work, and keep the production flow moving.', accent: 'green', icon: '▤', sortOrder: 20 },
   { id: 'daily-received', title: 'Daily Received', url: 'https://bdainc4-my.sharepoint.com/:x:/r/personal/tcampbell_bdainc_com/Documents/New%20Daily%20Rec..xlsx?d=wbd4f19ff22fd4f8a8b25e264b42e1b1a&csf=1&web=1&e=qERi2r', label: 'Shared workbook', description: 'Open the shared Excel workbook used for daily receiving updates and recaps.', accent: 'blue', icon: '▧', sortOrder: 30 },
   { id: 'assembly-screen', title: 'Assembly Screen', url: 'https://bdainc4-my.sharepoint.com/:x:/r/personal/jmateo_bdainc_com/_layouts/15/Doc.aspx?action=edit&sourcedoc=%7B2678bff3-263f-4512-bdf5-81a2de97afab%7D&wdExp=TEAMS-TREATMENT&web=1', label: 'Assembly workbook', description: 'Open the shared Assembly screen used by the team for current assembly work.', accent: 'green', icon: '▤', sortOrder: 40 },
@@ -82,7 +94,9 @@ function inferToolMeta(title, url) {
     icon: '◫',
   };
 
-  if (lowerUrl.includes('lightning.force.com')) {
+  if (lowerUrl.includes('1password.com')) {
+    meta = { ...meta, label: 'Password manager', description: 'Open 1Password to access saved work logins, autofill credentials, and recover account access.', accent: 'green', icon: '🔐' };
+  } else if (lowerUrl.includes('lightning.force.com')) {
     if (lowerUrl.includes('/lightning/r/report/')) {
       meta = { ...meta, label: 'Salesforce report', description: `Open the ${name} report in Salesforce.`, icon: '▧' };
     } else {
@@ -100,6 +114,14 @@ function inferToolMeta(title, url) {
     }
   }
   return meta;
+}
+
+async function insertToolIfMissing(pool, tool) {
+  await pool.query(
+    `INSERT INTO hub_tool_cards(id,title,url,label,description,accent,icon,sort_order,active,updated_at)
+     VALUES($1,$2,$3,$4,$5,$6,$7,$8,TRUE,NOW()) ON CONFLICT(id) DO NOTHING`,
+    [tool.id, tool.title, tool.url, tool.label, tool.description, tool.accent, tool.icon, tool.sortOrder],
+  );
 }
 
 async function ensureSchema(pool) {
@@ -125,16 +147,18 @@ async function ensureSchema(pool) {
   `);
 
   const seeded = await pool.query(`SELECT value FROM hub_tool_meta WHERE key='seeded_v1' LIMIT 1`);
-  if (seeded.rows.length) return;
-
-  for (const tool of SEED_TOOLS) {
-    await pool.query(
-      `INSERT INTO hub_tool_cards(id,title,url,label,description,accent,icon,sort_order,active,updated_at)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,TRUE,NOW()) ON CONFLICT(id) DO NOTHING`,
-      [tool.id, tool.title, tool.url, tool.label, tool.description, tool.accent, tool.icon, tool.sortOrder],
-    );
+  if (!seeded.rows.length) {
+    for (const tool of SEED_TOOLS) await insertToolIfMissing(pool, tool);
+    await pool.query(`INSERT INTO hub_tool_meta(key,value,updated_at) VALUES('seeded_v1','1',NOW()) ON CONFLICT(key) DO NOTHING`);
   }
-  await pool.query(`INSERT INTO hub_tool_meta(key,value,updated_at) VALUES('seeded_v1','1',NOW()) ON CONFLICT(key) DO NOTHING`);
+
+  // One-time additive migration for existing Hubs. The marker remains if a
+  // manager later deletes the card, so it will not be recreated automatically.
+  const passwordCard = await pool.query(`SELECT value FROM hub_tool_meta WHERE key='passwords_access_v1' LIMIT 1`);
+  if (!passwordCard.rows.length) {
+    await insertToolIfMissing(pool, PASSWORD_TOOL);
+    await pool.query(`INSERT INTO hub_tool_meta(key,value,updated_at) VALUES('passwords_access_v1','1',NOW()) ON CONFLICT(key) DO NOTHING`);
+  }
 }
 
 function serializeTool(row) {
