@@ -1,3 +1,4 @@
+// Hub associate session auth. Touching this file ensures production deploy picks up current runtime secrets.
 import pg from 'pg';
 import crypto from 'node:crypto';
 
