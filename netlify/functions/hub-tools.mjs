@@ -15,6 +15,17 @@ const PASSWORD_TOOL = {
   sortOrder: 15,
 };
 
+const SALESFORCE_HOME_TOOL = {
+  id: 'salesforce-home',
+  title: 'Salesforce Home',
+  url: 'https://swagup.lightning.force.com/lightning/page/home',
+  label: 'Salesforce home',
+  description: 'Open Salesforce home for apps, records, reports, and everyday work.',
+  accent: 'blue',
+  icon: '▤',
+  sortOrder: 65,
+};
+
 const SEED_TOOLS = [
   { id: 'fairshift-rotations', title: 'FairShift Rotations', url: 'https://fairshift-rotations.thandoyordani.chatgpt.site/', label: 'Labor planning', description: 'Plan team rotations, cleaning schedules, time off, and fair task assignments.', accent: 'orange', icon: '♙', sortOrder: 10 },
   PASSWORD_TOOL,
@@ -23,6 +34,7 @@ const SEED_TOOLS = [
   { id: 'assembly-screen', title: 'Assembly Screen', url: 'https://bdainc4-my.sharepoint.com/:x:/r/personal/jmateo_bdainc_com/_layouts/15/Doc.aspx?action=edit&sourcedoc=%7B2678bff3-263f-4512-bdf5-81a2de97afab%7D&wdExp=TEAMS-TREATMENT&web=1', label: 'Assembly workbook', description: 'Open the shared Assembly screen used by the team for current assembly work.', accent: 'green', icon: '▤', sortOrder: 40 },
   { id: 'daily-returns', title: 'Daily Returns', url: 'https://bdainc4-my.sharepoint.com/:x:/r/personal/cescobar_bdainc_com/_layouts/15/Doc.aspx?sourcedoc=%7B7B48C5B8-6820-490A-814A-5DF46CDD8974%7D&file=Daily%20Returns%202025%20A.M..xlsx&fromShare=true&action=default&mobileredirect=true', label: 'Returns workbook', description: 'Open the shared Returns workbook used for daily return tracking and updates.', accent: 'blue', icon: '▧', sortOrder: 50 },
   { id: 'overstock', title: 'Overstock', url: '/warehouse-hub/overstock.html', label: 'Inbound workflow', description: 'Open Houston directly to the Overstock section of the inbound module.', accent: 'orange', icon: '◫', sortOrder: 60 },
+  SALESFORCE_HOME_TOOL,
   { id: 'qa-approved', title: 'QA Approved', url: 'https://swagup.lightning.force.com/lightning/r/Report/00OPH000009Ytkr2AC/view?queryScope=userFolders', label: 'Salesforce report', description: 'Open the QA Approved report in Salesforce.', accent: 'green', icon: '▤', sortOrder: 70 },
   { id: 'receiving-report', title: 'Receiving Report', url: 'https://swagup.lightning.force.com/lightning/r/Report/00O6e000008lBIAEA2/view', label: 'Salesforce report', description: 'Open the Receiving report in Salesforce.', accent: 'blue', icon: '▧', sortOrder: 80 },
   { id: 'prepping-report', title: 'Prepping Report', url: 'https://swagup.lightning.force.com/lightning/r/Report/00OPH000001Gu0r2AC/view', label: 'Salesforce report', description: 'Open the Prepping report in Salesforce.', accent: 'orange', icon: '◫', sortOrder: 90 },
@@ -98,6 +110,8 @@ function inferToolMeta(title, url) {
     meta = { ...meta, label: 'Password manager', description: 'View, save, and manage your work logins in Google Password Manager.', accent: 'green', icon: '🔐' };
   } else if (lowerUrl.includes('1password.com')) {
     meta = { ...meta, label: 'Password manager', description: 'Open 1Password to access saved work logins and autofill credentials.', accent: 'green', icon: '🔐' };
+  } else if (lowerUrl.includes('/lightning/page/home')) {
+    meta = { ...meta, label: 'Salesforce home', description: 'Open Salesforce home for apps, records, reports, and everyday work.', accent: 'blue', icon: '▤' };
   } else if (lowerUrl.includes('lightning.force.com')) {
     if (lowerUrl.includes('/lightning/r/report/')) {
       meta = { ...meta, label: 'Salesforce report', description: `Open the ${name} report in Salesforce.`, icon: '▧' };
@@ -170,6 +184,12 @@ async function ensureSchema(pool) {
       [PASSWORD_TOOL.id, PASSWORD_TOOL.title, PASSWORD_TOOL.url, PASSWORD_TOOL.label, PASSWORD_TOOL.description, PASSWORD_TOOL.accent, PASSWORD_TOOL.icon, PASSWORD_TOOL.sortOrder],
     );
     await pool.query(`INSERT INTO hub_tool_meta(key,value,updated_at) VALUES('passwords_access_google_v1','1',NOW()) ON CONFLICT(key) DO NOTHING`);
+  }
+
+  const salesforceHomeCard = await pool.query(`SELECT value FROM hub_tool_meta WHERE key='salesforce_home_v1' LIMIT 1`);
+  if (!salesforceHomeCard.rows.length) {
+    await insertToolIfMissing(pool, SALESFORCE_HOME_TOOL);
+    await pool.query(`INSERT INTO hub_tool_meta(key,value,updated_at) VALUES('salesforce_home_v1','1',NOW()) ON CONFLICT(key) DO NOTHING`);
   }
 }
 
