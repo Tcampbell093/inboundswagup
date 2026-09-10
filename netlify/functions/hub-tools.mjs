@@ -6,10 +6,10 @@ let poolInstance = null;
 
 const PASSWORD_TOOL = {
   id: 'passwords-access',
-  title: 'Passwords & Access',
-  url: 'https://start.1password.com/signin/team',
+  title: 'Google Passwords',
+  url: 'https://passwords.google.com/',
   label: 'Password manager',
-  description: 'Open 1Password to access saved work logins, autofill credentials, and recover account access.',
+  description: 'View, save, and manage your work logins in Google Password Manager.',
   accent: 'green',
   icon: '🔐',
   sortOrder: 15,
@@ -94,8 +94,10 @@ function inferToolMeta(title, url) {
     icon: '◫',
   };
 
-  if (lowerUrl.includes('1password.com')) {
-    meta = { ...meta, label: 'Password manager', description: 'Open 1Password to access saved work logins, autofill credentials, and recover account access.', accent: 'green', icon: '🔐' };
+  if (lowerUrl.includes('passwords.google.com')) {
+    meta = { ...meta, label: 'Password manager', description: 'View, save, and manage your work logins in Google Password Manager.', accent: 'green', icon: '🔐' };
+  } else if (lowerUrl.includes('1password.com')) {
+    meta = { ...meta, label: 'Password manager', description: 'Open 1Password to access saved work logins and autofill credentials.', accent: 'green', icon: '🔐' };
   } else if (lowerUrl.includes('lightning.force.com')) {
     if (lowerUrl.includes('/lightning/r/report/')) {
       meta = { ...meta, label: 'Salesforce report', description: `Open the ${name} report in Salesforce.`, icon: '▧' };
@@ -152,12 +154,22 @@ async function ensureSchema(pool) {
     await pool.query(`INSERT INTO hub_tool_meta(key,value,updated_at) VALUES('seeded_v1','1',NOW()) ON CONFLICT(key) DO NOTHING`);
   }
 
-  // One-time additive migration for existing Hubs. The marker remains if a
-  // manager later deletes the card, so it will not be recreated automatically.
   const passwordCard = await pool.query(`SELECT value FROM hub_tool_meta WHERE key='passwords_access_v1' LIMIT 1`);
   if (!passwordCard.rows.length) {
     await insertToolIfMissing(pool, PASSWORD_TOOL);
     await pool.query(`INSERT INTO hub_tool_meta(key,value,updated_at) VALUES('passwords_access_v1','1',NOW()) ON CONFLICT(key) DO NOTHING`);
+  }
+
+  const googlePasswordCard = await pool.query(`SELECT value FROM hub_tool_meta WHERE key='passwords_access_google_v1' LIMIT 1`);
+  if (!googlePasswordCard.rows.length) {
+    await insertToolIfMissing(pool, PASSWORD_TOOL);
+    await pool.query(
+      `UPDATE hub_tool_cards
+       SET title=$2,url=$3,label=$4,description=$5,accent=$6,icon=$7,sort_order=$8,active=TRUE,updated_at=NOW()
+       WHERE id=$1`,
+      [PASSWORD_TOOL.id, PASSWORD_TOOL.title, PASSWORD_TOOL.url, PASSWORD_TOOL.label, PASSWORD_TOOL.description, PASSWORD_TOOL.accent, PASSWORD_TOOL.icon, PASSWORD_TOOL.sortOrder],
+    );
+    await pool.query(`INSERT INTO hub_tool_meta(key,value,updated_at) VALUES('passwords_access_google_v1','1',NOW()) ON CONFLICT(key) DO NOTHING`);
   }
 }
 
