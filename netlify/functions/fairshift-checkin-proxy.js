@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
 const SESSION_COOKIE = 'hub_associate_session';
+const SESSION_VERSION = 2;
 
 function json(statusCode, body) {
   return {
@@ -39,7 +40,7 @@ function sessionFromEvent(event) {
     decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
     const plain = Buffer.concat([decipher.update(Buffer.from(dataText, 'base64url')), decipher.final()]).toString('utf8');
     const payload = JSON.parse(plain);
-    if (!payload?.name || !payload?.pin || Number(payload.exp || 0) <= Date.now()) return null;
+    if (payload?.v !== SESSION_VERSION || payload?.fairShiftVerified !== true || !payload?.name || !payload?.pin || Number(payload.exp || 0) <= Date.now()) return null;
     return payload;
   } catch {
     return null;
@@ -81,11 +82,18 @@ exports.handler = async function handler(event) {
   const action = cleanText(body.action, 12);
   const assignmentId = Number(body.assignmentId);
   const session = sessionFromEvent(event);
-  const employeeName = cleanText(session?.name || body.employeeName, 100);
-  const pin = cleanText(session?.pin || body.pin, 8);
+  const manualEmployeeName = cleanText(body.employeeName, 100);
+  const manualPin = cleanText(body.pin, 8);
 
   if (!['start', 'finish'].includes(action)) return json(400, { error: 'Invalid cleaning action.' });
-  if (!assignmentId || !employeeName || !/^\d{4,8}$/.test(pin)) return json(400, { error: 'Sign in to the Hub or enter your employee name and 4–8 digit cleaning PIN.' });
+  if (!assignmentId) return json(400, { error: 'A valid assignment ID is required.' });
+
+  if (!session && (!manualEmployeeName || !/^\d{4,8}$/.test(manualPin))) {
+    return json(401, { error: 'Please sign in to the Hub again before updating cleaning. Your previous session cannot be used for direct cleaning.' });
+  }
+
+  const employeeName = cleanText(session?.name || manualEmployeeName, 100);
+  const pin = cleanText(session?.pin || manualPin, 8);
 
   return forward(`${FAIRSHIFT_BASE}/api/checkin`, {
     method: 'POST',
