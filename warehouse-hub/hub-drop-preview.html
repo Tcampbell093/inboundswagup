@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex" />
+<title>Warehouse Hub Drop Preview</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#f7f7f1}
+iframe{display:block;width:100%;height:100%;border:0}
+</style>
+</head>
+<body>
+<iframe id="hubFrame" src="/warehouse-hub/" title="Warehouse Operations Hub preview"></iframe>
+<script>
+(() => {
+  const frame = document.getElementById('hubFrame');
+  frame.addEventListener('load', () => {
+    const doc = frame.contentDocument;
+    if (!doc || doc.getElementById('hubDropPreview')) return;
+
+    const style = doc.createElement('style');
+    style.textContent = `
+      #hubDropPreview{margin-top:18px;padding:20px 22px;display:grid;grid-template-columns:minmax(210px,.72fr) minmax(0,1.6fr);gap:22px;align-items:center;border-left:4px solid var(--orange)}
+      #hubDropPreview .hd-kicker{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+      #hubDropPreview .hd-kicker .eyebrow{margin:0}
+      #hubDropPreview .hd-title{font-size:23px;letter-spacing:-.025em;margin:0 0 7px}
+      #hubDropPreview .hd-copy{margin:0;color:var(--muted);font-size:13px;line-height:1.45;max-width:300px}
+      #hubDropPreview .hd-stats{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;color:#68736e;font-size:12px;font-weight:800}
+      #hubDropPreview .hd-stat{border:1px solid var(--line);background:var(--paper);border-radius:999px;padding:6px 9px}
+      #hubDropPreview .hd-question{font-size:18px;font-weight:900;letter-spacing:-.015em;margin-bottom:12px}
+      #hubDropPreview .hd-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+      #hubDropPreview .hd-option{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:12px;padding:11px 10px;text-align:left;font-weight:800;cursor:pointer;transition:.15s ease}
+      #hubDropPreview .hd-option:hover{border-color:#b9c5be;transform:translateY(-1px)}
+      #hubDropPreview .hd-option.selected{border-color:var(--orange);background:var(--orange-soft);box-shadow:0 0 0 2px rgba(243,110,45,.08)}
+      #hubDropPreview .hd-letter{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:8px;background:#f0f2ed;margin-right:7px;font-size:11px}
+      #hubDropPreview .hd-option.selected .hd-letter{background:#fff;color:#bf4e20}
+      #hubDropPreview .hd-bottom{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px}
+      #hubDropPreview .hd-note{font-size:12px;color:var(--muted)}
+      #hubDropPreview .hd-submit{padding:10px 14px;border-radius:11px;white-space:nowrap}
+      #hubDropPreview .hd-result{display:none;margin-top:12px;border-radius:12px;padding:10px 12px;font-size:13px;font-weight:800}
+      #hubDropPreview .hd-result.good{display:block;background:var(--green-soft);color:var(--green)}
+      #hubDropPreview .hd-result.bad{display:block;background:var(--orange-soft);color:#a94a22}
+      @media(max-width:900px){#hubDropPreview{grid-template-columns:1fr}#hubDropPreview .hd-options{grid-template-columns:1fr 1fr}}
+      @media(max-width:520px){#hubDropPreview .hd-options{grid-template-columns:1fr}#hubDropPreview .hd-bottom{align-items:flex-start;flex-direction:column}.hd-submit{width:100%}}
+    `;
+    doc.head.appendChild(style);
+
+    const today = doc.getElementById('today');
+    if (!today) return;
+
+    const card = doc.createElement('div');
+    card.className = 'card';
+    card.id = 'hubDropPreview';
+    card.innerHTML = `
+      <div>
+        <div class="hd-kicker"><div class="eyebrow">Today’s Hub Drop</div><span class="smallpill">Preview · Trivia</span></div>
+        <h3 class="hd-title">One quick question.</h3>
+        <p class="hd-copy">A tiny daily challenge that gives the team something new to check when they open the Hub.</p>
+        <div class="hd-stats"><span class="hd-stat">🔥 3-day streak</span><span class="hd-stat">#4 this week</span></div>
+      </div>
+      <div>
+        <div class="hd-question">Which country has the most islands?</div>
+        <div class="hd-options" role="radiogroup" aria-label="Trivia answers">
+          <button class="hd-option" type="button" data-answer="Sweden"><span class="hd-letter">A</span>Sweden</button>
+          <button class="hd-option" type="button" data-answer="Canada"><span class="hd-letter">B</span>Canada</button>
+          <button class="hd-option" type="button" data-answer="Indonesia"><span class="hd-letter">C</span>Indonesia</button>
+          <button class="hd-option" type="button" data-answer="Philippines"><span class="hd-letter">D</span>Philippines</button>
+        </div>
+        <div class="hd-result" id="hdResult"></div>
+        <div class="hd-bottom"><span class="hd-note">Yesterday, 68% of the team got the question wrong.</span><button class="action hd-submit" id="hdSubmit" type="button">Submit answer</button></div>
+      </div>`;
+    today.appendChild(card);
+
+    let selected = '';
+    const options = [...card.querySelectorAll('.hd-option')];
+    const result = card.querySelector('#hdResult');
+    options.forEach(btn => btn.addEventListener('click', () => {
+      selected = btn.dataset.answer || '';
+      options.forEach(b => b.classList.toggle('selected', b === btn));
+      result.className = 'hd-result';
+      result.textContent = '';
+    }));
+
+    card.querySelector('#hdSubmit').addEventListener('click', () => {
+      if (!selected) {
+        result.className = 'hd-result bad';
+        result.textContent = 'Pick an answer first.';
+        return;
+      }
+      if (selected === 'Sweden') {
+        result.className = 'hd-result good';
+        result.textContent = '✓ Correct — +10 points. Your streak would move to 4 days.';
+      } else {
+        result.className = 'hd-result bad';
+        result.textContent = 'Not this time — the answer is Sweden. Your weekly score would stay the same.';
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>
