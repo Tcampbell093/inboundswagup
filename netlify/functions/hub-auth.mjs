@@ -1,4 +1,3 @@
-// Hub associate session auth. Touching this file ensures production deploy picks up current runtime secrets.
 import pg from 'pg';
 import crypto from 'node:crypto';
 
@@ -6,9 +5,12 @@ const { Pool } = pg;
 const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
 const SESSION_COOKIE = 'hub_associate_session';
 const SESSION_SECONDS = 10 * 60 * 60;
+const SESSION_VERSION = 2;
+const HUB_PIN_ITERATIONS = 100000;
 let poolInstance = null;
 let schemaReady = false;
 let rosterCache = { expiresAt: 0, people: [], selfService: false };
+let signingKeyPromise = null;
 
 function env(name) {
   return globalThis.Netlify?.env?.get(name) || '';
@@ -37,7 +39,9 @@ function json(status, body, headers = {}) {
 }
 
 function todayEastern() {
-  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date());
   const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${map.year}-${map.month}-${map.day}`;
 }
@@ -57,12 +61,13 @@ async function ensureSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS hub_associate_auth_name_idx ON hub_associate_auth(employee_name);
+    ALTER TABLE hub_associate_auth ADD COLUMN IF NOT EXISTS pin_iterations INTEGER NOT NULL DEFAULT 120000;
   `);
   schemaReady = true;
 }
 
-function hashPin(pin, saltHex) {
-  return crypto.pbkdf2Sync(pin, Buffer.from(saltHex, 'hex'), 120000, 32, 'sha256').toString('hex');
+function hashPin(pin, saltHex, iterations = HUB_PIN_ITERATIONS) {
+  return crypto.pbkdf2Sync(pin, Buffer.from(saltHex, 'hex'), iterations, 32, 'sha256').toString('hex');
 }
 
 function safeEqualHex(a, b) {
@@ -104,9 +109,12 @@ function decryptSession(token) {
     if (!ivText || !tagText || !dataText) return null;
     const decipher = crypto.createDecipheriv('aes-256-gcm', sessionKey(), Buffer.from(ivText, 'base64url'));
     decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
-    const plain = Buffer.concat([decipher.update(Buffer.from(dataText, 'base64url')), decipher.final()]).toString('utf8');
+    const plain = Buffer.concat([
+      decipher.update(Buffer.from(dataText, 'base64url')),
+      decipher.final(),
+    ]).toString('utf8');
     const payload = JSON.parse(plain);
-    if (!payload?.name || !payload?.pin || Number(payload.exp || 0) <= Date.now()) return null;
+    if (payload?.v !== SESSION_VERSION || !payload?.name || !payload?.pin || Number(payload.exp || 0) <= Date.now()) return null;
     return payload;
   } catch {
     return null;
@@ -121,17 +129,56 @@ function clearSessionCookie() {
   return `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 }
 
+async function signingKey() {
+  if (signingKeyPromise) return signingKeyPromise;
+  const pem = env('FAIRSHIFT_HUB_SIGNING_PRIVATE_KEY');
+  if (!pem) throw new Error('FairShift Hub signing key is not configured.');
+  const body = pem.replace(/-----BEGIN PRIVATE KEY-----/g, '').replace(/-----END PRIVATE KEY-----/g, '').replace(/\s+/g, '');
+  const der = Buffer.from(body, 'base64');
+  signingKeyPromise = crypto.webcrypto.subtle.importKey(
+    'pkcs8',
+    der,
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['sign'],
+  );
+  return signingKeyPromise;
+}
+
+async function signedFairShiftHeaders(path, method, bodyText) {
+  const timestamp = String(Date.now());
+  const canonical = `${timestamp}\n${method.toUpperCase()}\n${path}\n${bodyText}`;
+  const key = await signingKey();
+  const signature = await crypto.webcrypto.subtle.sign(
+    { name: 'ECDSA', hash: 'SHA-256' },
+    key,
+    new TextEncoder().encode(canonical),
+  );
+  return {
+    'x-hub-ts': timestamp,
+    'x-hub-signature': Buffer.from(signature).toString('base64url'),
+  };
+}
+
 async function fairShiftRequest(path, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const syncKey = env('FAIRSHIFT_HUB_PIN_SYNC_KEY');
+    const method = String(options.method || 'GET').toUpperCase();
+    const bodyText = typeof options.body === 'string' ? options.body : '';
+    let authHeaders = {};
+    try {
+      authHeaders = await signedFairShiftHeaders(path, method, bodyText);
+    } catch {
+      const syncKey = env('FAIRSHIFT_HUB_PIN_SYNC_KEY');
+      if (syncKey) authHeaders = { 'x-hub-pin-key': syncKey };
+    }
     const response = await fetch(`${FAIRSHIFT_BASE}${path}`, {
       ...options,
       signal: controller.signal,
       headers: {
         Accept: 'application/json',
-        ...(syncKey ? { 'x-hub-pin-key': syncKey } : {}),
+        ...authHeaders,
         ...(options.headers || {}),
       },
     });
@@ -176,7 +223,7 @@ async function loadRoster(force = false) {
       .filter((employee) => employee.id && employee.name);
   }
 
-  rosterCache = { expiresAt: Date.now() + 60000, people, selfService };
+  rosterCache = { expiresAt: Date.now() + 30000, people, selfService };
   return rosterCache;
 }
 
@@ -194,69 +241,106 @@ async function authMaps() {
 
 async function publicRoster() {
   const roster = await loadRoster();
+  if (roster.selfService) {
+    return {
+      selfServiceConnected: true,
+      pinSource: 'fairshift',
+      employees: roster.people.map((person) => ({
+        ...person,
+        hubPinConfigured: person.pinConfigured === true,
+      })),
+    };
+  }
+
   const maps = await authMaps();
   return {
-    selfServiceConnected: roster.selfService,
+    selfServiceConnected: false,
+    pinSource: 'hub-fallback',
     employees: roster.people.map((person) => {
       const key = slug(person.name);
-      const hubConfigured = maps.modern.get(key) === true || maps.legacy.get(key) === true;
-      return { ...person, hubPinConfigured: hubConfigured };
+      return {
+        ...person,
+        hubPinConfigured: maps.modern.get(key) === true || maps.legacy.get(key) === true,
+      };
     }),
   };
 }
 
-async function findPerson(name) {
-  const roster = await loadRoster();
+async function findPerson(name, force = false) {
+  const roster = await loadRoster(force);
   const key = slug(name);
-  return roster.people.find((person) => slug(person.name) === key) || null;
+  return {
+    roster,
+    person: roster.people.find((candidate) => slug(candidate.name) === key) || null,
+  };
 }
 
 async function saveModernPin(person, pin) {
   const pool = getPool();
   const salt = crypto.randomBytes(16).toString('hex');
-  const hash = hashPin(pin, salt);
+  const hash = hashPin(pin, salt, HUB_PIN_ITERATIONS);
   await pool.query(`
-    INSERT INTO hub_associate_auth(employee_key,employee_name,department,pin_salt,pin_hash,active,created_at,updated_at)
-    VALUES($1,$2,$3,$4,$5,TRUE,NOW(),NOW())
-    ON CONFLICT(employee_key) DO UPDATE SET employee_name=EXCLUDED.employee_name,department=EXCLUDED.department,
-      pin_salt=EXCLUDED.pin_salt,pin_hash=EXCLUDED.pin_hash,active=TRUE,updated_at=NOW()
-  `, [slug(person.name), person.name, person.department || '', salt, hash]);
+    INSERT INTO hub_associate_auth(employee_key,employee_name,department,pin_salt,pin_hash,pin_iterations,active,created_at,updated_at)
+    VALUES($1,$2,$3,$4,$5,$6,TRUE,NOW(),NOW())
+    ON CONFLICT(employee_key) DO UPDATE SET
+      employee_name=EXCLUDED.employee_name,
+      department=EXCLUDED.department,
+      pin_salt=EXCLUDED.pin_salt,
+      pin_hash=EXCLUDED.pin_hash,
+      pin_iterations=EXCLUDED.pin_iterations,
+      active=TRUE,
+      updated_at=NOW()
+  `, [slug(person.name), person.name, person.department || '', salt, hash, HUB_PIN_ITERATIONS]);
 }
 
-async function verifyHubPin(person, pin) {
+async function verifyHubFallback(person, pin) {
   const pool = getPool();
   const key = slug(person.name);
-  const modern = await pool.query(`SELECT pin_salt,pin_hash,active FROM hub_associate_auth WHERE employee_key=$1 LIMIT 1`, [key]);
+  const modern = await pool.query(`SELECT pin_salt,pin_hash,pin_iterations,active FROM hub_associate_auth WHERE employee_key=$1 LIMIT 1`, [key]);
   if (modern.rows[0]) {
     const row = modern.rows[0];
-    return row.active !== false && safeEqualHex(hashPin(pin, row.pin_salt), row.pin_hash);
+    if (row.active !== false) {
+      try {
+        const iterations = Number(row.pin_iterations || 120000);
+        if (safeEqualHex(hashPin(pin, row.pin_salt, iterations), row.pin_hash)) return true;
+      } catch {}
+    }
   }
 
   const legacy = await pool.query(`SELECT pin_hash,active FROM hub_employee_pins WHERE employee_key=$1 LIMIT 1`, [key]).catch(() => ({ rows: [] }));
   const row = legacy.rows[0];
-  if (row && row.active !== false && safeEqualHex(legacyHash(pin), row.pin_hash)) {
-    await saveModernPin(person, pin);
-    return true;
-  }
-  return false;
+  return !!(row && row.active !== false && safeEqualHex(legacyHash(pin), row.pin_hash));
 }
 
 async function verifyFairShiftPin(person, pin) {
-  const roster = await loadRoster();
-  if (!roster.selfService) return false;
-  const result = await fairShiftRequest('/api/checkin', {
+  const bodyText = JSON.stringify({ action: 'verifyPin', employeeName: person.name, pin });
+  return fairShiftRequest('/api/checkin', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'verifyPin', employeeName: person.name, pin }),
+    body: bodyText,
   });
-  return result.ok && result.body?.ok === true;
 }
 
-function createSession(person, pin) {
+function createSession(person, pin, fairShiftVerified) {
   const exp = Date.now() + SESSION_SECONDS * 1000;
   return {
-    payload: { name: person.name, department: person.department || '', employeeId: person.id || null, pin, exp },
-    public: { signedIn: true, name: person.name, department: person.department || '', employeeId: person.id || null, expiresAt: new Date(exp).toISOString() },
+    payload: {
+      v: SESSION_VERSION,
+      fairShiftVerified: !!fairShiftVerified,
+      name: person.name,
+      department: person.department || '',
+      employeeId: person.id || null,
+      pin,
+      exp,
+    },
+    public: {
+      signedIn: true,
+      fairShiftVerified: !!fairShiftVerified,
+      name: person.name,
+      department: person.department || '',
+      employeeId: person.id || null,
+      expiresAt: new Date(exp).toISOString(),
+    },
   };
 }
 
@@ -272,7 +356,14 @@ export default async (request) => {
         const token = cookieMap(request)[SESSION_COOKIE];
         const session = decryptSession(token);
         if (!session) return json(200, { signedIn: false });
-        return json(200, { signedIn: true, name: session.name, department: session.department || '', employeeId: session.employeeId || null, expiresAt: new Date(session.exp).toISOString() });
+        return json(200, {
+          signedIn: true,
+          fairShiftVerified: session.fairShiftVerified === true,
+          name: session.name,
+          department: session.department || '',
+          employeeId: session.employeeId || null,
+          expiresAt: new Date(session.exp).toISOString(),
+        });
       }
       return json(400, { error: 'Unsupported request.' });
     }
@@ -281,47 +372,65 @@ export default async (request) => {
     const body = await request.json().catch(() => ({}));
     const action = clean(body.action, 30);
 
-    if (action === 'logout') return json(200, { ok: true, signedIn: false }, { 'Set-Cookie': clearSessionCookie() });
+    if (action === 'logout') {
+      return json(200, { ok: true, signedIn: false }, { 'Set-Cookie': clearSessionCookie() });
+    }
 
-    const person = await findPerson(body.employeeName);
+    const lookup = await findPerson(body.employeeName, true);
+    const person = lookup.person;
     if (!person) return json(404, { error: 'Choose your name from the active FairShift team list.' });
+
     const pin = clean(body.pin, 8);
     if (!/^\d{4,8}$/.test(pin)) return json(400, { error: 'Enter a 4–8 digit PIN.' });
 
     if (action === 'setup') {
       const confirmPin = clean(body.confirmPin, 8);
       if (pin !== confirmPin) return json(400, { error: 'The two PINs do not match.' });
-      const maps = await authMaps();
-      const key = slug(person.name);
-      if (maps.modern.get(key) === true || maps.legacy.get(key) === true) return json(409, { error: 'A Hub PIN is already set for this associate. Sign in instead.' });
-
-      const roster = await loadRoster(true);
-      const fresh = roster.people.find((employee) => slug(employee.name) === key) || person;
-      if (roster.selfService && fresh.pinConfigured === false) {
-        const provision = await fairShiftRequest('/api/checkin', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'selfSetPin', employeeId: fresh.id, employeeName: fresh.name, pin }),
-        });
-        if (!provision.ok) return json(provision.status || 400, { error: clean(provision.body?.error || 'FairShift could not save this PIN.', 250) });
-      } else if (roster.selfService && fresh.pinConfigured === true) {
-        return json(409, { error: 'A cleaning PIN already exists for this associate. Use that PIN to sign in.' });
+      if (!lookup.roster.selfService) {
+        return json(503, { error: 'FairShift PIN setup is temporarily unavailable. Try again in a moment so your Hub and cleaning PIN stay the same.' });
+      }
+      if (person.pinConfigured === true) {
+        return json(409, { error: 'A FairShift cleaning PIN already exists for this associate. Sign in with that PIN instead.' });
       }
 
-      await saveModernPin(fresh, pin);
-      const session = createSession(fresh, pin);
-      return json(200, { ok: true, ...session.public, fairShiftPinSynced: roster.selfService }, { 'Set-Cookie': sessionCookie(session.payload) });
+      const bodyText = JSON.stringify({ action: 'selfSetPin', employeeId: person.id, employeeName: person.name, pin });
+      const provision = await fairShiftRequest('/api/checkin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: bodyText,
+      });
+      if (!provision.ok) {
+        return json(provision.status || 400, { error: clean(provision.body?.error || 'FairShift could not save this PIN.', 250) });
+      }
+
+      await saveModernPin(person, pin);
+      rosterCache.expiresAt = 0;
+      const session = createSession(person, pin, true);
+      return json(200, { ok: true, ...session.public }, { 'Set-Cookie': sessionCookie(session.payload) });
     }
 
     if (action === 'login') {
-      let verified = await verifyHubPin(person, pin);
-      if (!verified) {
-        verified = await verifyFairShiftPin(person, pin);
-        if (verified) await saveModernPin(person, pin);
+      if (lookup.roster.selfService) {
+        const verified = await verifyFairShiftPin(person, pin);
+        if (!verified.ok || verified.body?.ok !== true) {
+          const errorMessage = verified.status === 401
+            ? 'The Hub could not verify FairShift right now. Refresh and try again.'
+            : 'Name or FairShift cleaning PIN is incorrect.';
+          return json(verified.status === 401 ? 503 : 403, { error: errorMessage });
+        }
+        await saveModernPin(person, pin);
+        const session = createSession(person, pin, true);
+        return json(200, { ok: true, ...session.public }, { 'Set-Cookie': sessionCookie(session.payload) });
       }
+
+      const verified = await verifyHubFallback(person, pin);
       if (!verified) return json(403, { error: 'Name or PIN is incorrect.' });
-      const session = createSession(person, pin);
-      return json(200, { ok: true, ...session.public }, { 'Set-Cookie': sessionCookie(session.payload) });
+      const session = createSession(person, pin, false);
+      return json(200, {
+        ok: true,
+        ...session.public,
+        warning: 'FairShift verification is temporarily unavailable. Cleaning check-in will require a refreshed sign-in once FairShift reconnects.',
+      }, { 'Set-Cookie': sessionCookie(session.payload) });
     }
 
     return json(400, { error: 'Unsupported action.' });
