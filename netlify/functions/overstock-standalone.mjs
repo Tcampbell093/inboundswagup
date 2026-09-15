@@ -150,7 +150,7 @@ async function importExcelLocations(rawRows) {
   const rows = Array.isArray(rawRows) ? rawRows.slice(0, 1000) : [];
   const db = pool();
   const client = await db.connect();
-  const result = { received: rows.length, updatedEntries: 0, updatedContainers: 0, unchanged: 0, skipped: [], unresolved: [] };
+  const result = { received: rows.length, createdEntries: 0, createdContainers: 0, updatedEntries: 0, updatedContainers: 0, unchanged: 0, skipped: [], unresolved: [] };
 
   try {
     await client.query('BEGIN');
@@ -185,7 +185,45 @@ async function importExcelLocations(rawRows) {
         matches = entries.filter(entry => normalizePo(entry?.po) === po);
       }
       if (!matches.length) {
-        result.unresolved.push(`${key}: no Houston Overstock record found.`);
+        if (!po) {
+          result.unresolved.push(`${key}: a PO number is required to create a Houston record.`);
+          continue;
+        }
+
+        let targetContainer = containerCode
+          ? containers.find(container => str(container?.code, 120).toUpperCase() === containerCode)
+          : null;
+        if (!targetContainer) {
+          targetContainer = cleanContainer({
+            code: containerCode || nextContainerCode(containers),
+            currentLocation: location,
+            status: 'Open',
+            notes: 'Created from New Daily Rec Excel sync.',
+          });
+          containers.push(targetContainer);
+          result.createdContainers += 1;
+        } else if (str(targetContainer.currentLocation, 120).toUpperCase() !== location) {
+          const index = containers.findIndex(container => String(container?.id || '') === String(targetContainer.id));
+          targetContainer = { ...targetContainer, currentLocation: location, updatedAt: now };
+          containers[index] = targetContainer;
+          changedContainerIds.add(String(targetContainer.id));
+        }
+
+        const created = cleanEntry({
+          po,
+          deliveryId,
+          quantity: raw?.quantity,
+          status: 'Not Donation',
+          action: raw?.disposition || 'Required',
+          note: raw?.note,
+          date: new Date().toISOString().slice(0, 10),
+          location,
+          sourceType: 'excel-location-sync',
+          containerId: targetContainer.id,
+          containerCode: targetContainer.code,
+        });
+        entries.push(created);
+        result.createdEntries += 1;
         continue;
       }
 
@@ -220,7 +258,7 @@ async function importExcelLocations(rawRows) {
 
     result.updatedEntries = changedEntryIds.size;
     result.updatedContainers = changedContainerIds.size;
-    result.unchanged = Math.max(0, rows.length - result.skipped.length - result.unresolved.length - result.updatedEntries);
+    result.unchanged = Math.max(0, rows.length - result.skipped.length - result.unresolved.length - result.createdEntries - result.updatedEntries);
     data.overstockEntries = entries;
     data.overstockContainers = containers;
     await client.query(
