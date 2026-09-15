@@ -1,6 +1,6 @@
 # Overstock Control ↔ New Daily Rec Excel sync
 
-This integration supports both directions between Overstock Control and the SharePoint-hosted **New Daily Rec..xlsx** workbook. The inbound flow described below changes Houston locations only; it never creates or deletes Overstock records and never changes quantities, dispositions, notes, or historical timestamps.
+This integration supports both directions between Overstock Control and the SharePoint-hosted **New Daily Rec..xlsx** workbook. The inbound flow updates locations on matching Houston records and creates a new Houston item when a populated workbook PO does not already exist. It never deletes records or rewrites existing quantities, dispositions, notes, or historical timestamps.
 
 ## Workbook contract
 
@@ -53,6 +53,6 @@ Anyone allowed to edit the workbook may be able to inspect its associated script
 
 Office Scripts external API calls must be allowed by the Microsoft 365 administrator. If the workbook reports that external calls are disabled, BDA IT must enable them or provide an approved integration method.
 
-The endpoint prefers `Delivery ID (auto)`. If no Delivery ID match exists, it updates existing Houston entries with the same PO number. Blank workbook locations are ignored and never erase a Houston location. If a matched item belongs to a Houston container, the container location and every item in that container move together.
+The endpoint prefers `Delivery ID (auto)`. If no Delivery ID match exists, it updates existing Houston entries with the same PO number. If neither key matches, it creates a Houston item using the workbook PO, Delivery ID, Overstock Qty, location, container, disposition and note. A missing container code receives the next `OSC-###` code. Blank workbook locations are ignored and never erase a Houston location. If a matched item belongs to a Houston container, the container location and every item in that container move together.
 
 The response reports updated entries, updated containers, skipped blank rows, and workbook rows that could not be matched. The flow should retain failed or unresolved responses for manager review.
