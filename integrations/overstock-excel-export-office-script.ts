@@ -31,8 +31,45 @@ interface HoustonApiResponse extends HoustonSyncResult {
   import?: HoustonSyncResult;
 }
 
+interface PoHistorySyncResult {
+  error?: string;
+  current?: number;
+  archive?: number;
+  archivePa?: number;
+  total?: number;
+}
+
+interface WorkbookHistoryPayload {
+  currentRows: Record<string, string>[];
+  archiveRows: Record<string, string>[];
+  archivePaRows: Record<string, string>[];
+}
+
+function worksheetRows(workbook: ExcelScript.Workbook, sheetName: string): Record<string, string>[] {
+  const sheet: ExcelScript.Worksheet | undefined = workbook.getWorksheet(sheetName);
+  if (!sheet) return [];
+  const used: ExcelScript.Range | undefined = sheet.getUsedRange(true);
+  if (!used) return [];
+  const texts: string[][] = used.getTexts();
+  const headerIndex: number = texts.findIndex((row: string[]): boolean =>
+    row.some((cell: string): boolean => String(cell ?? '').trim() === 'PO # (Orden)')
+  );
+  if (headerIndex < 0) return [];
+  const headers: string[] = texts[headerIndex].map((cell: string): string => String(cell ?? '').trim());
+  return texts.slice(headerIndex + 1).map((row: string[]): Record<string, string> => {
+    const record: Record<string, string> = {};
+    headers.forEach((header: string, column: number): void => {
+      if (header) record[header] = String(row[column] ?? '').trim();
+    });
+    return record;
+  }).filter((record: Record<string, string>): boolean =>
+    Boolean(record['PO # (Orden)'] || record['Delivery ID (auto)'] || record['Delivery ID'])
+  );
+}
+
 async function main(workbook: ExcelScript.Workbook): Promise<string> {
   const HOUSTON_ENDPOINT = 'https://inboundswagup.netlify.app/api/overstock-control';
+  const PO_HISTORY_ENDPOINT = 'https://inboundswagup.netlify.app/api/po-history';
   const IMPORT_KEY = 'PASTE_YOUR_NEW_NETLIFY_KEY_HERE';
 
   if (IMPORT_KEY === 'PASTE_YOUR_NEW_NETLIFY_KEY_HERE') {
@@ -85,30 +122,41 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
     }))
     .filter((row: HoustonLocationRow): boolean => Boolean(row.location) && Boolean(row.deliveryId || row.po));
 
-  if (!rows.length) return 'Nothing to sync: no populated Overstock locations were found.';
-
-  const response = await fetch(HOUSTON_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-overstock-import-key': IMPORT_KEY,
-    },
-    body: JSON.stringify({ action: 'syncFromExcel', rows, associates }),
-  });
-
-  const responseText = await response.text();
   let result: HoustonSyncResult = {};
+  if (rows.length) {
+    const response: Response = await fetch(HOUSTON_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-overstock-import-key': IMPORT_KEY },
+      body: JSON.stringify({ action: 'syncFromExcel', rows, associates }),
+    });
+    const responseText: string = await response.text();
+    try {
+      const parsed: HoustonApiResponse = responseText ? JSON.parse(responseText) as HoustonApiResponse : {};
+      result = parsed.import ?? parsed;
+    } catch {
+      if (!response.ok) throw new Error(`Houston returned HTTP ${response.status}: ${responseText}`);
+    }
+    if (!response.ok) throw new Error(result.error || `Houston returned HTTP ${response.status}.`);
+  }
 
+  const history: WorkbookHistoryPayload = {
+    currentRows: worksheetRows(workbook, 'Daily Log'),
+    archiveRows: worksheetRows(workbook, 'Archive'),
+    archivePaRows: worksheetRows(workbook, 'Archive PA'),
+  };
+  const historyResponse: Response = await fetch(PO_HISTORY_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-overstock-import-key': IMPORT_KEY },
+    body: JSON.stringify({ action: 'syncWorkbookHistory', source: 'New Daily Rec', ...history }),
+  });
+  const historyText: string = await historyResponse.text();
+  let historyResult: PoHistorySyncResult = {};
   try {
-    const parsed: HoustonApiResponse = responseText ? JSON.parse(responseText) as HoustonApiResponse : {};
-    result = parsed.import ?? parsed;
+    historyResult = historyText ? JSON.parse(historyText) as PoHistorySyncResult : {};
   } catch {
-    if (!response.ok) throw new Error(`Houston returned HTTP ${response.status}: ${responseText}`);
+    if (!historyResponse.ok) throw new Error(`PO History returned HTTP ${historyResponse.status}: ${historyText}`);
   }
-
-  if (!response.ok) {
-    throw new Error(result.error || `Houston returned HTTP ${response.status}.`);
-  }
+  if (!historyResponse.ok) throw new Error(historyResult.error || `PO History returned HTTP ${historyResponse.status}.`);
 
   return [
     'Houston sync complete.',
@@ -119,5 +167,8 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
     `${result.unchanged ?? 0} already current`,
     `${result.unresolved?.length ?? 0} unmatched`,
     `${result.importedAssociates ?? 0} associate name(s) loaded`,
+    `${historyResult.current ?? 0} current PO row(s) copied`,
+    `${historyResult.archive ?? 0} archived PO row(s) copied`,
+    `${historyResult.archivePa ?? 0} put-away history row(s) copied`,
   ].join(' ');
 }
