@@ -51,6 +51,15 @@ function normalizePo(value) {
   return str(value, 120).replace(/^PO[-\s]*/i, '').trim().toUpperCase();
 }
 
+function normalizeOperationalDate(value) {
+  const raw = str(value, 40);
+  let match = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (match) return `${match[1]}-${String(Number(match[2])).padStart(2, '0')}-${String(Number(match[3])).padStart(2, '0')}`;
+  match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (match) return `${match[3]}-${String(Number(match[1])).padStart(2, '0')}-${String(Number(match[2])).padStart(2, '0')}`;
+  return '';
+}
+
 function tombId(t) {
   if (t == null) return '';
   return typeof t === 'object' ? str(t.id, 160) : str(t, 160);
@@ -145,6 +154,7 @@ function excelConnectionState() {
     direction: 'Overstock → Excel',
     createsMissingEntries: true,
     importsCategoryFromColumnH: true,
+    importsOperationalDateFromColumnT: true,
   };
 }
 
@@ -170,6 +180,7 @@ async function importExcelLocations(rawRows) {
       const po = normalizePo(raw?.po);
       const deliveryId = str(raw?.deliveryId, 120).toUpperCase();
       const category = str(raw?.category, 120);
+      const operationalDate = normalizeOperationalDate(raw?.operationalDate);
       const location = str(raw?.location, 120).toUpperCase();
       const containerCode = str(raw?.containerCode, 120).toUpperCase();
       const key = deliveryId || po || '(blank row)';
@@ -220,7 +231,7 @@ async function importExcelLocations(rawRows) {
           status: 'Not Donation',
           action: raw?.disposition || 'Required',
           note: raw?.note,
-          date: new Date().toISOString().slice(0, 10),
+          date: operationalDate || new Date().toISOString().slice(0, 10),
           location,
           sourceType: 'excel-location-sync',
           containerId: targetContainer.id,
@@ -236,6 +247,15 @@ async function importExcelLocations(rawRows) {
           const index = entries.findIndex(entry => String(entry?.id || '') === String(match?.id || ''));
           if (index < 0 || str(entries[index]?.category, 120) === category) continue;
           entries[index] = { ...entries[index], category, sourceType: 'excel-location-sync', updatedAt: now };
+          changedEntryIds.add(String(entries[index].id));
+        }
+      }
+
+      if (operationalDate) {
+        for (const match of matches) {
+          const index = entries.findIndex(entry => String(entry?.id || '') === String(match?.id || ''));
+          if (index < 0 || str(entries[index]?.date, 40) === operationalDate) continue;
+          entries[index] = { ...entries[index], date: operationalDate, sourceType: 'excel-location-sync', updatedAt: now };
           changedEntryIds.add(String(entries[index].id));
         }
       }
