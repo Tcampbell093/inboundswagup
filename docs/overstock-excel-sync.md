@@ -10,6 +10,7 @@ The workbook contains Excel table **DailyLog**. The sync targets these columns e
 - `Delivery ID (auto)` — preferred row key when available
 - Column H — category
 - Column T (`Prep Date (Prep)`) — operational PO date
+- All workbook `By/Por` columns — Stock Intake associate dropdown
 - `Overstock Qty`
 - `Overstock Loc (Ubicacion)`
 - `Overstock Cont. (Contenedor)`
@@ -58,3 +59,5 @@ Office Scripts external API calls must be allowed by the Microsoft 365 administr
 The endpoint prefers `Delivery ID (auto)`. If no Delivery ID match exists, it updates existing Houston entries with the same PO number. Column H is copied into the Houston category field, and Column T (`Prep Date (Prep)`) is stored as the operational PO date without replacing the database creation timestamp. If neither key matches, it creates a Houston item using the workbook PO, Delivery ID, category, operational date, Overstock Qty, location, container, disposition and note. A missing container code receives the next `OSC-###` code. Blank workbook locations are ignored and never erase a Houston location. If a matched item belongs to a Houston container, the container location and every item in that container move together.
 
 The response reports updated entries, updated containers, skipped blank rows, and workbook rows that could not be matched. The flow should retain failed or unresolved responses for manager review.
+
+Each successful workbook sync also refreshes Houston's associate master list from the names found across the DailyLog `By/Por` columns. Names are deduplicated without regard to capitalization and then used by the standalone Stock Intake associate picker.
