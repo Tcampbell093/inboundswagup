@@ -65,7 +65,8 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
   } = {};
 
   try {
-    result = responseText ? JSON.parse(responseText) : {};
+    const parsed = responseText ? JSON.parse(responseText) : {};
+    result = parsed.import ?? parsed;
   } catch {
     if (!response.ok) throw new Error(`Houston returned HTTP ${response.status}: ${responseText}`);
   }
