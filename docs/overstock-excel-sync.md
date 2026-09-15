@@ -1,10 +1,10 @@
-# Overstock Control → New Daily Rec Excel sync
+# Overstock Control ↔ New Daily Rec Excel sync
 
-This integration makes Overstock Control the source of truth and writes warehouse changes into the SharePoint-hosted **New Daily Rec..xlsx** workbook.
+This integration supports both directions between Overstock Control and the SharePoint-hosted **New Daily Rec..xlsx** workbook. The inbound flow described below changes Houston locations only; it never creates or deletes Overstock records and never changes quantities, dispositions, notes, or historical timestamps.
 
 ## Workbook contract
 
-The uploaded workbook already contains Excel table **DailyLog** (`A4:AZ504`). The sync targets these columns exactly:
+The workbook contains Excel table **DailyLog**. The sync targets these columns exactly:
 
 - `PO # (Orden)`
 - `Delivery ID (auto)` — preferred row key when available
@@ -37,3 +37,18 @@ Create one cloud flow in the same Microsoft 365 account that can edit the live w
 - `container.updated` — when a container code/location/status is edited, sends every Overstock item currently inside that container so Excel can update all matching DailyLog rows.
 
 The database write completes first. Excel sync is secondary: a temporary Microsoft/Power Automate failure does not roll back the warehouse transaction.
+
+## Excel location → Overstock Control
+
+Create a scheduled cloud flow in the Microsoft 365 account that can edit the live workbook.
+
+1. Add `integrations/overstock-excel-export-office-script.ts` in Excel for the web under **Automate → New Script**.
+2. Trigger the flow every 5 minutes during warehouse operating hours.
+3. Run the Office Script against the SharePoint workbook.
+4. Add an HTTP POST action to `https://inboundswagup.netlify.app/api/overstock-control`.
+5. Send header `x-overstock-import-key` using the same secret stored in Netlify as `OVERSTOCK_EXCEL_IMPORT_SECRET`.
+6. Send JSON body `{ "action": "syncFromExcel", "rows": <the Run script result> }`.
+
+The endpoint prefers `Delivery ID (auto)`. If no Delivery ID match exists, it updates existing Houston entries with the same PO number. Blank workbook locations are ignored and never erase a Houston location. If a matched item belongs to a Houston container, the container location and every item in that container move together.
+
+The response reports updated entries, updated containers, skipped blank rows, and workbook rows that could not be matched. The flow should retain failed or unresolved responses for manager review.

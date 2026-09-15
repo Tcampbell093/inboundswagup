@@ -34,6 +34,17 @@ function num(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function safeEqual(a, b) {
+  if (!a || !b) return false;
+  const aa = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  return aa.length === bb.length && crypto.timingSafeEqual(aa, bb);
+}
+
+function normalizePo(value) {
+  return str(value, 120).replace(/^PO[-\s]*/i, '').trim().toUpperCase();
+}
+
 function tombId(t) {
   if (t == null) return '';
   return typeof t === 'object' ? str(t.id, 160) : str(t, 160);
@@ -121,11 +132,103 @@ function filterDeleted(data) {
 function excelConnectionState() {
   return {
     configured: Boolean(env('OVERSTOCK_EXCEL_WEBHOOK_URL')),
+    importConfigured: Boolean(env('OVERSTOCK_EXCEL_IMPORT_SECRET')),
     provider: 'Power Automate',
     workbook: 'New Daily Rec..xlsx',
     table: 'DailyLog',
     direction: 'Overstock → Excel',
   };
+}
+
+async function importExcelLocations(rawRows) {
+  const rows = Array.isArray(rawRows) ? rawRows.slice(0, 1000) : [];
+  const db = pool();
+  const client = await db.connect();
+  const result = { received: rows.length, updatedEntries: 0, updatedContainers: 0, unchanged: 0, skipped: [], unresolved: [] };
+
+  try {
+    await client.query('BEGIN');
+    const state = await client.query(`SELECT data_json FROM workflow_sync_state WHERE state_key='default' LIMIT 1 FOR UPDATE`);
+    if (!state.rows.length) throw new Error('Houston workflow state is unavailable.');
+    const data = { ...(state.rows[0].data_json || {}) };
+    const filtered = filterDeleted(data);
+    const entries = filtered.entries.slice();
+    const containers = filtered.containers.slice();
+    const now = Date.now();
+    const changedContainerIds = new Set();
+    const changedEntryIds = new Set();
+
+    for (const raw of rows) {
+      const po = normalizePo(raw?.po);
+      const deliveryId = str(raw?.deliveryId, 120).toUpperCase();
+      const location = str(raw?.location, 120).toUpperCase();
+      const containerCode = str(raw?.containerCode, 120).toUpperCase();
+      const key = deliveryId || po || '(blank row)';
+
+      // Blank locations never clear Houston. This protects operational history
+      // when a workbook row is incomplete or its formula has not recalculated.
+      if (!location) {
+        result.skipped.push(`${key}: no Overstock location.`);
+        continue;
+      }
+
+      let matches = deliveryId
+        ? entries.filter(entry => str(entry?.deliveryId, 120).toUpperCase() === deliveryId)
+        : [];
+      if (!matches.length && po) {
+        matches = entries.filter(entry => normalizePo(entry?.po) === po);
+      }
+      if (!matches.length) {
+        result.unresolved.push(`${key}: no Houston Overstock record found.`);
+        continue;
+      }
+
+      const explicitContainer = containerCode
+        ? containers.find(container => str(container?.code, 120).toUpperCase() === containerCode)
+        : null;
+      const containerIds = new Set(matches.map(entry => str(entry?.containerId, 160)).filter(Boolean));
+      if (explicitContainer?.id) containerIds.add(String(explicitContainer.id));
+
+      if (containerIds.size) {
+        for (let i = 0; i < containers.length; i += 1) {
+          if (!containerIds.has(String(containers[i]?.id || ''))) continue;
+          if (str(containers[i]?.currentLocation, 120).toUpperCase() === location) continue;
+          containers[i] = { ...containers[i], currentLocation: location, updatedAt: now };
+          changedContainerIds.add(String(containers[i].id));
+        }
+        for (let i = 0; i < entries.length; i += 1) {
+          if (!containerIds.has(String(entries[i]?.containerId || ''))) continue;
+          if (str(entries[i]?.location, 120).toUpperCase() === location) continue;
+          entries[i] = { ...entries[i], location, sourceType: 'excel-location-sync', updatedAt: now };
+          changedEntryIds.add(String(entries[i].id));
+        }
+      } else {
+        for (const match of matches) {
+          const index = entries.findIndex(entry => String(entry?.id || '') === String(match?.id || ''));
+          if (index < 0 || str(entries[index]?.location, 120).toUpperCase() === location) continue;
+          entries[index] = { ...entries[index], location, sourceType: 'excel-location-sync', updatedAt: now };
+          changedEntryIds.add(String(entries[index].id));
+        }
+      }
+    }
+
+    result.updatedEntries = changedEntryIds.size;
+    result.updatedContainers = changedContainerIds.size;
+    result.unchanged = Math.max(0, rows.length - result.skipped.length - result.unresolved.length - result.updatedEntries);
+    data.overstockEntries = entries;
+    data.overstockContainers = containers;
+    await client.query(
+      `UPDATE workflow_sync_state SET data_json=$1::jsonb, updated_at=NOW() WHERE state_key='default'`,
+      [JSON.stringify(data)],
+    );
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 function excelRow(entry) {
@@ -303,6 +406,14 @@ export default async (request) => {
     if (request.method !== 'POST') return json(405, { error: 'Method not allowed.' });
     const body = await request.json().catch(() => ({}));
     const action = str(body.action, 50);
+
+    if (action === 'syncFromExcel') {
+      const expected = env('OVERSTOCK_EXCEL_IMPORT_SECRET');
+      const supplied = request.headers.get('x-overstock-import-key') || '';
+      if (!expected || !safeEqual(supplied, expected)) return json(401, { error: 'Excel sync authorization failed.' });
+      const importResult = await importExcelLocations(body.rows);
+      return json(200, { ok: true, import: importResult, snapshot: await readSnapshot(pool()) });
+    }
 
     if (action === 'testExcelSync') {
       const excelWrite = await sendExcelEvent({
