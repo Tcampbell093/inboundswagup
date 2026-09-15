@@ -5,6 +5,7 @@
   let toastTimer = null;
   let inventorySort = 'recent';
   let containerSort = 'updated';
+  let intake = { activeContainer: null, items: [], touched: new Set(), startedAt: null };
 
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm = (v) => String(v ?? '').trim().toLowerCase();
@@ -156,6 +157,40 @@
     document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${tab}`));
   }
 
+  function intakeStats() {
+    $('siItemsCount').textContent=String(intake.items.length);
+    $('siContainersCount').textContent=String(intake.touched.size);
+    $('siStartedAt').textContent=intake.startedAt?new Date(intake.startedAt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'—';
+    $('siRecentList').innerHTML=intake.items.length?intake.items.slice().reverse().map(item=>`<div class="si-recent-item"><span><strong>PO ${esc(item.po)}</strong> · ${Number(item.quantity).toLocaleString()} · ${esc(item.category||'Uncategorized')} · ${esc(item.containerCode)}</span><button type="button" data-si-delete="${esc(item.id)}" aria-label="Remove PO ${esc(item.po)}">×</button></div>`).join(''):'<div class="inv-meta">No items added yet.</div>';
+    document.querySelectorAll('[data-si-delete]').forEach(b=>b.onclick=()=>deleteIntakeItem(b.dataset.siDelete));
+  }
+
+  function fillIntakeLocations() {
+    const values=[...new Set([...snapshot.locations,...snapshot.containers.map(c=>c.currentLocation)].filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true}));
+    $('siContainerLocation').innerHTML='<option value="">— Select location —</option>'+values.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  }
+
+  function inspectIntakeContainer() {
+    const code=String($('siContainerCode').value||'').trim().toUpperCase();
+    const existing=snapshot.containers.find(c=>String(c.code||'').toUpperCase()===code);
+    $('siExistingContainer').hidden=!existing;
+    if(existing){$('siExistingContainer').textContent=`Existing container · ${existing.currentLocation||'No location'} · ${entriesForContainer(existing.id).length} item(s)`;if(existing.currentLocation)$('siContainerLocation').value=existing.currentLocation;}
+  }
+
+  function openStockIntake() {
+    intake={activeContainer:null,items:[],touched:new Set(),startedAt:Date.now()};
+    fillIntakeLocations();intakeStats();
+    $('siContainerStep').hidden=false;$('siItemStep').hidden=true;$('stockIntakeOverlay').hidden=false;
+    document.body.style.overflow='hidden';setTimeout(()=>$('siAssociate').focus(),40);
+  }
+
+  function closeStockIntake() {$('stockIntakeOverlay').hidden=true;document.body.style.overflow='';renderAll();}
+
+  async function deleteIntakeItem(id) {
+    const item=intake.items.find(x=>String(x.id)===String(id));if(!item||!confirm(`Remove PO ${item.po} from this intake?`))return;
+    try{const j=await request({action:'deleteEntry',id});snapshot={...snapshot,...j};intake.items=intake.items.filter(x=>String(x.id)!==String(id));intakeStats();toast('Item removed.');}catch(e){toast(e.message,true);}
+  }
+
   async function request(body=null) {
     const opts={headers:{'Accept':'application/json'}};
     if(body){opts.method='POST';opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body);}
@@ -246,6 +281,48 @@
   $('entryClearBtn').onclick=clearEntryForm;
   $('containerClearBtn').onclick=clearContainerForm;
   $('newContainerBtn').onclick=()=>{clearContainerForm();setTab('add');setTimeout(()=>$('containerForm').elements.code.focus(),50);};
+  $('stockIntakeBtn').onclick=openStockIntake;
+  $('stockIntakeCancel').onclick=()=>{if(!intake.items.length||confirm('Cancel this Stock Intake session? Saved items will remain in Houston.'))closeStockIntake();};
+  $('stockIntakeComplete').onclick=()=>{toast(`Stock Intake complete · ${intake.items.length} item(s) added.`);closeStockIntake();};
+  $('siSwitchContainer').onclick=()=>{intake.activeContainer=null;$('siItemStep').hidden=true;$('siContainerStep').hidden=false;$('siContainerCode').value='';$('siExistingContainer').hidden=true;setTimeout(()=>$('siContainerCode').focus(),30);};
+  $('siContainerCode').addEventListener('input',inspectIntakeContainer);
+  $('siContainerCode').addEventListener('blur',inspectIntakeContainer);
+
+  $('siContainerForm').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const associate=String($('siAssociate').value||'').trim();
+    const code=String($('siContainerCode').value||'').trim().toUpperCase();
+    const location=String($('siContainerLocation').value||'').trim();
+    if(!associate)return toast('Choose or enter the associate.',true);
+    let container=snapshot.containers.find(c=>String(c.code||'').toUpperCase()===code);
+    try{
+      if(!container){
+        if(!location)return toast('Choose a location for the new container.',true);
+        const j=await request({action:'upsertContainer',container:{code,currentLocation:location,status:'Open',notes:'Created through Stock Intake'}});
+        snapshot={...snapshot,...j};
+        container=snapshot.containers.find(c=>String(c.code||'').toUpperCase()===code)||snapshot.containers.slice().sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0))[0];
+      }
+      if(!container)throw new Error('Container could not be opened.');
+      intake.activeContainer=container;intake.touched.add(String(container.id));intakeStats();
+      $('siActiveContainer').textContent=`${container.code} · ${container.currentLocation||'No location'} · Logged by ${associate}`;
+      $('siContainerStep').hidden=true;$('siItemStep').hidden=false;setTimeout(()=>$('siPo').focus(),30);
+    }catch(err){toast(err.message||'Could not open container.',true);}
+  });
+
+  $('siItemForm').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const container=intake.activeContainer;if(!container)return toast('Open a container first.',true);
+    const po=String($('siPo').value||'').trim();const quantity=Number($('siQty').value||0);
+    if(!po||quantity<1)return toast('Enter a PO and quantity.',true);
+    const entry={po,deliveryId:String($('siDeliveryId').value||'').trim(),quantity,category:String($('siCategory').value||'').trim(),status:$('siStatus').value,action:$('siAction').value,note:String($('siNote').value||'').trim(),associate:String($('siAssociate').value||'').trim(),containerId:container.id,containerCode:container.code,location:container.currentLocation,date:new Date().toISOString().slice(0,10),sourceType:'stock-intake'};
+    try{
+      const j=await request({action:'upsertEntry',entry});snapshot={...snapshot,...j};
+      const saved=snapshot.entries.slice().sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0)).find(x=>String(x.po)===po&&String(x.containerId)===String(container.id));
+      intake.items.push(saved||entry);intakeStats();
+      $('siPo').value='';$('siDeliveryId').value='';$('siQty').value='';$('siCategory').value='';$('siNote').value='';setTimeout(()=>$('siPo').focus(),20);
+      toast(`PO ${po} added to ${container.code}.`);
+    }catch(err){toast(err.message||'Could not add item.',true);}
+  });
 
   renderDate();
   setInterval(renderDate,60*1000);
