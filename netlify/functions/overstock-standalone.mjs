@@ -143,6 +143,7 @@ function excelConnectionState() {
     workbook: 'New Daily Rec..xlsx',
     table: 'DailyLog',
     direction: 'Overstock → Excel',
+    createsMissingEntries: true,
   };
 }
 
