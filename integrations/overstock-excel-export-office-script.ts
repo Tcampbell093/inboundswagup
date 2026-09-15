@@ -5,6 +5,7 @@
 interface HoustonLocationRow {
   po: string;
   deliveryId: string;
+  category: string;
   quantity: number;
   location: string;
   containerCode: string;
@@ -14,7 +15,7 @@ interface HoustonLocationRow {
 
 async function main(workbook: ExcelScript.Workbook): Promise<string> {
   const HOUSTON_ENDPOINT = 'https://inboundswagup.netlify.app/api/overstock-control';
-  const IMPORT_KEY = 'onetwothreefourfivesixseveneightnineten';
+  const IMPORT_KEY = 'PASTE_YOUR_NEW_NETLIFY_KEY_HERE';
 
   if (IMPORT_KEY === 'PASTE_YOUR_NEW_NETLIFY_KEY_HERE') {
     throw new Error('Paste your new Netlify import key into IMPORT_KEY before running this script.');
@@ -30,6 +31,7 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
 
   const poCol = indexOf('PO # (Orden)');
   const deliveryCol = indexOf('Delivery ID (auto)');
+  const categoryCol = 7; // Workbook column H.
   const quantityCol = indexOf('Overstock Qty');
   const locationCol = indexOf('Overstock Loc (Ubicacion)');
   const containerCol = indexOf('Overstock Cont. (Contenedor)');
@@ -43,6 +45,7 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
     .map(row => ({
       po: String(row[poCol] ?? '').trim(),
       deliveryId: String(row[deliveryCol] ?? '').trim(),
+      category: String(row[categoryCol] ?? '').trim(),
       quantity: Math.max(0, Math.round(Number(row[quantityCol] ?? 0) || 0)),
       location: String(row[locationCol] ?? '').trim(),
       containerCode: String(row[containerCol] ?? '').trim(),
