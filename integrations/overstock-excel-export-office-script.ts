@@ -14,7 +14,7 @@ interface HoustonLocationRow {
 
 async function main(workbook: ExcelScript.Workbook): Promise<string> {
   const HOUSTON_ENDPOINT = 'https://inboundswagup.netlify.app/api/overstock-control';
-  const IMPORT_KEY = 'PASTE_YOUR_NEW_NETLIFY_KEY_HERE';
+  const IMPORT_KEY = 'onetwothreefourfivesixseveneightnineten';
 
   if (IMPORT_KEY === 'PASTE_YOUR_NEW_NETLIFY_KEY_HERE') {
     throw new Error('Paste your new Netlify import key into IMPORT_KEY before running this script.');
