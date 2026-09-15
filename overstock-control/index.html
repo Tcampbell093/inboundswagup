@@ -37,8 +37,9 @@
       <div class="tabs" role="tablist">
         <button class="tab active" data-tab="inventory" type="button">Inventory</button>
         <button class="tab" data-tab="containers" type="button">Containers</button>
-        <button class="tab" data-tab="add" type="button">Quick Add</button>
+        <button class="tab" data-tab="add" type="button">Manual Add</button>
       </div>
+      <button id="stockIntakeBtn" class="btn stock-intake-launch" type="button">▣ Stock Intake</button>
       <label class="search"><span>⌕</span><input id="searchInput" placeholder="Search PO, delivery, box, location, associate…" /></label>
     </section>
 
@@ -78,6 +79,39 @@
       </div>
     </section>
   </main>
+
+  <div id="stockIntakeOverlay" class="si-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="stockIntakeTitle">
+    <div class="si-modal">
+      <header class="si-header">
+        <div><div class="si-eyebrow">▣ Stock Intake</div><h2 id="stockIntakeTitle">Stock Intake</h2><p>Catalog what's already on the shelf — container by container.</p></div>
+        <div class="si-header-actions"><button id="stockIntakeCancel" class="si-cancel" type="button">Cancel</button><button id="stockIntakeComplete" class="si-complete" type="button">Complete</button></div>
+      </header>
+      <div class="si-stats"><div><strong id="siItemsCount">0</strong><span>Items added</span></div><div><strong id="siContainersCount">0</strong><span>Containers touched</span></div><div><strong id="siStartedAt">—</strong><span>Started</span></div></div>
+
+      <section id="siContainerStep" class="si-step">
+        <div class="si-step-title"><b>1</b><div><h3>Pick a container</h3><p>Enter the code on the box. If it doesn't exist, we'll create it.</p></div></div>
+        <form id="siContainerForm" class="si-form">
+          <label>Associate<input id="siAssociate" list="associateList" required placeholder="Who's using this tablet?" /></label>
+          <label>Container code<input id="siContainerCode" required placeholder="OSC-0042" autocapitalize="characters" /></label>
+          <label>Location<select id="siContainerLocation" required></select></label>
+          <div id="siExistingContainer" class="si-existing" hidden></div>
+          <button class="si-primary" type="submit">Open Container →</button>
+        </form>
+      </section>
+
+      <section id="siItemStep" class="si-step" hidden>
+        <div id="siActiveContainer" class="si-active-container"></div>
+        <div class="si-step-title"><b>2</b><div><h3>Add items</h3><p>Keep adding POs until this container is complete.</p></div><button id="siSwitchContainer" class="si-switch" type="button">↺ Switch container</button></div>
+        <form id="siItemForm" class="si-form">
+          <div class="si-row"><label>PO #<input id="siPo" required inputmode="numeric" /></label><label>Delivery ID<input id="siDeliveryId" placeholder="Optional" /></label><label>Qty<input id="siQty" required type="number" min="1" step="1" inputmode="numeric" /></label></div>
+          <div class="si-row"><label>Category<input id="siCategory" list="categoryList" /></label><label>Status<select id="siStatus"><option>Not Donation</option><option>Donation</option><option>Pending PB</option><option>Donated</option></select></label><label>Action<select id="siAction"><option>Required</option><option>Donated</option><option>Replaced</option><option>Missing from Box</option><option>Lost</option></select></label></div>
+          <label>Note<textarea id="siNote" placeholder="Optional"></textarea></label>
+          <button class="si-add" type="submit">+ Add Item to Container</button>
+        </form>
+        <div class="si-recent"><h4>Recent entries this session</h4><div id="siRecentList" class="si-recent-list"></div></div>
+      </section>
+    </div>
+  </div>
 
   <datalist id="associateList"></datalist>
   <datalist id="categoryList"></datalist>
