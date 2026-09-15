@@ -49,13 +49,25 @@
   function renderExcelSync() {
     const pill = $('excelSyncPill');
     if (!pill) return;
-    const connected = snapshot.excelSync?.configured === true;
-    pill.textContent = connected ? 'Excel write-back · Connected' : 'Excel write-back · Setup needed';
+    const outbound = snapshot.excelSync?.configured === true;
+    const inbound = snapshot.excelSync?.importConfigured === true;
+    const connected = outbound || inbound;
+    pill.textContent = outbound && inbound
+      ? 'Excel sync · Two-way ready'
+      : inbound
+        ? 'Excel → Houston · Ready'
+        : outbound
+          ? 'Houston → Excel · Ready'
+          : 'Excel sync · Setup needed';
     pill.classList.toggle('connected', connected);
     pill.classList.toggle('disconnected', !connected);
-    pill.title = connected
-      ? 'Changes from Overstock Control can be sent to the DailyLog table in New Daily Rec..xlsx.'
-      : 'The Overstock side is ready. Connect the Power Automate webhook to enable automatic Excel updates.';
+    pill.title = outbound && inbound
+      ? 'The DailyLog workbook can update Houston locations, and Houston changes can be sent back to Excel.'
+      : inbound
+        ? 'Use the workbook button to send populated DailyLog Overstock locations to Houston.'
+        : outbound
+          ? 'Changes from Overstock Control can be sent to the DailyLog workbook.'
+          : 'Excel synchronization has not been configured.';
   }
 
   function renderStats() {
