@@ -6,6 +6,7 @@ interface HoustonLocationRow {
   po: string;
   deliveryId: string;
   category: string;
+  operationalDate: string;
   quantity: number;
   location: string;
   containerCode: string;
@@ -32,6 +33,7 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
   const poCol = indexOf('PO # (Orden)');
   const deliveryCol = indexOf('Delivery ID (auto)');
   const categoryCol = 7; // Workbook column H.
+  const operationalDateCol = 19; // Workbook column T: Prep Date (Prep).
   const quantityCol = indexOf('Overstock Qty');
   const locationCol = indexOf('Overstock Loc (Ubicacion)');
   const containerCol = indexOf('Overstock Cont. (Contenedor)');
@@ -46,6 +48,7 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
       po: String(row[poCol] ?? '').trim(),
       deliveryId: String(row[deliveryCol] ?? '').trim(),
       category: String(row[categoryCol] ?? '').trim(),
+      operationalDate: String(row[operationalDateCol] ?? '').trim(),
       quantity: Math.max(0, Math.round(Number(row[quantityCol] ?? 0) || 0)),
       location: String(row[locationCol] ?? '').trim(),
       containerCode: String(row[containerCol] ?? '').trim(),
