@@ -14,6 +14,23 @@ interface HoustonLocationRow {
   note: string;
 }
 
+interface HoustonSyncResult {
+  error?: string;
+  received?: number;
+  updatedEntries?: number;
+  updatedContainers?: number;
+  createdEntries?: number;
+  createdContainers?: number;
+  unchanged?: number;
+  skipped?: string[];
+  unresolved?: string[];
+  importedAssociates?: number;
+}
+
+interface HoustonApiResponse extends HoustonSyncResult {
+  import?: HoustonSyncResult;
+}
+
 async function main(workbook: ExcelScript.Workbook): Promise<string> {
   const HOUSTON_ENDPOINT = 'https://inboundswagup.netlify.app/api/overstock-control';
   const IMPORT_KEY = 'PASTE_YOUR_NEW_NETLIFY_KEY_HERE';
@@ -54,8 +71,8 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
     throw new Error('DailyLog is missing a required PO, Delivery ID, quantity, location, or container column.');
   }
 
-  const rows = textRows
-    .map(row => ({
+  const rows: HoustonLocationRow[] = textRows
+    .map((row: string[]): HoustonLocationRow => ({
       po: String(row[poCol] ?? '').trim(),
       deliveryId: String(row[deliveryCol] ?? '').trim(),
       category: String(row[categoryCol] ?? '').trim(),
@@ -66,7 +83,7 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
       disposition: dispositionCol >= 0 ? String(row[dispositionCol] ?? '').trim() : '',
       note: noteCol >= 0 ? String(row[noteCol] ?? '').trim() : '',
     }))
-    .filter(row => Boolean(row.location) && Boolean(row.deliveryId || row.po));
+    .filter((row: HoustonLocationRow): boolean => Boolean(row.location) && Boolean(row.deliveryId || row.po));
 
   if (!rows.length) return 'Nothing to sync: no populated Overstock locations were found.';
 
@@ -80,21 +97,10 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
   });
 
   const responseText = await response.text();
-  let result: {
-    error?: string;
-    received?: number;
-    updatedEntries?: number;
-    updatedContainers?: number;
-    createdEntries?: number;
-    createdContainers?: number;
-    unchanged?: number;
-    skipped?: unknown[];
-    unresolved?: unknown[];
-    importedAssociates?: number;
-  } = {};
+  let result: HoustonSyncResult = {};
 
   try {
-    const parsed = responseText ? JSON.parse(responseText) : {};
+    const parsed: HoustonApiResponse = responseText ? JSON.parse(responseText) as HoustonApiResponse : {};
     result = parsed.import ?? parsed;
   } catch {
     if (!response.ok) throw new Error(`Houston returned HTTP ${response.status}: ${responseText}`);
