@@ -3,6 +3,8 @@
   const $ = (id) => document.getElementById(id);
   let snapshot = { entries: [], containers: [], categories: [], locations: [], associates: [], updatedAt: null, excelSync: { configured: false } };
   let toastTimer = null;
+  let inventorySort = 'recent';
+  let containerSort = 'updated';
 
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm = (v) => String(v ?? '').trim().toLowerCase();
@@ -81,7 +83,16 @@
 
   function renderInventory() {
     const q = currentQuery();
-    const entries = snapshot.entries.filter(e => entryMatches(e,q)).sort((a,b) => Number(b.updatedAt||b.createdAt||0)-Number(a.updatedAt||a.createdAt||0));
+    const entries = snapshot.entries.filter(e => entryMatches(e,q));
+    const cmp = (a,b) => String(a||'').localeCompare(String(b||''),undefined,{numeric:true,sensitivity:'base'});
+    const ts = e => Number(e.updatedAt||e.createdAt||0);
+    if(inventorySort==='oldest') entries.sort((a,b)=>ts(a)-ts(b));
+    else if(inventorySort==='po') entries.sort((a,b)=>cmp(a.po,b.po));
+    else if(inventorySort==='qty-desc') entries.sort((a,b)=>Number(b.quantity||0)-Number(a.quantity||0));
+    else if(inventorySort==='qty-asc') entries.sort((a,b)=>Number(a.quantity||0)-Number(b.quantity||0));
+    else if(inventorySort==='location') entries.sort((a,b)=>cmp(containerById(a.containerId)?.currentLocation||a.location,containerById(b.containerId)?.currentLocation||b.location));
+    else if(inventorySort==='associate') entries.sort((a,b)=>cmp(a.associate,b.associate));
+    else entries.sort((a,b)=>ts(b)-ts(a));
     $('inventoryMeta').textContent = `${entries.length} shown · ${snapshot.entries.length} total${snapshot.updatedAt ? ' · synced '+fmtDate(snapshot.updatedAt) : ''}`;
     $('inventoryList').innerHTML = entries.length ? entries.map(e => {
       const c = containerById(e.containerId);
@@ -102,7 +113,11 @@
 
   function renderContainers() {
     const q = currentQuery();
-    const rows = snapshot.containers.filter(c => containerMatches(c,q)).sort((a,b) => String(a.code||'').localeCompare(String(b.code||''), undefined, {numeric:true}));
+    const rows = snapshot.containers.filter(c => containerMatches(c,q));
+    const cmp = (a,b) => String(a||'').localeCompare(String(b||''),undefined,{numeric:true,sensitivity:'base'});
+    if(containerSort==='name') rows.sort((a,b)=>cmp(a.code,b.code));
+    else if(containerSort==='location') rows.sort((a,b)=>cmp(a.currentLocation,b.currentLocation)||cmp(a.code,b.code));
+    else rows.sort((a,b)=>Number(b.updatedAt||b.createdAt||0)-Number(a.updatedAt||a.createdAt||0));
     $('containerGrid').innerHTML = rows.length ? rows.map(c => {
       const items = entriesForContainer(c.id);
       const units = items.reduce((n,e)=>n+(Number(e.quantity)||0),0);
@@ -167,8 +182,12 @@
     finally{$('refreshBtn').disabled=false;}
   }
 
-  function clearEntryForm() {
-    const f=$('entryForm'); f.reset(); f.elements.id.value=''; f.elements.quantity.value='1'; f.elements.status.value='Not Donation'; f.elements.action.value='Required'; $('entrySaveBtn').textContent='Add item';
+  function clearEntryForm(preserveContext=false) {
+    const f=$('entryForm');
+    const context=preserveContext?{associate:f.elements.associate.value,containerId:f.elements.containerId.value,status:f.elements.status.value,action:f.elements.action.value}:null;
+    f.reset(); f.elements.id.value=''; f.elements.quantity.value='1'; f.elements.status.value='Not Donation'; f.elements.action.value='Required';
+    if(context){f.elements.associate.value=context.associate;f.elements.containerId.value=context.containerId;f.elements.status.value=context.status||'Not Donation';f.elements.action.value=context.action||'Required';}
+    $('entrySaveBtn').textContent='Add item and continue';
   }
 
   function clearContainerForm() {
@@ -199,12 +218,12 @@
   $('entryForm').addEventListener('submit',async e=>{
     e.preventDefault(); const f=e.currentTarget; const d=formObject(f); const c=containerById(d.containerId); if(!c)return toast('Choose a container.',true);
     const entry={id:d.id||undefined,po:d.po,deliveryId:d.deliveryId,quantity:Number(d.quantity||0),category:d.category,status:d.status,action:d.action,note:d.note,associate:d.associate,containerId:d.containerId,containerCode:c.code,location:c.currentLocation,date:new Date().toISOString().slice(0,10),sourceType:'overstock-standalone'};
-    try{const j=await request({action:'upsertEntry',entry});snapshot={...snapshot,...j};clearEntryForm();renderAll();toast(completedMessage(d.id?'Item updated.':'Item added to Overstock.',j),j.excelWrite?.configured && !j.excelWrite?.ok);}catch(err){toast(err.message,true);}
+    try{const j=await request({action:'upsertEntry',entry});snapshot={...snapshot,...j};clearEntryForm(true);renderAll();setTimeout(()=>$('entryForm').elements.po.focus(),25);toast(completedMessage(d.id?'Item updated.':'Item added. Ready for the next PO.',j),j.excelWrite?.configured && !j.excelWrite?.ok);}catch(err){toast(err.message,true);}
   });
 
   $('containerForm').addEventListener('submit',async e=>{
     e.preventDefault();const f=e.currentTarget;const d=formObject(f);const container={id:d.id||undefined,code:d.code,currentLocation:d.currentLocation,status:d.status,notes:d.notes};
-    try{const j=await request({action:'upsertContainer',container});snapshot={...snapshot,...j};clearContainerForm();renderAll();toast(completedMessage(d.id?'Container updated.':'Container created.',j),j.excelWrite?.configured && !j.excelWrite?.ok);}catch(err){toast(err.message,true);}
+    try{const j=await request({action:'upsertContainer',container});snapshot={...snapshot,...j};const selected=snapshot.containers.find(c=>String(c.code||'').toUpperCase()===String(container.code||'').toUpperCase())||snapshot.containers.slice().sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0))[0];clearContainerForm();renderAll();if(selected)$('entryForm').elements.containerId.value=selected.id;setTimeout(()=>$('entryForm').elements.po.focus(),25);toast(completedMessage(d.id?'Container updated and selected.':'Container created and selected. Add the first PO.',j),j.excelWrite?.configured && !j.excelWrite?.ok);}catch(err){toast(err.message,true);}
   });
 
   $('editForm').addEventListener('submit',async e=>{
@@ -221,6 +240,8 @@
   document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close)?.close());
   document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
   $('searchInput').addEventListener('input',()=>{renderInventory();renderContainers();});
+  $('inventorySort').addEventListener('change',e=>{inventorySort=e.target.value;renderInventory();});
+  $('containerSort').addEventListener('change',e=>{containerSort=e.target.value;renderContainers();});
   $('refreshBtn').onclick=()=>load(true);
   $('entryClearBtn').onclick=clearEntryForm;
   $('containerClearBtn').onclick=clearContainerForm;
