@@ -38,16 +38,20 @@ Create one cloud flow in the same Microsoft 365 account that can edit the live w
 
 The database write completes first. Excel sync is secondary: a temporary Microsoft/Power Automate failure does not roll back the warehouse transaction.
 
-## Excel location → Overstock Control
+## Excel location → Overstock Control (one-click, no Premium connector)
 
-Create a scheduled cloud flow in the Microsoft 365 account that can edit the live workbook.
+The workbook can call Houston directly from an Office Script when a user clicks its worksheet button. This avoids the Power Automate Premium HTTP action.
 
 1. Add `integrations/overstock-excel-export-office-script.ts` in Excel for the web under **Automate → New Script**.
-2. Trigger the flow every 5 minutes during warehouse operating hours.
-3. Run the Office Script against the SharePoint workbook.
-4. Add an HTTP POST action to `https://inboundswagup.netlify.app/api/overstock-control`.
-5. Send header `x-overstock-import-key` using the same secret stored in Netlify as `OVERSTOCK_EXCEL_IMPORT_SECRET`.
-6. Send JSON body `{ "action": "syncFromExcel", "rows": <the Run script result> }`.
+2. Rotate `OVERSTOCK_EXCEL_IMPORT_SECRET` in Netlify if its previous value was exposed.
+3. Replace `PASTE_YOUR_NEW_NETLIFY_KEY_HERE` in the private workbook script with that new value. Never commit the value to GitHub.
+4. Save the script, associate it with the workbook, and choose **Add button to worksheet**.
+5. Rename the button **Sync locations to Houston**.
+6. After changing Overstock locations, click the button and wait for the completion message.
+
+Anyone allowed to edit the workbook may be able to inspect its associated script and key. Restrict workbook edit access accordingly. The server limits this key to location updates on existing Houston records; it cannot create or delete records or change quantities, dispositions, notes, or history.
+
+Office Scripts external API calls must be allowed by the Microsoft 365 administrator. If the workbook reports that external calls are disabled, BDA IT must enable them or provide an approved integration method.
 
 The endpoint prefers `Delivery ID (auto)`. If no Delivery ID match exists, it updates existing Houston entries with the same PO number. Blank workbook locations are ignored and never erase a Houston location. If a matched item belongs to a Houston container, the container location and every item in that container move together.
 
