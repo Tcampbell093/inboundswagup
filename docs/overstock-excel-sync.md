@@ -9,6 +9,7 @@ The workbook contains Excel table **DailyLog**. The sync targets these columns e
 - `PO # (Orden)`
 - `Delivery ID (auto)` — preferred row key when available
 - Column H — category
+- Column T (`Prep Date (Prep)`) — operational PO date
 - `Overstock Qty`
 - `Overstock Loc (Ubicacion)`
 - `Overstock Cont. (Contenedor)`
@@ -54,6 +55,6 @@ Anyone allowed to edit the workbook may be able to inspect its associated script
 
 Office Scripts external API calls must be allowed by the Microsoft 365 administrator. If the workbook reports that external calls are disabled, BDA IT must enable them or provide an approved integration method.
 
-The endpoint prefers `Delivery ID (auto)`. If no Delivery ID match exists, it updates existing Houston entries with the same PO number. Column H is copied into the Houston category field. If neither key matches, it creates a Houston item using the workbook PO, Delivery ID, category, Overstock Qty, location, container, disposition and note. A missing container code receives the next `OSC-###` code. Blank workbook locations are ignored and never erase a Houston location. If a matched item belongs to a Houston container, the container location and every item in that container move together.
+The endpoint prefers `Delivery ID (auto)`. If no Delivery ID match exists, it updates existing Houston entries with the same PO number. Column H is copied into the Houston category field, and Column T (`Prep Date (Prep)`) is stored as the operational PO date without replacing the database creation timestamp. If neither key matches, it creates a Houston item using the workbook PO, Delivery ID, category, operational date, Overstock Qty, location, container, disposition and note. A missing container code receives the next `OSC-###` code. Blank workbook locations are ignored and never erase a Houston location. If a matched item belongs to a Houston container, the container location and every item in that container move together.
 
 The response reports updated entries, updated containers, skipped blank rows, and workbook rows that could not be matched. The flow should retain failed or unresolved responses for manager review.
