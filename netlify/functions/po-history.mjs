@@ -79,21 +79,24 @@ function normalized(row, sourceSheet, lifecycleState) {
 }
 
 async function syncRows(client, rows, sourceSheet, lifecycleState) {
-  let imported = 0;
-  for (let i = 0; i < rows.length; i += 1) {
-    const r = normalized(rows[i], sourceSheet, lifecycleState);
-    if (!r.po && !r.deliveryId) continue;
+  const prepared = rows.map((row) => normalized(row, sourceSheet, lifecycleState)).filter((r) => r.po || r.deliveryId);
+  for (let start = 0; start < prepared.length; start += 100) {
+    const chunk = prepared.slice(start, start + 100);
+    const params = [];
+    const values = chunk.map((r, rowIndex) => {
+      const offset = rowIndex * 11;
+      params.push(r.key,r.sourceSheet,r.lifecycleState,r.po,r.deliveryId,r.category,r.status,r.location,r.associate,r.activityDate,JSON.stringify(r.row));
+      return `(${Array.from({ length: 11 }, (_, i) => `$${offset + i + 1}${i === 10 ? '::jsonb' : ''}`).join(',')})`;
+    });
     await client.query(`INSERT INTO po_history_records
       (record_key,source_sheet,lifecycle_state,po,delivery_id,category,status,location,associate_name,activity_date,row_json)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)
+      VALUES ${values.join(',')}
       ON CONFLICT(record_key) DO UPDATE SET lifecycle_state=EXCLUDED.lifecycle_state, po=EXCLUDED.po,
       delivery_id=EXCLUDED.delivery_id, category=EXCLUDED.category, status=EXCLUDED.status,
       location=EXCLUDED.location, associate_name=EXCLUDED.associate_name, activity_date=EXCLUDED.activity_date,
-      row_json=EXCLUDED.row_json, last_seen_at=NOW()`,
-      [r.key,r.sourceSheet,r.lifecycleState,r.po,r.deliveryId,r.category,r.status,r.location,r.associate,r.activityDate,JSON.stringify(r.row)]);
-    imported += 1;
+      row_json=EXCLUDED.row_json, last_seen_at=NOW()`, params);
   }
-  return imported;
+  return prepared.length;
 }
 
 async function handleSync(request) {
