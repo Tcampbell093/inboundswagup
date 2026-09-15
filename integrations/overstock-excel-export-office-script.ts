@@ -29,6 +29,17 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
   const body = table.getRangeBetweenHeaderAndTotal();
   const textRows = body.getTexts();
   const indexOf = (name: string) => headers.indexOf(name);
+  const associateColumns: number[] = headers
+    .map((name: string, index: number): number => /\bBy\b|\(Por\)/i.test(name) ? index : -1)
+    .filter((index: number): boolean => index >= 0);
+  const associates: string[] = [];
+  textRows.forEach((row: string[]): void => {
+    associateColumns.forEach((column: number): void => {
+      const name: string = String(row[column] ?? '').trim();
+      if (name && !associates.some((existing: string): boolean => existing.toLowerCase() === name.toLowerCase())) associates.push(name);
+    });
+  });
+  associates.sort((a: string, b: string): number => a.localeCompare(b));
 
   const poCol = indexOf('PO # (Orden)');
   const deliveryCol = indexOf('Delivery ID (auto)');
@@ -65,7 +76,7 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
       'Content-Type': 'application/json',
       'x-overstock-import-key': IMPORT_KEY,
     },
-    body: JSON.stringify({ action: 'syncFromExcel', rows }),
+    body: JSON.stringify({ action: 'syncFromExcel', rows, associates }),
   });
 
   const responseText = await response.text();
@@ -79,6 +90,7 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
     unchanged?: number;
     skipped?: unknown[];
     unresolved?: unknown[];
+    importedAssociates?: number;
   } = {};
 
   try {
@@ -100,5 +112,6 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
     `${result.createdContainers ?? 0} new container(s) added`,
     `${result.unchanged ?? 0} already current`,
     `${result.unresolved?.length ?? 0} unmatched`,
+    `${result.importedAssociates ?? 0} associate name(s) loaded`,
   ].join(' ');
 }
