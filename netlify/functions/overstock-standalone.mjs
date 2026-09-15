@@ -158,17 +158,24 @@ function excelConnectionState() {
   };
 }
 
-async function importExcelLocations(rawRows) {
+async function importExcelLocations(rawRows, rawAssociates) {
   const rows = Array.isArray(rawRows) ? rawRows.slice(0, 1000) : [];
+  const workbookAssociates = [];
+  for (const raw of Array.isArray(rawAssociates) ? rawAssociates.slice(0, 250) : []) {
+    const name = str(raw, 120);
+    if (name && !workbookAssociates.some(existing => existing.toLowerCase() === name.toLowerCase())) workbookAssociates.push(name);
+  }
+  workbookAssociates.sort((a, b) => a.localeCompare(b));
   const db = pool();
   const client = await db.connect();
-  const result = { received: rows.length, createdEntries: 0, createdContainers: 0, updatedEntries: 0, updatedContainers: 0, unchanged: 0, skipped: [], unresolved: [] };
+  const result = { received: rows.length, importedAssociates: workbookAssociates.length, createdEntries: 0, createdContainers: 0, updatedEntries: 0, updatedContainers: 0, unchanged: 0, skipped: [], unresolved: [] };
 
   try {
     await client.query('BEGIN');
-    const state = await client.query(`SELECT data_json FROM workflow_sync_state WHERE state_key='default' LIMIT 1 FOR UPDATE`);
+    const state = await client.query(`SELECT data_json, masters_json FROM workflow_sync_state WHERE state_key='default' LIMIT 1 FOR UPDATE`);
     if (!state.rows.length) throw new Error('Houston workflow state is unavailable.');
     const data = { ...(state.rows[0].data_json || {}) };
+    const masters = { ...(state.rows[0].masters_json || {}) };
     const filtered = filterDeleted(data);
     const entries = filtered.entries.slice();
     const containers = filtered.containers.slice();
@@ -294,9 +301,10 @@ async function importExcelLocations(rawRows) {
     result.unchanged = Math.max(0, rows.length - result.skipped.length - result.unresolved.length - result.createdEntries - result.updatedEntries);
     data.overstockEntries = entries;
     data.overstockContainers = containers;
+    if (workbookAssociates.length) masters.associates = workbookAssociates;
     await client.query(
-      `UPDATE workflow_sync_state SET data_json=$1::jsonb, updated_at=NOW() WHERE state_key='default'`,
-      [JSON.stringify(data)],
+      `UPDATE workflow_sync_state SET data_json=$1::jsonb, masters_json=$2::jsonb, updated_at=NOW() WHERE state_key='default'`,
+      [JSON.stringify(data), JSON.stringify(masters)],
     );
     await client.query('COMMIT');
     return result;
@@ -499,7 +507,7 @@ export default async (request) => {
       const expected = env('OVERSTOCK_EXCEL_IMPORT_SECRET');
       const supplied = request.headers.get('x-overstock-import-key') || '';
       if (!expected || !safeEqual(supplied, expected)) return json(401, { error: 'Excel sync authorization failed.' });
-      const importResult = await importExcelLocations(body.rows);
+      const importResult = await importExcelLocations(body.rows, body.associates);
       return json(200, { ok: true, import: importResult, snapshot: await readSnapshot(pool()) });
     }
 
