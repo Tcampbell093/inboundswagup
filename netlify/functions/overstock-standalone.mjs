@@ -144,6 +144,7 @@ function excelConnectionState() {
     table: 'DailyLog',
     direction: 'Overstock → Excel',
     createsMissingEntries: true,
+    importsCategoryFromColumnH: true,
   };
 }
 
@@ -168,6 +169,7 @@ async function importExcelLocations(rawRows) {
     for (const raw of rows) {
       const po = normalizePo(raw?.po);
       const deliveryId = str(raw?.deliveryId, 120).toUpperCase();
+      const category = str(raw?.category, 120);
       const location = str(raw?.location, 120).toUpperCase();
       const containerCode = str(raw?.containerCode, 120).toUpperCase();
       const key = deliveryId || po || '(blank row)';
@@ -213,6 +215,7 @@ async function importExcelLocations(rawRows) {
         const created = cleanEntry({
           po,
           deliveryId,
+          category,
           quantity: raw?.quantity,
           status: 'Not Donation',
           action: raw?.disposition || 'Required',
@@ -226,6 +229,15 @@ async function importExcelLocations(rawRows) {
         entries.push(created);
         result.createdEntries += 1;
         continue;
+      }
+
+      if (category) {
+        for (const match of matches) {
+          const index = entries.findIndex(entry => String(entry?.id || '') === String(match?.id || ''));
+          if (index < 0 || str(entries[index]?.category, 120) === category) continue;
+          entries[index] = { ...entries[index], category, sourceType: 'excel-location-sync', updatedAt: now };
+          changedEntryIds.add(String(entries[index].id));
+        }
       }
 
       const explicitContainer = containerCode
