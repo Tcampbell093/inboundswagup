@@ -21,7 +21,13 @@ function pool() {
 function json(status, body) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, x-overstock-import-key',
+    },
   });
 }
 
@@ -402,6 +408,17 @@ async function mutate(action, body) {
 
 export default async (request) => {
   try {
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, x-overstock-import-key',
+          'Access-Control-Max-Age': '86400',
+        },
+      });
+    }
     if (request.method === 'GET') return json(200, await readSnapshot(pool()));
     if (request.method !== 'POST') return json(405, { error: 'Method not allowed.' });
     const body = await request.json().catch(() => ({}));
