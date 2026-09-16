@@ -6,7 +6,12 @@ let poolInstance;
 let schemaReady = false;
 const env = (name) => globalThis.Netlify?.env?.get(name) || process.env[name] || '';
 const pool = () => poolInstance ||= new Pool({ connectionString: env('DATABASE_URL'), ssl: { rejectUnauthorized: false } });
-const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-overstock-import-key',
+};
+const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store', ...corsHeaders } });
 const clean = (value, max = 500) => String(value == null ? '' : value).trim().slice(0, max);
 const value = (row, names) => {
   for (const name of names) if (row && row[name] != null && clean(row[name])) return clean(row[name]);
@@ -139,11 +144,13 @@ async function handleGet(request) {
   params.push(pageSize, (page - 1) * pageSize);
   const records = await pool().query(`SELECT * FROM po_history_records ${clause} ORDER BY ${order} LIMIT $${params.length-1} OFFSET $${params.length}`, params);
   const sync = await pool().query('SELECT * FROM po_history_sync_runs ORDER BY synced_at DESC LIMIT 1');
-  return json(200, { records: records.rows, total: count.rows[0].count, page, pageSize, lastSync: sync.rows[0] || null });
+  const stored = await pool().query('SELECT COUNT(*)::int AS count FROM po_history_records');
+  return json(200, { records: records.rows, total: count.rows[0].count, totalStored: stored.rows[0].count, page, pageSize, lastSync: sync.rows[0] || null });
 }
 
 export default async (request) => {
   try {
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...corsHeaders, 'Access-Control-Max-Age': '86400' } });
     await ensureSchema();
     if (request.method === 'POST') return handleSync(request);
     if (request.method === 'GET') return handleGet(request);
