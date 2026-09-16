@@ -8,6 +8,7 @@
 
   let feed = { announcements: [], policies: [], cleaning: [] };
   let tools = [];
+  let toolOrderDirty = false;
   let managerKey = '';
   let adminData = null;
   let toolAdminData = { tools: [] };
@@ -123,7 +124,7 @@
 
   function toolCardHtml(tool) {
     const accentClass = tool.accent === 'green' ? ' green' : tool.accent === 'blue' ? ' blue' : '';
-    return `<a class="tool-card${accentClass}" href="${escapeHtml(tool.url)}" target="_blank" rel="noopener"><div class="tool-top"><div class="iconbox">${escapeHtml(tool.icon || '◫')}</div><div class="open">Open ↗</div></div><div class="tool-label">${escapeHtml(tool.label || 'Team tool')}</div><h3>${escapeHtml(tool.title)}</h3><p>${escapeHtml(tool.description || `Open ${tool.title}.`)}</p></a>`;
+    return `<a class="tool-card${accentClass}" data-tool-id="${escapeHtml(tool.id || '')}" href="${escapeHtml(tool.url)}" target="_blank" rel="noopener"><div class="tool-top"><div class="iconbox">${escapeHtml(tool.icon || '◫')}</div><div class="open">Open ↗</div></div><div class="tool-label">${escapeHtml(tool.label || 'Team tool')}</div><h3>${escapeHtml(tool.title)}</h3><p>${escapeHtml(tool.description || `Open ${tool.title}.`)}</p></a>`;
   }
 
   function updateToolCount(count) {
@@ -167,6 +168,22 @@
       appendFallbackInsertCards();
     }
   }
+
+  document.querySelector('.tool-grid')?.addEventListener('click', (event) => {
+    const card = event.target.closest('a[data-tool-id]');
+    if (!card || !card.dataset.toolId) return;
+    toolOrderDirty = true;
+    const payload = JSON.stringify({ action: 'recordClick', id: card.dataset.toolId });
+    try {
+      if (navigator.sendBeacon && navigator.sendBeacon(TOOLS_API, new Blob([payload], { type: 'application/json' }))) return;
+    } catch (_) {}
+    fetch(TOOLS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true }).catch(() => {});
+  });
+  window.addEventListener('focus', () => {
+    if (!toolOrderDirty) return;
+    toolOrderDirty = false;
+    loadTools();
+  });
 
   function showMessage(id, text, error = false) {
     const el = $(id);
