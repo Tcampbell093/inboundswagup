@@ -5,6 +5,8 @@
   let toastTimer = null;
   let inventorySort = 'recent';
   let containerSort = 'updated';
+  let inventoryLimit = 100;
+  let searchTimer = null;
   let intake = { activeContainer: null, items: [], touched: new Set(), startedAt: null };
 
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -34,15 +36,15 @@
   function entriesForContainer(id) { return snapshot.entries.filter(e => String(e.containerId) === String(id)); }
   function currentQuery() { return norm($('searchInput').value); }
 
-  function entryMatches(e, q) {
+  function entryMatches(e, q, container = null) {
     if (!q) return true;
-    const c = containerById(e.containerId);
+    const c = container || containerById(e.containerId);
     return [e.po,e.deliveryId,e.category,e.status,e.action,e.note,e.associate,e.location,e.containerCode,c?.code,c?.currentLocation].some(v => norm(v).includes(q));
   }
 
-  function containerMatches(c, q) {
+  function containerMatches(c, q, items = []) {
     if (!q) return true;
-    return [c.code,c.currentLocation,c.status,c.notes].some(v => norm(v).includes(q)) || entriesForContainer(c.id).some(e => entryMatches(e,q));
+    return [c.code,c.currentLocation,c.status,c.notes].some(v => norm(v).includes(q)) || items.some(e => entryMatches(e,q,c));
   }
 
   function renderDate() {
@@ -84,19 +86,21 @@
 
   function renderInventory() {
     const q = currentQuery();
-    const entries = snapshot.entries.filter(e => entryMatches(e,q));
+    const containersById = new Map(snapshot.containers.map(c => [String(c.id), c]));
+    const entries = snapshot.entries.filter(e => entryMatches(e,q,containersById.get(String(e.containerId))));
     const cmp = (a,b) => String(a||'').localeCompare(String(b||''),undefined,{numeric:true,sensitivity:'base'});
     const ts = e => Number(e.updatedAt||e.createdAt||0);
     if(inventorySort==='oldest') entries.sort((a,b)=>ts(a)-ts(b));
     else if(inventorySort==='po') entries.sort((a,b)=>cmp(a.po,b.po));
     else if(inventorySort==='qty-desc') entries.sort((a,b)=>Number(b.quantity||0)-Number(a.quantity||0));
     else if(inventorySort==='qty-asc') entries.sort((a,b)=>Number(a.quantity||0)-Number(b.quantity||0));
-    else if(inventorySort==='location') entries.sort((a,b)=>cmp(containerById(a.containerId)?.currentLocation||a.location,containerById(b.containerId)?.currentLocation||b.location));
+    else if(inventorySort==='location') entries.sort((a,b)=>cmp(containersById.get(String(a.containerId))?.currentLocation||a.location,containersById.get(String(b.containerId))?.currentLocation||b.location));
     else if(inventorySort==='associate') entries.sort((a,b)=>cmp(a.associate,b.associate));
     else entries.sort((a,b)=>ts(b)-ts(a));
-    $('inventoryMeta').textContent = `${entries.length} shown · ${snapshot.entries.length} total${snapshot.updatedAt ? ' · synced '+fmtDate(snapshot.updatedAt) : ''}`;
-    $('inventoryList').innerHTML = entries.length ? entries.map(e => {
-      const c = containerById(e.containerId);
+    const visible = entries.slice(0,inventoryLimit);
+    $('inventoryMeta').textContent = `${visible.length} shown · ${entries.length} matching · ${snapshot.entries.length} total${snapshot.updatedAt ? ' · synced '+fmtDate(snapshot.updatedAt) : ''}`;
+    $('inventoryList').innerHTML = entries.length ? visible.map(e => {
+      const c = containersById.get(String(e.containerId));
       const location = c?.currentLocation || e.location || 'No location';
       const code = c?.code || e.containerCode || 'No box';
       const delivery = e.deliveryId ? ` · ${esc(e.deliveryId)}` : '';
@@ -109,18 +113,27 @@
         <div class="row-actions"><button class="mini" type="button" data-edit-entry="${esc(e.id)}">Edit</button></div>
       </article>`;
     }).join('') : '<div class="empty">No Overstock entries match this search.</div>';
+    const more = $('inventoryMore');
+    more.hidden = visible.length >= entries.length;
+    if (!more.hidden) more.textContent = `Show more inventory (${(entries.length - visible.length).toLocaleString()} remaining)`;
     document.querySelectorAll('[data-edit-entry]').forEach(b => b.onclick = () => openEditEntry(b.dataset.editEntry));
   }
 
   function renderContainers() {
     const q = currentQuery();
-    const rows = snapshot.containers.filter(c => containerMatches(c,q));
+    const entriesByContainer = new Map();
+    snapshot.entries.forEach(e => {
+      const id = String(e.containerId);
+      if (!entriesByContainer.has(id)) entriesByContainer.set(id,[]);
+      entriesByContainer.get(id).push(e);
+    });
+    const rows = snapshot.containers.filter(c => containerMatches(c,q,entriesByContainer.get(String(c.id))||[]));
     const cmp = (a,b) => String(a||'').localeCompare(String(b||''),undefined,{numeric:true,sensitivity:'base'});
     if(containerSort==='name') rows.sort((a,b)=>cmp(a.code,b.code));
     else if(containerSort==='location') rows.sort((a,b)=>cmp(a.currentLocation,b.currentLocation)||cmp(a.code,b.code));
     else rows.sort((a,b)=>Number(b.updatedAt||b.createdAt||0)-Number(a.updatedAt||a.createdAt||0));
     $('containerGrid').innerHTML = rows.length ? rows.map(c => {
-      const items = entriesForContainer(c.id);
+      const items = entriesByContainer.get(String(c.id))||[];
       const units = items.reduce((n,e)=>n+(Number(e.quantity)||0),0);
       return `<article class="container-card">
         <div class="container-card-top"><div><div class="container-code">${esc(c.code||'Unnamed box')}</div><div class="container-location">📍 ${esc(c.currentLocation||'No location')}</div></div><span class="chip ${norm(c.status)==='stored'?'green':''}">${esc(c.status||'Open')}</span></div>
@@ -130,7 +143,7 @@
       </article>`;
     }).join('') : '<div class="empty">No containers match this search.</div>';
     document.querySelectorAll('[data-edit-container]').forEach(b => b.onclick = () => editContainer(b.dataset.editContainer));
-    document.querySelectorAll('[data-filter-container]').forEach(b => b.onclick = () => { $('searchInput').value=b.dataset.filterContainer; setTab('inventory'); renderAll(); });
+    document.querySelectorAll('[data-filter-container]').forEach(b => b.onclick = () => { $('searchInput').value=b.dataset.filterContainer; inventoryLimit=100; setTab('inventory'); });
     document.querySelectorAll('[data-delete-container]').forEach(b => b.onclick = () => deleteContainer(b.dataset.deleteContainer));
   }
 
@@ -150,11 +163,16 @@
     $('actionList').innerHTML = options(snapshot.entries.map(e=>e.action));
   }
 
-  function renderAll() { renderExcelSync(); renderStats(); refreshSelects(); renderInventory(); renderContainers(); }
+  function renderActiveList() {
+    if ($('panel-containers').classList.contains('active')) renderContainers();
+    else if ($('panel-inventory').classList.contains('active')) renderInventory();
+  }
+  function renderAll() { renderExcelSync(); renderStats(); refreshSelects(); renderActiveList(); }
 
   function setTab(tab) {
     document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
     document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${tab}`));
+    renderActiveList();
   }
 
   function intakeStats() {
@@ -245,7 +263,6 @@
   function openEditEntry(id) {
     const e=snapshot.entries.find(x=>String(x.id)===String(id)); if(!e)return;
     const f=$('editForm');
-    refreshSelects();
     f.elements.id.value=e.id||'';f.elements.po.value=e.po||'';f.elements.deliveryId.value=e.deliveryId||'';f.elements.containerId.value=e.containerId||'';f.elements.quantity.value=Number(e.quantity||0);f.elements.category.value=e.category||'';f.elements.status.value=e.status||'';f.elements.action.value=e.action||'';f.elements.associate.value=e.associate||'';f.elements.note.value=e.note||'';
     $('editDialog').showModal();
   }
@@ -274,9 +291,10 @@
 
   document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close)?.close());
   document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
-  $('searchInput').addEventListener('input',()=>{renderInventory();renderContainers();});
-  $('inventorySort').addEventListener('change',e=>{inventorySort=e.target.value;renderInventory();});
+  $('searchInput').addEventListener('input',()=>{inventoryLimit=100;clearTimeout(searchTimer);searchTimer=setTimeout(renderActiveList,120);});
+  $('inventorySort').addEventListener('change',e=>{inventorySort=e.target.value;inventoryLimit=100;renderInventory();});
   $('containerSort').addEventListener('change',e=>{containerSort=e.target.value;renderContainers();});
+  $('inventoryMore').onclick=()=>{inventoryLimit+=100;renderInventory();};
   $('refreshBtn').onclick=()=>load(true);
   $('entryClearBtn').onclick=clearEntryForm;
   $('containerClearBtn').onclick=clearContainerForm;
@@ -327,5 +345,5 @@
   renderDate();
   setInterval(renderDate,60*1000);
   load(false);
-  setInterval(()=>{ if(!document.hidden && !$('editDialog').open) load(false); },30000);
+  setInterval(()=>{ if(!document.hidden && !$('editDialog').open && $('stockIntakeOverlay').hidden && !document.activeElement?.matches('input,textarea,select')) load(false); },60000);
 })();
