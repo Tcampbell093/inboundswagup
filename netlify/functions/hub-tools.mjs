@@ -26,6 +26,17 @@ const SALESFORCE_HOME_TOOL = {
   sortOrder: 65,
 };
 
+const PO_HISTORY_TOOL = {
+  id: 'po-history',
+  title: 'PO History',
+  url: '/po-history/',
+  label: 'Receiving records',
+  description: 'Search current and archived POs, locations, quantities, dates, and receiving details.',
+  accent: 'green',
+  icon: '⌕',
+  sortOrder: 61,
+};
+
 const SEED_TOOLS = [
   { id: 'fairshift-rotations', title: 'FairShift Rotations', url: 'https://fairshift-rotations.thandoyordani.chatgpt.site/', label: 'Labor planning', description: 'Plan team rotations, cleaning schedules, time off, and fair task assignments.', accent: 'orange', icon: '♙', sortOrder: 10 },
   PASSWORD_TOOL,
@@ -34,6 +45,7 @@ const SEED_TOOLS = [
   { id: 'assembly-screen', title: 'Assembly Screen', url: 'https://bdainc4-my.sharepoint.com/:x:/r/personal/jmateo_bdainc_com/_layouts/15/Doc.aspx?action=edit&sourcedoc=%7B2678bff3-263f-4512-bdf5-81a2de97afab%7D&wdExp=TEAMS-TREATMENT&web=1', label: 'Assembly workbook', description: 'Open the shared Assembly screen used by the team for current assembly work.', accent: 'green', icon: '▤', sortOrder: 40 },
   { id: 'daily-returns', title: 'Daily Returns', url: 'https://bdainc4-my.sharepoint.com/:x:/r/personal/cescobar_bdainc_com/_layouts/15/Doc.aspx?sourcedoc=%7B7B48C5B8-6820-490A-814A-5DF46CDD8974%7D&file=Daily%20Returns%202025%20A.M..xlsx&fromShare=true&action=default&mobileredirect=true', label: 'Returns workbook', description: 'Open the shared Returns workbook used for daily return tracking and updates.', accent: 'blue', icon: '▧', sortOrder: 50 },
   { id: 'overstock', title: 'Overstock', url: '/warehouse-hub/overstock.html', label: 'Inbound workflow', description: 'Open Houston directly to the Overstock section of the inbound module.', accent: 'orange', icon: '◫', sortOrder: 60 },
+  PO_HISTORY_TOOL,
   SALESFORCE_HOME_TOOL,
   { id: 'qa-approved', title: 'QA Approved', url: 'https://swagup.lightning.force.com/lightning/r/Report/00OPH000009Ytkr2AC/view?queryScope=userFolders', label: 'Salesforce report', description: 'Open the QA Approved report in Salesforce.', accent: 'green', icon: '▤', sortOrder: 70 },
   { id: 'receiving-report', title: 'Receiving Report', url: 'https://swagup.lightning.force.com/lightning/r/Report/00O6e000008lBIAEA2/view', label: 'Salesforce report', description: 'Open the Receiving report in Salesforce.', accent: 'blue', icon: '▧', sortOrder: 80 },
@@ -155,6 +167,11 @@ async function ensureSchema(pool) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS hub_tool_cards_sort_idx ON hub_tool_cards(sort_order, title);
+    CREATE TABLE IF NOT EXISTS hub_tool_usage (
+      tool_id TEXT PRIMARY KEY REFERENCES hub_tool_cards(id) ON DELETE CASCADE,
+      click_count BIGINT NOT NULL DEFAULT 0,
+      last_opened_at TIMESTAMPTZ
+    );
     CREATE TABLE IF NOT EXISTS hub_tool_meta (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
@@ -191,6 +208,12 @@ async function ensureSchema(pool) {
     await insertToolIfMissing(pool, SALESFORCE_HOME_TOOL);
     await pool.query(`INSERT INTO hub_tool_meta(key,value,updated_at) VALUES('salesforce_home_v1','1',NOW()) ON CONFLICT(key) DO NOTHING`);
   }
+
+  const poHistoryCard = await pool.query(`SELECT value FROM hub_tool_meta WHERE key='po_history_v1' LIMIT 1`);
+  if (!poHistoryCard.rows.length) {
+    await insertToolIfMissing(pool, PO_HISTORY_TOOL);
+    await pool.query(`INSERT INTO hub_tool_meta(key,value,updated_at) VALUES('po_history_v1','1',NOW()) ON CONFLICT(key) DO NOTHING`);
+  }
 }
 
 function serializeTool(row) {
@@ -209,8 +232,9 @@ function serializeTool(row) {
 }
 
 async function readTools(pool, includeInactive = false) {
-  const where = includeInactive ? '' : 'WHERE active=TRUE';
-  const result = await pool.query(`SELECT * FROM hub_tool_cards ${where} ORDER BY sort_order ASC, title ASC`);
+  const where = includeInactive ? '' : 'WHERE t.active=TRUE';
+  const order = includeInactive ? 't.sort_order ASC, t.title ASC' : 'COALESCE(u.click_count, 0) DESC, t.sort_order ASC, t.title ASC';
+  const result = await pool.query(`SELECT t.* FROM hub_tool_cards t LEFT JOIN hub_tool_usage u ON u.tool_id=t.id ${where} ORDER BY ${order}`);
   return result.rows.map(serializeTool);
 }
 
@@ -265,9 +289,17 @@ export default async (request) => {
     }
 
     if (request.method !== 'POST') return json(405, { error: 'Method not allowed.' });
-    if (!managerAuthorized(request)) return json(401, { error: 'Manager access denied.' });
-
     const body = await request.json().catch(() => ({}));
+    if (body.action === 'recordClick') {
+      const id = cleanText(body.id, 100);
+      if (!id) return json(400, { error: 'Card id is required.' });
+      const recorded = await pool.query(`INSERT INTO hub_tool_usage(tool_id,click_count,last_opened_at)
+        SELECT id, 1, NOW() FROM hub_tool_cards WHERE id=$1 AND active=TRUE
+        ON CONFLICT(tool_id) DO UPDATE SET click_count=hub_tool_usage.click_count+1,last_opened_at=NOW()
+        RETURNING tool_id`, [id]);
+      return recorded.rows.length ? json(200, { ok: true }) : json(404, { error: 'Card unavailable.' });
+    }
+    if (!managerAuthorized(request)) return json(401, { error: 'Manager access denied.' });
     if (body.action === 'upsertTool') {
       return json(200, { ok: true, result: await upsertTool(pool, body) });
     }
