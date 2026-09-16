@@ -144,19 +144,39 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
     archiveRows: worksheetRows(workbook, 'Archive'),
     archivePaRows: worksheetRows(workbook, 'Archive PA'),
   };
-  const historyResponse: Response = await fetch(PO_HISTORY_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-overstock-import-key': IMPORT_KEY },
-    body: JSON.stringify({ action: 'syncWorkbookHistory', source: 'New Daily Rec', ...history }),
-  });
-  const historyText: string = await historyResponse.text();
-  let historyResult: PoHistorySyncResult = {};
-  try {
-    historyResult = historyText ? JSON.parse(historyText) as PoHistorySyncResult : {};
-  } catch {
-    if (!historyResponse.ok) throw new Error(`PO History returned HTTP ${historyResponse.status}: ${historyText}`);
+  const historyResult: PoHistorySyncResult = { current: 0, archive: 0, archivePa: 0 };
+  const sheets: { name: string; field: keyof WorkbookHistoryPayload; count: keyof PoHistorySyncResult; rows: Record<string, string>[] }[] = [
+    { name: 'Daily Log', field: 'currentRows', count: 'current', rows: history.currentRows },
+    { name: 'Archive', field: 'archiveRows', count: 'archive', rows: history.archiveRows },
+    { name: 'Archive PA', field: 'archivePaRows', count: 'archivePa', rows: history.archivePaRows },
+  ];
+  for (const sheet of sheets) {
+    for (let start = 0; start < sheet.rows.length; start += 100) {
+      const payload: WorkbookHistoryPayload = { currentRows: [], archiveRows: [], archivePaRows: [] };
+      payload[sheet.field] = sheet.rows.slice(start, start + 100);
+      let historyResponse: Response;
+      try {
+        historyResponse = await fetch(PO_HISTORY_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-overstock-import-key': IMPORT_KEY },
+          body: JSON.stringify({ action: 'syncWorkbookHistory', source: 'New Daily Rec', ...payload }),
+        });
+      } catch (error) {
+        throw new Error(`PO History could not send ${sheet.name} rows ${start + 1}-${Math.min(start + 100, sheet.rows.length)}: ${String(error)}.`);
+      }
+      const historyText: string = await historyResponse.text();
+      let batch: PoHistorySyncResult = {};
+      try {
+        batch = historyText ? JSON.parse(historyText) as PoHistorySyncResult : {};
+      } catch {
+        if (!historyResponse.ok) throw new Error(`PO History returned HTTP ${historyResponse.status}: ${historyText}`);
+      }
+      if (!historyResponse.ok) throw new Error(batch.error || `PO History returned HTTP ${historyResponse.status} for ${sheet.name} rows ${start + 1}-${Math.min(start + 100, sheet.rows.length)}.`);
+      if (sheet.count === 'current') historyResult.current = (historyResult.current ?? 0) + (batch.current ?? 0);
+      if (sheet.count === 'archive') historyResult.archive = (historyResult.archive ?? 0) + (batch.archive ?? 0);
+      if (sheet.count === 'archivePa') historyResult.archivePa = (historyResult.archivePa ?? 0) + (batch.archivePa ?? 0);
+    }
   }
-  if (!historyResponse.ok) throw new Error(historyResult.error || `PO History returned HTTP ${historyResponse.status}.`);
 
   return [
     'Houston sync complete.',
