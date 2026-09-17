@@ -106,15 +106,15 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
   const containerCol = indexOf('Overstock Cont. (Contenedor)');
   const dispositionCol = indexOf('Disposition (Donado/Ret/Req)');
   const noteCol = indexOf('Overstock Note (Motivo)');
-  if (poCol < 0 || deliveryCol < 0 || quantityCol < 0 || locationCol < 0 || containerCol < 0) {
-    throw new Error('DailyLog is missing a required PO, Delivery ID, quantity, location, or container column.');
+  if (poCol < 0 || deliveryCol < 0 || prepAssociateCol < 0 || quantityCol < 0 || locationCol < 0 || containerCol < 0) {
+    throw new Error('DailyLog is missing a required PO, Delivery ID, Prep By, quantity, location, or container column.');
   }
 
   const rows: HoustonLocationRow[] = textRows
     .map((row: string[]): HoustonLocationRow => ({
       po: String(row[poCol] ?? '').trim(),
       deliveryId: String(row[deliveryCol] ?? '').trim(),
-      associate: prepAssociateCol >= 0 ? String(row[prepAssociateCol] ?? '').trim() : '',
+      associate: String(row[prepAssociateCol] ?? '').trim(),
       category: String(row[categoryCol] ?? '').trim(),
       operationalDate: String(row[operationalDateCol] ?? '').trim(),
       quantity: Math.max(0, Math.round(Number(row[quantityCol] ?? 0) || 0)),
