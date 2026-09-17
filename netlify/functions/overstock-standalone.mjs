@@ -159,7 +159,10 @@ function excelConnectionState() {
 }
 
 async function importExcelLocations(rawRows, rawAssociates) {
-  const rows = Array.isArray(rawRows) ? rawRows.slice(0, 1000) : [];
+  // The workbook can exceed 1,000 rows. Reject oversized requests explicitly
+  // rather than silently ignoring later corrections.
+  if (Array.isArray(rawRows) && rawRows.length > 10000) throw new Error('Excel sync exceeds 10,000 rows. Split the workbook sync into batches.');
+  const rows = Array.isArray(rawRows) ? rawRows : [];
   const workbookAssociates = [];
   for (const raw of Array.isArray(rawAssociates) ? rawAssociates.slice(0, 250) : []) {
     const name = str(raw, 120);
@@ -249,6 +252,16 @@ async function importExcelLocations(rawRows, rawAssociates) {
         continue;
       }
 
+      // A PO may contain several items in different boxes. Without a unique
+      // delivery match, a corrected box code cannot safely identify which item
+      // to move, so report it instead of changing unrelated inventory.
+      const matchingBoxIds = new Set(matches.map(entry => str(entry?.containerId, 160)));
+      const currentBox = containers.find(container => String(container?.id) === [...matchingBoxIds][0]);
+      if (containerCode && (matchingBoxIds.size > 1 || (!deliveryId && matches.length > 1 && str(currentBox?.code, 120).toUpperCase() !== containerCode))) {
+        result.unresolved.push(`${key}: multiple boxes match; select the item to move in Overstock Control.`);
+        continue;
+      }
+
       if (category) {
         for (const match of matches) {
           const index = entries.findIndex(entry => String(entry?.id || '') === String(match?.id || ''));
@@ -265,6 +278,43 @@ async function importExcelLocations(rawRows, rawAssociates) {
           entries[index] = { ...entries[index], date: operationalDate, sourceType: 'excel-location-sync', updatedAt: now };
           changedEntryIds.add(String(entries[index].id));
         }
+      }
+
+      if (containerCode) {
+        let target = containers.find(container => str(container?.code, 120).toUpperCase() === containerCode);
+        if (!target) {
+          target = cleanContainer({ code: containerCode, currentLocation: location, status: 'Open', notes: 'Created from New Daily Rec Excel sync.' });
+          containers.push(target);
+          result.createdContainers += 1;
+        }
+        const targetId = String(target.id);
+        const matchIds = new Set(matches.map(entry => String(entry.id)));
+        for (let i = 0; i < containers.length; i += 1) {
+          if (String(containers[i]?.id) !== targetId) continue;
+          if (str(containers[i]?.currentLocation, 120).toUpperCase() !== location) {
+            containers[i] = { ...containers[i], currentLocation: location, updatedAt: now };
+            changedContainerIds.add(targetId);
+          }
+          break;
+        }
+        for (let i = 0; i < entries.length; i += 1) {
+          const entry = entries[i];
+          const isMatch = matchIds.has(String(entry.id));
+          if (!isMatch && String(entry.containerId) !== targetId) continue;
+          const corrected = isMatch && (String(entry.containerId) !== targetId || str(entry.containerCode, 120).toUpperCase() !== containerCode);
+          if (!corrected && str(entry.location, 120).toUpperCase() === location) continue;
+          entries[i] = {
+            ...entry,
+            ...(isMatch ? { containerId: targetId, containerCode } : {}),
+            location,
+            sourceType: 'excel-location-sync',
+            updatedAt: now,
+          };
+          changedEntryIds.add(String(entry.id));
+        }
+        // The previous box may hold other POs; leave it and its location alone.
+        // Any now-empty box can be reviewed and removed from the Containers view.
+        continue;
       }
 
       const explicitContainer = containerCode
