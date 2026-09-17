@@ -5,6 +5,7 @@
 interface HoustonLocationRow {
   po: string;
   deliveryId: string;
+  associate: string;
   category: string;
   operationalDate: string;
   quantity: number;
@@ -97,6 +98,7 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
 
   const poCol = indexOf('PO # (Orden)');
   const deliveryCol = indexOf('Delivery ID (auto)');
+  const prepAssociateCol = indexOf('Prep By (Por)');
   const categoryCol = 7; // Workbook column H.
   const operationalDateCol = 19; // Workbook column T: Prep Date (Prep).
   const quantityCol = indexOf('Overstock Qty');
@@ -112,6 +114,7 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
     .map((row: string[]): HoustonLocationRow => ({
       po: String(row[poCol] ?? '').trim(),
       deliveryId: String(row[deliveryCol] ?? '').trim(),
+      associate: prepAssociateCol >= 0 ? String(row[prepAssociateCol] ?? '').trim() : '',
       category: String(row[categoryCol] ?? '').trim(),
       operationalDate: String(row[operationalDateCol] ?? '').trim(),
       quantity: Math.max(0, Math.round(Number(row[quantityCol] ?? 0) || 0)),
