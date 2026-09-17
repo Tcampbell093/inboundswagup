@@ -72,3 +72,29 @@ test('rows beyond the former 1,000-row limit are imported', async () => {
   assert.equal(result.createdEntries, 1);
   assert.equal(data.overstockEntries[0].po, '999');
 });
+
+test('prep associate stays with the matching delivery part and blank names preserve prior data', async () => {
+  const initial = {
+    overstockContainers: [{ id: 'box1', code: 'OSC-1', currentLocation: 'E-1' }, { id: 'box2', code: 'OSC-2', currentLocation: 'E-2' }],
+    overstockEntries: [
+      { id: 'part1', po: '777', deliveryId: '777-P1', containerId: 'box1', containerCode: 'OSC-1', location: 'E-1', associate: 'Ana' },
+      { id: 'part2', po: '777', deliveryId: '777-P2', containerId: 'box2', containerCode: 'OSC-2', location: 'E-2', associate: '' },
+    ],
+  };
+  const { data } = await sync(initial, [{ po: '777', deliveryId: '777-P2', containerCode: 'OSC-2', location: 'E-2', associate: 'Maria' }]);
+  assert.equal(data.overstockEntries.find(e => e.id === 'part1').associate, 'Ana');
+  assert.equal(data.overstockEntries.find(e => e.id === 'part2').associate, 'Maria');
+  const blank = await sync(data, [{ po: '777', deliveryId: '777-P2', containerCode: 'OSC-2', location: 'E-2', associate: '' }]);
+  assert.equal(blank.data.overstockEntries.find(e => e.id === 'part2').associate, 'Maria');
+});
+
+test('a new split delivery creates its own PO item instead of changing another part', async () => {
+  const initial = {
+    overstockContainers: [{ id: 'box1', code: 'OSC-1', currentLocation: 'E-1' }],
+    overstockEntries: [{ id: 'part1', po: '777', deliveryId: '777-P1', containerId: 'box1', containerCode: 'OSC-1', location: 'E-1', associate: 'Ana' }],
+  };
+  const { data, result } = await sync(initial, [{ po: '777', deliveryId: '777-P2', containerCode: 'OSC-2', location: 'E-2', associate: 'Maria' }]);
+  assert.equal(result.createdEntries, 1);
+  assert.deepEqual(data.overstockEntries.find(e => e.id === 'part1'), initial.overstockEntries[0]);
+  assert.equal(data.overstockEntries.find(e => e.deliveryId === '777-P2').associate, 'Maria');
+});
