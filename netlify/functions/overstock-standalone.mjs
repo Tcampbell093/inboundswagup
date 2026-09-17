@@ -189,6 +189,7 @@ async function importExcelLocations(rawRows, rawAssociates) {
     for (const raw of rows) {
       const po = normalizePo(raw?.po);
       const deliveryId = str(raw?.deliveryId, 120).toUpperCase();
+      const associate = str(raw?.associate, 120);
       const category = str(raw?.category, 120);
       const operationalDate = normalizeOperationalDate(raw?.operationalDate);
       const location = str(raw?.location, 120).toUpperCase();
@@ -202,11 +203,18 @@ async function importExcelLocations(rawRows, rawAssociates) {
         continue;
       }
 
-      let matches = deliveryId
-        ? entries.filter(entry => str(entry?.deliveryId, 120).toUpperCase() === deliveryId)
-        : [];
+      let matches = deliveryId ? entries.filter(entry => str(entry?.deliveryId, 120).toUpperCase() === deliveryId) : [];
       if (!matches.length && po) {
-        matches = entries.filter(entry => normalizePo(entry?.po) === po);
+        const samePo = entries.filter(entry => normalizePo(entry?.po) === po);
+        if (deliveryId) {
+          // A different delivery ID is a different part of a split PO.
+          // Match one legacy item without an ID only when the PO is unique.
+          if (samePo.length === 1 && !str(samePo[0]?.deliveryId, 120)) matches = samePo;
+          else if (samePo.some(entry => !str(entry?.deliveryId, 120))) {
+            result.unresolved.push(`${key}: split PO has an ambiguous item without a delivery ID.`);
+            continue;
+          }
+        } else matches = samePo;
       }
       if (!matches.length) {
         if (!po) {
@@ -236,6 +244,7 @@ async function importExcelLocations(rawRows, rawAssociates) {
         const created = cleanEntry({
           po,
           deliveryId,
+          associate,
           category,
           quantity: raw?.quantity,
           status: 'Not Donation',
@@ -255,6 +264,10 @@ async function importExcelLocations(rawRows, rawAssociates) {
       // A PO may contain several items in different boxes. Without a unique
       // delivery match, a corrected box code cannot safely identify which item
       // to move, so report it instead of changing unrelated inventory.
+      if (!deliveryId && associate && matches.length > 1) {
+        result.unresolved.push(`${key}: multiple parts match; a delivery ID is needed to assign the prep associate.`);
+        continue;
+      }
       const matchingBoxIds = new Set(matches.map(entry => str(entry?.containerId, 160)));
       const currentBox = containers.find(container => String(container?.id) === [...matchingBoxIds][0]);
       if (containerCode && (matchingBoxIds.size > 1 || (!deliveryId && matches.length > 1 && str(currentBox?.code, 120).toUpperCase() !== containerCode))) {
@@ -277,6 +290,19 @@ async function importExcelLocations(rawRows, rawAssociates) {
           if (index < 0 || str(entries[index]?.date, 40) === operationalDate) continue;
           entries[index] = { ...entries[index], date: operationalDate, sourceType: 'excel-location-sync', updatedAt: now };
           changedEntryIds.add(String(entries[index].id));
+        }
+      }
+
+      if (associate || (deliveryId && matches.some(entry => !str(entry?.deliveryId, 120)))) {
+        for (const match of matches) {
+          const index = entries.findIndex(entry => String(entry?.id || '') === String(match?.id || ''));
+          if (index < 0) continue;
+          const current = entries[index];
+          const nextAssociate = associate || str(current.associate, 120);
+          const nextDeliveryId = deliveryId || str(current.deliveryId, 120);
+          if (str(current.associate, 120) === nextAssociate && str(current.deliveryId, 120) === nextDeliveryId) continue;
+          entries[index] = { ...current, associate: nextAssociate, deliveryId: nextDeliveryId, sourceType: 'excel-location-sync', updatedAt: now };
+          changedEntryIds.add(String(current.id));
         }
       }
 
