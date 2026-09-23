@@ -1,140 +1,19 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#123d34" />
-  <meta name="robots" content="noindex" />
-  <title>Overstock Control</title>
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <header class="topbar">
-    <div class="topbar-inner">
-      <div class="brand"><span class="brandmark">◫</span><span>Overstock Control</span></div>
-      <div class="top-actions"><span class="live"><i></i> Live Houston data</span><span id="excelSyncPill" class="excel-sync-pill">Excel sync…</span><span id="currentDate" class="date-pill"></span><a class="hub-link" href="/warehouse-hub/">Work Hub ↗</a></div>
-    </div>
-  </header>
-
-  <main class="wrap">
-    <section class="hero">
-      <div>
-        <div class="eyebrow">Standalone Overstock</div>
-        <h1>Everything Overstock,<br>without the rest of Houston.</h1>
-        <p>This view uses the same live Overstock records already captured in Houston. Changes made here appear back in Houston too. When Excel write-back is connected, container locations and item details can also update the Daily Log automatically.</p>
-      </div>
-      <button id="refreshBtn" class="btn secondary" type="button">↻ Refresh</button>
-    </section>
-
-    <section class="stats" aria-label="Overstock summary">
-      <article><span>Active units</span><strong id="statUnits">0</strong></article>
-      <article><span>Entries</span><strong id="statEntries">0</strong></article>
-      <article><span>Open boxes</span><strong id="statOpen">0</strong></article>
-      <article><span>Locations used</span><strong id="statLocations">0</strong></article>
-    </section>
-
-    <section class="toolbar">
-      <div class="tabs" role="tablist">
-        <button class="tab active" data-tab="inventory" type="button">Inventory</button>
-        <button class="tab" data-tab="containers" type="button">Containers</button>
-        <button class="tab" data-tab="add" type="button">Manual Add</button>
-      </div>
-      <button id="stockIntakeBtn" class="btn stock-intake-launch" type="button">▣ Stock Intake</button>
-      <label class="search"><span>⌕</span><input id="searchInput" placeholder="Search PO, delivery, box, location, associate…" /></label>
-    </section>
-
-    <section class="panel active" id="panel-inventory">
-      <div class="panel-head"><div><h2>Overstock inventory</h2><p id="inventoryMeta">Loading…</p></div><label class="sort-control">Sort <select id="inventorySort"><option value="recent">Newest first</option><option value="oldest">Oldest first</option><option value="po">PO# (A–Z)</option><option value="qty-desc">Qty (high → low)</option><option value="qty-asc">Qty (low → high)</option><option value="location">Location</option><option value="associate">Associate</option></select></label></div>
-      <div id="inventoryList" class="inventory-list"></div>
-      <button id="inventoryMore" class="btn secondary more-results" type="button" hidden>Show more inventory</button>
-    </section>
-
-    <section class="panel" id="panel-containers">
-      <div class="panel-head"><div><h2>Containers</h2><p>Open, stored, and previously created Overstock boxes.</p></div><div class="panel-actions"><label class="sort-control">Sort <select id="containerSort"><option value="updated">Recently updated</option><option value="name">Box name</option><option value="location">Location</option></select></label><button id="newContainerBtn" class="btn" type="button">+ New container</button></div></div>
-      <div id="containerGrid" class="container-grid"></div>
-    </section>
-
-    <section class="panel" id="panel-add">
-      <div class="quick-grid">
-        <form id="containerForm" class="form-card">
-          <div class="form-title"><span>01</span><div><h2>Choose the box first</h2><p>Create the container once, then rapidly add every PO inside it.</p></div></div>
-          <input type="hidden" name="id" />
-          <div class="field"><label>Container code</label><input name="code" placeholder="OSC-003" autocapitalize="characters" /></div>
-          <div class="field"><label>Location</label><input name="currentLocation" list="locationList" placeholder="E-1" autocapitalize="characters" /></div>
-          <div class="field"><label>Status</label><select name="status"><option>Open</option><option>Stored</option><option>Closed</option></select></div>
-          <div class="field"><label>Notes</label><textarea name="notes" placeholder="Optional notes"></textarea></div>
-          <div class="form-actions"><button class="btn" type="submit" id="containerSaveBtn">Create and use container</button><button class="btn secondary" id="containerClearBtn" type="button">Clear</button></div>
-        </form>
-
-        <form id="entryForm" class="form-card rapid-entry-card">
-          <div class="form-title"><span>02</span><div><h2>Rapid item entry</h2><p>The selected container and associate stay in place after each PO.</p></div></div>
-          <input type="hidden" name="id" />
-          <div class="field"><label>Associate</label><input name="associate" list="associateList" placeholder="Who is logging this?" /></div>
-          <div class="field"><label>Container</label><select name="containerId" required></select></div>
-          <div class="two"><div class="field"><label>PO number</label><input name="po" inputmode="numeric" required placeholder="304978" /></div><div class="field"><label>Delivery ID <small>(recommended)</small></label><input name="deliveryId" placeholder="304978-P1" autocapitalize="characters" /></div></div>
-          <div class="two"><div class="field"><label>Quantity</label><input name="quantity" type="number" min="0" step="1" required value="1" /></div><div class="field"><label>Category</label><input name="category" list="categoryList" placeholder="Apparel" /></div></div>
-          <div class="two"><div class="field"><label>Status</label><input name="status" list="statusList" value="Not Donation" /></div><div class="field"><label>Disposition / Action</label><input name="action" list="actionList" value="Required" /></div></div>
-          <div class="field"><label>Overstock note</label><textarea name="note" placeholder="Optional reason or note"></textarea></div>
-          <div class="form-actions"><button class="btn" type="submit" id="entrySaveBtn">Add item and continue</button><button class="btn secondary" id="entryClearBtn" type="button">Clear item</button></div>
-        </form>
-      </div>
-    </section>
-  </main>
-
-  <div id="stockIntakeOverlay" class="si-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="stockIntakeTitle">
-    <div class="si-modal">
-      <header class="si-header">
-        <div><div class="si-eyebrow">▣ Stock Intake</div><h2 id="stockIntakeTitle">Stock Intake</h2><p>Catalog what's already on the shelf — container by container.</p></div>
-        <div class="si-header-actions"><button id="stockIntakeCancel" class="si-cancel" type="button">Cancel</button><button id="stockIntakeComplete" class="si-complete" type="button">Complete</button></div>
-      </header>
-      <div class="si-stats"><div><strong id="siItemsCount">0</strong><span>Items added</span></div><div><strong id="siContainersCount">0</strong><span>Containers touched</span></div><div><strong id="siStartedAt">—</strong><span>Started</span></div></div>
-
-      <section id="siContainerStep" class="si-step">
-        <div class="si-step-title"><b>1</b><div><h3>Pick a container</h3><p>Enter the code on the box. If it doesn't exist, we'll create it.</p></div></div>
-        <form id="siContainerForm" class="si-form">
-          <label>Associate<input id="siAssociate" list="associateList" required placeholder="Who's using this tablet?" /></label>
-          <label>Container code<input id="siContainerCode" required placeholder="OSC-0042" autocapitalize="characters" /></label>
-          <label>Location<select id="siContainerLocation" required></select></label>
-          <div id="siExistingContainer" class="si-existing" hidden></div>
-          <button class="si-primary" type="submit">Open Container →</button>
-        </form>
-      </section>
-
-      <section id="siItemStep" class="si-step" hidden>
-        <div id="siActiveContainer" class="si-active-container"></div>
-        <div class="si-step-title"><b>2</b><div><h3>Add items</h3><p>Keep adding POs until this container is complete.</p></div><button id="siSwitchContainer" class="si-switch" type="button">↺ Switch container</button></div>
-        <form id="siItemForm" class="si-form">
-          <div class="si-row"><label>PO #<input id="siPo" required inputmode="numeric" /></label><label>Delivery ID<input id="siDeliveryId" placeholder="Optional" /></label><label>Qty<input id="siQty" required type="number" min="1" step="1" inputmode="numeric" /></label></div>
-          <div class="si-row"><label>Category<input id="siCategory" list="categoryList" /></label><label>Status<select id="siStatus"><option>Not Donation</option><option>Donation</option><option>Pending PB</option><option>Donated</option></select></label><label>Action<select id="siAction"><option>Required</option><option>Donated</option><option>Replaced</option><option>Missing from Box</option><option>Lost</option></select></label></div>
-          <label>Note<textarea id="siNote" placeholder="Optional"></textarea></label>
-          <button class="si-add" type="submit">+ Add Item to Container</button>
-        </form>
-        <div class="si-recent"><h4>Recent entries this session</h4><div id="siRecentList" class="si-recent-list"></div></div>
-      </section>
-    </div>
-  </div>
-
-  <datalist id="associateList"></datalist>
-  <datalist id="categoryList"></datalist>
-  <datalist id="locationList"></datalist>
-  <datalist id="statusList"></datalist>
-  <datalist id="actionList"></datalist>
-
-  <dialog id="editDialog" class="dialog">
-    <div class="dialog-head"><h3>Edit Overstock item</h3><button type="button" data-close="editDialog">×</button></div>
-    <form id="editForm" class="dialog-body">
-      <input type="hidden" name="id" />
-      <div class="two"><div class="field"><label>PO number</label><input name="po" required /></div><div class="field"><label>Delivery ID</label><input name="deliveryId" placeholder="304978-P1" /></div></div>
-      <div class="field"><label>Container</label><select name="containerId" required></select></div>
-      <div class="two"><div class="field"><label>Quantity</label><input name="quantity" type="number" min="0" step="1" /></div><div class="field"><label>Category</label><input name="category" list="categoryList" /></div></div>
-      <div class="two"><div class="field"><label>Status</label><input name="status" list="statusList" /></div><div class="field"><label>Disposition / Action</label><input name="action" list="actionList" /></div></div>
-      <div class="field"><label>Associate</label><input name="associate" list="associateList" /></div>
-      <div class="field"><label>Overstock note</label><textarea name="note" placeholder="Optional reason or note"></textarea></div>
-      <div class="dialog-actions"><button class="btn" type="submit">Save changes</button><button class="btn danger" id="deleteEntryBtn" type="button">Delete item</button></div>
-    </form>
-  </dialog>
-
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="app.js"></script>
-</body>
-</html>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1c2d"><meta name="robots" content="noindex"><title>Overstock | Houston Control</title><link rel="stylesheet" href="style.css"></head><body>
+<header class="appbar"><div class="brand"><span class="brand-icon">▣</span><span><b>Houston Control</b><small>Overstock Operations</small></span></div><div class="appbar-actions"><span class="live-dot">● Live Houston data</span><span id="excelSyncPill" class="sync-pill">Excel sync…</span><button id="refreshBtn" class="ghost" type="button">↻ Refresh</button><a href="/warehouse-hub/" class="ghost">Work Hub ↗</a></div></header>
+<main class="page">
+<header class="page-head"><div><div class="eyebrow">Inbound workflow</div><h1>Overstock</h1><p>Receive, locate, audit, and manage every Overstock box using the original Houston workflow.</p></div><button id="stockIntakeBtn" class="primary" type="button">📦 Stock Intake</button></header>
+<section class="stat-strip"><article class="amber"><span>On Cart</span><strong id="statCart">0</strong><small>Boxes waiting to be stored</small></article><article class="blue"><span>Open Boxes</span><strong id="statOpen">0</strong><small>Still being filled</small></article><article class="green"><span>Stored</span><strong id="statStored">0</strong><small>Boxes in a location</small></article><article class="purple"><span>Locations Used</span><strong id="statLocations">0</strong><small>Active storage locations</small></article></section>
+<section class="panel"><div class="panel-head"><div><h2>📦 Put away — boxes on the cart</h2><p>Tap a box to assign it a storage location.</p></div><div class="head-actions"><span id="cartCount" class="badge amber">0 waiting</span><button id="newBoxBtn" class="ghost" type="button">+ New box</button></div></div><div id="cartGrid" class="card-grid"></div></section>
+<section class="panel"><div class="panel-head"><div><h2>🔎 Scan or type box code</h2><p>Enter a code like OSC-003, then add items, audit, edit, or move it.</p></div></div><form id="boxLookupForm" class="lookup"><input id="boxLookupInput" placeholder="OSC-003" autocomplete="off"><button class="primary" type="submit">Go</button></form><div id="boxLookupStatus" class="status-line"></div></section>
+<section class="panel"><div class="panel-head"><div><h2>📍 Location map</h2><p>Tap a location to see the boxes and POs stored there.</p></div><span id="locationCount" class="badge blue">0 used</span></div><div id="locationGrid" class="location-grid"></div></section>
+<section class="panel"><div class="panel-head"><div><h2>📦 Boxes</h2><p>Tap a box for options—add a PO, audit, edit, move, or delete an empty box.</p></div><div class="box-tools"><input id="boxSearch" class="filter" placeholder="Find a box or PO…"><select id="boxSort" class="filter"><option value="updated">Last updated</option><option value="name">Name (OSC #)</option><option value="location">Location</option></select><span id="boxCount" class="badge purple">0 boxes</span></div></div><div id="boxesGrid" class="card-grid"></div></section>
+<section class="panel log-panel"><div class="panel-head"><div><h2>📋 Overstock Log</h2><p>Tap any PO to review or edit its complete record.</p></div><div class="box-tools"><input id="logSearch" class="filter" placeholder="Search PO, box, location, associate…"><select id="logSort" class="filter"><option value="recent">Newest first</option><option value="oldest">Oldest first</option><option value="po">PO# (A–Z)</option><option value="qty-desc">Qty (high → low)</option><option value="qty-asc">Qty (low → high)</option><option value="location">Location</option><option value="associate">Associate</option></select></div></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>PO#</th><th>Category</th><th>Qty</th><th>Status</th><th>Action</th><th>Location / Box</th><th>Associate</th><th></th></tr></thead><tbody id="logBody"></tbody></table></div><div class="log-foot"><span id="logCount">Loading…</span><button id="showMoreBtn" class="ghost" type="button" hidden>Show more</button></div></section>
+</main>
+<dialog id="boxDialog" class="dialog small"><div class="dialog-head"><div><h3 id="boxDialogTitle">Box</h3><p id="boxDialogSub"></p></div><button data-close="boxDialog">×</button></div><div id="boxDialogBody" class="dialog-body"></div></dialog>
+<dialog id="locationDialog" class="dialog"><div class="dialog-head"><div><h3 id="locationDialogTitle">Location</h3><p id="locationDialogSub"></p></div><button data-close="locationDialog">×</button></div><div id="locationDialogBody" class="dialog-body"></div></dialog>
+<dialog id="editDialog" class="dialog"><div class="dialog-head"><div><h3 id="editTitle">Edit Overstock item</h3><p id="editSubtitle"></p></div><button data-close="editDialog">×</button></div><form id="editForm" class="dialog-body form-grid"><input type="hidden" name="id"><label>PO number<input name="po" required></label><label>Delivery ID<input name="deliveryId"></label><label class="wide">Container<select name="containerId" required></select></label><label>Quantity<input name="quantity" type="number" min="0" step="1" required></label><label>Category<input name="category" list="categoryList"></label><label>Status<select name="status"><option>Not Donation</option><option>Donation</option><option>Pending PB</option><option>Donated</option></select></label><label>Disposition / Action<select name="action"><option>Required</option><option>Donated</option><option>Replaced</option><option>Missing from Box</option><option>Lost</option></select></label><label class="wide">Associate<input name="associate" list="associateList"></label><label class="wide">Overstock note<textarea name="note"></textarea></label><div class="dialog-actions wide"><button class="primary" type="submit">Save changes</button><button id="deleteEntryBtn" class="danger" type="button">Delete item</button></div></form></dialog>
+<dialog id="containerDialog" class="dialog small"><div class="dialog-head"><div><h3 id="containerTitle">New box</h3><p>Create or edit an Overstock box.</p></div><button data-close="containerDialog">×</button></div><form id="containerForm" class="dialog-body form-grid one"><input type="hidden" name="id"><label>Box code<input name="code" required placeholder="OSC-003"></label><label>Location<select name="currentLocation"></select></label><label>Status<select name="status"><option>Open</option><option>On Cart</option><option>Stored</option><option>Full</option><option>Closed</option></select></label><label>Notes<textarea name="notes"></textarea></label><div class="dialog-actions"><button class="primary" type="submit">Save box</button></div></form></dialog>
+<div id="stockIntakeOverlay" class="intake-overlay" hidden><div class="intake-modal"><header class="intake-head"><div><div class="eyebrow">📦 Stock Intake</div><h2>Stock Intake</h2><p>Catalog what is on the shelf—container by container.</p></div><div><button id="stockIntakeCancel" class="ghost">Cancel</button><button id="stockIntakeComplete" class="complete">Complete</button></div></header><div class="intake-stats"><div><strong id="siItemsCount">0</strong><span>Items added</span></div><div><strong id="siContainersCount">0</strong><span>Containers touched</span></div><div><strong id="siStartedAt">—</strong><span>Started</span></div></div>
+<section id="siContainerStep" class="intake-step"><div class="step-title"><b>1</b><div><h3>Pick a container</h3><p>Enter the code on the box. If it does not exist, it will be created.</p></div></div><form id="siContainerForm" class="intake-form"><label>Associate<input id="siAssociate" list="associateList" required placeholder="Who is using this tablet?"></label><label>Container code<input id="siContainerCode" required placeholder="OSC-0042"></label><label>Location<select id="siContainerLocation" required></select></label><div id="siExistingContainer" class="existing" hidden></div><button class="intake-primary" type="submit">Open Container →</button></form></section>
+<section id="siItemStep" class="intake-step" hidden><div id="siActiveContainer" class="active-container"></div><div class="step-title"><b>2</b><div><h3>Add items</h3><p>Keep adding POs until this box is complete.</p></div><button id="siSwitchContainer" class="ghost">↺ Switch container</button></div><form id="siItemForm" class="intake-form"><div class="three"><label>PO #<input id="siPo" required></label><label>Delivery ID<input id="siDeliveryId" placeholder="Recommended for split POs"></label><label>Qty<input id="siQty" required type="number" min="1"></label></div><div class="three"><label>Category<input id="siCategory" list="categoryList"></label><label>Status<select id="siStatus"><option>Not Donation</option><option>Donation</option><option>Pending PB</option><option>Donated</option></select></label><label>Action<select id="siAction"><option>Required</option><option>Donated</option><option>Replaced</option><option>Missing from Box</option><option>Lost</option></select></label></div><label>Note<textarea id="siNote"></textarea></label><button class="complete" type="submit">+ Add Item to Container</button></form><div class="recent"><h4>Recent entries this session</h4><div id="siRecentList"></div></div></section></div></div>
+<datalist id="associateList"></datalist><datalist id="categoryList"></datalist><div id="toast" class="toast"></div><script src="app.js"></script></body></html>
