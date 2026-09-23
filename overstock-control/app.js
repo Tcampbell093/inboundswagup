@@ -1,349 +1,51 @@
 (() => {
-  const API = '/api/overstock-control';
-  const $ = (id) => document.getElementById(id);
-  let snapshot = { entries: [], containers: [], categories: [], locations: [], associates: [], updatedAt: null, excelSync: { configured: false } };
-  let toastTimer = null;
-  let inventorySort = 'recent';
-  let containerSort = 'updated';
-  let inventoryLimit = 100;
-  let searchTimer = null;
-  let intake = { activeContainer: null, items: [], touched: new Set(), startedAt: null };
-
-  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const norm = (v) => String(v ?? '').trim().toLowerCase();
-  const fmtDate = (v) => { try { return v ? new Date(v).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '—'; } catch { return '—'; } };
-
-  function toast(message, error = false) {
-    const el = $('toast');
-    el.textContent = message;
-    el.classList.toggle('error', error);
-    el.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
-  }
-
-  function formObject(form) {
-    return Object.fromEntries(new FormData(form).entries());
-  }
-
-  function options(values, current = '') {
-    const uniq = [...new Set((values || []).filter(Boolean).map(String))];
-    if (current && !uniq.includes(current)) uniq.unshift(current);
-    return uniq.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
-  }
-
-  function containerById(id) { return snapshot.containers.find(c => String(c.id) === String(id)); }
-  function entriesForContainer(id) { return snapshot.entries.filter(e => String(e.containerId) === String(id)); }
-  function currentQuery() { return norm($('searchInput').value); }
-
-  function entryMatches(e, q, container = null) {
-    if (!q) return true;
-    const c = container || containerById(e.containerId);
-    return [e.po,e.deliveryId,e.category,e.status,e.action,e.note,e.associate,e.location,e.containerCode,c?.code,c?.currentLocation].some(v => norm(v).includes(q));
-  }
-
-  function containerMatches(c, q, items = []) {
-    if (!q) return true;
-    return [c.code,c.currentLocation,c.status,c.notes].some(v => norm(v).includes(q)) || items.some(e => entryMatches(e,q,c));
-  }
-
-  function renderDate() {
-    $('currentDate').textContent = new Intl.DateTimeFormat('en-US', { timeZone:'America/New_York', weekday:'short', month:'short', day:'numeric' }).format(new Date());
-  }
-
-  function renderExcelSync() {
-    const pill = $('excelSyncPill');
-    if (!pill) return;
-    const outbound = snapshot.excelSync?.configured === true;
-    const inbound = snapshot.excelSync?.importConfigured === true;
-    const connected = outbound || inbound;
-    pill.textContent = outbound && inbound
-      ? 'Excel sync · Two-way ready'
-      : inbound
-        ? 'Excel → Houston · Ready'
-        : outbound
-          ? 'Houston → Excel · Ready'
-          : 'Excel sync · Setup needed';
-    pill.classList.toggle('connected', connected);
-    pill.classList.toggle('disconnected', !connected);
-    pill.title = outbound && inbound
-      ? 'The DailyLog workbook can update Houston locations, and Houston changes can be sent back to Excel.'
-      : inbound
-        ? 'Use the workbook button to send populated DailyLog Overstock locations to Houston.'
-        : outbound
-          ? 'Changes from Overstock Control can be sent to the DailyLog workbook.'
-          : 'Excel synchronization has not been configured.';
-  }
-
-  function renderStats() {
-    const removed = new Set(['missing from box','lost','replaced']);
-    const activeEntries = snapshot.entries.filter(e => !removed.has(norm(e.action)));
-    $('statUnits').textContent = activeEntries.reduce((n,e) => n + (Number(e.quantity)||0), 0).toLocaleString();
-    $('statEntries').textContent = snapshot.entries.length.toLocaleString();
-    $('statOpen').textContent = snapshot.containers.filter(c => norm(c.status) !== 'closed').length.toLocaleString();
-    $('statLocations').textContent = new Set(snapshot.containers.map(c => String(c.currentLocation||'').trim()).filter(Boolean)).size.toLocaleString();
-  }
-
-  function renderInventory() {
-    const q = currentQuery();
-    const containersById = new Map(snapshot.containers.map(c => [String(c.id), c]));
-    const entries = snapshot.entries.filter(e => entryMatches(e,q,containersById.get(String(e.containerId))));
-    const cmp = (a,b) => String(a||'').localeCompare(String(b||''),undefined,{numeric:true,sensitivity:'base'});
-    const ts = e => Number(e.updatedAt||e.createdAt||0);
-    if(inventorySort==='oldest') entries.sort((a,b)=>ts(a)-ts(b));
-    else if(inventorySort==='po') entries.sort((a,b)=>cmp(a.po,b.po));
-    else if(inventorySort==='qty-desc') entries.sort((a,b)=>Number(b.quantity||0)-Number(a.quantity||0));
-    else if(inventorySort==='qty-asc') entries.sort((a,b)=>Number(a.quantity||0)-Number(b.quantity||0));
-    else if(inventorySort==='location') entries.sort((a,b)=>cmp(containersById.get(String(a.containerId))?.currentLocation||a.location,containersById.get(String(b.containerId))?.currentLocation||b.location));
-    else if(inventorySort==='associate') entries.sort((a,b)=>cmp(a.associate,b.associate));
-    else entries.sort((a,b)=>ts(b)-ts(a));
-    const visible = entries.slice(0,inventoryLimit);
-    $('inventoryMeta').textContent = `${visible.length} shown · ${entries.length} matching · ${snapshot.entries.length} total${snapshot.updatedAt ? ' · synced '+fmtDate(snapshot.updatedAt) : ''}`;
-    $('inventoryList').innerHTML = entries.length ? visible.map(e => {
-      const c = containersById.get(String(e.containerId));
-      const location = c?.currentLocation || e.location || 'No location';
-      const code = c?.code || e.containerCode || 'No box';
-      const delivery = e.deliveryId ? ` · ${esc(e.deliveryId)}` : '';
-      return `<article class="inventory-row">
-        <div><div class="inv-po">PO ${esc(e.po || '—')}</div><div class="inv-meta">${esc(e.associate || 'Unknown associate')}${delivery} · ${fmtDate(Number(e.updatedAt||e.createdAt||0))}</div></div>
-        <div><span class="chip blue">${esc(code)}</span><div class="inv-meta">${esc(location)}</div></div>
-        <div><strong>${Number(e.quantity||0).toLocaleString()}</strong><div class="inv-meta">units</div></div>
-        <div><span class="chip">${esc(e.category || 'Uncategorized')}</span></div>
-        <div><span class="chip green">${esc(e.status || '—')}</span><div class="inv-meta">${esc(e.action || '')}</div>${e.note ? `<div class="inv-meta">${esc(e.note)}</div>` : ''}</div>
-        <div class="row-actions"><button class="mini" type="button" data-edit-entry="${esc(e.id)}">Edit</button></div>
-      </article>`;
-    }).join('') : '<div class="empty">No Overstock entries match this search.</div>';
-    const more = $('inventoryMore');
-    more.hidden = visible.length >= entries.length;
-    if (!more.hidden) more.textContent = `Show more inventory (${(entries.length - visible.length).toLocaleString()} remaining)`;
-    document.querySelectorAll('[data-edit-entry]').forEach(b => b.onclick = () => openEditEntry(b.dataset.editEntry));
-  }
-
-  function renderContainers() {
-    const q = currentQuery();
-    const entriesByContainer = new Map();
-    snapshot.entries.forEach(e => {
-      const id = String(e.containerId);
-      if (!entriesByContainer.has(id)) entriesByContainer.set(id,[]);
-      entriesByContainer.get(id).push(e);
-    });
-    const rows = snapshot.containers.filter(c => containerMatches(c,q,entriesByContainer.get(String(c.id))||[]));
-    const cmp = (a,b) => String(a||'').localeCompare(String(b||''),undefined,{numeric:true,sensitivity:'base'});
-    if(containerSort==='name') rows.sort((a,b)=>cmp(a.code,b.code));
-    else if(containerSort==='location') rows.sort((a,b)=>cmp(a.currentLocation,b.currentLocation)||cmp(a.code,b.code));
-    else rows.sort((a,b)=>Number(b.updatedAt||b.createdAt||0)-Number(a.updatedAt||a.createdAt||0));
-    $('containerGrid').innerHTML = rows.length ? rows.map(c => {
-      const items = entriesByContainer.get(String(c.id))||[];
-      const units = items.reduce((n,e)=>n+(Number(e.quantity)||0),0);
-      return `<article class="container-card">
-        <div class="container-card-top"><div><div class="container-code">${esc(c.code||'Unnamed box')}</div><div class="container-location">📍 ${esc(c.currentLocation||'No location')}</div></div><span class="chip ${norm(c.status)==='stored'?'green':''}">${esc(c.status||'Open')}</span></div>
-        <div class="container-stats"><div><span>Entries</span><strong>${items.length}</strong></div><div><span>Units</span><strong>${units.toLocaleString()}</strong></div></div>
-        ${c.notes ? `<div class="inv-meta" style="margin-bottom:12px">${esc(c.notes)}</div>` : ''}
-        <div class="container-actions"><button class="mini" type="button" data-edit-container="${esc(c.id)}">Edit</button><button class="mini" type="button" data-filter-container="${esc(c.code||'')}">Show items</button>${items.length===0?`<button class="mini" type="button" data-delete-container="${esc(c.id)}">Delete</button>`:''}</div>
-      </article>`;
-    }).join('') : '<div class="empty">No containers match this search.</div>';
-    document.querySelectorAll('[data-edit-container]').forEach(b => b.onclick = () => editContainer(b.dataset.editContainer));
-    document.querySelectorAll('[data-filter-container]').forEach(b => b.onclick = () => { $('searchInput').value=b.dataset.filterContainer; inventoryLimit=100; setTab('inventory'); });
-    document.querySelectorAll('[data-delete-container]').forEach(b => b.onclick = () => deleteContainer(b.dataset.deleteContainer));
-  }
-
-  function refreshSelects() {
-    const containerOpts = snapshot.containers
-      .slice().sort((a,b)=>String(a.code||'').localeCompare(String(b.code||''),undefined,{numeric:true}))
-      .map(c => `<option value="${esc(c.id)}">${esc(c.code||'Unnamed')} · ${esc(c.currentLocation||'No location')}</option>`).join('');
-    document.querySelectorAll('select[name=containerId]').forEach(sel => {
-      const current=sel.value;
-      sel.innerHTML = `<option value="">— select container —</option>${containerOpts}`;
-      if (current) sel.value=current;
-    });
-    $('associateList').innerHTML = options(snapshot.associates);
-    $('categoryList').innerHTML = options([...snapshot.categories, ...snapshot.entries.map(e=>e.category)]);
-    $('locationList').innerHTML = options([...snapshot.locations, ...snapshot.containers.map(c=>c.currentLocation)]);
-    $('statusList').innerHTML = options(snapshot.entries.map(e=>e.status));
-    $('actionList').innerHTML = options(snapshot.entries.map(e=>e.action));
-  }
-
-  function renderActiveList() {
-    if ($('panel-containers').classList.contains('active')) renderContainers();
-    else if ($('panel-inventory').classList.contains('active')) renderInventory();
-  }
-  function renderAll() { renderExcelSync(); renderStats(); refreshSelects(); renderActiveList(); }
-
-  function setTab(tab) {
-    document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
-    document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${tab}`));
-    renderActiveList();
-  }
-
-  function intakeStats() {
-    $('siItemsCount').textContent=String(intake.items.length);
-    $('siContainersCount').textContent=String(intake.touched.size);
-    $('siStartedAt').textContent=intake.startedAt?new Date(intake.startedAt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'—';
-    $('siRecentList').innerHTML=intake.items.length?intake.items.slice().reverse().map(item=>`<div class="si-recent-item"><span><strong>PO ${esc(item.po)}</strong> · ${Number(item.quantity).toLocaleString()} · ${esc(item.category||'Uncategorized')} · ${esc(item.containerCode)}</span><button type="button" data-si-delete="${esc(item.id)}" aria-label="Remove PO ${esc(item.po)}">×</button></div>`).join(''):'<div class="inv-meta">No items added yet.</div>';
-    document.querySelectorAll('[data-si-delete]').forEach(b=>b.onclick=()=>deleteIntakeItem(b.dataset.siDelete));
-  }
-
-  function fillIntakeLocations() {
-    const values=[...new Set([...snapshot.locations,...snapshot.containers.map(c=>c.currentLocation)].filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true}));
-    $('siContainerLocation').innerHTML='<option value="">— Select location —</option>'+values.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
-  }
-
-  function inspectIntakeContainer() {
-    const code=String($('siContainerCode').value||'').trim().toUpperCase();
-    const existing=snapshot.containers.find(c=>String(c.code||'').toUpperCase()===code);
-    $('siExistingContainer').hidden=!existing;
-    if(existing){$('siExistingContainer').textContent=`Existing container · ${existing.currentLocation||'No location'} · ${entriesForContainer(existing.id).length} item(s)`;if(existing.currentLocation)$('siContainerLocation').value=existing.currentLocation;}
-  }
-
-  function openStockIntake() {
-    intake={activeContainer:null,items:[],touched:new Set(),startedAt:Date.now()};
-    fillIntakeLocations();intakeStats();
-    $('siContainerStep').hidden=false;$('siItemStep').hidden=true;$('stockIntakeOverlay').hidden=false;
-    document.body.style.overflow='hidden';setTimeout(()=>$('siAssociate').focus(),40);
-  }
-
-  function closeStockIntake() {$('stockIntakeOverlay').hidden=true;document.body.style.overflow='';renderAll();}
-
-  async function deleteIntakeItem(id) {
-    const item=intake.items.find(x=>String(x.id)===String(id));if(!item||!confirm(`Remove PO ${item.po} from this intake?`))return;
-    try{const j=await request({action:'deleteEntry',id});snapshot={...snapshot,...j};intake.items=intake.items.filter(x=>String(x.id)!==String(id));intakeStats();toast('Item removed.');}catch(e){toast(e.message,true);}
-  }
-
-  async function request(body=null) {
-    const opts={headers:{'Accept':'application/json'}};
-    if(body){opts.method='POST';opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body);}
-    const r=await fetch(API,opts);
-    const j=await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(j.error||`Request failed (${r.status})`);
-    return j;
-  }
-
-  function completedMessage(base, result) {
-    if (!result?.excelWrite?.configured) return base;
-    if (result.excelWrite.ok) return `${base} Excel sync sent.`;
-    return `${base} Saved in Overstock, but Excel sync failed.`;
-  }
-
-  async function load(showNotice=false) {
-    $('refreshBtn').disabled=true;
-    try {
-      const j=await request();
-      snapshot={...snapshot,...j};
-      renderAll();
-      if(showNotice) toast('Overstock refreshed.');
-    } catch(e){ toast(e.message||'Could not load Overstock.',true); }
-    finally{$('refreshBtn').disabled=false;}
-  }
-
-  function clearEntryForm(preserveContext=false) {
-    const f=$('entryForm');
-    const context=preserveContext?{associate:f.elements.associate.value,containerId:f.elements.containerId.value,status:f.elements.status.value,action:f.elements.action.value}:null;
-    f.reset(); f.elements.id.value=''; f.elements.quantity.value='1'; f.elements.status.value='Not Donation'; f.elements.action.value='Required';
-    if(context){f.elements.associate.value=context.associate;f.elements.containerId.value=context.containerId;f.elements.status.value=context.status||'Not Donation';f.elements.action.value=context.action||'Required';}
-    $('entrySaveBtn').textContent='Add item and continue';
-  }
-
-  function clearContainerForm() {
-    const f=$('containerForm'); f.reset(); f.elements.id.value=''; f.elements.status.value='Open'; $('containerSaveBtn').textContent='Create container';
-  }
-
-  function editContainer(id) {
-    const c=containerById(id); if(!c)return;
-    const f=$('containerForm');
-    f.elements.id.value=c.id||''; f.elements.code.value=c.code||''; f.elements.currentLocation.value=c.currentLocation||''; f.elements.status.value=c.status||'Open'; f.elements.notes.value=c.notes||'';
-    $('containerSaveBtn').textContent='Save container'; setTab('add'); window.scrollTo({top:document.querySelector('#panel-add').offsetTop-90,behavior:'smooth'});
-  }
-
-  async function deleteContainer(id) {
-    const c=containerById(id); if(!c)return;
-    if(!confirm(`Delete ${c.code||'this container'}?`))return;
-    try{const j=await request({action:'deleteContainer',id});snapshot={...snapshot,...j};renderAll();toast(completedMessage('Container deleted.',j));}catch(e){toast(e.message,true);}
-  }
-
-  function openEditEntry(id) {
-    const e=snapshot.entries.find(x=>String(x.id)===String(id)); if(!e)return;
-    const f=$('editForm');
-    f.elements.id.value=e.id||'';f.elements.po.value=e.po||'';f.elements.deliveryId.value=e.deliveryId||'';f.elements.containerId.value=e.containerId||'';f.elements.quantity.value=Number(e.quantity||0);f.elements.category.value=e.category||'';f.elements.status.value=e.status||'';f.elements.action.value=e.action||'';f.elements.associate.value=e.associate||'';f.elements.note.value=e.note||'';
-    $('editDialog').showModal();
-  }
-
-  $('entryForm').addEventListener('submit',async e=>{
-    e.preventDefault(); const f=e.currentTarget; const d=formObject(f); const c=containerById(d.containerId); if(!c)return toast('Choose a container.',true);
-    const entry={id:d.id||undefined,po:d.po,deliveryId:d.deliveryId,quantity:Number(d.quantity||0),category:d.category,status:d.status,action:d.action,note:d.note,associate:d.associate,containerId:d.containerId,containerCode:c.code,location:c.currentLocation,date:new Date().toISOString().slice(0,10),sourceType:'overstock-standalone'};
-    try{const j=await request({action:'upsertEntry',entry});snapshot={...snapshot,...j};clearEntryForm(true);renderAll();setTimeout(()=>$('entryForm').elements.po.focus(),25);toast(completedMessage(d.id?'Item updated.':'Item added. Ready for the next PO.',j),j.excelWrite?.configured && !j.excelWrite?.ok);}catch(err){toast(err.message,true);}
-  });
-
-  $('containerForm').addEventListener('submit',async e=>{
-    e.preventDefault();const f=e.currentTarget;const d=formObject(f);const container={id:d.id||undefined,code:d.code,currentLocation:d.currentLocation,status:d.status,notes:d.notes};
-    try{const j=await request({action:'upsertContainer',container});snapshot={...snapshot,...j};const selected=snapshot.containers.find(c=>String(c.code||'').toUpperCase()===String(container.code||'').toUpperCase())||snapshot.containers.slice().sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0))[0];clearContainerForm();renderAll();if(selected)$('entryForm').elements.containerId.value=selected.id;setTimeout(()=>$('entryForm').elements.po.focus(),25);toast(completedMessage(d.id?'Container updated and selected.':'Container created and selected. Add the first PO.',j),j.excelWrite?.configured && !j.excelWrite?.ok);}catch(err){toast(err.message,true);}
-  });
-
-  $('editForm').addEventListener('submit',async e=>{
-    e.preventDefault();const d=formObject(e.currentTarget);const old=snapshot.entries.find(x=>String(x.id)===String(d.id));const c=containerById(d.containerId);if(!old||!c)return;
-    const entry={...old,id:d.id,po:d.po,deliveryId:d.deliveryId,containerId:d.containerId,containerCode:c.code,location:c.currentLocation,quantity:Number(d.quantity||0),category:d.category,status:d.status,action:d.action,note:d.note,associate:d.associate};
-    try{const j=await request({action:'upsertEntry',entry});snapshot={...snapshot,...j};$('editDialog').close();renderAll();toast(completedMessage('Item updated.',j),j.excelWrite?.configured && !j.excelWrite?.ok);}catch(err){toast(err.message,true);}
-  });
-
-  $('deleteEntryBtn').addEventListener('click',async()=>{
-    const id=$('editForm').elements.id.value;const e=snapshot.entries.find(x=>String(x.id)===String(id));if(!e||!confirm(`Delete PO ${e.po}?`))return;
-    try{const j=await request({action:'deleteEntry',id});snapshot={...snapshot,...j};$('editDialog').close();renderAll();toast(completedMessage('Item deleted.',j),j.excelWrite?.configured && !j.excelWrite?.ok);}catch(err){toast(err.message,true);}
-  });
-
-  document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close)?.close());
-  document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
-  $('searchInput').addEventListener('input',()=>{inventoryLimit=100;clearTimeout(searchTimer);searchTimer=setTimeout(renderActiveList,120);});
-  $('inventorySort').addEventListener('change',e=>{inventorySort=e.target.value;inventoryLimit=100;renderInventory();});
-  $('containerSort').addEventListener('change',e=>{containerSort=e.target.value;renderContainers();});
-  $('inventoryMore').onclick=()=>{inventoryLimit+=100;renderInventory();};
-  $('refreshBtn').onclick=()=>load(true);
-  $('entryClearBtn').onclick=clearEntryForm;
-  $('containerClearBtn').onclick=clearContainerForm;
-  $('newContainerBtn').onclick=()=>{clearContainerForm();setTab('add');setTimeout(()=>$('containerForm').elements.code.focus(),50);};
-  $('stockIntakeBtn').onclick=openStockIntake;
-  $('stockIntakeCancel').onclick=()=>{if(!intake.items.length||confirm('Cancel this Stock Intake session? Saved items will remain in Houston.'))closeStockIntake();};
-  $('stockIntakeComplete').onclick=()=>{toast(`Stock Intake complete · ${intake.items.length} item(s) added.`);closeStockIntake();};
-  $('siSwitchContainer').onclick=()=>{intake.activeContainer=null;$('siItemStep').hidden=true;$('siContainerStep').hidden=false;$('siContainerCode').value='';$('siExistingContainer').hidden=true;setTimeout(()=>$('siContainerCode').focus(),30);};
-  $('siContainerCode').addEventListener('input',inspectIntakeContainer);
-  $('siContainerCode').addEventListener('blur',inspectIntakeContainer);
-
-  $('siContainerForm').addEventListener('submit',async e=>{
-    e.preventDefault();
-    const associate=String($('siAssociate').value||'').trim();
-    const code=String($('siContainerCode').value||'').trim().toUpperCase();
-    const location=String($('siContainerLocation').value||'').trim();
-    if(!associate)return toast('Choose or enter the associate.',true);
-    let container=snapshot.containers.find(c=>String(c.code||'').toUpperCase()===code);
-    try{
-      if(!container){
-        if(!location)return toast('Choose a location for the new container.',true);
-        const j=await request({action:'upsertContainer',container:{code,currentLocation:location,status:'Open',notes:'Created through Stock Intake'}});
-        snapshot={...snapshot,...j};
-        container=snapshot.containers.find(c=>String(c.code||'').toUpperCase()===code)||snapshot.containers.slice().sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0))[0];
-      }
-      if(!container)throw new Error('Container could not be opened.');
-      intake.activeContainer=container;intake.touched.add(String(container.id));intakeStats();
-      $('siActiveContainer').textContent=`${container.code} · ${container.currentLocation||'No location'} · Logged by ${associate}`;
-      $('siContainerStep').hidden=true;$('siItemStep').hidden=false;setTimeout(()=>$('siPo').focus(),30);
-    }catch(err){toast(err.message||'Could not open container.',true);}
-  });
-
-  $('siItemForm').addEventListener('submit',async e=>{
-    e.preventDefault();
-    const container=intake.activeContainer;if(!container)return toast('Open a container first.',true);
-    const po=String($('siPo').value||'').trim();const quantity=Number($('siQty').value||0);
-    if(!po||quantity<1)return toast('Enter a PO and quantity.',true);
-    const entry={po,deliveryId:String($('siDeliveryId').value||'').trim(),quantity,category:String($('siCategory').value||'').trim(),status:$('siStatus').value,action:$('siAction').value,note:String($('siNote').value||'').trim(),associate:String($('siAssociate').value||'').trim(),containerId:container.id,containerCode:container.code,location:container.currentLocation,date:new Date().toISOString().slice(0,10),sourceType:'stock-intake'};
-    try{
-      const j=await request({action:'upsertEntry',entry});snapshot={...snapshot,...j};
-      const saved=snapshot.entries.slice().sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0)).find(x=>String(x.po)===po&&String(x.containerId)===String(container.id));
-      intake.items.push(saved||entry);intakeStats();
-      $('siPo').value='';$('siDeliveryId').value='';$('siQty').value='';$('siCategory').value='';$('siNote').value='';setTimeout(()=>$('siPo').focus(),20);
-      toast(`PO ${po} added to ${container.code}.`);
-    }catch(err){toast(err.message||'Could not add item.',true);}
-  });
-
-  renderDate();
-  setInterval(renderDate,60*1000);
-  load(false);
-  setInterval(()=>{ if(!document.hidden && !$('editDialog').open && $('stockIntakeOverlay').hidden && !document.activeElement?.matches('input,textarea,select')) load(false); },60000);
+  const API='/api/overstock-control',$=id=>document.getElementById(id);
+  let data={entries:[],containers:[],locations:[],categories:[],associates:[],excelSync:{}},logLimit=50,toastTimer;
+  let intake={container:null,items:[],touched:new Set(),started:null};
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const norm=v=>String(v??'').trim().toLowerCase();
+  const cmp=(a,b)=>String(a||'').localeCompare(String(b||''),undefined,{numeric:true,sensitivity:'base'});
+  const time=x=>Number(x?.updatedAt||x?.createdAt||0);
+  const fmt=v=>{try{return v?new Date(v).toLocaleString([],{month:'short',day:'numeric',year:'numeric'}):'—'}catch{return'—'}};
+  const container=id=>data.containers.find(c=>String(c.id)===String(id));
+  const items=id=>data.entries.filter(e=>String(e.containerId)===String(id));
+  const units=id=>items(id).reduce((n,e)=>n+Number(e.quantity||0),0);
+  function toast(msg,error=false){const el=$('toast');el.textContent=msg;el.className='toast show'+(error?' error':'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className='toast',3300)}
+  async function request(body){const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||`Request failed (${r.status})`);return j}
+  async function load(show=false){$('refreshBtn').disabled=true;try{const r=await fetch(API,{cache:'no-store'});if(!r.ok)throw new Error(`Could not load Overstock (${r.status})`);data=await r.json();render();if(show)toast('Overstock refreshed.')}catch(e){toast(e.message,true)}finally{$('refreshBtn').disabled=false}}
+  function mutationMessage(base,j){return j.excelWrite?.configured&&!j.excelWrite?.ok?`${base} Excel write-back needs attention.`:base}
+  function lists(){const opts=(arr,blank='')=>`${blank?`<option value="">${blank}</option>`:''}${[...new Set(arr.filter(Boolean))].sort(cmp).map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('')}`;$('associateList').innerHTML=opts(data.associates||[]);$('categoryList').innerHTML=opts(data.categories||[]);document.querySelectorAll('select[name="containerId"]').forEach(s=>{const keep=s.value;s.innerHTML=opts(data.containers.filter(c=>norm(c.status)!=='closed').sort((a,b)=>cmp(a.code,b.code)).map(c=>({v:c.id,t:`${c.code} · ${c.currentLocation||'On cart'}`})).map(x=>x.v));s.innerHTML='<option value="">— Select box —</option>'+data.containers.filter(c=>norm(c.status)!=='closed').sort((a,b)=>cmp(a.code,b.code)).map(c=>`<option value="${esc(c.id)}">${esc(c.code)} · ${esc(c.currentLocation||'On cart')}</option>`).join('');s.value=keep});const locs=['',...(data.locations||[])];document.querySelectorAll('select[name="currentLocation"],#siContainerLocation').forEach(s=>{const keep=s.value;s.innerHTML=locs.map(v=>`<option value="${esc(v)}">${v?esc(v):'— No location / on cart —'}</option>`).join('');s.value=keep})}
+  function syncPill(){const p=$('excelSyncPill'),out=data.excelSync?.configured,inbound=data.excelSync?.importConfigured;p.textContent=out&&inbound?'Excel sync · Two-way ready':inbound?'Excel → Houston · Ready':out?'Houston → Excel · Ready':'Excel sync · Setup needed';p.classList.toggle('connected',out||inbound)}
+  function status(c){const n=norm(c.status);if(n==='closed')return'closed';if(c.currentLocation&&(n==='stored'||n==='full'))return'stored';if(!c.currentLocation)return'cart';return n||'open'}
+  function renderStats(){const active=data.containers.filter(c=>status(c)!=='closed'),cart=active.filter(c=>!c.currentLocation),open=active.filter(c=>status(c)==='open'||status(c)==='cart'),stored=active.filter(c=>c.currentLocation&&(status(c)==='stored'||status(c)==='full'));$('statCart').textContent=cart.length;$('statOpen').textContent=open.length;$('statStored').textContent=stored.length;$('statLocations').textContent=new Set(active.map(c=>c.currentLocation).filter(Boolean)).size;return{active,cart,open,stored}}
+  function boxCard(c,cart=false){const its=items(c.id),u=units(c.id);return`<article class="box-card" data-box="${esc(c.id)}"><div class="box-top"><div class="box-code"><i class="status-dot ${status(c)}"></i>${esc(c.code||'Unnamed')}</div><span class="badge ${cart?'amber':''}">${esc(cart?'On cart':c.status||'Open')}</span></div><div class="box-meta"><b>${its.length}</b> PO${its.length===1?'':'s'} · <b>${u.toLocaleString()}</b> units${c.currentLocation?` · 📍 ${esc(c.currentLocation)}`:''}</div><div class="box-meta">${its.slice(0,3).map(e=>`PO ${esc(e.po)}`).join(' · ')||'Empty box'}</div><div class="box-cta">${cart?'Assign location →':'Open box options →'}</div></article>`}
+  function bindBoxes(root=document){root.querySelectorAll('[data-box]').forEach(el=>el.onclick=()=>openBox(el.dataset.box))}
+  function renderCart(stats){$('cartCount').textContent=`${stats.cart.length} waiting`;$('cartGrid').innerHTML=stats.cart.length?stats.cart.sort((a,b)=>time(b)-time(a)).map(c=>boxCard(c,true)).join(''):'<div class="empty">✓ No boxes are waiting on the cart.</div>';bindBoxes($('cartGrid'))}
+  function renderLocations(stats){const locs=[...new Set([...(data.locations||[]),...stats.active.map(c=>c.currentLocation).filter(Boolean)])].sort(cmp),used=new Set(stats.active.map(c=>c.currentLocation).filter(Boolean));$('locationCount').textContent=`${used.size} used`;$('locationGrid').innerHTML=locs.map(loc=>{const bs=stats.active.filter(c=>norm(c.currentLocation)===norm(loc)),u=bs.reduce((n,c)=>n+units(c.id),0);return`<button class="location ${bs.length?'occupied':''}" data-location="${esc(loc)}"><b>${esc(loc)}</b><span>${bs.length?`${bs.length} bx · ${u}u`:'free'}</span></button>`}).join('');document.querySelectorAll('[data-location]').forEach(b=>b.onclick=()=>openLocation(b.dataset.location))}
+  function renderBoxes(stats){const q=norm($('boxSearch').value),sort=$('boxSort').value;let bs=stats.active.filter(c=>{const content=items(c.id).map(e=>`${e.po} ${e.deliveryId||''}`).join(' ');return!q||norm(`${c.code} ${c.currentLocation} ${c.status} ${content}`).includes(q)});if(sort==='name')bs.sort((a,b)=>cmp(a.code,b.code));else if(sort==='location')bs.sort((a,b)=>cmp(a.currentLocation,b.currentLocation)||cmp(a.code,b.code));else bs.sort((a,b)=>time(b)-time(a));$('boxCount').textContent=`${bs.length} box${bs.length===1?'':'es'}`;$('boxesGrid').innerHTML=bs.length?bs.map(c=>boxCard(c)).join(''):'<div class="empty">No boxes match.</div>';bindBoxes($('boxesGrid'))}
+  function logMatches(e,q){const c=container(e.containerId);return!q||norm([e.po,e.deliveryId,e.category,e.status,e.action,e.location,e.containerCode,e.associate,c?.code,c?.currentLocation].join(' ')).includes(q)}
+  function renderLog(){const q=norm($('logSearch').value),sort=$('logSort').value;let es=data.entries.filter(e=>logMatches(e,q));if(sort==='oldest')es.sort((a,b)=>time(a)-time(b));else if(sort==='po')es.sort((a,b)=>cmp(a.po,b.po));else if(sort==='qty-desc')es.sort((a,b)=>Number(b.quantity||0)-Number(a.quantity||0));else if(sort==='qty-asc')es.sort((a,b)=>Number(a.quantity||0)-Number(b.quantity||0));else if(sort==='location')es.sort((a,b)=>cmp(container(a.containerId)?.currentLocation||a.location,container(b.containerId)?.currentLocation||b.location));else if(sort==='associate')es.sort((a,b)=>cmp(a.associate,b.associate));else es.sort((a,b)=>time(b)-time(a));const visible=es.slice(0,logLimit);$('logBody').innerHTML=visible.length?visible.map(e=>{const c=container(e.containerId),loc=c?.currentLocation||e.location||'—',code=c?.code||e.containerCode||'—';return`<tr><td>${esc(e.date||fmt(time(e)))}</td><td><button class="po-link" data-entry="${esc(e.id)}">${esc(e.po||'—')}</button>${e.deliveryId?`<small><br>${esc(e.deliveryId)}</small>`:''}</td><td>${esc(e.category||'—')}</td><td><span class="qty">+${Number(e.quantity||0).toLocaleString()}</span></td><td><span class="tag green">${esc(e.status||'—')}</span></td><td><span class="tag">${esc(e.action||'—')}</span></td><td><span class="mono">${esc(loc)}</span><br><small>${esc(code)}</small></td><td>${esc(e.associate||'Unknown')}</td><td><button class="ghost" data-entry="${esc(e.id)}">Edit</button></td></tr>`}).join(''):'<tr><td colspan="9" class="empty">No entries match.</td></tr>';$('logCount').textContent=`Showing ${visible.length} of ${es.length}`;$('showMoreBtn').hidden=visible.length>=es.length;$('showMoreBtn').textContent=`Show more (${es.length-visible.length} remaining)`;document.querySelectorAll('[data-entry]').forEach(b=>b.onclick=()=>openEntry(b.dataset.entry))}
+  function render(){lists();syncPill();const stats=renderStats();renderCart(stats);renderLocations(stats);renderBoxes(stats);renderLog()}
+  function openBox(id){const c=container(id);if(!c)return;const its=items(id);$('boxDialogTitle').textContent=c.code||'Box';$('boxDialogSub').textContent=`${c.currentLocation||'On cart'} · ${its.length} PO(s) · ${units(id)} units`;$('boxDialogBody').innerHTML=`<div class="box-summary"><b>${esc(c.code)}</b> is ${esc(c.status||'Open')} at <b>${esc(c.currentLocation||'no assigned location')}</b>.</div><div class="action-grid"><button class="action-btn" data-act="add">➕ Add a PO</button><button class="action-btn" data-act="audit">🔍 Audit contents</button><button class="action-btn" data-act="move">↗ Move location</button><button class="action-btn" data-act="edit">✏️ Edit box</button>${its.length===0?'<button class="action-btn" data-act="delete">🗑 Delete empty box</button>':''}</div>`;$('boxDialog').showModal();$('boxDialogBody').querySelector('[data-act="add"]').onclick=()=>{close('boxDialog');newEntry(id)};$('boxDialogBody').querySelector('[data-act="audit"]').onclick=()=>auditBox(id);$('boxDialogBody').querySelector('[data-act="move"]').onclick=()=>editContainer(id,true);$('boxDialogBody').querySelector('[data-act="edit"]').onclick=()=>editContainer(id);$('boxDialogBody').querySelector('[data-act="delete"]')?.addEventListener('click',()=>deleteContainer(id))}
+  function auditBox(id){const c=container(id),its=items(id);$('boxDialogTitle').textContent=`Audit ${c.code}`;$('boxDialogSub').textContent='Verify the physical contents against this list.';$('boxDialogBody').innerHTML=`<div class="box-summary">📍 <b>${esc(c.currentLocation||'On cart')}</b> · ${units(id)} total units</div><div class="audit-list">${its.length?its.map(e=>`<div class="audit-row"><span><b>PO ${esc(e.po)}</b>${e.deliveryId?` · ${esc(e.deliveryId)}`:''}<br><small>${esc(e.category||'Uncategorized')} · ${esc(e.associate||'Unknown associate')}</small></span><span><b>${Number(e.quantity||0)}</b> units <button class="ghost" data-audit-entry="${esc(e.id)}">Edit</button></span></div>`).join(''):'<div class="empty">This box has no POs.</div>'}</div>`;document.querySelectorAll('[data-audit-entry]').forEach(b=>b.onclick=()=>{close('boxDialog');openEntry(b.dataset.auditEntry)})}
+  function openLocation(loc){const bs=data.containers.filter(c=>norm(c.currentLocation)===norm(loc)&&status(c)!=='closed');$('locationDialogTitle').textContent=loc;$('locationDialogSub').textContent=`${bs.length} box(es) · ${bs.reduce((n,c)=>n+units(c.id),0)} units`;$('locationDialogBody').innerHTML=bs.length?`<div class="card-grid">${bs.map(c=>boxCard(c)).join('')}</div>`:'<div class="empty">This location is free.</div>';$('locationDialog').showModal();bindBoxes($('locationDialogBody'))}
+  function close(id){$(id)?.close()}
+  function newEntry(containerId){const f=$('editForm');f.reset();f.elements.id.value='';lists();f.elements.containerId.value=containerId||'';$('editTitle').textContent='Add PO to box';$('editSubtitle').textContent=container(containerId)?.code||'Choose a box';$('deleteEntryBtn').hidden=true;$('editDialog').showModal();setTimeout(()=>f.elements.po.focus(),20)}
+  function openEntry(id){const e=data.entries.find(x=>String(x.id)===String(id));if(!e)return;const f=$('editForm');lists();['id','po','deliveryId','containerId','quantity','category','status','action','associate','note'].forEach(k=>f.elements[k].value=e[k]??'');$('editTitle').textContent=`PO ${e.po}`;$('editSubtitle').textContent=e.deliveryId||e.containerCode||'';$('deleteEntryBtn').hidden=false;$('editDialog').showModal()}
+  function editContainer(id='',focusLocation=false){close('boxDialog');const c=id?container(id):null,f=$('containerForm');f.reset();lists();f.elements.id.value=c?.id||'';f.elements.code.value=c?.code||'';f.elements.currentLocation.value=c?.currentLocation||'';f.elements.status.value=c?.status||'Open';f.elements.notes.value=c?.notes||'';$('containerTitle').textContent=c?`Edit ${c.code}`:'New box';$('containerDialog').showModal();setTimeout(()=>focusLocation?f.elements.currentLocation.focus():f.elements.code.focus(),20)}
+  async function deleteContainer(id){const c=container(id);if(!c||items(id).length||!confirm(`Delete empty box ${c.code}?`))return;try{const j=await request({action:'deleteContainer',id});data={...data,...j};close('boxDialog');render();toast('Empty box deleted.')}catch(e){toast(e.message,true)}}
+  function inspectIntake(){const code=norm($('siContainerCode').value),c=data.containers.find(x=>norm(x.code)===code),el=$('siExistingContainer');el.hidden=!c;if(c){el.textContent=`Existing box · ${c.currentLocation||'On cart'} · ${items(c.id).length} PO(s)`;$('siContainerLocation').value=c.currentLocation||''}}
+  function intakeStats(){$('siItemsCount').textContent=intake.items.length;$('siContainersCount').textContent=intake.touched.size;$('siStartedAt').textContent=intake.started?new Date(intake.started).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'—';$('siRecentList').innerHTML=intake.items.slice().reverse().map(e=>`<div class="recent-item"><b>PO ${esc(e.po)}</b> · ${Number(e.quantity||0)} units · ${esc(e.containerCode)}</div>`).join('')}
+  function openIntake(containerId=''){intake={container:null,items:[],touched:new Set(),started:Date.now()};$('stockIntakeOverlay').hidden=false;$('siContainerStep').hidden=false;$('siItemStep').hidden=true;$('siContainerForm').reset();lists();if(containerId){const c=container(containerId);$('siContainerCode').value=c?.code||'';$('siContainerLocation').value=c?.currentLocation||'';inspectIntake()}intakeStats();setTimeout(()=>$('siAssociate').focus(),20)}
+  function closeIntake(){$('stockIntakeOverlay').hidden=true;intake.container=null;render()}
+  $('editForm').onsubmit=async ev=>{ev.preventDefault();const f=ev.currentTarget,d=Object.fromEntries(new FormData(f));const old=data.entries.find(e=>String(e.id)===String(d.id))||{},c=container(d.containerId);if(!c)return toast('Choose a box.',true);const entry={...old,id:d.id||undefined,po:d.po,deliveryId:d.deliveryId,containerId:c.id,containerCode:c.code,location:c.currentLocation,quantity:Number(d.quantity||0),category:d.category,status:d.status,action:d.action,associate:d.associate,note:d.note,date:old.date||new Date().toISOString().slice(0,10),sourceType:old.sourceType||'overstock-standalone'};try{const j=await request({action:'upsertEntry',entry});data={...data,...j};close('editDialog');render();toast(mutationMessage(d.id?'Item updated.':'PO added to box.',j))}catch(e){toast(e.message,true)}};
+  $('deleteEntryBtn').onclick=async()=>{const id=$('editForm').elements.id.value,e=data.entries.find(x=>String(x.id)===String(id));if(!e||!confirm(`Remove PO ${e.po}?`))return;try{const j=await request({action:'deleteEntry',id});data={...data,...j};close('editDialog');render();toast(mutationMessage('Item deleted.',j))}catch(x){toast(x.message,true)}};
+  $('containerForm').onsubmit=async ev=>{ev.preventDefault();const d=Object.fromEntries(new FormData(ev.currentTarget)),old=container(d.id)||{},saved={...old,id:d.id||undefined,code:d.code,currentLocation:d.currentLocation,status:d.currentLocation&&['Open','On Cart'].includes(d.status)?'Stored':d.status,notes:d.notes};try{const j=await request({action:'upsertContainer',container:saved});data={...data,...j};close('containerDialog');render();toast(mutationMessage(d.id?'Box updated.':'Box created.',j))}catch(e){toast(e.message,true)}};
+  $('boxLookupForm').onsubmit=e=>{e.preventDefault();const code=norm($('boxLookupInput').value),c=data.containers.find(x=>norm(x.code)===code);if(c){$('boxLookupStatus').textContent=`Found ${c.code} · ${c.currentLocation||'On cart'} · ${items(c.id).length} PO(s)`;openBox(c.id)}else{$('boxLookupStatus').textContent='Box not found. Opening Stock Intake to create it.';openIntake();$('siContainerCode').value=$('boxLookupInput').value.trim().toUpperCase()}};
+  $('siContainerCode').oninput=inspectIntake;
+  $('siContainerForm').onsubmit=async ev=>{ev.preventDefault();const associate=$('siAssociate').value.trim(),code=$('siContainerCode').value.trim().toUpperCase(),loc=$('siContainerLocation').value;let c=data.containers.find(x=>norm(x.code)===norm(code));try{if(!c){if(!loc)throw new Error('Choose a location for the new box.');const j=await request({action:'upsertContainer',container:{code,currentLocation:loc,status:'Stored',notes:'Created through Stock Intake'}});data={...data,...j};c=data.containers.find(x=>norm(x.code)===norm(code))}if(!c)throw new Error('Box could not be opened.');intake.container=c;intake.touched.add(String(c.id));intakeStats();$('siActiveContainer').textContent=`${c.code} · ${c.currentLocation||'On cart'} · Logged by ${associate}`;$('siContainerStep').hidden=true;$('siItemStep').hidden=false;setTimeout(()=>$('siPo').focus(),20)}catch(e){toast(e.message,true)}};
+  $('siItemForm').onsubmit=async ev=>{ev.preventDefault();const c=intake.container,po=$('siPo').value.trim(),qty=Number($('siQty').value||0);if(!c||!po||qty<1)return toast('Enter a PO and quantity.',true);const entry={po,deliveryId:$('siDeliveryId').value.trim(),quantity:qty,category:$('siCategory').value.trim(),status:$('siStatus').value,action:$('siAction').value,note:$('siNote').value.trim(),associate:$('siAssociate').value.trim(),containerId:c.id,containerCode:c.code,location:c.currentLocation,date:new Date().toISOString().slice(0,10),sourceType:'stock-intake'};try{const j=await request({action:'upsertEntry',entry});data={...data,...j};const saved=data.entries.slice().sort((a,b)=>time(b)-time(a)).find(e=>e.po===po&&String(e.containerId)===String(c.id))||entry;intake.items.push(saved);intakeStats();['siPo','siDeliveryId','siQty','siCategory','siNote'].forEach(id=>$(id).value='');setTimeout(()=>$('siPo').focus(),20);toast(`PO ${po} added to ${c.code}.`)}catch(e){toast(e.message,true)}};
+  $('siSwitchContainer').onclick=()=>{intake.container=null;$('siItemStep').hidden=true;$('siContainerStep').hidden=false;$('siContainerCode').value='';$('siExistingContainer').hidden=true};$('stockIntakeBtn').onclick=()=>openIntake();$('stockIntakeCancel').onclick=()=>{if(!intake.items.length||confirm('Cancel? Saved items will remain in Houston.'))closeIntake()};$('stockIntakeComplete').onclick=()=>{toast(`Stock Intake complete · ${intake.items.length} item(s) added.`);closeIntake()};
+  $('refreshBtn').onclick=()=>load(true);$('newBoxBtn').onclick=()=>editContainer();$('boxSearch').oninput=()=>renderBoxes(renderStats());$('boxSort').onchange=()=>renderBoxes(renderStats());$('logSearch').oninput=()=>{logLimit=50;renderLog()};$('logSort').onchange=()=>{logLimit=50;renderLog()};$('showMoreBtn').onclick=()=>{logLimit+=50;renderLog()};document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>close(b.dataset.close));
+  load();setInterval(()=>{if(!document.hidden&&!document.querySelector('dialog[open]')&&!document.activeElement?.matches('input,select,textarea')&&$('stockIntakeOverlay').hidden)load()},60000);
 })();
