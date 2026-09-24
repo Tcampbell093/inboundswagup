@@ -145,9 +145,17 @@
 
       if (!response.ok) {
         if (response.status === 401) {
-          await window.HubAssociate?.refresh?.().catch?.(() => {});
-          setNote(row, `Sign in as ${person} again to continue.`, 'bad');
-          window.HubAssociate?.open?.(person);
+          const refreshed = await window.HubAssociate?.refresh?.().catch?.(() => ({ signedIn: false }));
+          if (link.isConnected) {
+            link.classList.remove('is-busy');
+            link.textContent = originalText;
+          }
+          if (refreshed?.signedIn && normalize(refreshed.name) === normalize(person)) {
+            setNote(row, 'Your Hub sign-in was refreshed. Tap Start again.', 'bad');
+          } else {
+            setNote(row, `Sign in as ${person} again, then tap Start.`, 'bad');
+            window.HubAssociate?.open?.(person);
+          }
           return;
         }
         throw new Error(body.error || 'Cleaning check-in failed.');
