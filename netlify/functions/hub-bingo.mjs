@@ -350,7 +350,7 @@ export default async (request) => {
     if (action !== 'draw') return json(400, { error: 'Unsupported action.' });
 
     const result = await drawSymbol(session);
-    return jso(result.status, result.body);
+    return json(result.status, result.body);
   } catch (error) {
     return json(400, { error: clean(error?.message || 'Warehouse Bingo is temporarily unavailable.', 300) });
   }
