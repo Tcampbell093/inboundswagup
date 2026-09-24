@@ -21,7 +21,7 @@
   <section class="section" id="today">
     <div class="section-head">
       <div><div class="eyebrow" id="sectionEyebrow">Today at a glance</div><h2 id="sectionTitle">What the team needs to know</h2></div>
-      <div class="head-right"><div class="section-note" id="sectionNote">Cleaning responsibilities, announcements, and policy updates in one place.</div><div class="view-switch" role="tablist" aria-label="Today or week view"><button class="view-dot active" id="todayDot" type="button" role="tab" aria-selected="true" aria-controls="todayView" title="Today view"><span class="sr-only">Today view</span></button><button class="view-dot" id="weekDot" type="button" role="tab" aria-selected="false" aria-controls="weekView" title="Week view"><span class="sr-only">Week view</span></button></div></div>
+      <div class="head-right"><div class="section-note" id="sectionNote">Cleaning responsibilities, announcements, and policy updates in one place.</div><div class="view-switch" role="tablist" aria-label="Today, week, or Bingo view"><button class="view-dot active" id="todayDot" type="button" role="tab" aria-selected="true" aria-controls="todayView" title="Today view"><span class="sr-only">Today view</span></button><button class="view-dot" id="weekDot" type="button" role="tab" aria-selected="false" aria-controls="weekView" title="Week view"><span class="sr-only">Week view</span></button><button class="view-dot" id="bingoDot" type="button" role="tab" aria-selected="false" aria-controls="bingoView" title="Warehouse Bingo"><span class="sr-only">Warehouse Bingo</span></button></div></div>
     </div>
 
     <div class="view-panel active" id="todayView" role="tabpanel" aria-labelledby="todayDot">
@@ -33,6 +33,10 @@
 
     <div class="view-panel" id="weekView" role="tabpanel" aria-labelledby="weekDot">
       <div class="card week-card"><div class="week-toolbar"><div><h3 id="weekTitle">This week</h3><div class="week-range">Cleaning assignments, announcements, and policy updates in one weekly view.</div></div><span class="smallpill">5 work days</span></div><div class="week-calendar" id="weekCalendar" aria-label="Weekly warehouse calendar"></div><div class="week-legend"><span class="legend-item"><span class="legend-dot clean"></span> Cleaning</span><span class="legend-item"><span class="legend-dot announce"></span> Announcements</span><span class="legend-item"><span class="legend-dot policy"></span> Policies</span></div></div>
+    </div>
+
+    <div class="view-panel" id="bingoView" role="tabpanel" aria-labelledby="bingoDot">
+      <div id="bingoApp"><div class="empty">Warehouse Bingo is loading…</div></div>
     </div>
   </section>
 
@@ -71,6 +75,6 @@
 </script>
 <script src="associate-auth.js"></script>
 <script src="script.js"></script>
-<script src="cleaning-inline.js"></script>
+<script src="cleaning-inline.js"></script>\n<script src="bingo.js"></script>
 </body>
 </html>
