@@ -101,7 +101,13 @@
         complete.className = 'checkin';
         complete.textContent = '15 min ✓';
         link.replaceWith(complete);
-        setNote(row, 'Cleaning completed. 15 FairShift minutes credited.', 'good');
+        const bingoText = body.bingoCoinAwarded
+          ? 'Cleaning completed. 15 FairShift minutes + 1 Bingo Coin earned.'
+          : 'Cleaning completed. 15 FairShift minutes credited.';
+        setNote(row, bingoText, 'good');
+        document.dispatchEvent(new CustomEvent('hub-bingo-refresh', {
+          detail: { awarded: !!body.bingoCoinAwarded, coins: body.bingoCoins ?? null },
+        }));
       }
     } catch (error) {
       link.classList.remove('is-busy');
