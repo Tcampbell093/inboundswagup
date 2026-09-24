@@ -3,7 +3,7 @@
   const TOOLS_API = '/.netlify/functions/hub-tools';
   const FAIRSHIFT = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
   const $ = (id) => document.getElementById(id);
-  const todayDot = $('todayDot'), weekDot = $('weekDot'), todayView = $('todayView'), weekView = $('weekView');
+  const todayDot = $('todayDot'), weekDot = $('weekDot'), bingoDot = $('bingoDot');\n  const todayView = $('todayView'), weekView = $('weekView'), bingoView = $('bingoView');
   const sectionEyebrow = $('sectionEyebrow'), sectionTitle = $('sectionTitle'), sectionNote = $('sectionNote');
 
   let feed = { announcements: [], policies: [], cleaning: [] };
@@ -38,20 +38,38 @@
 
   function setView(view) {
     const isToday = view === 'today';
+    const isWeek = view === 'week';
+    const isBingo = view === 'bingo';
+
     todayDot.classList.toggle('active', isToday);
-    weekDot.classList.toggle('active', !isToday);
+    weekDot.classList.toggle('active', isWeek);
+    bingoDot.classList.toggle('active', isBingo);
     todayDot.setAttribute('aria-selected', String(isToday));
-    weekDot.setAttribute('aria-selected', String(!isToday));
+    weekDot.setAttribute('aria-selected', String(isWeek));
+    bingoDot.setAttribute('aria-selected', String(isBingo));
     todayView.classList.toggle('active', isToday);
-    weekView.classList.toggle('active', !isToday);
-    sectionEyebrow.textContent = isToday ? 'Today at a glance' : 'Week at a glance';
-    sectionTitle.textContent = isToday ? 'What the team needs to know' : 'What’s happening this week';
-    sectionNote.textContent = isToday
-      ? 'Cleaning responsibilities, announcements, and policy updates in one place.'
-      : 'A Monday–Friday view of cleaning, announcements, reminders, and policy changes.';
+    weekView.classList.toggle('active', isWeek);
+    bingoView.classList.toggle('active', isBingo);
+
+    if (isBingo) {
+      sectionEyebrow.textContent = 'Today at a glance';
+      sectionTitle.textContent = 'Warehouse Bingo';
+      sectionNote.textContent = 'Cleaning earns Bingo Coins. Spend them on random symbol draws.';
+    } else if (isWeek) {
+      sectionEyebrow.textContent = 'Week at a glance';
+      sectionTitle.textContent = 'What’s happening this week';
+      sectionNote.textContent = 'A Monday–Friday view of cleaning, announcements, reminders, and policy changes.';
+    } else {
+      sectionEyebrow.textContent = 'Today at a glance';
+      sectionTitle.textContent = 'What the team needs to know';
+      sectionNote.textContent = 'Cleaning responsibilities, announcements, and policy updates in one place.';
+    }
+
+    document.dispatchEvent(new CustomEvent('hub-view-changed', { detail: { view } }));
   }
   todayDot.addEventListener('click', () => setView('today'));
   weekDot.addEventListener('click', () => setView('week'));
+  bingoDot.addEventListener('click', () => setView('bingo'));
 
   function actionForCleaning(r) {
     if (r.status === 'completed') return `<span class="checkin">${Number(r.creditMinutes || 15)} min ✓</span>`;
