@@ -1,5 +1,5 @@
 (() => {
-  const PROXY = '/.netlify/functions/fairshift-checkin-proxy';
+  const PROXY = '/.netlify/functions/hub-cleaning';
   const cleaningList = document.getElementById('todayCleaning');
   if (!cleaningList) return;
 
