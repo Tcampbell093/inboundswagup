@@ -3,7 +3,8 @@
   const TOOLS_API = '/.netlify/functions/hub-tools';
   const FAIRSHIFT = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
   const $ = (id) => document.getElementById(id);
-  const todayDot = $('todayDot'), weekDot = $('weekDot'), bingoDot = $('bingoDot');\n  const todayView = $('todayView'), weekView = $('weekView'), bingoView = $('bingoView');
+  const todayDot = $('todayDot'), weekDot = $('weekDot'), bingoDot = $('bingoDot');
+  const todayView = $('todayView'), weekView = $('weekView'), bingoView = $('bingoView');
   const sectionEyebrow = $('sectionEyebrow'), sectionTitle = $('sectionTitle'), sectionNote = $('sectionNote');
 
   let feed = { announcements: [], policies: [], cleaning: [] };
