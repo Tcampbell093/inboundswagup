@@ -48,7 +48,7 @@
   dialog.innerHTML = `
     <div class="dialog-head"><h3 id="associateTitle">Who’s using the Hub?</h3><button class="close" id="associateClose" type="button">×</button></div>
     <div class="associate-body">
-      <p class="associate-intro" id="associateIntro">Choose your name once for the shift. After that, cleaning check-in and other personal Hub features can recognize you without asking for your PIN again.</p>
+      <p class="associate-intro" id="associateIntro">Choose your name once for the shift. Associates and Team Leads can use the same Hub sign-in for personal Hub features without signing into Houston.</p>
       <div class="associate-success" id="associateSuccess"></div>
       <div class="associate-error" id="associateError"></div>
       <div class="associate-state" id="associateCurrent"></div>
@@ -71,7 +71,7 @@
           <button class="associate-link" id="associateNotNow" type="button">Not now</button>
         </div>
       </form>
-      <div class="associate-note" id="associateNote">If you already use a FairShift cleaning PIN, use that same PIN here. New associates can create a PIN when one has not been set yet.</div>
+      <div class="associate-note" id="associateNote">If you already use a FairShift cleaning PIN, use that same PIN here. Team Leads and new team members can create a Hub PIN when one has not been set yet.</div>
     </div>`;
   document.body.appendChild(dialog);
 
@@ -172,7 +172,7 @@
   async function loadRoster() {
     const data = await api('?action=roster');
     roster = Array.isArray(data.employees) ? data.employees : [];
-    nameEl.innerHTML = `<option value="">Choose your name…</option>${roster.map((person) => `<option value="${esc(person.name)}">${esc(person.name)}${person.department ? ' · ' + esc(person.department) : ''}</option>`).join('')}`;
+    nameEl.innerHTML = `<option value="">Choose your name…</option>${roster.map((person) => `<option value="${esc(person.name)}">${esc(person.name)}${person.department ? ' · ' + esc(person.department) : ''}${person.role ? ' · ' + esc(person.role) : ''}</option>`).join('')}`;
     if (data.selfServiceConnected === false) {
       note.textContent = 'If you already have a FairShift cleaning PIN, use the same one here. First-time PIN setup is available in the Hub; FairShift syncing will follow the same PIN when its self-service update is active.';
     }
@@ -208,7 +208,9 @@
       document.getElementById('associatePinLabel').firstChild.nodeValue = 'Create a PIN';
       confirmWrap.style.display = 'block';
       submit.textContent = 'Create PIN & sign in';
-      note.textContent = 'Choose a private 4–8 digit PIN you can remember. If you already have a FairShift cleaning PIN, use that same number here.';
+      note.textContent = selected.fairShiftSelfService === false
+        ? 'Create a private 4–8 digit Warehouse Hub PIN. This gives Team Leads Hub access without adding them to FairShift cleaning rotations.'
+        : 'Choose a private 4–8 digit PIN you can remember. If you already have a FairShift cleaning PIN, use that same number here.';
     }
     setTimeout(() => pinEl.focus(), 30);
   });
