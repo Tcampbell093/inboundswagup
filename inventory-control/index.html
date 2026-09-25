@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#123d34">
+  <meta name="robots" content="noindex">
+  <title>Warehouse Inventory · Operations Hub</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/warehouse-hub/"><span class="mark">◇</span><span>Operations Hub</span></a>
+    <nav>
+      <a href="/warehouse-hub/">Warehouse Hub</a>
+      <a href="/overstock-control/">Overstock</a>
+      <a href="/po-history/">PO History</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section class="intro">
+      <div>
+        <p class="eyebrow">Standalone warehouse tool</p>
+        <h1>Warehouse Inventory</h1>
+        <p class="lede">A separate copy of Houston Control's supply inventory. Counts, requests, photos, and edits made here are stored independently and do not change Houston Control.</p>
+      </div>
+      <div class="isolation"><strong>Independent copy</strong><span>Houston edits do not sync here</span></div>
+    </section>
+
+    <section id="inventoryPage" class="active inventory-page" aria-label="Warehouse inventory">
+      <div id="inventoryRoot"></div>
+    </section>
+  </main>
+
+  <footer><div class="wrap">Warehouse Operations Hub · Standalone Inventory</div></footer>
+  <script src="app.js?v=20260925-1"></script>
+</body>
+</html>
