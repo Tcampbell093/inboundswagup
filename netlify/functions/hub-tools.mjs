@@ -37,6 +37,17 @@ const PO_HISTORY_TOOL = {
   sortOrder: 61,
 };
 
+const INVENTORY_CONTROL_TOOL = {
+  id: 'warehouse-inventory',
+  title: 'Warehouse Inventory',
+  url: '/inventory-control/',
+  label: 'Supply inventory',
+  description: 'Manage the standalone warehouse supply inventory. Changes here stay separate from Houston Control.',
+  accent: 'blue',
+  icon: '▦',
+  sortOrder: 62,
+};
+
 const SEED_TOOLS = [
   { id: 'fairshift-rotations', title: 'FairShift Rotations', url: 'https://fairshift-rotations.thandoyordani.chatgpt.site/', label: 'Labor planning', description: 'Plan team rotations, cleaning schedules, time off, and fair task assignments.', accent: 'orange', icon: '♙', sortOrder: 10 },
   PASSWORD_TOOL,
@@ -46,6 +57,7 @@ const SEED_TOOLS = [
   { id: 'daily-returns', title: 'Daily Returns', url: 'https://bdainc4-my.sharepoint.com/:x:/r/personal/cescobar_bdainc_com/_layouts/15/Doc.aspx?sourcedoc=%7B7B48C5B8-6820-490A-814A-5DF46CDD8974%7D&file=Daily%20Returns%202025%20A.M..xlsx&fromShare=true&action=default&mobileredirect=true', label: 'Returns workbook', description: 'Open the shared Returns workbook used for daily return tracking and updates.', accent: 'blue', icon: '▧', sortOrder: 50 },
   { id: 'overstock', title: 'Overstock', url: '/warehouse-hub/overstock.html', label: 'Inbound workflow', description: 'Open Houston directly to the Overstock section of the inbound module.', accent: 'orange', icon: '◫', sortOrder: 60 },
   PO_HISTORY_TOOL,
+  INVENTORY_CONTROL_TOOL,
   SALESFORCE_HOME_TOOL,
   { id: 'qa-approved', title: 'QA Approved', url: 'https://swagup.lightning.force.com/lightning/r/Report/00OPH000009Ytkr2AC/view?queryScope=userFolders', label: 'Salesforce report', description: 'Open the QA Approved report in Salesforce.', accent: 'green', icon: '▤', sortOrder: 70 },
   { id: 'receiving-report', title: 'Receiving Report', url: 'https://swagup.lightning.force.com/lightning/r/Report/00O6e000008lBIAEA2/view', label: 'Salesforce report', description: 'Open the Receiving report in Salesforce.', accent: 'blue', icon: '▧', sortOrder: 80 },
@@ -213,6 +225,12 @@ async function ensureSchema(pool) {
   if (!poHistoryCard.rows.length) {
     await insertToolIfMissing(pool, PO_HISTORY_TOOL);
     await pool.query(`INSERT INTO hub_tool_meta(key,value,updated_at) VALUES('po_history_v1','1',NOW()) ON CONFLICT(key) DO NOTHING`);
+  }
+
+  const inventoryControlCard = await pool.query(`SELECT value FROM hub_tool_meta WHERE key='warehouse_inventory_v1' LIMIT 1`);
+  if (!inventoryControlCard.rows.length) {
+    await insertToolIfMissing(pool, INVENTORY_CONTROL_TOOL);
+    await pool.query(`INSERT INTO hub_tool_meta(key,value,updated_at) VALUES('warehouse_inventory_v1','1',NOW()) ON CONFLICT(key) DO NOTHING`);
   }
 }
 
