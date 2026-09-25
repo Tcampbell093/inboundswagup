@@ -12,11 +12,14 @@
 <body>
   <header class="topbar">
     <a class="brand" href="/warehouse-hub/"><span class="mark">◇</span><span>Operations Hub</span></a>
-    <nav>
-      <a href="/warehouse-hub/">Warehouse Hub</a>
-      <a href="/overstock-control/">Overstock</a>
-      <a href="/po-history/">PO History</a>
-    </nav>
+    <div class="top-actions">
+      <nav>
+        <a href="/warehouse-hub/">Warehouse Hub</a>
+        <a href="/overstock-control/">Overstock</a>
+        <a href="/po-history/">PO History</a>
+      </nav>
+      <button id="manageBtn" class="toolcount" type="button">Manager unlock</button>
+    </div>
   </header>
 
   <main class="wrap">
@@ -40,6 +43,46 @@
     // snapshot marker exists, this endpoint never re-imports Houston changes.
     fetch('/.netlify/functions/warehouse-inventory?snapshotStatus=1', { cache: 'no-store' }).catch(function(){});
   </script>
-  <script src="app.js?v=20260925-1"></script>
+  <script src="/warehouse-hub/associate-auth.js?v=20260925-1"></script>
+  <script>
+    (function(){
+      var btn=document.getElementById('manageBtn');
+      if(!btn)return;
+      async function validate(key,quiet){
+        if(!key)return false;
+        try{
+          var res=await fetch('/.netlify/functions/warehouse-inventory?managerCheck=1',{cache:'no-store',headers:{'x-hub-key':key}});
+          var body=await res.json().catch(function(){return{};});
+          if(res.ok){
+            sessionStorage.setItem('warehouseInventoryManagerKey',key);
+            btn.textContent='Manager unlocked';
+            btn.classList.add('signed-in');
+            document.dispatchEvent(new CustomEvent('warehouse-inventory-manager-unlocked'));
+            return true;
+          }
+          if(res.status===401){
+            if(window.HubAssociate&&window.HubAssociate.open)window.HubAssociate.open();
+            if(!quiet)alert('Sign in with your Warehouse Hub PIN first.');
+          }else if(!quiet){
+            alert(body.error||'Manager access key not accepted.');
+          }
+        }catch(e){
+          if(!quiet)alert('Could not verify manager access.');
+        }
+        sessionStorage.removeItem('warehouseInventoryManagerKey');
+        btn.textContent='Manager unlock';
+        btn.classList.remove('signed-in');
+        return false;
+      }
+      btn.addEventListener('click',function(){
+        var existing=sessionStorage.getItem('warehouseInventoryManagerKey')||'';
+        var key=window.prompt('Manager access key',existing);
+        if(key)validate(key.trim(),false);
+      });
+      var saved=sessionStorage.getItem('warehouseInventoryManagerKey')||'';
+      if(saved)validate(saved,true);
+    })();
+  </script>
+  <script src="app.js?v=20260925-2"></script>
 </body>
 </html>
