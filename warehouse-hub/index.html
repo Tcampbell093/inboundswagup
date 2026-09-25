@@ -63,7 +63,7 @@
 <dialog class="dialog" id="managerDialog"><div class="dialog-head"><h3>Manage Hub updates</h3><button class="close" data-close="managerDialog" type="button">×</button></div><div class="dialog-body"><div class="message" id="managerMessage"></div><div class="manager-grid">
   <section class="manager-section"><h4>Announcement</h4><form id="announcementForm"><div class="field"><label>Title</label><input name="title" required maxlength="120" /></div><div class="field"><label>Message</label><textarea name="message" required maxlength="1200"></textarea></div><div class="form-row"><div class="field"><label>Start date</label><input name="startDate" type="date" required /></div><div class="field"><label>End date (optional)</label><input name="endDate" type="date" /></div></div><div class="field"><label>Department</label><input name="department" value="All teams" maxlength="80" /></div><label class="check"><input name="pinned" type="checkbox" /> Pin this announcement</label><button class="action" type="submit">Post announcement</button></form><div class="admin-list" id="announcementAdminList"></div></section>
   <section class="manager-section"><h4>Policy update</h4><form id="policyForm"><div class="field"><label>Title</label><input name="title" required maxlength="140" /></div><div class="field"><label>Summary</label><textarea name="summary" required maxlength="1600"></textarea></div><div class="field"><label>Effective date</label><input name="effectiveDate" type="date" required /></div><label class="check"><input name="readRequired" type="checkbox" /> Mark as read required</label><button class="action" type="submit">Publish policy</button></form><div class="admin-list" id="policyAdminList"></div></section>
-  <section class="manager-section"><h4>FairShift cleaning</h4><p class="policy-meta">FairShift is the live source for cleaning assignments and fairness credit. Manage the rotation there; associate PINs are also managed from its cleaning check-in page.</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px"><a class="action" href="https://fairshift-rotations.thandoyordani.chatgpt.site/" target="_blank" rel="noopener">Open FairShift ↗</a><a class="action secondary" href="https://fairshift-rotations.thandoyordani.chatgpt.site/checkin" target="_blank" rel="noopener">Cleaning PINs ↗</a></div></section>
+  <section class="manager-section"><h4>FairShift cleaning</h4><p class="policy-meta">FairShift still powers cleaning rotations, leave protection, and fairness credit. Team members, designations, departments, and cleaning-area settings are now managed directly in this Hub manager window.</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px"><a class="action" href="https://fairshift-rotations.thandoyordani.chatgpt.site/" target="_blank" rel="noopener">Open rotation planner ↗</a></div></section>
 </div></div></dialog>
 <script>
 (() => {
@@ -74,8 +74,8 @@
   }).format(new Date());
 })();
 </script>
-<script src="associate-auth.js?v=20260925-2"></script>
-<script src="script.js"></script>
+<script src="associate-auth.js?v=20260925-3"></script>
+<script src="script.js?v=20260925-3"></script>
 <script src="cleaning-inline.js?v=20260924-1415"></script>
 <script src="bingo.js"></script>
 </body>
