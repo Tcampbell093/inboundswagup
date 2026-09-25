@@ -223,7 +223,7 @@
       + '<div id="ivRBulk" class="iv-bulkbar" hidden><strong id="ivRBulkCount">0 selected</strong><select id="ivRBulkStatus" class="iv-select"><option value="">Change status to…</option><option>Requested</option><option>Reviewing</option><option>Approved</option><option>Ordered</option><option>Shipped</option><option>Delivered</option><option>Denied</option><option>Canceled</option></select><button id="ivRBulkApply" class="iv-btn iv-btn-primary" type="button">Apply to selected</button><button id="ivRBulkClear" class="iv-btn" type="button">Clear</button></div>'
       + '<div class="iv-tablewrap"><table class="iv-table"><thead><tr>'
       + '<th class="iv-rselect"><input id="ivRAll" class="iv-rcheck" type="checkbox" aria-label="Select all shown requests"/></th><th>Urg</th><th>Item</th><th>Department</th><th>Qty</th><th>Requested by</th><th>Date</th><th>Status</th><th>Expected</th><th>Tracking</th>'
-      + '</tr></thead><tbody id="ivRBody"></tbody></table></div>
+      + '</tr></thead><tbody id="ivRBody"></tbody></table></div>'
       + '</div>' // end requests view
       + dl('ivDeptList', DEPARTMENTS) + dl('ivCatList', CATEGORIES) + dl('ivUnitList', UNITS) + dl('ivLocList', LOCATIONS);
 
