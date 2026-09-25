@@ -99,8 +99,42 @@ function safeEqual(a, b) {
   return aa.length === bb.length && crypto.timingSafeEqual(aa, bb);
 }
 
+const HUB_SESSION_COOKIE = 'hub_associate_session';
+const HUB_SESSION_VERSION = 2;
+
+function cookieMap(request) {
+  const raw = request.headers.get('cookie') || '';
+  return Object.fromEntries(raw.split(';').map((part) => part.trim()).filter(Boolean).map((part) => {
+    const index = part.indexOf('=');
+    return index === -1 ? [part, ''] : [part.slice(0, index), part.slice(index + 1)];
+  }));
+}
+
+function hubSession(request) {
+  try {
+    const secret = env('HUB_ASSOCIATE_SESSION_SECRET');
+    const token = cookieMap(request)[HUB_SESSION_COOKIE];
+    if (!secret || !token) return null;
+    const key = crypto.createHash('sha256').update(secret).digest();
+    const [ivText, tagText, dataText] = String(token).split('.');
+    if (!ivText || !tagText || !dataText) return null;
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivText, 'base64url'));
+    decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
+    const plain = Buffer.concat([
+      decipher.update(Buffer.from(dataText, 'base64url')),
+      decipher.final(),
+    ]).toString('utf8');
+    const payload = JSON.parse(plain);
+    if (payload?.v !== HUB_SESSION_VERSION || !payload?.name || Number(payload.exp || 0) <= Date.now()) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 function managerAuthorized(request) {
-  return safeEqual(request.headers.get('x-hub-key') || '', env('HUB_MANAGER_KEY'));
+  if (safeEqual(request.headers.get('x-hub-key') || '', env('HUB_MANAGER_KEY'))) return true;
+  return String(hubSession(request)?.role || '').toLowerCase() === 'manager';
 }
 
 function validateUrl(value) {
