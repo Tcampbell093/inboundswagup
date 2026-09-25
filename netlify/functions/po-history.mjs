@@ -52,18 +52,45 @@ async function ensureSchema() {
   schemaReady = true;
 }
 
-async function authorize(request) {
-  const token = clean((request.headers.get('authorization') || '').replace(/^Bearer\s+/i, ''), 4000);
-  if (!token) return false;
+const HUB_SESSION_COOKIE = 'hub_associate_session';
+const HUB_SESSION_VERSION = 2;
+
+function cookieMap(request) {
+  const raw = request.headers.get('cookie') || '';
+  return Object.fromEntries(raw.split(';').map((part) => part.trim()).filter(Boolean).map((part) => {
+    const index = part.indexOf('=');
+    return index === -1 ? [part, ''] : [part.slice(0, index), part.slice(index + 1)];
+  }));
+}
+
+function hubSessionKey() {
+  const secret = env('HUB_ASSOCIATE_SESSION_SECRET');
+  return secret ? crypto.createHash('sha256').update(secret).digest() : null;
+}
+
+function hubSession(request) {
   try {
-    const origin = env('IDENTITY_URL') || 'https://inboundswagup.netlify.app/.netlify/identity';
-    const response = await fetch(`${origin}/user`, { headers: { authorization: `Bearer ${token}` } });
-    if (!response.ok) return false;
-    const user = await response.json();
-    if (!user?.email) return false;
-    const result = await pool().query('SELECT suspended, invited FROM hc_users WHERE LOWER(email)=LOWER($1)', [user.email]);
-    return Boolean(result.rows[0] && !result.rows[0].suspended && result.rows[0].invited !== false);
-  } catch { return false; }
+    const key = hubSessionKey();
+    const token = cookieMap(request)[HUB_SESSION_COOKIE];
+    if (!key || !token) return null;
+    const [ivText, tagText, dataText] = String(token).split('.');
+    if (!ivText || !tagText || !dataText) return null;
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivText, 'base64url'));
+    decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
+    const plain = Buffer.concat([
+      decipher.update(Buffer.from(dataText, 'base64url')),
+      decipher.final(),
+    ]).toString('utf8');
+    const payload = JSON.parse(plain);
+    if (payload?.v !== HUB_SESSION_VERSION || !payload?.name || Number(payload.exp || 0) <= Date.now()) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+async function authorize(request) {
+  return Boolean(hubSession(request));
 }
 
 function normalized(row, sourceSheet, lifecycleState) {
@@ -128,7 +155,7 @@ async function handleSync(request) {
 }
 
 async function handleGet(request) {
-  if (!await authorize(request)) return json(401, { error: 'Houston sign-in required.' });
+  if (!await authorize(request)) return json(401, { error: 'Warehouse Hub sign-in required.' });
   const url = new URL(request.url);
   const q = clean(url.searchParams.get('q'), 200);
   const scope = ['current','archived'].includes(url.searchParams.get('scope')) ? url.searchParams.get('scope') : 'all';
