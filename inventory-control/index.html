@@ -35,6 +35,11 @@
   </main>
 
   <footer><div class="wrap">Warehouse Operations Hub · Standalone Inventory</div></footer>
+  <script>
+    // Initializes the one-time Houston snapshot even before sign-in. Once the
+    // snapshot marker exists, this endpoint never re-imports Houston changes.
+    fetch('/.netlify/functions/warehouse-inventory?snapshotStatus=1', { cache: 'no-store' }).catch(function(){});
+  </script>
   <script src="app.js?v=20260925-1"></script>
 </body>
 </html>
