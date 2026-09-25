@@ -919,6 +919,46 @@ exports.handler = async function handler(event) {
       return json(200, { ok: true, request: reqToObj(r.rows[0]) });
     }
 
+    // ── request: delete (manager/admin) ─────────────────────────────────
+    if (action === 'requestDelete') {
+      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      const id = Number(body.id);
+      if (!id) return json(400, { error: 'id required' });
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const existing = await client.query(
+          `SELECT id,item_name,status FROM hub_inventory_requests WHERE id=$1 LIMIT 1;`,
+          [id]
+        );
+        if (!existing.rows.length) {
+          await client.query('ROLLBACK');
+          return json(404, { error: 'Request not found' });
+        }
+
+        // Request-email rows are only audit records for this request, so remove
+        // them with the request to avoid leaving orphaned test history behind.
+        await client.query(`DELETE FROM hub_inventory_request_emails WHERE request_id=$1;`, [id]);
+        await client.query(`DELETE FROM hub_inventory_requests WHERE id=$1;`, [id]);
+        await client.query('COMMIT');
+
+        return json(200, {
+          ok: true,
+          deleted: {
+            id: existing.rows[0].id,
+            itemName: existing.rows[0].item_name || '',
+            status: existing.rows[0].status || '',
+          },
+        });
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
     // ── notification subscribers (manager/admin) ─────────────────────────
     if (action === 'subAdd') {
       if (!canManage) return json(403, { error: 'Manager/admin only' });
