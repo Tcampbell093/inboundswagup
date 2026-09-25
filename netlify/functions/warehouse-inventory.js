@@ -203,6 +203,17 @@ async function ensureSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  // Manager alert cursor for Warehouse Bingo wins. Bingo itself owns the
+  // winner records; this table only remembers how far each manager has read.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS hub_bingo_alert_state (
+      employee_key TEXT PRIMARY KEY,
+      employee_name TEXT NOT NULL,
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
 
   // Snapshot Houston Inventory once. After this marker is written, this module
   // reads and writes ONLY the hub_inventory_* tables, so later Houston changes
@@ -583,10 +594,14 @@ exports.handler = async function handler(event) {
         return json(200, { requests: rr.rows.map(reqToObj), role });
       }
 
-      // Personal Warehouse Hub request alerts.
+      // Personal Warehouse Hub alerts: optional Inventory request alerts for
+      // any signed-in user, plus automatic Bingo-win alerts for Managers.
       if (qs.alerts === '1' || qs.alerts === 'true') {
         const employeeName = who(caller);
         const employeeKey = personKey(employeeName);
+        const asOf = new Date();
+        const listAlerts = qs.list === '1' || qs.list === 'true';
+
         const sr = await pool.query(
           `SELECT subscribed,subscribed_at,last_seen_at
              FROM hub_inventory_alert_subscriptions
@@ -595,32 +610,87 @@ exports.handler = async function handler(event) {
         );
         const sub = sr.rows[0] || null;
         const subscribed = !!(sub && sub.subscribed);
-        if (!subscribed) {
-          return json(200, { subscribed: false, unseenCount: 0, alerts: [], role });
+
+        let requestUnseenCount = 0;
+        let requestAlerts = [];
+        if (subscribed) {
+          const baseline = sub.last_seen_at || sub.subscribed_at;
+          const countR = await pool.query(
+            `SELECT COUNT(*)::int AS n
+               FROM hub_inventory_requests
+              WHERE created_at > $1 AND created_at <= $2;`,
+            [baseline, asOf]
+          );
+          requestUnseenCount = Number(countR.rows[0]?.n || 0);
+          if (listAlerts) {
+            const ar = await pool.query(
+              `SELECT * FROM hub_inventory_requests
+                WHERE created_at > $1 AND created_at <= $2
+                ORDER BY created_at DESC
+                LIMIT 100;`,
+              [baseline, asOf]
+            );
+            requestAlerts = ar.rows.map(reqToObj);
+          }
         }
 
-        const baseline = sub.last_seen_at || sub.subscribed_at;
-        const countR = await pool.query(
-          `SELECT COUNT(*)::int AS n FROM hub_inventory_requests WHERE created_at > $1;`,
-          [baseline]
-        );
-        let alerts = [];
-        if (qs.list === '1' || qs.list === 'true') {
-          const ar = await pool.query(
-            `SELECT * FROM hub_inventory_requests
-              WHERE created_at > $1
-              ORDER BY created_at DESC
-              LIMIT 100;`,
-            [baseline]
+        const bingoEligible = canManage;
+        let bingoUnseenCount = 0;
+        let bingoWins = [];
+
+        if (bingoEligible) {
+          await pool.query(
+            `INSERT INTO hub_bingo_alert_state(employee_key,employee_name,last_seen_at,updated_at)
+             VALUES($1,$2,NOW(),NOW())
+             ON CONFLICT(employee_key) DO UPDATE SET
+               employee_name=EXCLUDED.employee_name,
+               updated_at=NOW();`,
+            [employeeKey, employeeName]
           );
-          alerts = ar.rows.map(reqToObj);
+          const bs = await pool.query(
+            `SELECT last_seen_at FROM hub_bingo_alert_state WHERE employee_key=$1 LIMIT 1;`,
+            [employeeKey]
+          );
+          const bingoBaseline = bs.rows[0]?.last_seen_at || asOf;
+          const exists = await pool.query(`SELECT to_regclass('public.hub_bingo_players') AS table_name;`);
+          if (exists.rows[0]?.table_name) {
+            const bc = await pool.query(
+              `SELECT COUNT(*)::int AS n
+                 FROM hub_bingo_players
+                WHERE won_at IS NOT NULL AND won_at > $1 AND won_at <= $2;`,
+              [bingoBaseline, asOf]
+            );
+            bingoUnseenCount = Number(bc.rows[0]?.n || 0);
+            if (listAlerts) {
+              const br = await pool.query(
+                `SELECT employee_name,round_key,won_at
+                   FROM hub_bingo_players
+                  WHERE won_at IS NOT NULL AND won_at > $1 AND won_at <= $2
+                  ORDER BY won_at DESC
+                  LIMIT 100;`,
+                [bingoBaseline, asOf]
+              );
+              bingoWins = br.rows.map((row) => ({
+                employeeName: row.employee_name || '',
+                roundKey: row.round_key || '',
+                wonAt: row.won_at,
+              }));
+            }
+          }
         }
+
         return json(200, {
-          subscribed: true,
-          unseenCount: Number(countR.rows[0]?.n || 0),
-          alerts,
-          subscribedAt: sub.subscribed_at,
-          lastSeenAt: sub.last_seen_at,
+          subscribed,
+          unseenCount: requestUnseenCount + bingoUnseenCount,
+          alerts: requestAlerts,
+          requestUnseenCount,
+          requestAlerts,
+          bingoEligible,
+          bingoUnseenCount,
+          bingoWins,
+          seenThrough: asOf.toISOString(),
+          subscribedAt: sub?.subscribed_at || null,
+          lastSeenAt: sub?.last_seen_at || null,
           role,
         });
       }
@@ -1036,15 +1106,37 @@ exports.handler = async function handler(event) {
     }
 
     if (action === 'alertMarkSeen') {
-      const employeeKey = personKey(who(caller));
+      const employeeName = who(caller);
+      const employeeKey = personKey(employeeName);
+      const parsedSeen = body.seenThrough ? new Date(body.seenThrough) : new Date();
+      const seenThrough = Number.isNaN(parsedSeen.getTime()) ? new Date() : parsedSeen;
+
       const r = await pool.query(
         `UPDATE hub_inventory_alert_subscriptions
-            SET last_seen_at=NOW(),updated_at=NOW()
+            SET last_seen_at=$2,updated_at=NOW()
           WHERE employee_key=$1 AND subscribed=TRUE
           RETURNING last_seen_at;`,
-        [employeeKey]
+        [employeeKey, seenThrough]
       );
-      return json(200, { ok: true, subscribed: !!r.rows.length, lastSeenAt: r.rows[0]?.last_seen_at || null });
+
+      if (canManage) {
+        await pool.query(
+          `INSERT INTO hub_bingo_alert_state(employee_key,employee_name,last_seen_at,updated_at)
+           VALUES($1,$2,$3,NOW())
+           ON CONFLICT(employee_key) DO UPDATE SET
+             employee_name=EXCLUDED.employee_name,
+             last_seen_at=GREATEST(hub_bingo_alert_state.last_seen_at,EXCLUDED.last_seen_at),
+             updated_at=NOW();`,
+          [employeeKey, employeeName, seenThrough]
+        );
+      }
+
+      return json(200, {
+        ok: true,
+        subscribed: !!r.rows.length,
+        lastSeenAt: r.rows[0]?.last_seen_at || null,
+        bingoSeen: canManage,
+      });
     }
 
     // ── request: delete (manager/admin) ─────────────────────────────────
