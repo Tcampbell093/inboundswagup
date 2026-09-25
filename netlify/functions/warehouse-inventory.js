@@ -21,7 +21,7 @@
    ========================================================= */
 
 const { Pool } = require('pg');
-const { verifyUser } = require('./_auth');
+const crypto = require('node:crypto');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -30,6 +30,70 @@ const pool = new Pool({
 
 function json(statusCode, body) {
   return { statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify(body) };
+}
+
+const HUB_SESSION_COOKIE = 'hub_associate_session';
+const HUB_SESSION_VERSION = 2;
+
+function safeEqual(a, b) {
+  if (!a || !b) return false;
+  const aa = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  return aa.length === bb.length && crypto.timingSafeEqual(aa, bb);
+}
+
+function managerAuthorized(event) {
+  return safeEqual(
+    event.headers?.['x-hub-key'] || event.headers?.['X-Hub-Key'] || '',
+    process.env.HUB_MANAGER_KEY || '',
+  );
+}
+
+function cookieMap(event) {
+  const raw = event.headers?.cookie || event.headers?.Cookie || '';
+  return Object.fromEntries(String(raw).split(';').map((part) => part.trim()).filter(Boolean).map((part) => {
+    const index = part.indexOf('=');
+    return index === -1 ? [part, ''] : [part.slice(0, index), part.slice(index + 1)];
+  }));
+}
+
+function hubSession(event) {
+  try {
+    const secret = process.env.HUB_ASSOCIATE_SESSION_SECRET || '';
+    const token = cookieMap(event)[HUB_SESSION_COOKIE];
+    if (!secret || !token) return null;
+    const key = crypto.createHash('sha256').update(secret).digest();
+    const [ivText, tagText, dataText] = String(token).split('.');
+    if (!ivText || !tagText || !dataText) return null;
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivText, 'base64url'));
+    decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
+    const plain = Buffer.concat([
+      decipher.update(Buffer.from(dataText, 'base64url')),
+      decipher.final(),
+    ]).toString('utf8');
+    const payload = JSON.parse(plain);
+    if (payload?.v !== HUB_SESSION_VERSION || !payload?.name || Number(payload.exp || 0) <= Date.now()) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function verifyHubUser(event) {
+  const session = hubSession(event);
+  if (!session) return null;
+  const elevated = managerAuthorized(event);
+  const role = elevated ? 'admin' : 'l2';
+  return {
+    role,
+    effectiveRole: role,
+    email: '',
+    user: {
+      user_metadata: { full_name: session.name, name: session.name },
+      app_metadata: { role },
+    },
+    hubSession: session,
+  };
 }
 
 let schemaReady = false;
@@ -439,6 +503,12 @@ exports.handler = async function handler(event) {
   const qs = event.queryStringParameters || {};
   try { await ensureSchema(); } catch (error) { return json(500, { error: 'Standalone inventory snapshot could not initialize: ' + error.message }); }
 
+  if (event.httpMethod === 'GET' && (qs.managerCheck === '1' || qs.managerCheck === 'true')) {
+    if (!hubSession(event)) return json(401, { error: 'Warehouse Hub sign-in required' });
+    if (!managerAuthorized(event)) return json(403, { error: 'Manager access key not accepted.' });
+    return json(200, { ok: true, role: 'admin' });
+  }
+
   if (event.httpMethod === 'GET' && (qs.snapshotStatus === '1' || qs.snapshotStatus === 'true')) {
     const marker = await pool.query(`SELECT value, updated_at FROM hub_inventory_meta WHERE key='houston_snapshot_v1' LIMIT 1;`);
     const counts = await pool.query(`
@@ -477,8 +547,8 @@ exports.handler = async function handler(event) {
     } catch (e) { return page('Sorry — something went wrong. Please contact your administrator.'); }
   }
 
-  const caller = await verifyUser(event);
-  if (!caller) return json(401, { error: 'Authentication required' });
+  const caller = verifyHubUser(event);
+  if (!caller) return json(401, { error: 'Warehouse Hub sign-in required' });
   const role = caller.role;
   const canManage = role === 'admin' || role === 'manager';
   const canCount = canManage || role === 'l1' || role === 'l2';
