@@ -348,6 +348,7 @@ function createSession(person, pin, fairShiftVerified) {
       name: person.name,
       department: person.department || '',
       employeeId: person.id || null,
+      role: person.role || 'Associate',
       pin,
       exp,
     },
@@ -357,6 +358,7 @@ function createSession(person, pin, fairShiftVerified) {
       name: person.name,
       department: person.department || '',
       employeeId: person.id || null,
+      role: person.role || 'Associate',
       expiresAt: new Date(exp).toISOString(),
     },
   };
@@ -380,6 +382,7 @@ export default async (request) => {
           name: session.name,
           department: session.department || '',
           employeeId: session.employeeId || null,
+          role: session.role || 'Associate',
           expiresAt: new Date(session.exp).toISOString(),
         });
       }
