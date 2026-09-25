@@ -191,6 +191,19 @@ async function ensureSchema() {
       UNIQUE (request_id, email)
     );
   `);
+  // In-Hub request-alert subscriptions. A subscriber sees a badge for requests
+  // created after the last time they opened their alerts.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS hub_inventory_alert_subscriptions (
+      employee_key TEXT PRIMARY KEY,
+      employee_name TEXT NOT NULL,
+      subscribed BOOLEAN NOT NULL DEFAULT TRUE,
+      subscribed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
   // Snapshot Houston Inventory once. After this marker is written, this module
   // reads and writes ONLY the hub_inventory_* tables, so later Houston changes
   // cannot alter the Warehouse Hub copy.
@@ -341,6 +354,7 @@ function reqToObj(r) {
 }
 
 const norm = (s) => String(s == null ? '' : s).trim().toLowerCase();
+const personKey = (s) => norm(s).normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80);
 // Include department so the same item name in two departments imports as two
 // separate, exclusive rows (link them later for a warehouse total).
 const matchKey = (name, sku, dept) => norm(name) + '|' + norm(sku) + '|' + norm(dept);
@@ -567,6 +581,48 @@ exports.handler = async function handler(event) {
       if (qs.requests === '1' || qs.requests === 'true') {
         const rr = await pool.query(`SELECT * FROM hub_inventory_requests ORDER BY created_at DESC LIMIT 1000;`);
         return json(200, { requests: rr.rows.map(reqToObj), role });
+      }
+
+      // Personal Warehouse Hub request alerts.
+      if (qs.alerts === '1' || qs.alerts === 'true') {
+        const employeeName = who(caller);
+        const employeeKey = personKey(employeeName);
+        const sr = await pool.query(
+          `SELECT subscribed,subscribed_at,last_seen_at
+             FROM hub_inventory_alert_subscriptions
+            WHERE employee_key=$1 LIMIT 1;`,
+          [employeeKey]
+        );
+        const sub = sr.rows[0] || null;
+        const subscribed = !!(sub && sub.subscribed);
+        if (!subscribed) {
+          return json(200, { subscribed: false, unseenCount: 0, alerts: [], role });
+        }
+
+        const baseline = sub.last_seen_at || sub.subscribed_at;
+        const countR = await pool.query(
+          `SELECT COUNT(*)::int AS n FROM hub_inventory_requests WHERE created_at > $1;`,
+          [baseline]
+        );
+        let alerts = [];
+        if (qs.list === '1' || qs.list === 'true') {
+          const ar = await pool.query(
+            `SELECT * FROM hub_inventory_requests
+              WHERE created_at > $1
+              ORDER BY created_at DESC
+              LIMIT 100;`,
+            [baseline]
+          );
+          alerts = ar.rows.map(reqToObj);
+        }
+        return json(200, {
+          subscribed: true,
+          unseenCount: Number(countR.rows[0]?.n || 0),
+          alerts,
+          subscribedAt: sub.subscribed_at,
+          lastSeenAt: sub.last_seen_at,
+          role,
+        });
       }
 
       // Notification subscribers list (manager/admin only).
@@ -892,8 +948,8 @@ exports.handler = async function handler(event) {
          rq.reason || '', rq.orderLink || '', who(caller)]
       );
       const created = reqToObj(r.rows[0]);
-      // Notify subscribers (email + in-app). Best-effort — never blocks the request.
-      await notifyNewRequest(created, caller);
+      // Request-alert subscribers are notified through the Warehouse Hub badge.
+      // Email notifications are intentionally no longer sent.
       return json(200, { ok: true, request: created });
     }
 
@@ -917,6 +973,78 @@ exports.handler = async function handler(event) {
       const r = await pool.query(`UPDATE hub_inventory_requests SET ${sets.join(', ')} WHERE id=$${i} RETURNING *;`, vals);
       if (!r.rows.length) return json(404, { error: 'not found' });
       return json(200, { ok: true, request: reqToObj(r.rows[0]) });
+    }
+
+    // ── request: bulk status update (manager/admin) ──────────────────────
+    if (action === 'requestBulkUpdate') {
+      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      const ids = Array.isArray(body.ids)
+        ? [...new Set(body.ids.map(Number).filter((id) => Number.isInteger(id) && id > 0))].slice(0, 500)
+        : [];
+      const status = String(body.status || '');
+      if (!ids.length) return json(400, { error: 'Select at least one request.' });
+      if (!REQ_STATUSES.includes(status)) return json(400, { error: 'invalid status' });
+      const r = await pool.query(
+        `UPDATE hub_inventory_requests
+            SET status=$1,updated_at=NOW()
+          WHERE id = ANY($2::bigint[])
+          RETURNING id;`,
+        [status, ids]
+      );
+      return json(200, { ok: true, updated: r.rowCount, ids: r.rows.map((row) => Number(row.id)), status });
+    }
+
+    // ── personal request-alert subscription ──────────────────────────────
+    if (action === 'alertSubscribe') {
+      const enabled = body.enabled !== false;
+      const employeeName = who(caller);
+      const employeeKey = personKey(employeeName);
+      if (!employeeKey) return json(400, { error: 'Could not identify the signed-in Hub user.' });
+
+      if (enabled) {
+        await pool.query(
+          `INSERT INTO hub_inventory_alert_subscriptions
+             (employee_key,employee_name,subscribed,subscribed_at,last_seen_at,updated_at)
+           VALUES($1,$2,TRUE,NOW(),NOW(),NOW())
+           ON CONFLICT(employee_key) DO UPDATE SET
+             employee_name=EXCLUDED.employee_name,
+             subscribed=TRUE,
+             subscribed_at=CASE
+               WHEN hub_inventory_alert_subscriptions.subscribed=FALSE THEN NOW()
+               ELSE hub_inventory_alert_subscriptions.subscribed_at
+             END,
+             last_seen_at=CASE
+               WHEN hub_inventory_alert_subscriptions.subscribed=FALSE THEN NOW()
+               ELSE hub_inventory_alert_subscriptions.last_seen_at
+             END,
+             updated_at=NOW();`,
+          [employeeKey, employeeName]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO hub_inventory_alert_subscriptions
+             (employee_key,employee_name,subscribed,subscribed_at,last_seen_at,updated_at)
+           VALUES($1,$2,FALSE,NOW(),NOW(),NOW())
+           ON CONFLICT(employee_key) DO UPDATE SET
+             employee_name=EXCLUDED.employee_name,
+             subscribed=FALSE,
+             updated_at=NOW();`,
+          [employeeKey, employeeName]
+        );
+      }
+      return json(200, { ok: true, subscribed: enabled });
+    }
+
+    if (action === 'alertMarkSeen') {
+      const employeeKey = personKey(who(caller));
+      const r = await pool.query(
+        `UPDATE hub_inventory_alert_subscriptions
+            SET last_seen_at=NOW(),updated_at=NOW()
+          WHERE employee_key=$1 AND subscribed=TRUE
+          RETURNING last_seen_at;`,
+        [employeeKey]
+      );
+      return json(200, { ok: true, subscribed: !!r.rows.length, lastSeenAt: r.rows[0]?.last_seen_at || null });
     }
 
     // ── request: delete (manager/admin) ─────────────────────────────────
