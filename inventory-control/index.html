@@ -43,19 +43,25 @@
     // snapshot marker exists, this endpoint never re-imports Houston changes.
     fetch('/.netlify/functions/warehouse-inventory?snapshotStatus=1', { cache: 'no-store' }).catch(function(){});
   </script>
-  <script src="/warehouse-hub/associate-auth.js?v=20260925-2"></script>
+  <script src="/warehouse-hub/associate-auth.js?v=20260925-3"></script>
   <script>
     (function(){
       var btn=document.getElementById('manageBtn');
       if(!btn)return;
-      async function validate(key,quiet){
+
+      function signedManager(){
+        var session=window.HubAssociate&&window.HubAssociate.getSession ? window.HubAssociate.getSession() : {};
+        return !!(session&&session.signedIn&&String(session.role||'').toLowerCase()==='manager');
+      }
+
+      async function validateKey(key,quiet){
         if(!key)return false;
         try{
           var res=await fetch('/.netlify/functions/warehouse-inventory?managerCheck=1',{cache:'no-store',headers:{'x-hub-key':key}});
           var body=await res.json().catch(function(){return{};});
           if(res.ok){
             sessionStorage.setItem('warehouseInventoryManagerKey',key);
-            btn.textContent='Manager unlocked';
+            btn.textContent='Manager access active';
             btn.classList.add('signed-in');
             document.dispatchEvent(new CustomEvent('warehouse-inventory-manager-unlocked'));
             return true;
@@ -74,15 +80,35 @@
         btn.classList.remove('signed-in');
         return false;
       }
+
+      async function syncManagerState(){
+        if(signedManager()){
+          sessionStorage.removeItem('warehouseInventoryManagerKey');
+          btn.textContent='Manager access active';
+          btn.classList.add('signed-in');
+          document.dispatchEvent(new CustomEvent('warehouse-inventory-manager-unlocked'));
+          return;
+        }
+        var saved=sessionStorage.getItem('warehouseInventoryManagerKey')||'';
+        if(saved){await validateKey(saved,true);return;}
+        btn.textContent='Manager unlock';
+        btn.classList.remove('signed-in');
+      }
+
       btn.addEventListener('click',function(){
+        if(signedManager()){
+          btn.textContent='Manager access active';
+          return;
+        }
         var existing=sessionStorage.getItem('warehouseInventoryManagerKey')||'';
         var key=window.prompt('Manager access key',existing);
-        if(key)validate(key.trim(),false);
+        if(key)validateKey(key.trim(),false);
       });
-      var saved=sessionStorage.getItem('warehouseInventoryManagerKey')||'';
-      if(saved)validate(saved,true);
+
+      document.addEventListener('hub-associate-session',syncManagerState);
+      setTimeout(syncManagerState,700);
     })();
   </script>
-  <script src="app.js?v=20260925-2"></script>
+  <script src="app.js?v=20260925-3"></script>
 </body>
 </html>
