@@ -101,7 +101,7 @@
 
   function updateButton() {
     if (session.signedIn) {
-      btn.textContent = `${session.name}${session.department ? ' · ' + session.department : ''}`;
+      btn.textContent = `${session.name}${String(session.role || '').toLowerCase() === 'manager' ? ' · Manager' : (session.department ? ' · ' + session.department : '')}`;
       btn.classList.add('signed-in');
       btn.title = 'Associate signed in for this shift';
     } else {
@@ -127,7 +127,7 @@
 
   function showSignedInState() {
     current.classList.add('show');
-    current.innerHTML = `<strong>Signed in as ${esc(session.name)}</strong><span>${esc(session.department || 'Warehouse team')} · Your Hub session stays active for this shift.</span>`;
+    current.innerHTML = `<strong>Signed in as ${esc(session.name)}${session.role ? ' · ' + esc(session.role) : ''}</strong><span>${esc(session.department || 'Warehouse team')} · Your Hub session stays active for this shift.</span>`;
     form.style.display = 'none';
     const existing = current.querySelector('[data-signout]');
     if (!existing) {
@@ -169,8 +169,8 @@
     return body;
   }
 
-  async function loadRoster() {
-    const data = await api('?action=roster');
+  async function loadRoster(force = false) {
+    const data = await api(`?action=roster${force ? '&refresh=1' : ''}`);
     roster = Array.isArray(data.employees) ? data.employees : [];
     nameEl.innerHTML = `<option value="">Choose your name…</option>${roster.map((person) => `<option value="${esc(person.name)}">${esc(person.name)}${person.department ? ' · ' + esc(person.department) : ''}${person.role ? ' · ' + esc(person.role) : ''}</option>`).join('')}`;
     if (data.selfServiceConnected === false) {
@@ -267,6 +267,7 @@
     getSession: () => ({ ...session }),
     open: (name = '') => openDialog(name),
     refresh: async () => { await loadSession(); return { ...session }; },
+    refreshRoster: async () => { await loadRoster(true); return roster.map((person) => ({ ...person })); },
   };
 
   Promise.allSettled([loadRoster(), loadSession()]).then(() => {
