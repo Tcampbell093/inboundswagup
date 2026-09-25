@@ -15,7 +15,37 @@ function json(statusCode, body) {
 function text(value, max = 500) { return String(value == null ? '' : value).trim().slice(0, max); }
 function validDate(value) { const s = text(value, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : ''; }
 function safeEqual(a, b) { if (!a || !b) return false; const aa = Buffer.from(String(a)), bb = Buffer.from(String(b)); return aa.length === bb.length && crypto.timingSafeEqual(aa, bb); }
-function managerAuthorized(event) { return safeEqual(event.headers?.['x-hub-key'] || event.headers?.['X-Hub-Key'] || '', process.env.HUB_MANAGER_KEY || ''); }
+const HUB_SESSION_COOKIE = 'hub_associate_session';
+const HUB_SESSION_VERSION = 2;
+function cookieMap(event) {
+  const raw = event.headers?.cookie || event.headers?.Cookie || '';
+  return Object.fromEntries(String(raw).split(';').map((part) => part.trim()).filter(Boolean).map((part) => {
+    const index = part.indexOf('=');
+    return index === -1 ? [part, ''] : [part.slice(0, index), part.slice(index + 1)];
+  }));
+}
+function hubSession(event) {
+  try {
+    const secret = process.env.HUB_ASSOCIATE_SESSION_SECRET || '';
+    const token = cookieMap(event)[HUB_SESSION_COOKIE];
+    if (!secret || !token) return null;
+    const key = crypto.createHash('sha256').update(secret).digest();
+    const [ivText, tagText, dataText] = String(token).split('.');
+    if (!ivText || !tagText || !dataText) return null;
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivText, 'base64url'));
+    decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
+    const plain = Buffer.concat([decipher.update(Buffer.from(dataText, 'base64url')), decipher.final()]).toString('utf8');
+    const payload = JSON.parse(plain);
+    if (payload?.v !== HUB_SESSION_VERSION || !payload?.name || Number(payload.exp || 0) <= Date.now()) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+function managerAuthorized(event) {
+  if (safeEqual(event.headers?.['x-hub-key'] || event.headers?.['X-Hub-Key'] || '', process.env.HUB_MANAGER_KEY || '')) return true;
+  return String(hubSession(event)?.role || '').toLowerCase() === 'manager';
+}
 function slug(value) { return text(value, 100).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80); }
 function hashPin(pin) { return crypto.createHash('sha256').update(`${process.env.HUB_PIN_SALT || ''}:${pin}`).digest('hex'); }
 
