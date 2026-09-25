@@ -17,7 +17,7 @@
   var UNITS = ['each', 'box', 'case', 'carton', 'roll', 'pack', 'bag', 'sleeve', 'sheet', 'pair', 'bundle'];
   var LOCATIONS = ['Supply Rack', 'Assembly Supplies', 'Fulfillment Supplies', 'Uline Box Area', 'Cleaning Supply Area', 'Mailer Section', 'Top Rack', 'Bottom Shelf', 'Unknown'];
 
-  var state = { items: [], summary: {}, role: '', loaded: false, loading: false, includeArchived: false, activeId: null, view: 'items', deptView: '', addLinkTo: null, requests: [], reqLoading: false, sort: 'name' };
+  var state = { items: [], summary: {}, role: '', loaded: false, loading: false, includeArchived: false, activeId: null, view: 'items', deptView: '', addLinkTo: null, requests: [], reqLoading: false, reqSelected: {}, alertSubscribed: false, sort: 'name' };
   var els = {};
 
   var nativeFetch = window.fetch.bind(window);
@@ -156,7 +156,13 @@
       + '.iv-sugname{font-weight:700;color:#16263a;font-size:13.5px;}'
       + '.iv-sugmeta{font-size:11.5px;color:#8aa0bb;margin-top:2px;}'
       + '.iv-linkbanner{background:#e7f7ef;border:1px solid #bfe6d2;color:#0a7c4e;border-radius:10px;padding:9px 12px;font-size:12.5px;font-weight:700;margin:0 0 11px;display:flex;justify-content:space-between;align-items:center;gap:8px;}'
-      + '.iv-linkbanner button{border:none;background:transparent;color:#0a7c4e;font-weight:800;cursor:pointer;font-size:16px;line-height:1;}';
+      + '.iv-linkbanner button{border:none;background:transparent;color:#0a7c4e;font-weight:800;cursor:pointer;font-size:16px;line-height:1;}'
+      + '#inventoryPage .iv-bulkbar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;background:#edf5ff;border:1px solid #c9dcef;border-radius:11px;padding:9px 11px;margin:0 0 10px;}'
+      + '#inventoryPage .iv-bulkbar[hidden]{display:none;}'
+      + '#inventoryPage .iv-rcheck{width:18px;height:18px;accent-color:#1d6fb8;cursor:pointer;}'
+      + '#inventoryPage .iv-rselect{width:42px;text-align:center;}'
+      + '#inventoryPage .iv-alertbox{background:#f4f8f6;border:1px solid #d7e6df;border-radius:12px;padding:13px;line-height:1.5;}'
+      + '#inventoryPage .iv-alertbox strong{display:block;margin-bottom:3px;}';
     var s = document.createElement('style'); s.id = 'ivStyles'; s.textContent = c; document.head.appendChild(s);
   }
 
@@ -211,12 +217,13 @@
       + '<input id="ivRSearch" class="iv-input iv-search" type="text" placeholder="Search requests — item, department, requester…" autocomplete="off"/>'
       + '<select id="ivRStatus" class="iv-select"><option value="open">Open requests</option><option value="">All statuses</option><option>Requested</option><option>Reviewing</option><option>Approved</option><option>Ordered</option><option>Shipped</option><option>Delivered</option><option>Denied</option><option>Canceled</option></select>'
       + '<select id="ivRUrg" class="iv-select"><option value="">Any urgency</option><option>Urgent</option><option>High</option><option>Normal</option><option>Low</option></select>'
-      + '<button id="ivNotify" class="iv-btn" type="button" hidden>🔔 Notifications</button>'
+      + '<button id="ivNotify" class="iv-btn" type="button">🔔 Request alerts</button>'
       + '<div class="iv-spacer"></div><span id="ivRCount" class="iv-count"></span>'
       + '</div>'
+      + '<div id="ivRBulk" class="iv-bulkbar" hidden><strong id="ivRBulkCount">0 selected</strong><select id="ivRBulkStatus" class="iv-select"><option value="">Change status to…</option><option>Requested</option><option>Reviewing</option><option>Approved</option><option>Ordered</option><option>Shipped</option><option>Delivered</option><option>Denied</option><option>Canceled</option></select><button id="ivRBulkApply" class="iv-btn iv-btn-primary" type="button">Apply to selected</button><button id="ivRBulkClear" class="iv-btn" type="button">Clear</button></div>'
       + '<div class="iv-tablewrap"><table class="iv-table"><thead><tr>'
-      + '<th>Urg</th><th>Item</th><th>Department</th><th>Qty</th><th>Requested by</th><th>Date</th><th>Status</th><th>Expected</th><th>Tracking</th>'
-      + '</tr></thead><tbody id="ivRBody"></tbody></table></div>'
+      + '<th class="iv-rselect"><input id="ivRAll" class="iv-rcheck" type="checkbox" aria-label="Select all shown requests"/></th><th>Urg</th><th>Item</th><th>Department</th><th>Qty</th><th>Requested by</th><th>Date</th><th>Status</th><th>Expected</th><th>Tracking</th>'
+      + '</tr></thead><tbody id="ivRBody"></tbody></table></div>
       + '</div>' // end requests view
       + dl('ivDeptList', DEPARTMENTS) + dl('ivCatList', CATEGORIES) + dl('ivUnitList', UNITS) + dl('ivLocList', LOCATIONS);
 
@@ -259,11 +266,23 @@
     // Requests view refs + listeners
     els.rbody = document.getElementById('ivRBody'); els.rcount = document.getElementById('ivRCount');
     els.rsearch = document.getElementById('ivRSearch'); els.rstatus = document.getElementById('ivRStatus'); els.rurg = document.getElementById('ivRUrg');
+    els.rbulk = document.getElementById('ivRBulk'); els.rbulkCount = document.getElementById('ivRBulkCount');
+    els.rbulkStatus = document.getElementById('ivRBulkStatus'); els.rall = document.getElementById('ivRAll');
     els.rsearch.addEventListener('input', renderRequests);
     [els.rstatus, els.rurg].forEach(function (s) { s.addEventListener('change', renderRequests); });
     document.getElementById('ivTabItems').addEventListener('click', function () { switchView('items'); });
     document.getElementById('ivTabReq').addEventListener('click', function () { switchView('requests'); });
-    document.getElementById('ivNotify').addEventListener('click', openNotifyModal);
+    document.getElementById('ivNotify').addEventListener('click', openRequestAlertsModal);
+    document.getElementById('ivRBulkClear').addEventListener('click', function () { state.reqSelected = {}; renderRequests(); });
+    document.getElementById('ivRBulkApply').addEventListener('click', applyBulkRequestStatus);
+    els.rall.addEventListener('change', function () {
+      visibleRequests().forEach(function (request) {
+        if (els.rall.checked) state.reqSelected[String(request.id)] = true;
+        else delete state.reqSelected[String(request.id)];
+      });
+      renderRequests();
+    });
+    refreshRequestAlertButton();
 
     buildModal();
     updateRoleUI();
@@ -282,8 +301,8 @@
     var add = document.getElementById('ivAdd'), imp = document.getElementById('ivImport');
     if (add) add.hidden = !canManage();
     if (imp) imp.hidden = !canManage();
-    var notify = document.getElementById('ivNotify');
-    if (notify) notify.hidden = !canManage();
+    if (els.rbulk) els.rbulk.hidden = !canManage() || selectedRequestIds().length === 0;
+    if (els.rall && els.rall.closest('th')) els.rall.closest('th').hidden = !canManage();
   }
 
   function fillSelect(sel, values, anyLabel) {
@@ -989,27 +1008,60 @@
   // ── Requests view ─────────────────────────────────────────
   function loadRequests() {
     if (!els.rbody) return;
-    state.reqLoading = true; els.rbody.innerHTML = '<tr><td colspan="9" class="iv-empty">Loading…</td></tr>';
+    state.reqLoading = true; els.rbody.innerHTML = '<tr><td colspan="10" class="iv-empty">Loading…</td></tr>';
     ivFetch(API + '?requests=1', { headers: { 'Accept': 'application/json' } })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-      .then(function (res) { state.reqLoading = false; if (!res.ok) { els.rbody.innerHTML = '<tr><td colspan="9" class="iv-empty">Could not load (' + esc((res.j && res.j.error) || 'error') + ').</td></tr>'; return; } state.requests = res.j.requests || []; renderRequests(); })
-      .catch(function (e) { state.reqLoading = false; els.rbody.innerHTML = '<tr><td colspan="9" class="iv-empty">Network error: ' + esc(e.message) + '</td></tr>'; });
+      .then(function (res) { state.reqLoading = false; if (!res.ok) { els.rbody.innerHTML = '<tr><td colspan="10" class="iv-empty">Could not load (' + esc((res.j && res.j.error) || 'error') + ').</td></tr>'; return; } state.requests = res.j.requests || [];
+        var keep = {}; state.requests.forEach(function (request) { if (state.reqSelected[String(request.id)]) keep[String(request.id)] = true; });
+        state.reqSelected = keep; renderRequests(); })
+      .catch(function (e) { state.reqLoading = false; els.rbody.innerHTML = '<tr><td colspan="10" class="iv-empty">Network error: ' + esc(e.message) + '</td></tr>'; });
   }
   var REQ_OPEN_C = ['Requested', 'Reviewing', 'Approved', 'Ordered', 'Shipped'];
-  function renderRequests() {
-    if (!els.rbody) return;
+  function visibleRequests() {
     var q = (els.rsearch.value || '').trim().toLowerCase(), st = els.rstatus.value, ur = els.rurg.value;
-    var rows = state.requests.filter(function (r) {
+    return state.requests.filter(function (r) {
       if (st === 'open') { if (REQ_OPEN_C.indexOf(r.status) === -1) return false; }
       else if (st && r.status !== st) return false;
       if (ur && r.urgency !== ur) return false;
-      if (q) { var hay = [r.itemName, r.department, r.requestedBy, r.status, r.reason, r.tracking].map(function (x) { return String(x || '').toLowerCase(); }).join(' '); if (hay.indexOf(q) === -1) return false; }
+      if (q) {
+        var hay = [r.itemName, r.department, r.requestedBy, r.status, r.reason, r.tracking]
+          .map(function (x) { return String(x || '').toLowerCase(); }).join(' ');
+        if (hay.indexOf(q) === -1) return false;
+      }
       return true;
     });
+  }
+
+  function selectedRequestIds() {
+    return Object.keys(state.reqSelected).filter(function (id) { return state.reqSelected[id]; }).map(Number);
+  }
+
+  function updateBulkRequestUI(rows) {
+    var selected = selectedRequestIds();
+    if (els.rbulkCount) els.rbulkCount.textContent = selected.length + ' selected';
+    if (els.rbulk) els.rbulk.hidden = !canManage() || selected.length === 0;
+    if (els.rall) {
+      var shown = rows || visibleRequests();
+      var selectedShown = shown.filter(function (r) { return !!state.reqSelected[String(r.id)]; }).length;
+      els.rall.checked = shown.length > 0 && selectedShown === shown.length;
+      els.rall.indeterminate = selectedShown > 0 && selectedShown < shown.length;
+      if (els.rall.closest('th')) els.rall.closest('th').hidden = !canManage();
+    }
+  }
+
+  function renderRequests() {
+    if (!els.rbody) return;
+    var rows = visibleRequests();
     els.rcount.textContent = rows.length + ' request' + (rows.length === 1 ? '' : 's');
-    if (!rows.length) { els.rbody.innerHTML = '<tr><td colspan="9" class="iv-empty">' + (state.reqLoading ? 'Loading…' : 'No requests.') + '</td></tr>'; return; }
+    if (!rows.length) {
+      els.rbody.innerHTML = '<tr><td colspan="10" class="iv-empty">' + (state.reqLoading ? 'Loading…' : 'No requests.') + '</td></tr>';
+      updateBulkRequestUI(rows);
+      return;
+    }
     els.rbody.innerHTML = rows.map(function (r) {
+      var checked = !!state.reqSelected[String(r.id)];
       return '<tr data-rid="' + r.id + '" role="button" tabindex="0">'
+        + '<td class="iv-rselect"' + (canManage() ? '' : ' hidden') + '><input class="iv-rcheck" data-rcheck="' + r.id + '" type="checkbox"' + (checked ? ' checked' : '') + ' aria-label="Select request ' + r.id + '"/></td>'
         + '<td class="iv-urg-' + esc(r.urgency) + '">' + esc(r.urgency) + '</td>'
         + '<td class="iv-name">' + esc(r.itemName) + '</td>'
         + '<td>' + esc(r.department || '—') + '</td>'
@@ -1021,8 +1073,40 @@
         + '<td>' + esc(r.tracking || '—') + '</td>'
         + '</tr>';
     }).join('');
-    els.rbody.querySelectorAll('[data-rid]').forEach(function (tr) { tr.addEventListener('click', function () { openRequestManage(tr.getAttribute('data-rid')); }); });
+
+    els.rbody.querySelectorAll('[data-rcheck]').forEach(function (box) {
+      box.addEventListener('click', function (event) { event.stopPropagation(); });
+      box.addEventListener('change', function () {
+        var id = String(box.getAttribute('data-rcheck'));
+        if (box.checked) state.reqSelected[id] = true;
+        else delete state.reqSelected[id];
+        updateBulkRequestUI(rows);
+      });
+    });
+    els.rbody.querySelectorAll('[data-rid]').forEach(function (tr) {
+      tr.addEventListener('click', function (event) {
+        if (event.target.closest('input,button,select,a')) return;
+        openRequestManage(tr.getAttribute('data-rid'));
+      });
+    });
+    updateBulkRequestUI(rows);
   }
+
+  function applyBulkRequestStatus() {
+    var ids = selectedRequestIds();
+    var status = els.rbulkStatus ? els.rbulkStatus.value : '';
+    if (!ids.length) return alert('Select at least one request.');
+    if (!status) return alert('Choose the status you want to apply.');
+    if (!confirm('Change ' + ids.length + ' selected request' + (ids.length === 1 ? '' : 's') + ' to "' + status + '"?')) return;
+    post({ action: 'requestBulkUpdate', ids: ids, status: status }, function (result) {
+      state.reqSelected = {};
+      if (els.rbulkStatus) els.rbulkStatus.value = '';
+      loadData();
+      loadRequests();
+      alert((result.updated || ids.length) + ' request' + ((result.updated || ids.length) === 1 ? '' : 's') + ' updated.');
+    });
+  }
+
   function reqStatusClass(s) { return s === 'Delivered' ? 'iv-in' : (s === 'Denied' || s === 'Canceled') ? 'iv-out' : (s === 'Ordered' || s === 'Shipped') ? 'iv-low' : 'iv-rev'; }
 
   // ── Request: manage (office manager / admin) ──────────────
@@ -1082,6 +1166,52 @@
   }
 
   // ── Notification subscribers (office manager email alerts) ─
+  function refreshRequestAlertButton() {
+    var btn = document.getElementById('ivNotify');
+    if (!btn) return;
+    ivFetch(API + '?alerts=1', { headers: { 'Accept': 'application/json' }, cache: 'no-store' })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) return;
+        state.alertSubscribed = !!res.j.subscribed;
+        btn.textContent = state.alertSubscribed ? '🔔 Request alerts: On' : '🔕 Request alerts: Off';
+      })
+      .catch(function () {});
+  }
+
+  function openRequestAlertsModal() {
+    openModal('Request alerts', 'Warehouse Hub notifications for new supply requests',
+      '<div class="iv-empty" style="padding:16px;">Checking your alert subscription…</div>');
+    ivFetch(API + '?alerts=1', { headers: { 'Accept': 'application/json' }, cache: 'no-store' })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          document.getElementById('ivMBody').innerHTML = '<div class="iv-empty">Could not load alert settings.</div>';
+          return;
+        }
+        state.alertSubscribed = !!res.j.subscribed;
+        var body = '<div class="iv-alertbox"><strong>' + (state.alertSubscribed ? 'Request alerts are on' : 'Request alerts are off') + '</strong>'
+          + (state.alertSubscribed
+            ? 'When new inventory requests are submitted, the Warehouse Hub will show a red alert count until you open the alerts.'
+            : 'Subscribe to get a red badge in the Warehouse Hub whenever new inventory requests are submitted.')
+          + '</div>'
+          + '<div class="iv-row" style="justify-content:flex-end;margin-top:14px;">'
+          + '<button class="iv-go" id="ivAlertToggle" type="button">' + (state.alertSubscribed ? 'Turn off alerts' : 'Subscribe to request alerts') + '</button>'
+          + '</div>';
+        document.getElementById('ivMBody').innerHTML = body;
+        document.getElementById('ivAlertToggle').addEventListener('click', function () {
+          post({ action: 'alertSubscribe', enabled: !state.alertSubscribed }, function (result) {
+            state.alertSubscribed = !!result.subscribed;
+            closeModal();
+            refreshRequestAlertButton();
+          });
+        });
+      })
+      .catch(function (e) {
+        document.getElementById('ivMBody').innerHTML = '<div class="iv-empty">Network error: ' + esc(e.message) + '</div>';
+      });
+  }
+
   function openNotifyModal() {
     openModal('Request notifications', 'Who gets emailed when a new supply request is made', '<div class="iv-empty" style="padding:16px;">Loading…</div>');
     ivFetch(API + '?subscriptions=1', { headers: { 'Accept': 'application/json' } })
