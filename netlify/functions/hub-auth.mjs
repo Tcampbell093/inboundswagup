@@ -265,8 +265,8 @@ async function authMaps() {
   };
 }
 
-async function publicRoster() {
-  const roster = await loadRoster();
+async function publicRoster(force = false) {
+  const roster = await loadRoster(force);
   const maps = await authMaps();
   return {
     selfServiceConnected: roster.selfService,
@@ -371,7 +371,7 @@ export default async (request) => {
 
     if (request.method === 'GET') {
       const action = url.searchParams.get('action') || 'session';
-      if (action === 'roster') return json(200, await publicRoster());
+      if (action === 'roster') return json(200, await publicRoster(url.searchParams.get('refresh') === '1'));
       if (action === 'session') {
         const token = cookieMap(request)[SESSION_COOKIE];
         const session = decryptSession(token);
