@@ -1044,13 +1044,26 @@
         + '<div class="iv-field"><label>Tracking number</label><input id="ivmTrack" value="' + esc(r.tracking || '') + '"/></div>'
         + '</div>'
         + '<div class="iv-field"><label>Notes</label><textarea id="ivmNotes" rows="2">' + esc(r.notes || '') + '</textarea></div>'
-        + '<div class="iv-row" style="justify-content:flex-end;"><button class="iv-go" id="ivmSave" type="button">Save</button></div>';
+        + '<div class="iv-row" style="justify-content:space-between;gap:10px;">'
+        + '<button class="iv-danger" id="ivmDelete" type="button">Delete request</button>'
+        + '<button class="iv-go" id="ivmSave" type="button">Save</button>'
+        + '</div>';
     } else {
       html += '<div class="iv-sec">Status</div>' + kv('Status', r.status) + (r.expectedDate ? kv('Expected', fmtDate(r.expectedDate)) : '') + (r.tracking ? kv('Tracking', r.tracking) : '') + (r.notes ? '<div class="iv-sec">Notes</div><div style="white-space:pre-wrap;font-size:12.5px;">' + esc(r.notes) + '</div>' : '');
     }
     openModal('Request: ' + r.itemName, r.status + ' · ' + r.urgency, html);
 
     if (manage) {
+      document.getElementById('ivmDelete').addEventListener('click', function () {
+        var label = r.itemName || ('Request #' + rid);
+        if (!confirm('Delete "' + label + '" request #' + rid + '?\n\nThis permanently removes the request and its email audit history.')) return;
+        post({ action: 'requestDelete', id: rid }, function () {
+          closeModal();
+          loadData();
+          loadRequests();
+        });
+      });
+
       document.getElementById('ivmSave').addEventListener('click', function () {
         var newStatus = document.getElementById('ivmStatus').value;
         var fields = { status: newStatus, assignedTo: document.getElementById('ivmOwner').value, expectedDate: document.getElementById('ivmDate').value, tracking: document.getElementById('ivmTrack').value, notes: document.getElementById('ivmNotes').value };
