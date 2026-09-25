@@ -21,31 +21,18 @@
   var els = {};
 
   var nativeFetch = window.fetch.bind(window);
-  function readHoustonSession() {
-    try { return JSON.parse(localStorage.getItem('hcAuthUser') || 'null'); } catch (_) { return null; }
-  }
-  function inventoryLogin() {
-    var next = '/inventory-control/';
-    window.location.href = '/login.html?redirect=' + encodeURIComponent(next);
+  function inventoryManagerKey() {
+    try { return sessionStorage.getItem('warehouseInventoryManagerKey') || ''; } catch (_) { return ''; }
   }
   function ivFetch(input, options) {
-    var session = readHoustonSession();
-    var token = session && session.token;
-    if (!token) {
-      inventoryLogin();
-      return Promise.reject(new Error('Sign in required.'));
-    }
-    window.hcCurrentUser = window.hcCurrentUser || {
-      id: session.id || null,
-      email: session.email || '',
-      name: session.name || session.email || '',
-      role: session.role || 'l1',
-      token: token
-    };
     var opts = Object.assign({}, options || {});
-    opts.headers = Object.assign({}, opts.headers || {}, { 'Authorization': 'Bearer ' + token });
+    opts.headers = Object.assign({}, opts.headers || {});
+    var key = inventoryManagerKey();
+    if (key) opts.headers['x-hub-key'] = key;
     return nativeFetch(input, opts).then(function (response) {
-      if (response.status === 401) inventoryLogin();
+      if (response.status === 401) {
+        setTimeout(function () { if (window.HubAssociate && window.HubAssociate.open) window.HubAssociate.open(); }, 0);
+      }
       return response;
     });
   }
@@ -1212,6 +1199,15 @@
     injectStyles();
     buildShell();
     if (isActive()) loadData();
+    document.addEventListener('hub-associate-session', function (event) {
+      if (!event.detail || !event.detail.signedIn) return;
+      loadData();
+      if (state.view === 'requests') loadRequests();
+    });
+    document.addEventListener('warehouse-inventory-manager-unlocked', function () {
+      loadData();
+      if (state.view === 'requests') loadRequests();
+    });
     document.addEventListener('click', function (e) { var b = e.target && e.target.closest && e.target.closest('.nav-btn[data-page="' + PAGE_ID + '"]'); if (b) setTimeout(onMaybeActivate, 0); }, true);
     window.addEventListener('hashchange', function () { if (window.location.hash === '#' + PAGE_ID) onMaybeActivate(); });
   }
