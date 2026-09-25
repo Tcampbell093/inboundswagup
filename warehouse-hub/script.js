@@ -1,6 +1,7 @@
 (() => {
   const API = '/.netlify/functions/hub-feed';
   const TOOLS_API = '/.netlify/functions/hub-tools';
+  const TEAM_API = '/.netlify/functions/hub-team-admin';
   const FAIRSHIFT = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
   const $ = (id) => document.getElementById(id);
   const todayDot = $('todayDot'), weekDot = $('weekDot'), bingoDot = $('bingoDot');
@@ -13,6 +14,7 @@
   let managerKey = '';
   let adminData = null;
   let toolAdminData = { tools: [] };
+  let teamAdminData = { employees: [], departments: [] };
   let checkinTarget = null;
 
   const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({
@@ -246,8 +248,14 @@
 
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => $(b.dataset.close)?.close()));
 
+  function managerHeaders() {
+    const headers = {};
+    if (managerKey) headers['x-hub-key'] = managerKey;
+    return headers;
+  }
+
   async function adminFetch(body = null) {
-    const opts = { headers: { 'x-hub-key': managerKey } };
+    const opts = { headers: managerHeaders() };
     let url = `${API}?admin=1`;
     if (body) {
       url = API;
@@ -262,7 +270,7 @@
   }
 
   async function toolAdminFetch(body = null) {
-    const opts = { headers: { 'x-hub-key': managerKey } };
+    const opts = { headers: managerHeaders() };
     let url = `${TOOLS_API}?admin=1`;
     if (body) {
       url = TOOLS_API;
@@ -273,6 +281,24 @@
     const r = await fetch(url, opts);
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || 'Tool card request failed.');
+    return j;
+  }
+
+  async function teamAdminFetch(body = null) {
+    const opts = { headers: managerHeaders(), cache: 'no-store' };
+    let url = TEAM_API;
+    if (body) {
+      opts.method = 'POST';
+      opts.headers['content-type'] = 'application/json';
+      opts.body = JSON.stringify(body);
+    }
+    const r = await fetch(url, opts);
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const error = new Error(j.error || 'Team management request failed.');
+      error.bridgeMissing = !!j.bridgeMissing;
+      throw error;
+    }
     return j;
   }
 
@@ -288,6 +314,181 @@
     if (lower.includes('overstock') || name.toLowerCase().includes('overstock')) return { label: 'Inbound workflow', description: `Open Houston directly to the ${name} section of the inbound module.` };
     if (lower.includes('inboundswagup.netlify.app')) return { label: 'Warehouse control', description: `Open ${name} in Houston Control.` };
     return { label: 'Team tool', description: `Open ${name}.` };
+  }
+
+
+  function teamDepartmentOptions(selected = '') {
+    const departments = Array.isArray(teamAdminData?.departments) ? teamAdminData.departments : [];
+    return ['Unassigned', ...departments.map((d) => d.name)]
+      .map((name) => `<option value="${escapeHtml(name)}"${name === selected ? ' selected' : ''}>${escapeHtml(name)}</option>`)
+      .join('');
+  }
+
+  function injectTeamManager() {
+    if ($('teamManagerSection')) return;
+    const managerGrid = document.querySelector('.manager-grid');
+    if (!managerGrid) return;
+
+    const style = document.createElement('style');
+    style.textContent = `
+      .team-manager-section{grid-column:1/-1}
+      .team-manager-note{margin:-5px 0 15px;line-height:1.5}
+      .team-add-grid{display:grid;grid-template-columns:1.3fr 1fr .8fr auto;gap:9px;align-items:end}
+      .team-person-row{display:grid;grid-template-columns:1.25fr 1fr .8fr auto auto;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+      .team-person-row input,.team-person-row select,.dept-admin-row input{width:100%;border:1px solid #cfd6d0;border-radius:9px;background:#fff;padding:9px;color:var(--ink)}
+      .team-person-row .check{margin:0;white-space:nowrap}
+      .dept-admin-row{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+      .team-subhead{font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:20px 0 8px}
+      .team-role-manager{color:var(--green);font-weight:900}
+      @media(max-width:820px){
+        .team-add-grid{grid-template-columns:1fr 1fr}.team-add-grid .team-add-name{grid-column:1/-1}
+        .team-person-row{grid-template-columns:1fr 1fr}.team-person-row .team-name{grid-column:1/-1}
+        .dept-admin-row{grid-template-columns:1fr auto}.dept-admin-row .dept-name{grid-column:1/-1}
+      }
+    `;
+    document.head.appendChild(style);
+
+    const section = document.createElement('section');
+    section.className = 'manager-section team-manager-section';
+    section.id = 'teamManagerSection';
+    section.innerHTML = `
+      <h4>Team & departments</h4>
+      <p class="policy-meta team-manager-note">Manage the warehouse roster here instead of opening FairShift. Manager is a Hub-wide designation: Managers automatically get the Hub manager tools and full Warehouse Inventory management access after signing in with their Hub PIN.</p>
+      <form id="teamAddForm" class="team-add-grid">
+        <div class="field team-add-name"><label>Name</label><input name="name" required maxlength="100" placeholder="Team member name" /></div>
+        <div class="field"><label>Home department</label><select name="homeDepartment" id="teamAddDepartment"></select></div>
+        <div class="field"><label>Designation</label><select name="role"><option>Associate</option><option>Team Lead</option><option>Manager</option></select></div>
+        <button class="action" type="submit">Add person</button>
+      </form>
+      <div class="team-subhead">People</div>
+      <div id="teamAdminList"></div>
+      <div class="team-subhead">Departments</div>
+      <form id="departmentAddForm" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <input name="name" required maxlength="100" placeholder="New department" style="flex:1;min-width:190px;border:1px solid #cfd6d0;border-radius:9px;background:#fff;padding:10px;color:var(--ink)" />
+        <button class="action" type="submit">Add department</button>
+      </form>
+      <div id="departmentAdminList"></div>
+    `;
+    managerGrid.appendChild(section);
+
+    $('teamAddForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const payload = formObject(form);
+      try {
+        await teamAdminFetch({ action: 'addEmployee', ...payload });
+        form.reset();
+        await refreshTeamAdmin('Team member added.');
+      } catch (error) {
+        showMessage('managerMessage', error.message || 'Could not add team member.', true);
+      }
+    });
+
+    $('departmentAddForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const name = form.elements.name.value.trim();
+      if (!name) return;
+      try {
+        await teamAdminFetch({ action: 'addDepartment', name });
+        form.reset();
+        await refreshTeamAdmin('Department added.');
+      } catch (error) {
+        showMessage('managerMessage', error.message || 'Could not add department.', true);
+      }
+    });
+  }
+
+  function renderTeamAdmin() {
+    if (!$('teamAdminList') || !$('departmentAdminList')) return;
+    const employees = Array.isArray(teamAdminData?.employees) ? teamAdminData.employees : [];
+    const departments = Array.isArray(teamAdminData?.departments) ? teamAdminData.departments : [];
+
+    const addDepartment = $('teamAddDepartment');
+    if (addDepartment) addDepartment.innerHTML = teamDepartmentOptions('Unassigned');
+
+    $('teamAdminList').innerHTML = employees.length ? employees.map((employee) => `
+      <div class="team-person-row" data-team-id="${escapeHtml(employee.id)}">
+        <input class="team-name" data-field="name" value="${escapeHtml(employee.name)}" aria-label="Name" />
+        <select data-field="homeDepartment" aria-label="Department">${teamDepartmentOptions(employee.homeDepartment || 'Unassigned')}</select>
+        <select data-field="role" aria-label="Designation">
+          <option${employee.role === 'Associate' ? ' selected' : ''}>Associate</option>
+          <option${employee.role === 'Team Lead' ? ' selected' : ''}>Team Lead</option>
+          <option${employee.role === 'Manager' ? ' selected' : ''}>Manager</option>
+        </select>
+        <label class="check"><input data-field="active" type="checkbox"${employee.active !== false ? ' checked' : ''} /> Active</label>
+        <button class="mini-edit" type="button" data-save-team="${escapeHtml(employee.id)}">Save</button>
+      </div>
+    `).join('') : '<div class="policy-meta">No team members found.</div>';
+
+    $('departmentAdminList').innerHTML = departments.length ? departments.map((department) => `
+      <div class="dept-admin-row" data-dept-id="${escapeHtml(department.id)}">
+        <input class="dept-name" data-field="name" value="${escapeHtml(department.name)}" aria-label="Department name" />
+        <label class="check"><input data-field="cleaningActive" type="checkbox"${department.cleaningActive ? ' checked' : ''} /> Cleaning area</label>
+        <button class="mini-edit" type="button" data-save-dept="${escapeHtml(department.id)}">Save</button>
+        <button class="mini-delete" type="button" data-remove-dept="${escapeHtml(department.id)}">Remove</button>
+      </div>
+    `).join('') : '<div class="policy-meta">No departments found.</div>';
+
+    document.querySelectorAll('[data-save-team]').forEach((button) => {
+      button.onclick = async () => {
+        const row = button.closest('[data-team-id]');
+        const id = Number(button.dataset.saveTeam);
+        const name = row.querySelector('[data-field=name]').value.trim();
+        const homeDepartment = row.querySelector('[data-field=homeDepartment]').value;
+        const role = row.querySelector('[data-field=role]').value;
+        const active = row.querySelector('[data-field=active]').checked;
+        try {
+          await teamAdminFetch({ action: 'updateEmployee', id, name, homeDepartment, role, active });
+          const current = window.HubAssociate?.getSession?.() || {};
+          const note = current.signedIn && normalizeName(current.name) === normalizeName(name) && role === 'Manager'
+            ? ' Saved. Sign out and back in once to activate your new Manager access.'
+            : '';
+          await refreshTeamAdmin(`Team member saved.${note}`);
+        } catch (error) {
+          showMessage('managerMessage', error.message || 'Could not save team member.', true);
+        }
+      };
+    });
+
+    document.querySelectorAll('[data-save-dept]').forEach((button) => {
+      button.onclick = async () => {
+        const row = button.closest('[data-dept-id]');
+        const id = Number(button.dataset.saveDept);
+        const name = row.querySelector('[data-field=name]').value.trim();
+        const cleaningActive = row.querySelector('[data-field=cleaningActive]').checked;
+        try {
+          await teamAdminFetch({ action: 'updateDepartment', id, name });
+          await teamAdminFetch({ action: 'setCleaningDepartment', id, cleaningActive });
+          await refreshTeamAdmin('Department saved.');
+        } catch (error) {
+          showMessage('managerMessage', error.message || 'Could not save department.', true);
+        }
+      };
+    });
+
+    document.querySelectorAll('[data-remove-dept]').forEach((button) => {
+      button.onclick = async () => {
+        if (!confirm('Remove this department? Team members must be moved out of it first.')) return;
+        try {
+          await teamAdminFetch({ action: 'removeDepartment', id: Number(button.dataset.removeDept) });
+          await refreshTeamAdmin('Department removed.');
+        } catch (error) {
+          showMessage('managerMessage', error.message || 'Could not remove department.', true);
+        }
+      };
+    });
+  }
+
+  function normalizeName(value) {
+    return String(value || '').trim().toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-');
+  }
+
+  async function refreshTeamAdmin(message = '') {
+    teamAdminData = await teamAdminFetch();
+    renderTeamAdmin();
+    await window.HubAssociate?.refreshRoster?.().catch?.(() => {});
+    if (message) showMessage('managerMessage', message);
   }
 
   function injectToolManager() {
@@ -414,25 +615,43 @@
   }
 
   async function openManager() {
-    const key = window.prompt('Manager access key');
-    if (!key) return;
-    managerKey = key.trim();
+    const session = window.HubAssociate?.getSession?.() || { signedIn: false };
+    const designatedManager = session.signedIn && String(session.role || '').toLowerCase() === 'manager';
+    if (designatedManager) {
+      managerKey = '';
+    } else {
+      const key = window.prompt('Manager access key');
+      if (!key) return;
+      managerKey = key.trim();
+    }
+
     try {
-      adminData = await adminFetch();
-      try {
-        toolAdminData = await toolAdminFetch();
-      } catch (toolError) {
-        toolAdminData = { tools: [] };
-      }
+      const results = await Promise.allSettled([adminFetch(), toolAdminFetch(), teamAdminFetch()]);
+      if (results[0].status !== 'fulfilled') throw results[0].reason;
+      adminData = results[0].value;
+      toolAdminData = results[1].status === 'fulfilled' ? results[1].value : { tools: [] };
+      teamAdminData = results[2].status === 'fulfilled' ? results[2].value : { employees: [], departments: [] };
       renderAdmin();
+      renderTeamAdmin();
       $('managerMessage').style.display = 'none';
       $('managerDialog').showModal();
+      if (results[2].status !== 'fulfilled') showMessage('managerMessage', results[2].reason?.message || 'Team management is temporarily unavailable.', true);
     } catch (e) {
       managerKey = '';
       window.alert(e.message || 'Manager access denied.');
     }
   }
+
+  function updateManagerButton() {
+    const session = window.HubAssociate?.getSession?.() || {};
+    const manager = session.signedIn && String(session.role || '').toLowerCase() === 'manager';
+    $('manageBtn').textContent = manager ? 'Manager tools' : 'Manage';
+    $('manageBtn').title = manager ? 'Open your Manager controls' : 'Manager controls';
+  }
+
   $('manageBtn').addEventListener('click', openManager);
+  document.addEventListener('hub-associate-session', updateManagerButton);
+  setTimeout(updateManagerButton, 700);
 
   function setDefaultDates() {
     const t = today();
@@ -451,6 +670,7 @@
       ? adminData.policies.map((p) => `<div class="admin-row"><div><strong>${escapeHtml(p.title)}</strong><small>Effective ${escapeHtml(p.effectiveDate)}</small></div><button class="mini-delete" data-del-pol="${escapeHtml(p.id)}">Delete</button></div>`).join('')
       : '<div class="policy-meta">None posted.</div>';
     bindAdminDeletes();
+    renderTeamAdmin();
     renderToolAdmin();
     setDefaultDates();
   }
@@ -520,6 +740,7 @@
     }
   });
 
+  injectTeamManager();
   injectToolManager();
   setDefaultDates();
   loadFeed();
