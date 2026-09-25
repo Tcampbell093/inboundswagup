@@ -191,37 +191,63 @@ async function fairShiftRequest(path, options = {}) {
 
 async function loadRoster(force = false) {
   if (!force && rosterCache.expiresAt > Date.now()) return rosterCache;
-  let people = [];
+
+  let modernPeople = [];
   let selfService = false;
 
   try {
     const modern = await fairShiftRequest('/api/checkin?roster=1');
     if (modern.ok && Array.isArray(modern.body?.employees)) {
-      people = modern.body.employees.map((employee) => ({
+      modernPeople = modern.body.employees.map((employee) => ({
         id: Number(employee.id),
         name: clean(employee.name, 100),
         department: clean(employee.homeDepartment, 100),
         role: clean(employee.role, 60),
         pinConfigured: !!employee.pinConfigured,
+        fairShiftSelfService: true,
       })).filter((employee) => employee.id && employee.name);
       selfService = true;
     }
   } catch {}
 
-  if (!people.length) {
+  let dashboardPeople = [];
+  try {
     const dashboard = await fairShiftRequest(`/api/dashboard?date=${encodeURIComponent(todayEastern())}`);
-    if (!dashboard.ok) throw new Error('FairShift employee list is unavailable.');
-    people = (Array.isArray(dashboard.body?.employees) ? dashboard.body.employees : [])
-      .filter((employee) => employee && employee.active !== false)
-      .map((employee) => ({
-        id: Number(employee.id),
-        name: clean(employee.name, 100),
-        department: clean(employee.homeDepartment, 100),
-        role: clean(employee.role, 60),
-        pinConfigured: null,
-      }))
-      .filter((employee) => employee.id && employee.name);
+    if (dashboard.ok) {
+      dashboardPeople = (Array.isArray(dashboard.body?.employees) ? dashboard.body.employees : [])
+        .filter((employee) => employee && employee.active !== false)
+        .map((employee) => ({
+          id: Number(employee.id),
+          name: clean(employee.name, 100),
+          department: clean(employee.homeDepartment, 100),
+          role: clean(employee.role, 60),
+          pinConfigured: null,
+          fairShiftSelfService: false,
+        }))
+        .filter((employee) => employee.id && employee.name);
+    }
+  } catch {}
+
+  if (!modernPeople.length && !dashboardPeople.length) {
+    throw new Error('FairShift employee list is unavailable.');
   }
+
+  // The protected FairShift roster intentionally omits Team Leads because they
+  // are not part of cleaning rotation self-service. Merge the public active
+  // team roster so Team Leads can still use Warehouse Hub features. People
+  // present in the protected roster keep FairShift PIN/cleaning integration;
+  // dashboard-only people use a Hub-only PIN.
+  const merged = new Map();
+  for (const person of dashboardPeople) merged.set(slug(person.name), person);
+  for (const person of modernPeople) merged.set(slug(person.name), person);
+
+  const people = [...merged.values()].sort((a, b) => {
+    const roleA = String(a.role || '').toLowerCase();
+    const roleB = String(b.role || '').toLowerCase();
+    const leadA = roleA.includes('lead') ? 0 : 1;
+    const leadB = roleB.includes('lead') ? 0 : 1;
+    return leadA - leadB || a.name.localeCompare(b.name);
+  });
 
   rosterCache = { expiresAt: Date.now() + 30000, people, selfService };
   return rosterCache;
@@ -241,26 +267,18 @@ async function authMaps() {
 
 async function publicRoster() {
   const roster = await loadRoster();
-  if (roster.selfService) {
-    return {
-      selfServiceConnected: true,
-      pinSource: 'fairshift',
-      employees: roster.people.map((person) => ({
-        ...person,
-        hubPinConfigured: person.pinConfigured === true,
-      })),
-    };
-  }
-
   const maps = await authMaps();
   return {
-    selfServiceConnected: false,
-    pinSource: 'hub-fallback',
+    selfServiceConnected: roster.selfService,
+    pinSource: roster.selfService ? 'mixed' : 'hub-fallback',
     employees: roster.people.map((person) => {
       const key = slug(person.name);
+      const hubConfigured = maps.modern.get(key) === true || maps.legacy.get(key) === true;
       return {
         ...person,
-        hubPinConfigured: maps.modern.get(key) === true || maps.legacy.get(key) === true,
+        hubPinConfigured: person.fairShiftSelfService
+          ? person.pinConfigured === true
+          : hubConfigured,
       };
     }),
   };
@@ -378,7 +396,7 @@ export default async (request) => {
 
     const lookup = await findPerson(body.employeeName, true);
     const person = lookup.person;
-    if (!person) return json(404, { error: 'Choose your name from the active FairShift team list.' });
+    if (!person) return json(404, { error: 'Choose your name from the active warehouse team list.' });
 
     const pin = clean(body.pin, 8);
     if (!/^\d{4,8}$/.test(pin)) return json(400, { error: 'Enter a 4–8 digit PIN.' });
@@ -386,11 +404,21 @@ export default async (request) => {
     if (action === 'setup') {
       const confirmPin = clean(body.confirmPin, 8);
       if (pin !== confirmPin) return json(400, { error: 'The two PINs do not match.' });
+
+      // Team Leads and any other active team members intentionally excluded
+      // from FairShift cleaning self-service still need Hub access. Give them a
+      // Hub-only PIN; this does not enroll them in cleaning or alter FairShift.
+      if (person.fairShiftSelfService === false) {
+        await saveModernPin(person, pin);
+        const session = createSession(person, pin, false);
+        return json(200, { ok: true, ...session.public }, { 'Set-Cookie': sessionCookie(session.payload) });
+      }
+
       if (!lookup.roster.selfService) {
         return json(503, { error: 'FairShift PIN setup is temporarily unavailable. Try again in a moment so your Hub and cleaning PIN stay the same.' });
       }
       if (person.pinConfigured === true) {
-        return json(409, { error: 'A FairShift cleaning PIN already exists for this associate. Sign in with that PIN instead.' });
+        return json(409, { error: 'A FairShift cleaning PIN already exists for this team member. Sign in with that PIN instead.' });
       }
 
       const bodyText = JSON.stringify({ action: 'selfSetPin', employeeId: person.id, employeeName: person.name, pin });
@@ -410,7 +438,7 @@ export default async (request) => {
     }
 
     if (action === 'login') {
-      if (lookup.roster.selfService) {
+      if (lookup.roster.selfService && person.fairShiftSelfService !== false) {
         const verified = await verifyFairShiftPin(person, pin);
         if (!verified.ok || verified.body?.ok !== true) {
           const errorMessage = verified.status === 401
