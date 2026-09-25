@@ -42,7 +42,7 @@ function safeEqual(a, b) {
   return aa.length === bb.length && crypto.timingSafeEqual(aa, bb);
 }
 
-function managerAuthorized(event) {
+function managerKeyAuthorized(event) {
   return safeEqual(
     event.headers?.['x-hub-key'] || event.headers?.['X-Hub-Key'] || '',
     process.env.HUB_MANAGER_KEY || '',
@@ -77,6 +77,11 @@ function hubSession(event) {
   } catch {
     return null;
   }
+}
+
+function managerAuthorized(event) {
+  if (managerKeyAuthorized(event)) return true;
+  return String(hubSession(event)?.role || '').toLowerCase() === 'manager';
 }
 
 function verifyHubUser(event) {
