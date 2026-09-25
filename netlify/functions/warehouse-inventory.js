@@ -409,13 +409,9 @@ async function notifyNewRequest(req, caller) {
       const email = String(s.email || '').trim();
       if (!email) continue;
       try {
-        // In-app notification fallback (always, even if email fails / isn't set up).
-        try {
-          await pool.query(
-            `INSERT INTO hc_notifications (type, target_email, message) VALUES ('inventory_request', $1, $2);`,
-            [email, `New supply request: ${req.itemName}${req.quantity ? ` (×${req.quantity})` : ''} — ${req.urgency || 'Normal'} priority, by ${req.requestedBy || 'unknown'}`]
-          );
-        } catch (e) { /* hc_notifications may not exist in some envs — ignore */ }
+        // Standalone Inventory deliberately does not write Houston Control's
+        // hc_notifications table. Email delivery remains available, but all
+        // inventory state and in-app effects stay isolated from Houston.
 
         // Don't email the person who just made the request.
         if (callerEmail && norm(email) === callerEmail) continue;
