@@ -109,7 +109,7 @@ async function ensureSchema() {
       created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
-  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS inventory_subs_email_idx ON hub_inventory_subscriptions(LOWER(email));`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS hub_inventory_subs_email_idx ON hub_inventory_subscriptions(LOWER(email));`);
   // Per-request send log (so we never email the same person twice for one request).
   await pool.query(`
     CREATE TABLE IF NOT EXISTS hub_inventory_request_emails (
@@ -389,7 +389,7 @@ function buildRequestEmail(req, token) {
   const html =
     `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:540px;margin:0 auto;padding:8px">` +
       `<div style="background:#11324f;border-radius:10px 10px 0 0;padding:16px 20px"><div style="color:#fff;font-size:17px;font-weight:700">New inventory request</div>` +
-      `<div style="color:#9fc3e8;font-size:13px;margin-top:2px">Houston Control · ${urgent ? `<span style="color:#ffb3b3;font-weight:700">${htmlEscape(req.urgency)} priority</span>` : 'a new supply request was submitted'}</div></div>` +
+      `<div style="color:#9fc3e8;font-size:13px;margin-top:2px">Warehouse Inventory · ${urgent ? `<span style="color:#ffb3b3;font-weight:700">${htmlEscape(req.urgency)} priority</span>` : 'a new supply request was submitted'}</div></div>` +
       `<div style="border:1px solid #e3e8ee;border-top:none;border-radius:0 0 10px 10px;padding:16px 8px"><table style="width:100%;border-collapse:collapse">${rows}</table>` +
       `<div style="padding:12px 12px 4px">${orderBtn}${appBtn}</div>${unsub}</div></div>`;
   return { subject, html };
