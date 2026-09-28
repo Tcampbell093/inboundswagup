@@ -12,3 +12,16 @@
 .container-view-dot.active>span{background:#6c46c1;box-shadow:0 0 0 3px rgba(108,70,193,.14)}
 .container-view-dot:hover>span{transform:scale(1.12)}
 @media(max-width:720px){.container-view-head{align-items:center}.container-view-dot small{display:none}.container-view-dots{gap:12px}}
+
+.page-head-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.button-count{display:inline-grid;place-items:center;min-width:20px;height:20px;margin-left:4px;padding:0 6px;border-radius:99px;background:#efe8fb;color:#5f3a9d;font-size:10px;font-weight:900}
+.donate{border:0;border-radius:9px;padding:10px 14px;font-weight:850;cursor:pointer;background:var(--purple);color:#fff}
+.donate:hover{filter:brightness(.96)}
+.donation-hint{padding:10px 12px;border-radius:9px;background:#f5f0fb;border:1px solid #ded1f0;color:#5e4778;font-size:11px;line-height:1.45}
+.intake-submit-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.donation-list{display:grid;gap:9px}
+.donation-row{border:1px solid var(--line);border-radius:10px;padding:12px 13px;background:#fff}
+.donation-main{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.donation-main b{font-size:14px}
+.donation-meta{margin-top:5px;color:var(--muted);font-size:11px}
+@media(max-width:560px){.page-head-actions,.intake-submit-grid{width:100%;grid-template-columns:1fr}.page-head-actions>button{flex:1}}
