@@ -134,13 +134,17 @@ function nextContainerCode(containers) {
 function filterDeleted(data) {
   const entryTombs = normalizeTombs(data.__deletedOverstockEntryIds);
   const containerTombs = normalizeTombs(data.__deletedOverstockContainerIds);
+  const donationTombs = normalizeTombs(data.__deletedOverstockDonationIds);
   const deadE = new Set(entryTombs.map(t => t.id));
   const deadC = new Set(containerTombs.map(t => t.id));
+  const deadD = new Set(donationTombs.map(t => t.id));
   return {
     entries: (Array.isArray(data.overstockEntries) ? data.overstockEntries : []).filter(e => e?.id && !deadE.has(String(e.id))),
     containers: (Array.isArray(data.overstockContainers) ? data.overstockContainers : []).filter(c => c?.id && !deadC.has(String(c.id))),
+    donations: (Array.isArray(data.overstockDonations) ? data.overstockDonations : []).filter(d => d?.id && !deadD.has(String(d.id))),
     entryTombs,
     containerTombs,
+    donationTombs,
   };
 }
 
@@ -447,6 +451,7 @@ async function readSnapshot(db) {
   return {
     entries: filtered.entries,
     containers: filtered.containers,
+    donations: filtered.donations,
     locations,
     categories,
     associates,
@@ -467,9 +472,48 @@ async function mutate(action, body) {
     const filtered = filterDeleted(data);
     let entries = filtered.entries.slice();
     let containers = filtered.containers.slice();
+    let donations = filtered.donations.slice();
     let entryTombs = filtered.entryTombs.slice();
     let containerTombs = filtered.containerTombs.slice();
+    let donationTombs = filtered.donationTombs.slice();
     const now = Date.now();
+
+    const donateRecordFor = (entry, donatedBy = '') => {
+      let record = donations.find(d => String(d?.entryId || '') === String(entry?.id || ''));
+      if (!record) {
+        record = {
+          id: crypto.randomUUID(),
+          entryId: str(entry?.id, 160),
+          po: str(entry?.po, 120),
+          deliveryId: str(entry?.deliveryId, 120),
+          quantity: Math.max(0, Math.round(num(entry?.quantity, 0))),
+          category: str(entry?.category, 120),
+          containerId: str(entry?.containerId, 160),
+          containerCode: str(entry?.containerCode, 120),
+          location: str(entry?.location, 120),
+          associate: str(entry?.associate, 120),
+          note: str(entry?.note, 1000),
+          sizeBreakdown: entry?.sizeBreakdown ?? null,
+          donatedBy: str(donatedBy || entry?.associate || 'unknown', 120),
+          donatedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        };
+        donations.unshift(record);
+      }
+      donationTombs = donationTombs.filter(t => t.id !== String(record.id));
+      return record;
+    };
+
+    const detachAsDonated = (entry) => ({
+      ...entry,
+      status: 'Donation',
+      action: 'Donated',
+      location: '',
+      containerId: '',
+      containerCode: '',
+      updatedAt: now,
+    });
 
     if (action === 'upsertEntry') {
       const incoming = body.entry || {};
@@ -484,12 +528,51 @@ async function mutate(action, body) {
       saved.location = container.currentLocation || saved.location;
       if (idx >= 0) entries[idx] = saved; else entries.push(saved);
       entryTombs = entryTombs.filter(t => t.id !== saved.id);
+      let finalSaved = saved;
+      if (body.donateNow === true) {
+        donateRecordFor(saved, body.donatedBy);
+        finalSaved = detachAsDonated(saved);
+        const savedIndex = entries.findIndex(e => String(e.id) === String(saved.id));
+        if (savedIndex >= 0) entries[savedIndex] = finalSaved;
+      }
       excelEvent = {
         event: 'entry.upserted',
         source: 'overstock-control',
         occurredAt: new Date().toISOString(),
-        rows: [excelRow(saved)],
+        rows: [excelRow(finalSaved)],
       };
+    } else if (action === 'donateEntry') {
+      const id = str(body.id, 160);
+      if (!id) throw new Error('Entry id is required.');
+      const idx = entries.findIndex(e => String(e?.id || '') === id);
+      if (idx < 0) throw new Error('Overstock entry was not found.');
+      const existing = entries[idx];
+      donateRecordFor(existing, body.donatedBy);
+      const donated = detachAsDonated(existing);
+      entries[idx] = donated;
+      excelEvent = {
+        event: 'entry.upserted',
+        source: 'overstock-control',
+        occurredAt: new Date().toISOString(),
+        rows: [excelRow(donated)],
+      };
+    } else if (action === 'migrateDonations') {
+      const migrated = [];
+      for (let i = 0; i < entries.length; i += 1) {
+        const entry = entries[i];
+        const isDonated = str(entry?.action, 120).toLowerCase() === 'donated';
+        const stillAttached = Boolean(entry?.containerId || entry?.containerCode || entry?.location);
+        if (!isDonated || !stillAttached) continue;
+        donateRecordFor(entry, entry?.associate);
+        entries[i] = detachAsDonated(entry);
+        migrated.push(entries[i]);
+      }
+      excelEvent = migrated.length ? {
+        event: 'entry.upserted',
+        source: 'overstock-control',
+        occurredAt: new Date().toISOString(),
+        rows: migrated.map(excelRow),
+      } : null;
     } else if (action === 'deleteEntry') {
       const id = str(body.id, 160);
       if (!id) throw new Error('Entry id is required.');
@@ -544,8 +627,10 @@ async function mutate(action, body) {
 
     data.overstockEntries = entries;
     data.overstockContainers = containers;
+    data.overstockDonations = donations;
     data.__deletedOverstockEntryIds = entryTombs;
     data.__deletedOverstockContainerIds = containerTombs;
+    data.__deletedOverstockDonationIds = donationTombs;
 
     await client.query(
       `UPDATE workflow_sync_state SET data_json=$1::jsonb, updated_at=NOW() WHERE state_key='default'`,
