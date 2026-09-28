@@ -1,6 +1,6 @@
 (() => {
   const API='/api/overstock-control',$=id=>document.getElementById(id);
-  let data={entries:[],containers:[],locations:[],categories:[],associates:[],excelSync:{}},logLimit=50,toastTimer;
+  let data={entries:[],containers:[],locations:[],categories:[],associates:[],excelSync:{}},logLimit=50,toastTimer,boxView='active';
   let intake={container:null,items:[],touched:new Set(),started:null};
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm=v=>String(v??'').trim().toLowerCase();
@@ -22,7 +22,36 @@
   function bindBoxes(root=document){root.querySelectorAll('[data-box]').forEach(el=>el.onclick=()=>openBox(el.dataset.box))}
   function renderCart(stats){$('cartCount').textContent=`${stats.cart.length} waiting`;$('cartGrid').innerHTML=stats.cart.length?stats.cart.sort((a,b)=>time(b)-time(a)).map(c=>boxCard(c,true)).join(''):'<div class="empty">✓ No boxes are waiting on the cart.</div>';bindBoxes($('cartGrid'))}
   function renderLocations(stats){const locs=[...new Set([...(data.locations||[]),...stats.active.map(c=>c.currentLocation).filter(Boolean)])].sort(cmp),used=new Set(stats.active.map(c=>c.currentLocation).filter(Boolean));$('locationCount').textContent=`${used.size} used`;$('locationGrid').innerHTML=locs.map(loc=>{const bs=stats.active.filter(c=>norm(c.currentLocation)===norm(loc)),u=bs.reduce((n,c)=>n+units(c.id),0);return`<button class="location ${bs.length?'occupied':''}" data-location="${esc(loc)}"><b>${esc(loc)}</b><span>${bs.length?`${bs.length} bx · ${u}u`:'free'}</span></button>`}).join('');document.querySelectorAll('[data-location]').forEach(b=>b.onclick=()=>openLocation(b.dataset.location))}
-  function renderBoxes(stats){const q=norm($('boxSearch').value),sort=$('boxSort').value;let bs=stats.active.filter(c=>{const content=items(c.id).map(e=>`${e.po} ${e.deliveryId||''}`).join(' ');return!q||norm(`${c.code} ${c.currentLocation} ${c.status} ${content}`).includes(q)});if(sort==='name')bs.sort((a,b)=>cmp(a.code,b.code));else if(sort==='location')bs.sort((a,b)=>cmp(a.currentLocation,b.currentLocation)||cmp(a.code,b.code));else bs.sort((a,b)=>time(b)-time(a));$('boxCount').textContent=`${bs.length} box${bs.length===1?'':'es'}`;$('boxesGrid').innerHTML=bs.length?bs.map(c=>boxCard(c)).join(''):'<div class="empty">No boxes match.</div>';bindBoxes($('boxesGrid'))}
+  function renderBoxes(stats){
+    const q=norm($('boxSearch').value),sort=$('boxSort').value;
+    const activeBoxes=stats.active.filter(c=>items(c.id).length>0);
+    const emptyBoxes=stats.active.filter(c=>items(c.id).length===0);
+    let bs=(boxView==='empty'?emptyBoxes:activeBoxes).filter(c=>{
+      const content=items(c.id).map(e=>`${e.po} ${e.deliveryId||''}`).join(' ');
+      return !q||norm(`${c.code} ${c.currentLocation} ${c.status} ${content}`).includes(q)
+    });
+    if(sort==='name')bs.sort((a,b)=>cmp(a.code,b.code));
+    else if(sort==='location')bs.sort((a,b)=>cmp(a.currentLocation,b.currentLocation)||cmp(a.code,b.code));
+    else bs.sort((a,b)=>time(b)-time(a));
+
+    $('boxActiveCount').textContent=activeBoxes.length;
+    $('boxEmptyCount').textContent=emptyBoxes.length;
+    $('boxCount').textContent=`${bs.length} ${boxView==='empty'?'empty container':'box'}${bs.length===1?'':'es'}`;
+    $('boxViewTitle').textContent=boxView==='empty'?'Empty containers':'Active boxes';
+    $('boxViewNote').textContent=boxView==='empty'
+      ? 'Empty containers are kept here for reuse without cluttering the active box list.'
+      : 'Containers currently holding one or more Overstock records.';
+    document.querySelectorAll('[data-box-view]').forEach(btn=>{
+      const on=btn.dataset.boxView===boxView;
+      btn.classList.toggle('active',on);
+      btn.setAttribute('aria-current',on?'true':'false');
+    });
+
+    $('boxesGrid').innerHTML=bs.length
+      ? bs.map(c=>boxCard(c)).join('')
+      : `<div class="empty">${boxView==='empty'?'No empty containers right now.':'No active boxes match.'}</div>`;
+    bindBoxes($('boxesGrid'));
+  }
   function logMatches(e,q){const c=container(e.containerId);return!q||norm([e.po,e.deliveryId,e.category,e.status,e.action,e.location,e.containerCode,e.associate,c?.code,c?.currentLocation].join(' ')).includes(q)}
   function renderLog(){const q=norm($('logSearch').value),sort=$('logSort').value;let es=data.entries.filter(e=>logMatches(e,q));if(sort==='oldest')es.sort((a,b)=>time(a)-time(b));else if(sort==='po')es.sort((a,b)=>cmp(a.po,b.po));else if(sort==='qty-desc')es.sort((a,b)=>Number(b.quantity||0)-Number(a.quantity||0));else if(sort==='qty-asc')es.sort((a,b)=>Number(a.quantity||0)-Number(b.quantity||0));else if(sort==='location')es.sort((a,b)=>cmp(container(a.containerId)?.currentLocation||a.location,container(b.containerId)?.currentLocation||b.location));else if(sort==='associate')es.sort((a,b)=>cmp(a.associate,b.associate));else es.sort((a,b)=>time(b)-time(a));const visible=es.slice(0,logLimit);$('logBody').innerHTML=visible.length?visible.map(e=>{const c=container(e.containerId),loc=c?.currentLocation||e.location||'—',code=c?.code||e.containerCode||'—';return`<tr><td>${esc(e.date||fmt(time(e)))}</td><td><button class="po-link" data-entry="${esc(e.id)}">${esc(e.po||'—')}</button>${e.deliveryId?`<small><br>${esc(e.deliveryId)}</small>`:''}</td><td>${esc(e.category||'—')}</td><td><span class="qty">+${Number(e.quantity||0).toLocaleString()}</span></td><td><span class="tag green">${esc(e.status||'—')}</span></td><td><span class="tag">${esc(e.action||'—')}</span></td><td><span class="mono">${esc(loc)}</span><br><small>${esc(code)}</small></td><td>${esc(e.associate||'Unknown')}</td><td><button class="ghost" data-entry="${esc(e.id)}">Edit</button></td></tr>`}).join(''):'<tr><td colspan="9" class="empty">No entries match.</td></tr>';$('logCount').textContent=`Showing ${visible.length} of ${es.length}`;$('showMoreBtn').hidden=visible.length>=es.length;$('showMoreBtn').textContent=`Show more (${es.length-visible.length} remaining)`;document.querySelectorAll('[data-entry]').forEach(b=>b.onclick=()=>openEntry(b.dataset.entry))}
   function render(){lists();syncPill();const stats=renderStats();renderCart(stats);renderLocations(stats);renderBoxes(stats);renderLog()}
@@ -46,6 +75,6 @@
   $('siContainerForm').onsubmit=async ev=>{ev.preventDefault();const associate=$('siAssociate').value.trim(),code=$('siContainerCode').value.trim().toUpperCase(),loc=$('siContainerLocation').value;let c=data.containers.find(x=>norm(x.code)===norm(code));try{if(!c){if(!loc)throw new Error('Choose a location for the new box.');const j=await request({action:'upsertContainer',container:{code,currentLocation:loc,status:'Stored',notes:'Created through Stock Intake'}});data={...data,...j};c=data.containers.find(x=>norm(x.code)===norm(code))}if(!c)throw new Error('Box could not be opened.');intake.container=c;intake.touched.add(String(c.id));intakeStats();$('siActiveContainer').textContent=`${c.code} · ${c.currentLocation||'On cart'} · Logged by ${associate}`;$('siContainerStep').hidden=true;$('siItemStep').hidden=false;setTimeout(()=>$('siPo').focus(),20)}catch(e){toast(e.message,true)}};
   $('siItemForm').onsubmit=async ev=>{ev.preventDefault();const c=intake.container,po=$('siPo').value.trim(),qty=Number($('siQty').value||0);if(!c||!po||qty<1)return toast('Enter a PO and quantity.',true);const entry={po,deliveryId:$('siDeliveryId').value.trim(),quantity:qty,category:$('siCategory').value.trim(),status:$('siStatus').value,action:$('siAction').value,note:$('siNote').value.trim(),associate:$('siAssociate').value.trim(),containerId:c.id,containerCode:c.code,location:c.currentLocation,date:new Date().toISOString().slice(0,10),sourceType:'stock-intake'};try{const j=await request({action:'upsertEntry',entry});data={...data,...j};const saved=data.entries.slice().sort((a,b)=>time(b)-time(a)).find(e=>e.po===po&&String(e.containerId)===String(c.id))||entry;intake.items.push(saved);intakeStats();['siPo','siDeliveryId','siQty','siCategory','siNote'].forEach(id=>$(id).value='');setTimeout(()=>$('siPo').focus(),20);toast(`PO ${po} added to ${c.code}.`)}catch(e){toast(e.message,true)}};
   $('siSwitchContainer').onclick=()=>{intake.container=null;$('siItemStep').hidden=true;$('siContainerStep').hidden=false;$('siContainerCode').value='';$('siExistingContainer').hidden=true};$('stockIntakeBtn').onclick=()=>openIntake();$('stockIntakeCancel').onclick=()=>{if(!intake.items.length||confirm('Cancel? Saved items will remain in Houston.'))closeIntake()};$('stockIntakeComplete').onclick=()=>{toast(`Stock Intake complete · ${intake.items.length} item(s) added.`);closeIntake()};
-  $('refreshBtn').onclick=()=>load(true);$('newBoxBtn').onclick=()=>editContainer();$('boxSearch').oninput=()=>renderBoxes(renderStats());$('boxSort').onchange=()=>renderBoxes(renderStats());$('logSearch').oninput=()=>{logLimit=50;renderLog()};$('logSort').onchange=()=>{logLimit=50;renderLog()};$('showMoreBtn').onclick=()=>{logLimit+=50;renderLog()};document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>close(b.dataset.close));
+  $('refreshBtn').onclick=()=>load(true);$('newBoxBtn').onclick=()=>editContainer();$('boxSearch').oninput=()=>renderBoxes(renderStats());$('boxSort').onchange=()=>renderBoxes(renderStats());document.querySelectorAll('[data-box-view]').forEach(btn=>btn.onclick=()=>{boxView=btn.dataset.boxView==='empty'?'empty':'active';renderBoxes(renderStats())});$('logSearch').oninput=()=>{logLimit=50;renderLog()};$('logSort').onchange=()=>{logLimit=50;renderLog()};$('showMoreBtn').onclick=()=>{logLimit+=50;renderLog()};document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>close(b.dataset.close));
   load();setInterval(()=>{if(!document.hidden&&!document.querySelector('dialog[open]')&&!document.activeElement?.matches('input,select,textarea')&&$('stockIntakeOverlay').hidden)load()},60000);
 })();
