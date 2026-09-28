@@ -244,6 +244,11 @@ exports.handler = async function handler(event) {
         const mergedContainerTombs   = mergeTombstones(incomingContainerTombs, serverContainerTombs);
         const deletedContainerIds    = new Set(mergedContainerTombs.map(t => t.id));
 
+        const incomingDonationTombs = normalizeTombstones(data.__deletedOverstockDonationIds);
+        const serverDonationTombs   = normalizeTombstones(serverData.__deletedOverstockDonationIds);
+        const mergedDonationTombs   = mergeTombstones(incomingDonationTombs, serverDonationTombs);
+        const deletedDonationIds    = new Set(mergedDonationTombs.map(t => t.id));
+
         // Merge overstockEntries
         const incomingEntries = Array.isArray(data.overstockEntries) ? data.overstockEntries : [];
         const serverEntries   = Array.isArray(serverData.overstockEntries) ? serverData.overstockEntries : [];
@@ -288,12 +293,34 @@ exports.handler = async function handler(event) {
         }
         data.overstockContainers = [...containerMap.values()];
 
+        // Merge Donation Pool records by ID so concurrent tablets cannot overwrite them.
+        const incomingDonations = Array.isArray(data.overstockDonations) ? data.overstockDonations : [];
+        const serverDonations   = Array.isArray(serverData.overstockDonations) ? serverData.overstockDonations : [];
+        const donationMap = new Map();
+        for (const d of serverDonations) {
+          if (d && d.id && !deletedDonationIds.has(String(d.id))) donationMap.set(String(d.id), d);
+        }
+        for (const d of incomingDonations) {
+          if (!d || !d.id) continue;
+          const id = String(d.id);
+          if (deletedDonationIds.has(id)) continue;
+          const existing = donationMap.get(id);
+          if (!existing) donationMap.set(id, d);
+          else {
+            const incomingTs = Number(d.updatedAt || d.donatedAt || d.createdAt || 0);
+            const existingTs = Number(existing.updatedAt || existing.donatedAt || existing.createdAt || 0);
+            donationMap.set(id, incomingTs >= existingTs ? d : existing);
+          }
+        }
+        data.overstockDonations = [...donationMap.values()];
+
         // Persist merged tombstones on the server (24h rolling window). This is
         // the key change from the previous version — we no longer strip them
         // after applying. They stay around to block resurrection by stale
         // clients that haven't seen the delete yet.
         data.__deletedOverstockEntryIds     = mergedEntryTombs;
         data.__deletedOverstockContainerIds = mergedContainerTombs;
+        data.__deletedOverstockDonationIds  = mergedDonationTombs;
       } catch (mergeErr) {
         // If merge fails for any reason, fall back to the original full-state
         // overwrite behavior — don't break sync entirely. Log for debugging.
