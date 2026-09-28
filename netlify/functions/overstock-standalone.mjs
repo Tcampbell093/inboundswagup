@@ -83,6 +83,8 @@ function cleanEntry(raw, existing = null) {
   const now = Date.now();
   const source = existing || {};
   const id = str(raw.id || source.id || crypto.randomUUID(), 160);
+  const originalAssociate = str(source.originalAssociate || source.associate || raw.originalAssociate || raw.associate, 120);
+  const lastChangedBy = str(raw.lastChangedBy || source.lastChangedBy || originalAssociate, 120);
   return {
     ...source,
     id,
@@ -95,7 +97,10 @@ function cleanEntry(raw, existing = null) {
     note: str(raw.note ?? source.note, 1000),
     date: str(raw.date ?? source.date, 40) || new Date().toISOString().slice(0, 10),
     location: str(raw.location ?? source.location, 120),
-    associate: str(raw.associate ?? source.associate, 120),
+    associate: originalAssociate,
+    originalAssociate,
+    lastChangedBy,
+    lastChangedAt: now,
     sourceType: str(raw.sourceType ?? source.sourceType, 80) || 'overstock-standalone',
     containerId: str(raw.containerId ?? source.containerId, 160),
     containerCode: str(raw.containerCode ?? source.containerCode, 120),
@@ -479,6 +484,8 @@ async function mutate(action, body) {
     const now = Date.now();
 
     const donateRecordFor = (entry, donatedBy = '') => {
+      const originalAssociate = str(entry?.originalAssociate || entry?.associate || 'unknown', 120);
+      const actor = str(donatedBy || entry?.lastChangedBy || originalAssociate || 'unknown', 120);
       let record = donations.find(d => String(d?.entryId || '') === String(entry?.id || ''));
       if (!record) {
         record = {
@@ -491,34 +498,55 @@ async function mutate(action, body) {
           containerId: str(entry?.containerId, 160),
           containerCode: str(entry?.containerCode, 120),
           location: str(entry?.location, 120),
-          associate: str(entry?.associate, 120),
+          associate: originalAssociate,
+          originalAssociate,
+          lastChangedBy: actor,
           note: str(entry?.note, 1000),
           sizeBreakdown: entry?.sizeBreakdown ?? null,
-          donatedBy: str(donatedBy || entry?.associate || 'unknown', 120),
+          donatedBy: actor,
           donatedAt: now,
           createdAt: now,
           updatedAt: now,
         };
         donations.unshift(record);
+      } else {
+        record.originalAssociate = str(record.originalAssociate || record.associate || originalAssociate, 120);
+        record.associate = record.originalAssociate;
+        record.lastChangedBy = actor;
+        record.donatedBy = actor;
+        record.updatedAt = now;
       }
       donationTombs = donationTombs.filter(t => t.id !== String(record.id));
       return record;
     };
 
-    const detachAsDonated = (entry) => ({
-      ...entry,
-      status: 'Donation',
-      action: 'Donated',
-      location: '',
-      containerId: '',
-      containerCode: '',
-      updatedAt: now,
-    });
+    const detachAsDonated = (entry, changedBy = '') => {
+      const actor = str(changedBy || entry?.lastChangedBy || entry?.originalAssociate || entry?.associate || 'unknown', 120);
+      return {
+        ...entry,
+        associate: str(entry?.originalAssociate || entry?.associate, 120),
+        originalAssociate: str(entry?.originalAssociate || entry?.associate, 120),
+        lastChangedBy: actor,
+        lastChangedAt: now,
+        status: 'Donation',
+        action: 'Donated',
+        location: '',
+        containerId: '',
+        containerCode: '',
+        updatedAt: now,
+      };
+    };
 
     if (action === 'upsertEntry') {
-      const incoming = body.entry || {};
+      const incoming = { ...(body.entry || {}) };
       const idx = entries.findIndex(e => String(e?.id || '') === String(incoming.id || ''));
       const existing = idx >= 0 ? entries[idx] : null;
+      const originalAssociate = str(existing?.originalAssociate || existing?.associate || incoming.originalAssociate || incoming.associate, 120);
+      const actor = str(body.changedBy || incoming.lastChangedBy || (!existing ? originalAssociate : ''), 120);
+      if (existing && !actor) throw new Error('The person making this change is required.');
+      incoming.associate = originalAssociate;
+      incoming.originalAssociate = originalAssociate;
+      incoming.lastChangedBy = actor || originalAssociate;
       const saved = cleanEntry(incoming, existing);
       if (!saved.po) throw new Error('PO number is required.');
       if (!saved.containerId) throw new Error('A container is required.');
@@ -530,8 +558,9 @@ async function mutate(action, body) {
       entryTombs = entryTombs.filter(t => t.id !== saved.id);
       let finalSaved = saved;
       if (body.donateNow === true) {
-        donateRecordFor(saved, body.donatedBy);
-        finalSaved = detachAsDonated(saved);
+        const donor = str(body.donatedBy || actor || saved.lastChangedBy || saved.originalAssociate || saved.associate, 120);
+        donateRecordFor(saved, donor);
+        finalSaved = detachAsDonated(saved, donor);
         const savedIndex = entries.findIndex(e => String(e.id) === String(saved.id));
         if (savedIndex >= 0) entries[savedIndex] = finalSaved;
       }
@@ -547,8 +576,10 @@ async function mutate(action, body) {
       const idx = entries.findIndex(e => String(e?.id || '') === id);
       if (idx < 0) throw new Error('Overstock entry was not found.');
       const existing = entries[idx];
-      donateRecordFor(existing, body.donatedBy);
-      const donated = detachAsDonated(existing);
+      const donor = str(body.donatedBy || body.changedBy, 120);
+      if (!donor) throw new Error('The person donating this item is required.');
+      donateRecordFor(existing, donor);
+      const donated = detachAsDonated(existing, donor);
       entries[idx] = donated;
       excelEvent = {
         event: 'entry.upserted',
@@ -563,8 +594,9 @@ async function mutate(action, body) {
         const isDonated = str(entry?.action, 120).toLowerCase() === 'donated';
         const stillAttached = Boolean(entry?.containerId || entry?.containerCode || entry?.location);
         if (!isDonated || !stillAttached) continue;
-        donateRecordFor(entry, entry?.associate);
-        entries[i] = detachAsDonated(entry);
+        const actor = str(entry?.lastChangedBy || entry?.originalAssociate || entry?.associate || 'unknown', 120);
+        donateRecordFor(entry, actor);
+        entries[i] = detachAsDonated(entry, actor);
         migrated.push(entries[i]);
       }
       excelEvent = migrated.length ? {
