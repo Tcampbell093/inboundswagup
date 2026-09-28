@@ -619,13 +619,10 @@
     const poInput   = el('stockIntakeItemPo');
     const qtyInput  = el('stockIntakeItemQty');
     const catInput  = el('stockIntakeItemCategory');
-    const statusInput = el('stockIntakeItemStatus');
-    const actionInput = el('stockIntakeItemAction');
+    const donateNow = ev.submitter?.id === 'stockIntakeDonateSubmit';
     const po       = (poInput?.value || '').trim();
     const qty      = Math.max(0, Math.floor(Number(qtyInput?.value || 0)));
     const category = catInput?.value || '';
-    const status   = statusInput?.value || 'Not Donation';
-    const action   = actionInput?.value || 'Required';
 
     if (!po) { showToast('Enter a PO number.', 'error'); poInput?.focus(); return; }
     // PO format check — reject obvious typos (letters, stray punctuation,
@@ -637,6 +634,10 @@
     if (!qty) { showToast('Enter a quantity.', 'error'); qtyInput?.focus(); return; }
     // Category required before saving.
     if (!category) { showToast('Please select a category before saving this PO.', 'error'); catInput?.focus(); return; }
+    if (donateNow) {
+      const proceed = confirm(`Donate PO# ${po} (${qty} units)?\n\nThis will add it and immediately move it out of ${session.activeContainerCode || 'the current box'} into the Donation Pool.\n\nPress OK to donate or Cancel to keep editing.`);
+      if (!proceed) return;
+    }
 
     // Duplicate-in-container: BLOCK. A container must never list the same PO
     // twice. To change the count, use the ✎ pencil on the existing line.
@@ -681,8 +682,8 @@
       po,
       quantity: qty,
       category,
-      status,
-      action,
+      status: 'Not Donation',
+      action: 'Required',
       location: session.activeContainerLocation,
       associate: getCurrentUser(),
       sourceType: 'stock-intake',
@@ -701,6 +702,19 @@
     } catch (e) {
       showToast('Failed to save entry: ' + e.message, 'error');
       return;
+    }
+
+    if (donateNow) {
+      if (typeof window.donateOverstockEntry === 'function') {
+        const result = window.donateOverstockEntry(entryId, { skipConfirm: true, skipHoldWarning: true, skipRender: true, skipToast: true });
+        if (!result || !result.ok) {
+          showToast('The item was added, but could not be moved to the Donation Pool.', 'error');
+          return;
+        }
+      } else {
+        showToast('Donation action is unavailable in this build. The item was kept in the container.', 'error');
+        return;
+      }
     }
 
     // Update session, re-render
@@ -725,10 +739,6 @@
     poInput.value = '';
     qtyInput.value = '';
     if (catInput) catInput.value = '';
-    // Reset status/action to the safe defaults so each PO starts neutral and
-    // "Donation" is a deliberate per-PO choice.
-    if (statusInput) statusInput.value = 'Not Donation';
-    if (actionInput) actionInput.value = 'Required';
     document.querySelectorAll('[data-si-size]').forEach(inp => { inp.value = ''; });
     el('stockIntakeItemSizesRow')?.setAttribute('hidden', '');
     poInput.focus();
@@ -737,14 +747,16 @@
   // ── Delete an entry (from recent list) ─────────────────────────────────
   function deleteEntry(entryId) {
     if (!entryId) return;
-    if (!confirm('Remove this entry from the system?')) return;
+    const arr = window.state?.data?.overstockEntries || [];
+    const row = arr.find(r => r.id === entryId);
+    const label = row ? `PO# ${row.po}${row.containerCode ? ` in ${row.containerCode}` : ''}` : 'this entry';
+    if (!confirm(`⚠️ DELETE THIS ENTRY?\n\nYou are about to remove ${label} from the shared Overstock system.\n\nONLY use Delete if the entry was created by mistake. If the product was donated, moved, pulled, missing, or replaced, press Cancel and use the correct action instead.\n\nPress OK to DELETE or Cancel to keep it.`)) return;
     try {
-      const arr = window.state.data.overstockEntries || [];
-      const idx = arr.findIndex(r => r.id === entryId);
-      if (idx === -1) {
-        // Already gone from data; just clean session
+      if (row && typeof window.deleteOverstockEntry === 'function') {
+        window.deleteOverstockEntry(entryId);
       } else {
-        arr.splice(idx, 1);
+        const idx = arr.findIndex(r => r.id === entryId);
+        if (idx !== -1) arr.splice(idx, 1);
         if (typeof window.persistData === 'function') window.persistData();
       }
     } catch (e) {
