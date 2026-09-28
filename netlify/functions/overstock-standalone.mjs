@@ -5,6 +5,7 @@ const { Pool } = pg;
 let poolInstance = null;
 const TOMBSTONE_TTL_MS = 24 * 60 * 60 * 1000;
 const EXCEL_WEBHOOK_TIMEOUT_MS = 8000;
+const HUB_SESSION_COOKIE = 'hub_associate_session';
 
 function env(name) {
   return globalThis.Netlify?.env?.get(name) || '';
@@ -45,6 +46,36 @@ function safeEqual(a, b) {
   const aa = Buffer.from(String(a));
   const bb = Buffer.from(String(b));
   return aa.length === bb.length && crypto.timingSafeEqual(aa, bb);
+}
+
+function cookieMap(request) {
+  const raw = request.headers.get('cookie') || '';
+  return Object.fromEntries(raw.split(';').map(part => part.trim()).filter(Boolean).map(part => {
+    const idx = part.indexOf('=');
+    return idx === -1 ? [part, ''] : [part.slice(0, idx), part.slice(idx + 1)];
+  }));
+}
+
+function hubActor(request) {
+  const token = cookieMap(request)[HUB_SESSION_COOKIE];
+  const secret = env('HUB_ASSOCIATE_SESSION_SECRET');
+  if (!token || !secret) return '';
+  try {
+    const [ivText, tagText, dataText] = String(token).split('.');
+    if (!ivText || !tagText || !dataText) return '';
+    const key = crypto.createHash('sha256').update(secret).digest();
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivText, 'base64url'));
+    decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
+    const plain = Buffer.concat([
+      decipher.update(Buffer.from(dataText, 'base64url')),
+      decipher.final(),
+    ]).toString('utf8');
+    const session = JSON.parse(plain);
+    if (!session?.name || Number(session.exp || 0) <= Date.now()) return '';
+    return str(session.name, 120);
+  } catch {
+    return '';
+  }
 }
 
 function normalizePo(value) {
@@ -465,7 +496,7 @@ async function readSnapshot(db) {
   };
 }
 
-async function mutate(action, body) {
+async function mutate(action, body, actor = '') {
   const db = pool();
   const client = await db.connect();
   let excelEvent = null;
@@ -541,12 +572,11 @@ async function mutate(action, body) {
       const incoming = { ...(body.entry || {}) };
       const idx = entries.findIndex(e => String(e?.id || '') === String(incoming.id || ''));
       const existing = idx >= 0 ? entries[idx] : null;
-      const originalAssociate = str(existing?.originalAssociate || existing?.associate || incoming.originalAssociate || incoming.associate, 120);
-      const actor = str(body.changedBy || incoming.lastChangedBy || (!existing ? originalAssociate : ''), 120);
-      if (existing && !actor) throw new Error('The person making this change is required.');
+      const originalAssociate = str(existing?.originalAssociate || existing?.associate || actor, 120);
+      if (!actor) throw new Error('A signed-in Hub user is required.');
       incoming.associate = originalAssociate;
       incoming.originalAssociate = originalAssociate;
-      incoming.lastChangedBy = actor || originalAssociate;
+      incoming.lastChangedBy = actor;
       const saved = cleanEntry(incoming, existing);
       if (!saved.po) throw new Error('PO number is required.');
       if (!saved.containerId) throw new Error('A container is required.');
@@ -558,9 +588,8 @@ async function mutate(action, body) {
       entryTombs = entryTombs.filter(t => t.id !== saved.id);
       let finalSaved = saved;
       if (body.donateNow === true) {
-        const donor = str(body.donatedBy || actor || saved.lastChangedBy || saved.originalAssociate || saved.associate, 120);
-        donateRecordFor(saved, donor);
-        finalSaved = detachAsDonated(saved, donor);
+        donateRecordFor(saved, actor);
+        finalSaved = detachAsDonated(saved, actor);
         const savedIndex = entries.findIndex(e => String(e.id) === String(saved.id));
         if (savedIndex >= 0) entries[savedIndex] = finalSaved;
       }
@@ -576,10 +605,9 @@ async function mutate(action, body) {
       const idx = entries.findIndex(e => String(e?.id || '') === id);
       if (idx < 0) throw new Error('Overstock entry was not found.');
       const existing = entries[idx];
-      const donor = str(body.donatedBy || body.changedBy, 120);
-      if (!donor) throw new Error('The person donating this item is required.');
-      donateRecordFor(existing, donor);
-      const donated = detachAsDonated(existing, donor);
+      if (!actor) throw new Error('A signed-in Hub user is required.');
+      donateRecordFor(existing, actor);
+      const donated = detachAsDonated(existing, actor);
       entries[idx] = donated;
       excelEvent = {
         event: 'entry.upserted',
@@ -714,7 +742,9 @@ export default async (request) => {
       return json(200, { ok: true, excelWrite, excelSync: excelConnectionState() });
     }
 
-    const result = await mutate(action, body);
+    const actor = hubActor(request);
+    if (!actor) return json(401, { error: 'Sign in to the Work Hub before making Overstock changes.' });
+    const result = await mutate(action, body, actor);
     const excelWrite = result.excelEvent ? await sendExcelEvent(result.excelEvent) : { configured: false, ok: false, status: 'no-event' };
     return json(200, { ok: true, ...result.snapshot, excelWrite });
   } catch (error) {
