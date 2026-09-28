@@ -250,6 +250,7 @@ function applyWorkflowSyncPayload(payload={}){
     // must survive to be applied on the NEXT sync).
     const pendingDeletedEntries    = Array.isArray(state.data?.__deletedOverstockEntryIds)    ? state.data.__deletedOverstockEntryIds.slice()    : [];
     const pendingDeletedContainers = Array.isArray(state.data?.__deletedOverstockContainerIds) ? state.data.__deletedOverstockContainerIds.slice() : [];
+    const pendingDeletedDonations  = Array.isArray(state.data?.__deletedOverstockDonationIds)  ? state.data.__deletedOverstockDonationIds.slice()  : [];
 
     // Snapshot the current local overstock rows BEFORE we overwrite state.data
     // with the incoming payload. These are needed to recover any rows that
@@ -260,6 +261,7 @@ function applyWorkflowSyncPayload(payload={}){
     // says 5" bug). We merge them back in below.
     const localOverstockEntries    = Array.isArray(state.data?.overstockEntries)    ? state.data.overstockEntries.slice()    : [];
     const localOverstockContainers = Array.isArray(state.data?.overstockContainers) ? state.data.overstockContainers.slice() : [];
+    const localOverstockDonations  = Array.isArray(state.data?.overstockDonations)  ? state.data.overstockDonations.slice()  : [];
 
     // Tombstone arrays may contain bare IDs (from local deletes that haven't
     // been to the server yet) OR { id, ts } objects (from server-returned
@@ -275,6 +277,7 @@ function applyWorkflowSyncPayload(payload={}){
     // when present because it carries the timestamp.
     const serverEntryTombs    = Array.isArray(parsed.__deletedOverstockEntryIds)    ? parsed.__deletedOverstockEntryIds    : [];
     const serverContainerTombs = Array.isArray(parsed.__deletedOverstockContainerIds) ? parsed.__deletedOverstockContainerIds : [];
+    const serverDonationTombs = Array.isArray(parsed.__deletedOverstockDonationIds) ? parsed.__deletedOverstockDonationIds : [];
     const mergedEntryTombs = [
       ...serverEntryTombs,
       ...pendingDeletedEntries.filter(p => !serverEntryTombs.some(s => tombId(s) === tombId(p))),
@@ -282,6 +285,10 @@ function applyWorkflowSyncPayload(payload={}){
     const mergedContainerTombs = [
       ...serverContainerTombs,
       ...pendingDeletedContainers.filter(p => !serverContainerTombs.some(s => tombId(s) === tombId(p))),
+    ];
+    const mergedDonationTombs = [
+      ...serverDonationTombs,
+      ...pendingDeletedDonations.filter(p => !serverDonationTombs.some(s => tombId(s) === tombId(p))),
     ];
 
     state.data = {
@@ -303,8 +310,9 @@ function applyWorkflowSyncPayload(payload={}){
       putawayAuditSessions: Array.isArray(parsed.putawayAuditSessions) ? parsed.putawayAuditSessions : defaults.putawayAuditSessions,
       putawayAuditUi: { ...defaults.putawayAuditUi, ...(parsed.putawayAuditUi || {}) },
       workflowUi: { ...defaults.workflowUi, ...(parsed.workflowUi || {}) },
-      __deletedOverstockEntryIds:    mergedEntryTombs,
+      __deletedOverstockEntryIds:     mergedEntryTombs,
       __deletedOverstockContainerIds: mergedContainerTombs,
+      __deletedOverstockDonationIds:  mergedDonationTombs,
     };
 
     // Defense in depth — also locally filter overstockContainers/Entries
@@ -313,8 +321,12 @@ function applyWorkflowSyncPayload(payload={}){
     // impossible.
     const skipE = new Set(mergedEntryTombs.map(tombId).filter(Boolean));
     const skipC = new Set(mergedContainerTombs.map(tombId).filter(Boolean));
+    const skipD = new Set(mergedDonationTombs.map(tombId).filter(Boolean));
     if (skipE.size) state.data.overstockEntries    = state.data.overstockEntries.filter(r => !skipE.has(String(r.id)));
     if (skipC.size) state.data.overstockContainers = state.data.overstockContainers.filter(c => !skipC.has(String(c.id)));
+    if (skipD.size && Array.isArray(state.data.overstockDonations)) {
+      state.data.overstockDonations = state.data.overstockDonations.filter(d => !skipD.has(String(d.id)));
+    }
 
     // Merge local-only overstock rows back in. A sync response (the echo of
     // our own POST, or a GET poll) can be missing rows that were added locally
@@ -336,14 +348,19 @@ function applyWorkflowSyncPayload(payload={}){
         if (skip.has(id)) return; // tombstoned — don't resurrect
         const inc = byId.get(id);
         if (!inc) { byId.set(id, r); return; } // local-only add the payload missed
-        const localTs = Number(r.updatedAt || r.createdAt || 0);
-        const incTs   = Number(inc.updatedAt || inc.createdAt || 0);
+        const localTs = Number(r.updatedAt || r.donatedAt || r.createdAt || 0);
+        const incTs   = Number(inc.updatedAt || inc.donatedAt || inc.createdAt || 0);
         if (localTs > incTs) byId.set(id, r); // local edit not yet synced
       });
       return [...byId.values()];
     };
     state.data.overstockEntries    = mergeLocalOverstockRows(state.data.overstockEntries, localOverstockEntries, skipE);
     state.data.overstockContainers = mergeLocalOverstockRows(state.data.overstockContainers, localOverstockContainers, skipC);
+    state.data.overstockDonations  = mergeLocalOverstockRows(
+      Array.isArray(state.data.overstockDonations) ? state.data.overstockDonations : [],
+      localOverstockDonations,
+      skipD
+    );
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
   }
@@ -4725,6 +4742,87 @@ function getOverstockDonations() {
   return [...list].sort((a, b) => (b.donatedAt || 0) - (a.donatedAt || 0));
 }
 
+function osEnsureDonationRecord(entry, meta = {}) {
+  if (!entry) return null;
+  if (!Array.isArray(state.data.overstockDonations)) state.data.overstockDonations = [];
+  const existing = state.data.overstockDonations.find(d => d && d.entryId === entry.id);
+  if (existing) return existing;
+  const record = {
+    id: makeId(),
+    entryId: entry.id,
+    po: entry.po,
+    quantity: Number(entry.quantity || 0),
+    category: entry.category || '',
+    containerCode: meta.containerCode != null ? meta.containerCode : (entry.containerCode || ''),
+    location: meta.location != null ? meta.location : (entry.location || ''),
+    sizeBreakdown: entry.sizeBreakdown || undefined,
+    donatedBy: meta.donatedBy || (window.hcCurrentUser?.name || window.hcCurrentUser?.email || state.currentUser || entry.associate || 'unknown'),
+    donatedAt: Number(meta.donatedAt || Date.now()),
+  };
+  state.data.overstockDonations.unshift(record);
+  return record;
+}
+
+function donateOverstockEntry(entryOrId, opts = {}) {
+  const entries = Array.isArray(state.data.overstockEntries) ? state.data.overstockEntries : [];
+  const entry = typeof entryOrId === 'string' ? entries.find(e => e && e.id === entryOrId) : entryOrId;
+  if (!entry) return { ok: false, reason: 'not_found' };
+
+  const hold = typeof osHoldFor === 'function' ? osHoldFor(entry.id) : null;
+  if (!opts.skipHoldWarning && hold && (hold.status === 'On Hold' || hold.status === 'Do Not Donate')) {
+    const proceed = confirm(`⚠️ STOP — PO# ${entry.po} is marked "${hold.status}"${hold.by ? ` by ${hold.by}` : ''}${hold.reason ? `\nReason: ${hold.reason}` : ''}\n\nThe office has asked NOT to donate this. Donate anyway?`);
+    if (!proceed) return { ok: false, reason: 'hold_cancelled' };
+  }
+
+  const boxBefore = entry.containerCode || '';
+  const locationBefore = entry.location || '';
+  if (!opts.skipConfirm) {
+    const proceed = confirm(`Donate PO# ${entry.po} (${Number(entry.quantity || 0)} units)?\n\nThis will REMOVE it from ${boxBefore || 'its current box'} and move it into the Donation Pool.\n\nPress OK to donate or Cancel to keep it where it is.`);
+    if (!proceed) return { ok: false, reason: 'cancelled' };
+  }
+
+  if (!opts.skipUndo && typeof osSnapshotForUndo === 'function') osSnapshotForUndo(`Donated PO# ${entry.po}`);
+  osEnsureDonationRecord(entry, { containerCode: boxBefore, location: locationBefore, donatedBy: opts.donatedBy, donatedAt: opts.donatedAt });
+
+  entry.action = 'Donated';
+  entry.status = 'Donation';
+  entry.location = '';
+  entry.containerId = '';
+  entry.containerCode = '';
+  entry.updatedAt = Date.now();
+
+  if (typeof osLogEvent === 'function') {
+    osLogEvent(entry.po, 'donated', `Donated from ${boxBefore || 'overstock'}`, { containerCode: boxBefore, location: locationBefore });
+  }
+  persistData();
+  if (!opts.skipRender && typeof renderOverstockPage === 'function') renderOverstockPage();
+  if (!opts.skipToast && typeof showToast === 'function') showToast(`PO# ${entry.po} moved to the Donation Pool.`, 'success');
+  return { ok: true };
+}
+window.donateOverstockEntry = donateOverstockEntry;
+
+function migrateLegacyDonatedOverstockEntries() {
+  const entries = Array.isArray(state.data.overstockEntries) ? state.data.overstockEntries : [];
+  const stuck = entries.filter(e => e && e.action === 'Donated' && (e.containerId || e.containerCode || e.location));
+  if (!stuck.length) return 0;
+  stuck.forEach(entry => {
+    osEnsureDonationRecord(entry, {
+      containerCode: entry.containerCode || '',
+      location: entry.location || '',
+      donatedBy: entry.associate || 'unknown',
+      donatedAt: Number(entry.updatedAt || entry.createdAt || Date.now()),
+    });
+    entry.status = 'Donation';
+    entry.action = 'Donated';
+    entry.location = '';
+    entry.containerId = '';
+    entry.containerCode = '';
+    entry.updatedAt = Date.now();
+  });
+  persistData();
+  return stuck.length;
+}
+
 let osReleasePickId = null; // donation row currently choosing a box to return to
 
 function openOverstockDonations() {
@@ -4855,8 +4953,10 @@ function osReleaseDonation(donationId, containerId) {
     state.data.overstockEntries = entries;
   }
 
+  if (!Array.isArray(state.data.__deletedOverstockDonationIds)) state.data.__deletedOverstockDonationIds = [];
+  state.data.__deletedOverstockDonationIds.push(String(donationId));
   state.data.overstockDonations = donations.filter(d => d.id !== donationId);
-  osLogEvent(don.po, 'released', `Returned to ${container.code} from the donations list`, { containerCode: container.code, location: container.currentLocation || '' });
+  osLogEvent(don.po, 'released', `Returned to ${container.code} from the Donation Pool`, { containerCode: container.code, location: container.currentLocation || '' });
   osReleasePickId = null;
   persistData();
   if (typeof renderOverstockPage === 'function') renderOverstockPage();
@@ -4894,7 +4994,7 @@ window.openOverstockDonations = openOverstockDonations;
 // of them — donate, delete, remove-to-zero, keep, move, add/remove — can be
 // reversed, even several steps back. Built for associates who aren't used to
 // software: nothing is ever a dead end.
-const OS_UNDO_KEYS = ['overstockEntries', 'overstockContainers', 'overstockDonations', '__deletedOverstockEntryIds', '__deletedOverstockContainerIds'];
+const OS_UNDO_KEYS = ['overstockEntries', 'overstockContainers', 'overstockDonations', '__deletedOverstockEntryIds', '__deletedOverstockContainerIds', '__deletedOverstockDonationIds'];
 let osUndoStack = [];
 let osActiveAudit = null; // {loc, containerId} while the audit modal is open
 
@@ -5411,7 +5511,7 @@ function osOpenAudit(loc, containerId) {
     if (_hdDel && (_hdDel.status === 'On Hold' || _hdDel.status === 'Do Not Donate')) {
       if (!confirm(`⚠️ STOP — PO# ${entry.po} is marked "${_hdDel.status}"${_hdDel.by ? ` by ${_hdDel.by}` : ''}${_hdDel.reason ? `\nReason: ${_hdDel.reason}` : ''}\n\nThe office has asked to keep this. Delete anyway?`)) return;
     }
-    if (!confirm(`Delete ${label} entirely?\n\nThis removes the PO from overstock. Use this only for entries logged by mistake — for items pulled, donated, or moved, use those actions instead so it's recorded properly.\n\n(You can undo this right after if it was a mistake.)`)) return;
+    if (!confirm(`⚠️ DELETE THIS PO?\n\nYou are about to remove ${label} from the shared Overstock system.\n\nONLY use Delete when the entry itself was created by mistake. If the product was donated, moved, pulled, missing, or replaced, press Cancel and use that action instead so the history stays accurate.\n\nPress OK to DELETE or Cancel to keep it.`)) return;
     osSnapshotForUndo(`Deleted PO# ${entry.po}`);
     if (typeof window.deleteOverstockEntry === 'function') {
       window.deleteOverstockEntry(entry.id);
@@ -6012,6 +6112,9 @@ function renderOverstockPage() {
   if (!state.data.overstockFilters) state.data.overstockFilters = { date: '', associate: 'All', location: 'All', status: 'All', search: '', mineOnly: false };
   if (!Array.isArray(state.data.overstockContainers)) state.data.overstockContainers = [];
 
+  // Self-heal legacy rows that were marked Donated but left attached to a box.
+  try { migrateLegacyDonatedOverstockEntries(); } catch (e) { console.warn('Donation migration failed:', e); }
+
   // Auto-repair before render. The function is idempotent and a no-op when
   // everything is already consistent, so this is cheap on healthy data and
   // self-healing on drifted data.
@@ -6349,19 +6452,23 @@ function renderOverstockPage() {
       <td>${escapeHtml(row.associate)}</td>
       <td class="action-stack">
         ${batchBtn}
-        <button class="tiny-btn overstock-edit-btn" type="button" ${ownerLocked ? 'disabled' : ''}>${state.language === 'es' ? 'Editar' : 'Edit'}</button>
-        <button class="tiny-btn ghost-btn overstock-delete-btn" type="button" ${ownerLocked ? 'disabled' : ''}>${state.language === 'es' ? 'Eliminar' : 'Delete'}</button>
+        ${row.action === 'Donated'
+          ? '<span class="lock-note">🎁 In Donation Pool</span>'
+          : '<button class="tiny-btn overstock-donate-btn" type="button">🎁 Donate</button>'}
+        <button class="tiny-btn overstock-edit-btn" type="button" ${ownerLocked || row.action === 'Donated' ? 'disabled' : ''}>${state.language === 'es' ? 'Editar' : 'Edit'}</button>
+        <button class="tiny-btn ghost-btn overstock-delete-btn" type="button" ${ownerLocked || row.action === 'Donated' ? 'disabled' : ''}>${state.language === 'es' ? 'Eliminar' : 'Delete'}</button>
       </td>
     `;
     const histBtn = tr.querySelector('.history-row');
     if (histBtn) histBtn.addEventListener('click', () => openBatchHistoryModal('overstock', row.po));
     const poLink = tr.querySelector('.os-po-link');
     if (poLink) poLink.addEventListener('click', () => osOpenAuditForEntry(row));
-    if (!ownerLocked) {
+    const donateBtn = tr.querySelector('.overstock-donate-btn');
+    if (donateBtn) donateBtn.addEventListener('click', () => donateOverstockEntry(row));
+    if (!ownerLocked && row.action !== 'Donated') {
       tr.querySelector('.overstock-delete-btn').addEventListener('click', () => {
-        // Light confirm — single PO entry, low stakes, but tablets fat-finger.
         const label = row.containerCode ? `${row.containerCode} · PO# ${row.po}` : `PO# ${row.po}`;
-        if (!confirm(`Remove ${label}?`)) return;
+        if (!confirm(`⚠️ DELETE THIS PO?\n\nYou are about to remove ${label} from the shared Overstock system.\n\nONLY use Delete if this entry was created by mistake. If the product was donated, moved, pulled, missing, or replaced, press Cancel and use the correct action instead.\n\nPress OK to DELETE or Cancel to keep it.`)) return;
         if (typeof window.deleteOverstockEntry === 'function') {
           window.deleteOverstockEntry(row.id);
         } else {
@@ -6399,8 +6506,7 @@ function toggleOverstockEditRow(tableRow, rowId) {
           : `<select data-field="po"></select>`}
         <select data-field="category"></select>
         <input type="number" value="${Number(row.quantity || 0) || 0}" data-field="quantity" ${manualRow ? '' : 'readonly'} />
-        <select data-field="status"></select>
-        <select data-field="action"></select>
+        <div style="font-size:12px;color:var(--muted);align-self:center;">Disposition changes use the action buttons — use <strong>Donate</strong> to send an item to the Donation Pool.</div>
         <select data-field="location"></select>
         <select data-field="associate"></select>
         <button class="tiny-btn save-overstock-edit" type="button">${t("save")}</button>
@@ -6433,16 +6539,6 @@ function toggleOverstockEditRow(tableRow, rowId) {
     .forEach(c => appendOption(categorySel, c, c));
   categorySel.value = row.category || "";
 
-  const statusSel = editTr.querySelector('[data-field="status"]');
-  statusSel.innerHTML = "";
-  overstockStatusOptions.forEach(opt => appendOption(statusSel, opt, translateStatus(opt)));
-  statusSel.value = row.status;
-
-  const actionSel = editTr.querySelector('[data-field="action"]');
-  actionSel.innerHTML = "";
-  overstockActionOptions.forEach(opt => appendOption(actionSel, opt, translateStatus(opt)));
-  actionSel.value = row.action;
-
   const locationSel = editTr.querySelector('[data-field="location"]');
   locationSel.innerHTML = "";
   getOverstockLocations().forEach(loc => appendOption(locationSel, loc, loc));
@@ -6462,8 +6558,6 @@ function toggleOverstockEditRow(tableRow, rowId) {
     row.po = (poField ? poField.value : row.po).trim();
     row.category = editTr.querySelector('[data-field="category"]').value;
     row.quantity = Number(editTr.querySelector('[data-field="quantity"]').value || 0) || 0;
-    row.status = editTr.querySelector('[data-field="status"]').value;
-    row.action = editTr.querySelector('[data-field="action"]').value;
     row.location = editTr.querySelector('[data-field="location"]').value;
     row.associate = editTr.querySelector('[data-field="associate"]').value;
     row.updatedAt = Date.now();
