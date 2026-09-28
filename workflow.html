@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>QA Inbound Workflow</title>
   <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="Styles/workflow.css" />
+  <link rel="stylesheet" href="Styles/workflow.css?v=20260928-donation1" />
   <link rel="stylesheet" href="Styles/pallets.css" />
 </head>
 <body class="workflow-page">
@@ -148,7 +148,7 @@
           </div>
           <div class="os-panel-head-actions">
             <button id="overstockStockIntakeBtn" class="os-action-btn" type="button">📦 Stock Intake</button>
-            <button id="overstockDonationsBtn" class="os-ghost-btn" type="button" title="Review donated items">🎁 Donations</button>
+            <button id="overstockDonationsBtn" class="os-ghost-btn" type="button" title="Review donated items">🎁 Donation Pool</button>
             <button id="overstockRenormalizeBtn" class="os-ghost-btn" type="button" title="One-time cleanup: rename OSC-#### codes to OSC-###" style="display:none;">🔧 Renormalize codes</button>
           </div>
         </div>
@@ -325,8 +325,8 @@
         <div class="os-modal" role="dialog" aria-modal="true">
           <div class="os-modal-head">
             <div>
-              <div class="os-modal-title">🎁 Donated items</div>
-              <div class="os-modal-sub" id="osDonSub">Every PO donated, with when and by whom.</div>
+              <div class="os-modal-title">🎁 Donation Pool</div>
+              <div class="os-modal-sub" id="osDonSub">Every donated PO is moved here, with when and by whom.</div>
             </div>
             <button class="os-modal-close" data-close="osMdDonations">✕</button>
           </div>
@@ -592,29 +592,7 @@
                 </div>
               </div>
 
-              <!-- Status + Action — set when first logging the PO (e.g. mark
-                   it ready for donation right away). -->
-              <div class="si-item-row">
-                <div class="si-field">
-                  <label class="si-field-lbl" for="stockIntakeItemStatus">Status</label>
-                  <select id="stockIntakeItemStatus" class="si-input">
-                    <option value="Not Donation">Not Donation</option>
-                    <option value="Donation">Donation</option>
-                    <option value="Pending PB">Pending PB</option>
-                    <option value="Donated">Donated</option>
-                  </select>
-                </div>
-                <div class="si-field">
-                  <label class="si-field-lbl" for="stockIntakeItemAction">Action</label>
-                  <select id="stockIntakeItemAction" class="si-input">
-                    <option value="Required">Required</option>
-                    <option value="Donated">Donated</option>
-                    <option value="Replaced">Replaced</option>
-                    <option value="Missing from Box">Missing from Box</option>
-                    <option value="Lost">Lost</option>
-                  </select>
-                </div>
-              </div>
+              <div class="si-step-help" style="margin-top:6px;">Items stay in the container by default. If this PO is being donated now, use the purple <strong>Donate Item</strong> button below — no status changes needed.</div>
 
               <!-- Apparel sizes (shown only when category = Apparel) -->
               <div class="si-sizes-row" id="stockIntakeItemSizesRow" hidden>
@@ -630,7 +608,10 @@
                 </div>
               </div>
 
-              <button type="submit" class="si-add-btn" id="stockIntakeItemSubmit">+ Add Item to Container</button>
+              <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;">
+                <button type="submit" class="si-add-btn" id="stockIntakeItemSubmit">+ Add Item to Container</button>
+                <button type="submit" class="si-add-btn" id="stockIntakeDonateSubmit" style="background:#6d28d9;">🎁 Donate Item</button>
+              </div>
             </form>
 
             <!-- Last-10 entries this session ─────────────────────────── -->
@@ -957,11 +938,11 @@
   <script src="auth-fetch.js"></script>
   <script src="auth.js"></script>
   <script src="i18n.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=20260928-donation1"></script>
   <script src="stats-module.js"></script>
   <script src="inbound-pallets.js"></script>
   <script src="po-lookup.js"></script>
-  <script src="stock-intake.js"></script>
+  <script src="stock-intake.js?v=20260928-donation1"></script>
   <script>
   // ── Put-Away auto-container creation hook ─────────────────────────────
   // Patches plt_advance so that when a pallet moves to 'done',
