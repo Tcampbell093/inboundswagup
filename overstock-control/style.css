@@ -25,3 +25,19 @@
 .donation-main b{font-size:14px}
 .donation-meta{margin-top:5px;color:var(--muted);font-size:11px}
 @media(max-width:560px){.page-head-actions,.intake-submit-grid{width:100%;grid-template-columns:1fr}.page-head-actions>button{flex:1}}
+
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.eligibility-dialog{width:min(760px,calc(100% - 24px))}
+.eligibility-item{background:#f4f7fa;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-weight:850;margin-bottom:12px}
+.eligibility-intro{margin:0 0 12px;color:var(--navy2);line-height:1.5}
+.eligibility-list{display:grid;gap:10px}
+.eligibility-check{display:grid;grid-template-columns:auto 1fr;gap:11px;align-items:start;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;text-transform:none;letter-spacing:0;color:var(--navy2);font-size:13px;font-weight:600}
+.eligibility-check:hover{border-color:#9abbd4;background:#f8fbfd}
+.eligibility-check input{width:19px;height:19px;margin:1px 0 0;accent-color:var(--purple)}
+.eligibility-check span{display:grid;gap:3px}
+.eligibility-check b{font-size:13px}
+.eligibility-check small{font-size:11px;line-height:1.45;color:var(--muted);font-weight:500}
+.eligibility-stop{margin-top:13px;padding:10px 12px;border-radius:9px;background:#fff0ee;border:1px solid #efc7c1;color:var(--red);font-size:11px;font-weight:850}
+.eligibility-actions{justify-content:flex-end;margin-top:14px}
+#donationEligibilityConfirm:disabled{opacity:.45;cursor:not-allowed;filter:none}
+@media(max-width:760px){.two{grid-template-columns:1fr}}
