@@ -105,7 +105,7 @@
   }
   function renderAttention(){
     const ts=[...(settings().thresholds||[])].sort((a,b)=>Number(a.points)-Number(b.points)),first=Number(ts[0]?.points||Infinity);
-    const rows=people().map(p=>({person:p,points:totalFor(p.personKey)})).filter(x=>x.points>=first).sort((a,b)=>b.points-a.points);
+    const rows=activePeople().map(p=>({person:p,points:totalFor(p.personKey)})).filter(x=>x.points>=first).sort((a,b)=>b.points-a.points);
     $('attentionList').innerHTML=rows.length?rows.map(({person,points})=>{const t=thresholdState(points);return `<button class="attention-item" data-attention="${esc(person.personKey)}" type="button"><strong><span>${esc(person.name)}</span><span>${points} pts</span></strong><p>${esc(t.met?.label||'Attention')} threshold reached${t.next?` · ${Math.max(0,Number(t.next.points)-points)} from ${esc(t.next.label)}`:''}</p></button>`}).join(''):'<div class="attention-empty">Nobody is currently at a conversation threshold.</div>';
     $('attentionList').querySelectorAll('[data-attention]').forEach(btn=>btn.onclick=()=>openPerson(btn.dataset.attention,true));
   }
