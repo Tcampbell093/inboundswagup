@@ -48,6 +48,17 @@ const INVENTORY_CONTROL_TOOL = {
   sortOrder: 62,
 };
 
+const ATTENDANCE_CONTROL_TOOL = {
+  id: 'attendance-control',
+  title: 'Attendance',
+  url: '/attendance-control/',
+  label: 'Manager attendance',
+  description: 'Take daily attendance by department, track points, and review people who need follow-up.',
+  accent: 'orange',
+  icon: '✓',
+  sortOrder: 19,
+};
+
 const SEED_TOOLS = [
   { id: 'fairshift-rotations', title: 'FairShift Rotations', url: 'https://fairshift-rotations.thandoyordani.chatgpt.site/', label: 'Labor planning', description: 'Plan team rotations, cleaning schedules, time off, and fair task assignments.', accent: 'orange', icon: '♙', sortOrder: 10 },
   PASSWORD_TOOL,
@@ -277,6 +288,12 @@ async function ensureSchema(pool) {
     await insertToolIfMissing(pool, INVENTORY_CONTROL_TOOL);
     await pool.query(`INSERT INTO hub_tool_meta(key,value,updated_at) VALUES('warehouse_inventory_v1','1',NOW()) ON CONFLICT(key) DO NOTHING`);
   }
+
+  const attendanceControlCard = await pool.query(`SELECT value FROM hub_tool_meta WHERE key='attendance_control_v1' LIMIT 1`);
+  if (!attendanceControlCard.rows.length) {
+    await insertToolIfMissing(pool, ATTENDANCE_CONTROL_TOOL);
+    await pool.query(`INSERT INTO hub_tool_meta(key,value,updated_at) VALUES('attendance_control_v1','1',NOW()) ON CONFLICT(key) DO NOTHING`);
+  }
 }
 
 function serializeTool(row) {
@@ -435,12 +452,14 @@ export default async (request) => {
       const session = hubSession(request);
       if (!session) return json(200, { signedIn: false, tools: [], access: null });
       const allTools = await readTools(pool, false);
+      const role = String(session.role || '').toLowerCase();
+      const visibleTools = role === 'manager' ? allTools : allTools.filter((tool) => tool.id !== 'attendance-control');
       const access = await accessFor(pool, session.name);
       return json(200, {
         signedIn: true,
         employeeName: session.name,
         access,
-        tools: filterToolsForAccess(allTools, access),
+        tools: filterToolsForAccess(visibleTools, access),
       });
     }
 
