@@ -222,13 +222,13 @@ exports.handler = async function handler(event) {
     await ensureSchema();
     if (event.httpMethod === 'GET') {
       const admin = String(event.queryStringParameters?.admin || '') === '1';
-      if (admin && !managerAuthorized(event)) return json(401, { error: 'Manager access denied.' });
+      if (admin && !managerAuthorized(event)) return json(401, { error: 'Admin access denied.' });
       return json(200, await readFeed(admin));
     }
     if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed' });
     const body = JSON.parse(event.body || '{}');
     if (body.action === 'cleaningAction') return json(200, { ok: true, result: await cleaningAction(body) });
-    if (!managerAuthorized(event)) return json(401, { error: 'Manager access denied.' });
+    if (!managerAuthorized(event)) return json(401, { error: 'Admin access denied.' });
     let result = null;
     if (body.action === 'upsertAnnouncement') result = await upsertAnnouncement(body);
     else if (body.action === 'upsertPolicy') result = await upsertPolicy(body);
