@@ -178,6 +178,7 @@ function filterDeleted(data) {
     entries: (Array.isArray(data.overstockEntries) ? data.overstockEntries : []).filter(e => e?.id && !deadE.has(String(e.id))),
     containers: (Array.isArray(data.overstockContainers) ? data.overstockContainers : []).filter(c => c?.id && !deadC.has(String(c.id))),
     donations: (Array.isArray(data.overstockDonations) ? data.overstockDonations : []).filter(d => d?.id && !deadD.has(String(d.id))),
+    activities: (Array.isArray(data.overstockActivity) ? data.overstockActivity : []).filter(a => a?.id).slice(0, 50),
     entryTombs,
     containerTombs,
     donationTombs,
@@ -488,6 +489,7 @@ async function readSnapshot(db) {
     entries: filtered.entries,
     containers: filtered.containers,
     donations: filtered.donations,
+    activities: filtered.activities,
     locations,
     categories,
     associates,
@@ -509,10 +511,28 @@ async function mutate(action, body, actor = '') {
     let entries = filtered.entries.slice();
     let containers = filtered.containers.slice();
     let donations = filtered.donations.slice();
+    let activities = filtered.activities.slice();
     let entryTombs = filtered.entryTombs.slice();
     let containerTombs = filtered.containerTombs.slice();
     let donationTombs = filtered.donationTombs.slice();
     const now = Date.now();
+
+    const addActivity = ({ type='update', entry=null, container=null, summary='', po='', entryId='', containerId='', containerCode='', location='' } = {}) => {
+      const activity = {
+        id: crypto.randomUUID(),
+        type: str(type, 50) || 'update',
+        actor: str(actor || 'Unknown', 120),
+        summary: str(summary, 300),
+        po: str(po || entry?.po, 120),
+        entryId: str(entryId || entry?.id, 160),
+        containerId: str(containerId || entry?.containerId || container?.id, 160),
+        containerCode: str(containerCode || entry?.containerCode || container?.code, 120),
+        location: str(location || entry?.location || container?.currentLocation, 120),
+        createdAt: now,
+      };
+      activities.unshift(activity);
+      activities = activities.slice(0, 50);
+    };
 
     const donateRecordFor = (entry, donatedBy = '') => {
       const originalAssociate = str(entry?.originalAssociate || entry?.associate || 'unknown', 120);
@@ -592,6 +612,16 @@ async function mutate(action, body, actor = '') {
         finalSaved = detachAsDonated(saved, actor);
         const savedIndex = entries.findIndex(e => String(e.id) === String(saved.id));
         if (savedIndex >= 0) entries[savedIndex] = finalSaved;
+        addActivity({ type:'donation', entry:saved, summary:`sent PO ${saved.po} → Donation Pool` });
+      } else if (!existing) {
+        addActivity({ type:'added', entry:saved, summary:`added PO ${saved.po} → ${saved.containerCode || 'Overstock'}` });
+      } else {
+        let summary = `updated PO ${saved.po}`;
+        if (str(existing.action,120) !== str(saved.action,120)) summary = `changed PO ${saved.po} → ${saved.action || 'Updated'}`;
+        else if (String(existing.containerId || '') !== String(saved.containerId || '')) summary = `moved PO ${saved.po} → ${saved.containerCode || 'another box'}`;
+        else if (Number(existing.quantity || 0) !== Number(saved.quantity || 0)) summary = `changed PO ${saved.po} quantity → ${Number(saved.quantity || 0).toLocaleString()}`;
+        else if (str(existing.category,120) !== str(saved.category,120)) summary = `updated PO ${saved.po} → ${saved.category || 'Uncategorized'}`;
+        addActivity({ type:'updated', entry:saved, summary });
       }
       excelEvent = {
         event: 'entry.upserted',
@@ -609,6 +639,7 @@ async function mutate(action, body, actor = '') {
       donateRecordFor(existing, actor);
       const donated = detachAsDonated(existing, actor);
       entries[idx] = donated;
+      addActivity({ type:'donation', entry:existing, summary:`sent PO ${existing.po} → Donation Pool` });
       excelEvent = {
         event: 'entry.upserted',
         source: 'overstock-control',
@@ -637,6 +668,7 @@ async function mutate(action, body, actor = '') {
       const id = str(body.id, 160);
       if (!id) throw new Error('Entry id is required.');
       const existing = entries.find(e => String(e.id) === id) || null;
+      if (existing) addActivity({ type:'deleted', entry:existing, summary:`deleted PO ${existing.po}` });
       entries = entries.filter(e => String(e.id) !== id);
       entryTombs = normalizeTombs([...entryTombs, { id, ts: now }]);
       excelEvent = {
@@ -657,6 +689,9 @@ async function mutate(action, body, actor = '') {
       if (idx >= 0) containers[idx] = saved; else containers.push(saved);
       containerTombs = containerTombs.filter(t => t.id !== saved.id);
       entries = entries.map(e => String(e.containerId) === saved.id ? { ...e, containerCode: saved.code, location: saved.currentLocation, updatedAt: now } : e);
+      if (!existing) addActivity({ type:'box', container:saved, summary:`created box ${saved.code}${saved.currentLocation ? ` → ${saved.currentLocation}` : ''}` });
+      else if (str(existing.currentLocation,120) !== str(saved.currentLocation,120)) addActivity({ type:'box', container:saved, summary:`moved box ${saved.code} → ${saved.currentLocation || 'On cart'}` });
+      else if (str(existing.status,80) !== str(saved.status,80)) addActivity({ type:'box', container:saved, summary:`changed box ${saved.code} → ${saved.status || 'Updated'}` });
       excelEvent = {
         event: 'container.updated',
         source: 'overstock-control',
@@ -671,6 +706,7 @@ async function mutate(action, body, actor = '') {
       if (!id) throw new Error('Container id is required.');
       if (entries.some(e => String(e.containerId) === id)) throw new Error('Move or remove the items in this container before deleting it.');
       const existing = containers.find(c => String(c.id) === id) || null;
+      if (existing) addActivity({ type:'deleted', container:existing, summary:`deleted box ${existing.code}` });
       containers = containers.filter(c => String(c.id) !== id);
       containerTombs = normalizeTombs([...containerTombs, { id, ts: now }]);
       excelEvent = {
@@ -688,6 +724,7 @@ async function mutate(action, body, actor = '') {
     data.overstockEntries = entries;
     data.overstockContainers = containers;
     data.overstockDonations = donations;
+    data.overstockActivity = activities;
     data.__deletedOverstockEntryIds = entryTombs;
     data.__deletedOverstockContainerIds = containerTombs;
     data.__deletedOverstockDonationIds = donationTombs;
@@ -719,7 +756,12 @@ export default async (request) => {
         },
       });
     }
-    if (request.method === 'GET') return json(200, await readSnapshot(pool()));
+    if (request.method === 'GET') {
+      const snapshot = await readSnapshot(pool());
+      const requestUrl = new URL(request.url);
+      if (requestUrl.searchParams.get('activity') === '1') return json(200, { activities: (snapshot.activities || []).slice(0, 5), updatedAt: snapshot.updatedAt });
+      return json(200, snapshot);
+    }
     if (request.method !== 'POST') return json(405, { error: 'Method not allowed.' });
     const body = await request.json().catch(() => ({}));
     const action = str(body.action, 50);
