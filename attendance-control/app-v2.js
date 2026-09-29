@@ -62,7 +62,7 @@
     }
     const role=String(state.session.role||'').toLowerCase();
     const ok=role==='manager'||role==='team lead';
-    $('managerPill').textContent=ok?`👤 ${state.session.name} · ${state.session.role || 'Attendance'}`:'Access restricted';
+    $('managerPill').textContent=ok?`👤 ${state.session.name} · ${role==='manager'?'Admin':(state.session.role || 'Attendance')}`:'Access restricted';
     $('accessGate').hidden=ok;
     $('app').hidden=!ok;
     const settingsTab=document.querySelector('.tab[data-view="settings"]');
@@ -155,7 +155,7 @@
   function deptOptions(selected){return departmentNames().map(d=>`<option value="${esc(d)}"${d===selected?' selected':''}>${esc(d)}</option>`).join('')}
   function renderSettings(){
     if(!state.snapshot)return;const s=settings();
-    $('thresholdSettings').innerHTML=(s.thresholds||[]).map(t=>`<div class="setting-row" data-threshold="${esc(t.id)}"><label>${esc(t.label)}<small>Flag manager follow-up at this point total.</small></label><input type="number" min="0" step=".5" value="${Number(t.points)}" /></div>`).join('');
+    $('thresholdSettings').innerHTML=(s.thresholds||[]).map(t=>`<div class="setting-row" data-threshold="${esc(t.id)}"><label>${esc(t.label)}<small>Flag admin follow-up at this point total.</small></label><input type="number" min="0" step=".5" value="${Number(t.points)}" /></div>`).join('');
     $('statusSettings').innerHTML=(s.statuses||[]).map(st=>{const p=Number(st.points),help=p===0?'No points':(p>0?'Adds '+p+' point'+(p===1?'':'s'):'Removes '+Math.abs(p)+' point'+(Math.abs(p)===1?'':'s'));return `<div class="setting-row" data-status-setting="${esc(st.id)}"><label>${esc(st.label)}<small>${esc(help)}</small></label><input type="number" min="-10" max="20" step=".5" value="${p}" /></div>`}).join('');
     $('rosterAdminList').innerHTML=people().map(p=>`<div class="roster-admin-row" data-roster-person="${esc(p.personKey)}"><input data-name value="${esc(p.name)}" aria-label="Name"><select data-department>${deptOptions(p.currentDepartment||'Unassigned')}</select><label class="active-check"><input data-active type="checkbox" ${p.active!==false?'checked':''}> Active</label><button data-save-person type="button">Save</button></div>`).join('');
     $('rosterAdminList').querySelectorAll('[data-roster-person]').forEach(row=>row.querySelector('[data-save-person]').onclick=()=>saveRosterPerson(row));
