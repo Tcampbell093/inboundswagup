@@ -697,7 +697,7 @@ exports.handler = async function handler(event) {
 
       // Notification subscribers list (manager/admin only).
       if (qs.subscriptions === '1' || qs.subscriptions === 'true') {
-        if (!canManage) return json(403, { error: 'Manager/admin only' });
+        if (!canManage) return json(403, { error: 'Admin only' });
         const sr = await pool.query(`SELECT id, email, label, enabled, created_by, created_at FROM hub_inventory_subscriptions ORDER BY LOWER(email) ASC;`);
         const subs = sr.rows.map(s => ({ id: s.id, email: s.email, label: s.label || '', enabled: !!s.enabled, createdBy: s.created_by || '', createdAt: s.created_at }));
         return json(200, { subscriptions: subs, emailConfigured: emailChannel() !== 'none', channel: emailChannel(), role });
@@ -707,7 +707,7 @@ exports.handler = async function handler(event) {
       // notification emails, so an admin can see exactly who was emailed and
       // whether each send succeeded or failed (and why).
       if (qs.emailLog === '1' || qs.emailLog === 'true') {
-        if (!canManage) return json(403, { error: 'Manager/admin only' });
+        if (!canManage) return json(403, { error: 'Admin only' });
         const lr = await pool.query(
           `SELECT e.email, e.status, e.error, e.sent_at, r.item_name
              FROM hub_inventory_request_emails e
@@ -784,7 +784,7 @@ exports.handler = async function handler(event) {
 
     // ── add ──────────────────────────────────────────────────────────────
     if (action === 'add') {
-      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      if (!canManage) return json(403, { error: 'Admin only' });
       const it = body.item || {};
       const name = String(it.itemName || '').trim();
       if (!name) return json(400, { error: 'Item name is required' });
@@ -828,7 +828,7 @@ exports.handler = async function handler(event) {
 
     // ── update editable fields ───────────────────────────────────────────
     if (action === 'update') {
-      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      if (!canManage) return json(403, { error: 'Admin only' });
       const id = body.id; const f = body.fields || {};
       if (!id) return json(400, { error: 'id required' });
       const sets = [], vals = []; let i = 1;
@@ -902,7 +902,7 @@ exports.handler = async function handler(event) {
 
     // ── archive / unarchive ──────────────────────────────────────────────
     if (action === 'archive' || action === 'unarchive') {
-      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      if (!canManage) return json(403, { error: 'Admin only' });
       const r = await pool.query(
         `UPDATE hub_inventory_items SET archived=$1, last_updated_by=$2, updated_at=NOW() WHERE id=$3 RETURNING *;`,
         [action === 'archive', who(caller), body.id]
@@ -922,7 +922,7 @@ exports.handler = async function handler(event) {
     // Ties two or more item rows together as the same physical product so the
     // app can show a warehouse-wide total. Each row keeps its own count.
     if (action === 'link') {
-      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      if (!canManage) return json(403, { error: 'Admin only' });
       const ids = (Array.isArray(body.ids) ? body.ids : []).map(x => String(x)).filter(Boolean);
       if (ids.length < 2) return json(400, { error: 'Select at least two items to link' });
       // Reuse a product_key already on one of the rows, else mint a new one, so
@@ -941,7 +941,7 @@ exports.handler = async function handler(event) {
 
     // ── unlink a row from its product group ───────────────────────────────
     if (action === 'unlink') {
-      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      if (!canManage) return json(403, { error: 'Admin only' });
       if (!body.id) return json(400, { error: 'id required' });
       const r = await pool.query(`SELECT product_key FROM hub_inventory_items WHERE id=$1;`, [body.id]);
       if (!r.rows.length) return json(404, { error: 'not found' });
@@ -960,7 +960,7 @@ exports.handler = async function handler(event) {
 
     // ── import (add new, update matches) ─────────────────────────────────
     if (action === 'import') {
-      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      if (!canManage) return json(403, { error: 'Admin only' });
       const rows = Array.isArray(body.rows) ? body.rows : [];
       const existing = await pool.query(`SELECT id, item_name, location, sku, department FROM hub_inventory_items WHERE archived=false;`);
       const byKey = new Map(existing.rows.map(r => [matchKey(r.item_name, r.sku, r.department), r.id]));
@@ -1025,7 +1025,7 @@ exports.handler = async function handler(event) {
 
     // ── request: update (manager/admin = office manager) ─────────────────
     if (action === 'requestUpdate') {
-      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      if (!canManage) return json(403, { error: 'Admin only' });
       const id = body.id; const f = body.fields || {};
       if (!id) return json(400, { error: 'id required' });
       const sets = [], vals = []; let i = 1;
@@ -1047,7 +1047,7 @@ exports.handler = async function handler(event) {
 
     // ── request: bulk status update (manager/admin) ──────────────────────
     if (action === 'requestBulkUpdate') {
-      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      if (!canManage) return json(403, { error: 'Admin only' });
       const ids = Array.isArray(body.ids)
         ? [...new Set(body.ids.map(Number).filter((id) => Number.isInteger(id) && id > 0))].slice(0, 500)
         : [];
@@ -1141,7 +1141,7 @@ exports.handler = async function handler(event) {
 
     // ── request: delete (manager/admin) ─────────────────────────────────
     if (action === 'requestDelete') {
-      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      if (!canManage) return json(403, { error: 'Admin only' });
       const id = Number(body.id);
       if (!id) return json(400, { error: 'id required' });
 
@@ -1181,7 +1181,7 @@ exports.handler = async function handler(event) {
 
     // ── notification subscribers (manager/admin) ─────────────────────────
     if (action === 'subAdd') {
-      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      if (!canManage) return json(403, { error: 'Admin only' });
       const email = String(body.email || '').trim();
       const label = String(body.label || '').trim();
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(400, { error: 'Please enter a valid email address' });
@@ -1196,14 +1196,14 @@ exports.handler = async function handler(event) {
       return json(200, { ok: true, subscription: { id: s.id, email: s.email, label: s.label || '', enabled: !!s.enabled } });
     }
     if (action === 'subToggle') {
-      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      if (!canManage) return json(403, { error: 'Admin only' });
       if (!body.id) return json(400, { error: 'id required' });
       const r = await pool.query(`UPDATE hub_inventory_subscriptions SET enabled=$1 WHERE id=$2 RETURNING id, enabled;`, [body.enabled !== false, body.id]);
       if (!r.rows.length) return json(404, { error: 'not found' });
       return json(200, { ok: true, id: r.rows[0].id, enabled: !!r.rows[0].enabled });
     }
     if (action === 'subRemove') {
-      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      if (!canManage) return json(403, { error: 'Admin only' });
       if (!body.id) return json(400, { error: 'id required' });
       await pool.query(`DELETE FROM hub_inventory_subscriptions WHERE id=$1;`, [body.id]);
       return json(200, { ok: true });
@@ -1211,7 +1211,7 @@ exports.handler = async function handler(event) {
 
     // ── email diagnostic: send a one-off test + report exactly what happened ──
     if (action === 'emailTest') {
-      if (!canManage) return json(403, { error: 'Manager/admin only' });
+      if (!canManage) return json(403, { error: 'Admin only' });
       const to = String((body.to || '').trim() || caller.email || '').toLowerCase();
       if (!to) return json(400, { error: 'No recipient address' });
       const channel = emailChannel();
