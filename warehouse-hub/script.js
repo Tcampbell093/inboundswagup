@@ -616,7 +616,7 @@
 
     const currentEmployee = $('accessEmployee').value;
     $('accessEmployee').innerHTML = employees.length
-      ? employees.map((person) => `<option value="${escapeHtml(person.name)}">${escapeHtml(person.name)} · ${escapeHtml(person.role || 'Associate')}</option>`).join('')
+      ? employees.map((person) => `<option value="${escapeHtml(person.name)}">${escapeHtml(person.name)} · ${escapeHtml(person.role === 'Manager' ? 'Admin' : (person.role || 'Associate'))}</option>`).join('')
       : '<option value="">No active team members</option>';
     if (employees.some((person) => person.name === currentEmployee)) $('accessEmployee').value = currentEmployee;
 
