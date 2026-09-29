@@ -17,7 +17,11 @@ const clean=(v,m=500)=>String(v==null?'':v).trim().slice(0,m);
 const slug=v=>clean(v,140).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,120);
 function cookieMap(request){const raw=request.headers.get('cookie')||'';return Object.fromEntries(raw.split(';').map(p=>p.trim()).filter(Boolean).map(p=>{const i=p.indexOf('=');return i===-1?[p,'']:[p.slice(0,i),p.slice(i+1)]}))}
 function hubSession(request){try{const secret=env('HUB_ASSOCIATE_SESSION_SECRET'),token=cookieMap(request)[SESSION_COOKIE];if(!secret||!token)return null;const key=crypto.createHash('sha256').update(secret).digest(),[iv,tag,data]=String(token).split('.');if(!iv||!tag||!data)return null;const d=crypto.createDecipheriv('aes-256-gcm',key,Buffer.from(iv,'base64url'));d.setAuthTag(Buffer.from(tag,'base64url'));const p=JSON.parse(Buffer.concat([d.update(Buffer.from(data,'base64url')),d.final()]).toString('utf8'));if(p?.v!==SESSION_VERSION||!p?.name||Number(p.exp||0)<=Date.now())return null;return p}catch{return null}}
-function managerSession(request){const s=hubSession(request);return s&&String(s.role||'').toLowerCase()==='manager'?s:null}
+function attendanceSession(request){
+ const s=hubSession(request),role=String(s?.role||'').toLowerCase();
+ return s&&(role==='manager'||role==='team lead')?s:null
+}
+function isManager(session){return String(session?.role||'').toLowerCase()==='manager'}
 const validDate=v=>/^\d{4}-\d{2}-\d{2}$/.test(clean(v,10))?clean(v,10):'';
 const nameKey=v=>clean(v,160).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,' ').trim();
 
@@ -141,13 +145,22 @@ async function savePerson(db,body){const name=clean(body.name,120);if(!name)thro
 async function saveDepartment(db,body){const name=clean(body.name,120);if(!name)throw new Error('Enter a department name.');const active=body.active!==false,sort=Number.isFinite(Number(body.sortOrder))?Math.round(Number(body.sortOrder)):100;await db.query(`INSERT INTO hub_attendance_departments(name,active,sort_order,created_at,updated_at) VALUES($1,$2,$3,NOW(),NOW()) ON CONFLICT(name) DO UPDATE SET active=EXCLUDED.active,sort_order=EXCLUDED.sort_order,updated_at=NOW()`,[name,active,sort]);return{name,active,sortOrder:sort}}
 
 export default async(request)=>{
- try{const session=managerSession(request);if(!session)return json(401,{error:'Manager sign-in through the Warehouse Hub is required.'});await ensureSchema();const db=pool(),url=new URL(request.url);
+ try{const session=attendanceSession(request);if(!session)return json(401,{error:'Warehouse Hub Team Lead or Manager sign-in is required.'});await ensureSchema();const db=pool(),url=new URL(request.url);
   if(request.method==='GET'){const key=clean(url.searchParams.get('person'),160);if(key)return json(200,await history(db,key));const date=validDate(url.searchParams.get('date'))||new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'}).format(new Date());return json(200,await snapshot(db,date))}
   if(request.method!=='POST')return json(405,{error:'Method not allowed.'});const body=await request.json().catch(()=>({})),action=clean(body.action,50);
   if(action==='saveDay'){const r=await saveDay(db,session,body);return json(200,{ok:true,...r,snapshot:await snapshot(db,validDate(body.date))})}
-  if(action==='saveSettings')return json(200,{ok:true,settings:await saveSettings(db,session,body)});
-  if(action==='upsertPerson')return json(200,{ok:true,person:await savePerson(db,body)});
-  if(action==='upsertDepartment')return json(200,{ok:true,department:await saveDepartment(db,body)});
+  if(action==='saveSettings'){
+    if(!isManager(session))return json(403,{error:'Manager access is required to change attendance rules.'});
+    return json(200,{ok:true,settings:await saveSettings(db,session,body)});
+  }
+  if(action==='upsertPerson'){
+    if(!isManager(session))return json(403,{error:'Manager access is required to change the attendance roster.'});
+    return json(200,{ok:true,person:await savePerson(db,body)});
+  }
+  if(action==='upsertDepartment'){
+    if(!isManager(session))return json(403,{error:'Manager access is required to change attendance departments.'});
+    return json(200,{ok:true,department:await saveDepartment(db,body)});
+  }
   return json(400,{error:'Unsupported attendance action.'});
  }catch(e){return json(400,{error:clean(e?.message||'Unexpected attendance error.',300)})}
 };
