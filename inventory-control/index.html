@@ -18,7 +18,7 @@
         <a href="/overstock-control/">Overstock</a>
         <a href="/po-history/">PO History</a>
       </nav>
-      <button id="manageBtn" class="toolcount" type="button">Manager unlock</button>
+      <button id="manageBtn" class="toolcount" type="button">Admin unlock</button>
     </div>
   </header>
 
@@ -43,7 +43,7 @@
     // snapshot marker exists, this endpoint never re-imports Houston changes.
     fetch('/.netlify/functions/warehouse-inventory?snapshotStatus=1', { cache: 'no-store' }).catch(function(){});
   </script>
-  <script src="/warehouse-hub/associate-auth.js?v=20260925-3"></script>
+  <script src="/warehouse-hub/associate-auth.js?v=20260929-adminlabels1"></script>
   <script>
     (function(){
       var btn=document.getElementById('manageBtn');
@@ -61,7 +61,7 @@
           var body=await res.json().catch(function(){return{};});
           if(res.ok){
             sessionStorage.setItem('warehouseInventoryManagerKey',key);
-            btn.textContent='Manager access active';
+            btn.textContent='Admin access active';
             btn.classList.add('signed-in');
             document.dispatchEvent(new CustomEvent('warehouse-inventory-manager-unlocked'));
             return true;
@@ -70,13 +70,13 @@
             if(window.HubAssociate&&window.HubAssociate.open)window.HubAssociate.open();
             if(!quiet)alert('Sign in with your Warehouse Hub PIN first.');
           }else if(!quiet){
-            alert(body.error||'Manager access key not accepted.');
+            alert(body.error||'Admin access key not accepted.');
           }
         }catch(e){
-          if(!quiet)alert('Could not verify manager access.');
+          if(!quiet)alert('Could not verify admin access.');
         }
         sessionStorage.removeItem('warehouseInventoryManagerKey');
-        btn.textContent='Manager unlock';
+        btn.textContent='Admin unlock';
         btn.classList.remove('signed-in');
         return false;
       }
@@ -84,24 +84,24 @@
       async function syncManagerState(){
         if(signedManager()){
           sessionStorage.removeItem('warehouseInventoryManagerKey');
-          btn.textContent='Manager access active';
+          btn.textContent='Admin access active';
           btn.classList.add('signed-in');
           document.dispatchEvent(new CustomEvent('warehouse-inventory-manager-unlocked'));
           return;
         }
         var saved=sessionStorage.getItem('warehouseInventoryManagerKey')||'';
         if(saved){await validateKey(saved,true);return;}
-        btn.textContent='Manager unlock';
+        btn.textContent='Admin unlock';
         btn.classList.remove('signed-in');
       }
 
       btn.addEventListener('click',function(){
         if(signedManager()){
-          btn.textContent='Manager access active';
+          btn.textContent='Admin access active';
           return;
         }
         var existing=sessionStorage.getItem('warehouseInventoryManagerKey')||'';
-        var key=window.prompt('Manager access key',existing);
+        var key=window.prompt('Admin access key',existing);
         if(key)validateKey(key.trim(),false);
       });
 
