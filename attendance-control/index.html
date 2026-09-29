@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Attendance Control</title>
   <link rel="stylesheet" href="style.css?v=20260929-1" />
+  <style>body.auth-pending{visibility:hidden}</style>
 </head>
-<body>
+<body class="auth-pending">
   <header class="topbar">
     <a class="brand" href="/warehouse-hub/">
       <span class="brand-mark">A</span>
@@ -21,8 +22,8 @@
   <main class="shell">
     <section id="accessGate" class="access-gate" hidden>
       <div class="gate-icon">🔒</div>
-      <h1>Manager access required</h1>
-      <p>Sign in through the Warehouse Hub with a manager profile to view attendance and points.</p>
+      <h1>Access restricted</h1>
+      <p>You do not have access to this page.</p>
       <a class="primary-link" href="/warehouse-hub/">Back to Warehouse Hub</a>
     </section>
 
@@ -150,6 +151,6 @@
   </main>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="app-v2.js?v=20260929-1"></script>
+  <script src="app-v2.js?v=20260929-auth1"></script>
 </body>
 </html>
