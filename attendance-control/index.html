@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Attendance Control</title>
+  <link rel="stylesheet" href="style.css?v=20260929-1" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/warehouse-hub/">
+      <span class="brand-mark">A</span>
+      <span><b>Attendance Control</b><small>Warehouse Operations Hub</small></span>
+    </a>
+    <div class="topbar-right">
+      <span id="managerPill" class="pill">Checking Hub sign-in…</span>
+      <button id="refreshBtn" class="ghost" type="button">↻ Refresh</button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section id="accessGate" class="access-gate" hidden>
+      <div class="gate-icon">🔒</div>
+      <h1>Manager access required</h1>
+      <p>Sign in through the Warehouse Hub with a manager profile to view attendance and points.</p>
+      <a class="primary-link" href="/warehouse-hub/">Back to Warehouse Hub</a>
+    </section>
+
+    <div id="app" hidden>
+      <nav class="tabs" aria-label="Attendance sections">
+        <button class="tab active" data-view="today" type="button">Today</button>
+        <button class="tab" data-view="people" type="button">People</button>
+        <button class="tab" data-view="settings" type="button">Settings</button>
+      </nav>
+
+      <section id="view-today" class="view active">
+        <div class="hero">
+          <div>
+            <div class="eyebrow">Daily Attendance</div>
+            <h1 id="todayTitle">Take Attendance</h1>
+            <p id="todaySub">Mark the team once, change only the exceptions, then save.</p>
+          </div>
+          <div class="date-controls">
+            <button id="prevDateBtn" class="ghost square" type="button">←</button>
+            <input id="dateInput" type="date" />
+            <button id="nextDateBtn" class="ghost square" type="button">→</button>
+            <button id="todayBtn" class="ghost" type="button">Today</button>
+          </div>
+        </div>
+
+        <div id="departmentTabs" class="dept-tabs"></div>
+
+        <div class="stat-grid">
+          <article class="stat-card"><span>Roster</span><strong id="statRoster">0</strong><small>active people</small></article>
+          <article class="stat-card"><span>Marked</span><strong id="statMarked">0</strong><small id="statMarkedHelp">0% complete</small></article>
+          <article class="stat-card"><span>Present</span><strong id="statPresent">0</strong><small>for selected date</small></article>
+          <article class="stat-card"><span>Exceptions</span><strong id="statExceptions">0</strong><small>anything not Present</small></article>
+        </div>
+
+        <div class="today-layout">
+          <section class="panel roster-panel">
+            <div class="panel-head">
+              <div>
+                <h2 id="deptTitle">Department</h2>
+                <p id="deptHelp">Use Mark All Present, then change only the people who are exceptions.</p>
+              </div>
+              <div class="panel-actions">
+                <button id="markAllBtn" class="secondary" type="button">✓ Mark All Present</button>
+                <button id="saveDayBtn" class="primary" type="button">Save Attendance</button>
+              </div>
+            </div>
+            <div id="saveState" class="save-state"></div>
+            <div id="rosterList" class="roster-list"></div>
+          </section>
+
+          <aside class="panel attention-panel">
+            <div class="panel-head compact">
+              <div>
+                <div class="eyebrow">Points Watch</div>
+                <h2>Needs Attention</h2>
+              </div>
+            </div>
+            <div id="attentionList" class="attention-list"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="view-people" class="view">
+        <div class="hero compact-hero">
+          <div>
+            <div class="eyebrow">People</div>
+            <h1>Attendance History</h1>
+            <p>Search a person, see their active points, thresholds, and attendance timeline.</p>
+          </div>
+        </div>
+        <div class="people-layout">
+          <section class="panel">
+            <div class="search-wrap">
+              <input id="peopleSearch" type="search" placeholder="Search people…" />
+            </div>
+            <div id="peopleList" class="people-list"></div>
+          </section>
+          <section class="panel person-detail" id="personDetail">
+            <div class="empty-state">Select a person to see their attendance history.</div>
+          </section>
+        </div>
+      </section>
+
+      <section id="view-settings" class="view">
+        <div class="hero compact-hero">
+          <div>
+            <div class="eyebrow">Manager Settings</div>
+            <h1>Attendance Rules</h1>
+            <p>Adjust point values and conversation thresholds without changing the website.</p>
+          </div>
+          <button id="saveSettingsBtn" class="primary" type="button">Save Settings</button>
+        </div>
+
+        <div class="settings-grid">
+          <section class="panel">
+            <div class="panel-head compact"><div><h2>Conversation Thresholds</h2><p>Reaching a threshold flags the person for manager follow-up. It does not automatically record discipline.</p></div></div>
+            <div id="thresholdSettings" class="settings-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head compact"><div><h2>Status Point Values</h2><p>These defaults match the logic in the attendance workbook and can be changed at any time.</p></div></div>
+            <div id="statusSettings" class="settings-list"></div>
+          </section>
+
+          <section class="panel roster-source">
+            <div class="panel-head compact"><div><h2>Roster Source</h2><p>Employees and departments come from the Warehouse Hub team roster, so adding, removing, or moving a person updates Attendance automatically.</p></div></div>
+            <a class="secondary-link" href="/warehouse-hub/">Open Warehouse Hub Team Manager</a>
+          </section>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script src="app.js?v=20260929-1"></script>
+</body>
+</html>
