@@ -52,7 +52,7 @@ const ATTENDANCE_CONTROL_TOOL = {
   id: 'attendance-control',
   title: 'Attendance',
   url: '/attendance-control/',
-  label: 'Manager attendance',
+  label: 'Team attendance',
   description: 'Take daily attendance by department, track points, and review people who need follow-up.',
   accent: 'orange',
   icon: '✓',
@@ -453,7 +453,8 @@ export default async (request) => {
       if (!session) return json(200, { signedIn: false, tools: [], access: null });
       const allTools = await readTools(pool, false);
       const role = String(session.role || '').toLowerCase();
-      const visibleTools = role === 'manager' ? allTools : allTools.filter((tool) => tool.id !== 'attendance-control');
+      const attendanceRole = role === 'manager' || role === 'team lead';
+      const visibleTools = attendanceRole ? allTools : allTools.filter((tool) => tool.id !== 'attendance-control');
       const access = await accessFor(pool, session.name);
       return json(200, {
         signedIn: true,
