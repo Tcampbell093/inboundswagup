@@ -440,7 +440,7 @@ export default async (request) => {
     if (request.method === 'GET') {
       const admin = requestUrl.searchParams.get('admin') === '1';
       if (admin) {
-        if (!managerAuthorized(request)) return json(401, { error: 'Manager access denied.' });
+        if (!managerAuthorized(request)) return json(401, { error: 'Admin access denied.' });
         const allTools = await readTools(pool, true);
         return json(200, {
           tools: allTools,
@@ -475,7 +475,7 @@ export default async (request) => {
         RETURNING tool_id`, [id]);
       return recorded.rows.length ? json(200, { ok: true }) : json(404, { error: 'Card unavailable.' });
     }
-    if (!managerAuthorized(request)) return json(401, { error: 'Manager access denied.' });
+    if (!managerAuthorized(request)) return json(401, { error: 'Admin access denied.' });
     if (body.action === 'upsertTool') {
       return json(200, { ok: true, result: await upsertTool(pool, body) });
     }
