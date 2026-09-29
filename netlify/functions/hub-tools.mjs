@@ -348,11 +348,14 @@ async function saveAccess(pool, body) {
   if (!employeeKey || !employeeName) throw new Error('Choose a team member.');
   const validPresetIds = new Set(['full','receiving','prep','assembly','inventory','custom']);
   const preset = validPresetIds.has(body.preset) ? body.preset : 'custom';
-  const known = await pool.query(`SELECT id FROM hub_tool_cards`);
-  const knownIds = new Set(known.rows.map((row) => String(row.id)));
-  const allowed = preset === 'full'
-    ? []
-    : [...new Set((Array.isArray(body.allowedToolIds) ? body.allowedToolIds : []).map(String).filter((id) => knownIds.has(id)))];
+  const allTools = await readTools(pool, true);
+  const knownIds = new Set(allTools.map((tool) => String(tool.id)));
+  let allowed = [];
+  if (preset === 'custom') {
+    allowed = [...new Set((Array.isArray(body.allowedToolIds) ? body.allowedToolIds : []).map(String).filter((id) => knownIds.has(id)))];
+  } else if (preset !== 'full') {
+    allowed = presetDefinitions(allTools).find((item) => item.id === preset)?.toolIds || [];
+  }
 
   await pool.query(`
     INSERT INTO hub_tool_access(employee_key,employee_name,preset,allowed_tool_ids,updated_at)
