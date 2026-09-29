@@ -92,6 +92,10 @@ function cleanText(value, max = 500) {
   return String(value == null ? '' : value).trim().slice(0, max);
 }
 
+function slug(value) {
+  return cleanText(value, 120).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 100);
+}
+
 function safeEqual(a, b) {
   if (!a || !b) return false;
   const aa = Buffer.from(String(a));
@@ -223,6 +227,13 @@ async function ensureSchema(pool) {
       value TEXT NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS hub_tool_access (
+      employee_key TEXT PRIMARY KEY,
+      employee_name TEXT NOT NULL,
+      preset TEXT NOT NULL DEFAULT 'full',
+      allowed_tool_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
 
   const seeded = await pool.query(`SELECT value FROM hub_tool_meta WHERE key='seeded_v1' LIMIT 1`);
@@ -290,6 +301,78 @@ async function readTools(pool, includeInactive = false) {
   return result.rows.map(serializeTool);
 }
 
+
+function presetDefinitions(tools) {
+  const activeIds = new Set((tools || []).filter((tool) => tool.active !== false).map((tool) => tool.id));
+  const keep = (ids) => ids.filter((id) => activeIds.has(id));
+  return [
+    { id: 'full', name: 'Full Access', toolIds: [...activeIds] },
+    { id: 'receiving', name: 'Receiving', toolIds: keep(['fairshift-rotations','houston-control','daily-received','overstock','po-history','warehouse-inventory','salesforce-home','qa-approved','receiving-report','pending-insert-cards','completed-insert-cards']) },
+    { id: 'prep', name: 'Prep', toolIds: keep(['fairshift-rotations','houston-control','warehouse-inventory','salesforce-home','prepping-report','ready-packbuilders','pending-packbuilder-pos']) },
+    { id: 'assembly', name: 'Assembly', toolIds: keep(['fairshift-rotations','houston-control','assembly-screen','warehouse-inventory','salesforce-home','ready-packbuilders','pending-packbuilder-pos']) },
+    { id: 'inventory', name: 'Inventory Only', toolIds: keep(['warehouse-inventory']) },
+    { id: 'custom', name: 'Custom', toolIds: [] },
+  ];
+}
+
+async function readAccessRows(pool) {
+  const result = await pool.query(`SELECT employee_key,employee_name,preset,allowed_tool_ids,updated_at FROM hub_tool_access ORDER BY employee_name ASC`);
+  return result.rows.map((row) => ({
+    employeeKey: row.employee_key,
+    employeeName: row.employee_name,
+    preset: row.preset || 'full',
+    allowedToolIds: Array.isArray(row.allowed_tool_ids) ? row.allowed_tool_ids.map(String) : [],
+    updatedAt: row.updated_at || null,
+  }));
+}
+
+async function accessFor(pool, employeeName) {
+  const key = slug(employeeName);
+  if (!key) return { employeeKey: '', employeeName: '', preset: 'full', allowedToolIds: [], defaulted: true };
+  const result = await pool.query(`SELECT employee_key,employee_name,preset,allowed_tool_ids,updated_at FROM hub_tool_access WHERE employee_key=$1 LIMIT 1`, [key]);
+  const row = result.rows[0];
+  if (!row) return { employeeKey: key, employeeName, preset: 'full', allowedToolIds: [], defaulted: true };
+  return {
+    employeeKey: row.employee_key,
+    employeeName: row.employee_name,
+    preset: row.preset || 'full',
+    allowedToolIds: Array.isArray(row.allowed_tool_ids) ? row.allowed_tool_ids.map(String) : [],
+    updatedAt: row.updated_at || null,
+    defaulted: false,
+  };
+}
+
+async function saveAccess(pool, body) {
+  const employeeName = cleanText(body.employeeName, 120);
+  const employeeKey = slug(employeeName);
+  if (!employeeKey || !employeeName) throw new Error('Choose a team member.');
+  const validPresetIds = new Set(['full','receiving','prep','assembly','inventory','custom']);
+  const preset = validPresetIds.has(body.preset) ? body.preset : 'custom';
+  const known = await pool.query(`SELECT id FROM hub_tool_cards`);
+  const knownIds = new Set(known.rows.map((row) => String(row.id)));
+  const allowed = preset === 'full'
+    ? []
+    : [...new Set((Array.isArray(body.allowedToolIds) ? body.allowedToolIds : []).map(String).filter((id) => knownIds.has(id)))];
+
+  await pool.query(`
+    INSERT INTO hub_tool_access(employee_key,employee_name,preset,allowed_tool_ids,updated_at)
+    VALUES($1,$2,$3,$4::jsonb,NOW())
+    ON CONFLICT(employee_key) DO UPDATE SET
+      employee_name=EXCLUDED.employee_name,
+      preset=EXCLUDED.preset,
+      allowed_tool_ids=EXCLUDED.allowed_tool_ids,
+      updated_at=NOW()
+  `, [employeeKey, employeeName, preset, JSON.stringify(allowed)]);
+
+  return accessFor(pool, employeeName);
+}
+
+function filterToolsForAccess(tools, access) {
+  if (!access || access.preset === 'full') return tools;
+  const allowed = new Set(access.allowedToolIds || []);
+  return tools.filter((tool) => allowed.has(tool.id));
+}
+
 async function upsertTool(pool, body) {
   const id = cleanText(body.id, 100) || crypto.randomUUID();
   const title = cleanText(body.title, 120);
@@ -336,8 +419,26 @@ export default async (request) => {
 
     if (request.method === 'GET') {
       const admin = requestUrl.searchParams.get('admin') === '1';
-      if (admin && !managerAuthorized(request)) return json(401, { error: 'Manager access denied.' });
-      return json(200, { tools: await readTools(pool, admin) });
+      if (admin) {
+        if (!managerAuthorized(request)) return json(401, { error: 'Manager access denied.' });
+        const allTools = await readTools(pool, true);
+        return json(200, {
+          tools: allTools,
+          access: await readAccessRows(pool),
+          presets: presetDefinitions(allTools),
+        });
+      }
+
+      const session = hubSession(request);
+      if (!session) return json(200, { signedIn: false, tools: [], access: null });
+      const allTools = await readTools(pool, false);
+      const access = await accessFor(pool, session.name);
+      return json(200, {
+        signedIn: true,
+        employeeName: session.name,
+        access,
+        tools: filterToolsForAccess(allTools, access),
+      });
     }
 
     if (request.method !== 'POST') return json(405, { error: 'Method not allowed.' });
@@ -360,6 +461,9 @@ export default async (request) => {
       if (!id) throw new Error('Card id is required.');
       await pool.query(`DELETE FROM hub_tool_cards WHERE id=$1`, [id]);
       return json(200, { ok: true });
+    }
+    if (body.action === 'setAccess') {
+      return json(200, { ok: true, access: await saveAccess(pool, body) });
     }
     return json(400, { error: 'Unsupported action.' });
   } catch (error) {
