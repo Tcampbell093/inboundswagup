@@ -128,8 +128,21 @@
           </section>
 
           <section class="panel roster-source">
-            <div class="panel-head compact"><div><h2>Roster Source</h2><p>Employees and departments come from the Warehouse Hub team roster, so adding, removing, or moving a person updates Attendance automatically.</p></div></div>
-            <a class="secondary-link" href="/warehouse-hub/">Open Warehouse Hub Team Manager</a>
+            <div class="panel-head">
+              <div><h2>Attendance Roster</h2><p>This roster is independent from Hub users. It began with the names from the Excel workbook and can be changed here.</p></div>
+              <button id="addPersonBtn" class="secondary" type="button">+ Add Person</button>
+            </div>
+            <div class="roster-admin-grid">
+              <div>
+                <div class="subhead">People</div>
+                <div id="rosterAdminList" class="roster-admin-list"></div>
+              </div>
+              <div>
+                <div class="subhead">Departments</div>
+                <div class="inline-add"><input id="newDepartmentName" type="text" placeholder="New department" /><button id="addDepartmentBtn" class="secondary" type="button">Add</button></div>
+                <div id="departmentAdminList" class="department-admin-list"></div>
+              </div>
+            </div>
           </section>
         </div>
       </section>
@@ -137,6 +150,6 @@
   </main>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="app.js?v=20260929-1"></script>
+  <script src="app.js?v=20260929-2"></script>
 </body>
 </html>
