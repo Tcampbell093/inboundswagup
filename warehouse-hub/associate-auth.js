@@ -210,7 +210,7 @@
     }
     return `<article class="bingo-reward-card">
       <div class="bingo-reward-top">
-        <div><div class="bingo-reward-name">${esc(row.employeeName)}</div><div class="bingo-reward-meta">Won ${esc(rewardDate(row.wonAt))} · Reward given ${esc(rewardDate(row.rewardedAt))}</div><div class="bingo-reward-meta">Given by ${esc(row.rewardedBy || 'Unknown')}${row.rewardedByRole ? ' · ' + esc(row.rewardedByRole) : ''} · Round ${esc(row.roundKey)}</div></div>
+        <div><div class="bingo-reward-name">${esc(row.employeeName)}</div><div class="bingo-reward-meta">Won ${esc(rewardDate(row.wonAt))} · Reward given ${esc(rewardDate(row.rewardedAt))}</div><div class="bingo-reward-meta">Given by ${esc(row.rewardedBy || 'Unknown')}${row.rewardedByRole ? ' · ' + esc(displayRole(row.rewardedByRole)) : ''} · Round ${esc(row.roundKey)}</div></div>
         <span class="bingo-reward-status">✓ Given</span>
       </div>
       ${row.rewardNote ? `<div class="bingo-reward-history-note">${esc(row.rewardNote)}</div>` : ''}
