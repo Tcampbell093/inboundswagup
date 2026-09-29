@@ -145,12 +145,12 @@ async function savePerson(db,body){const name=clean(body.name,120);if(!name)thro
 async function saveDepartment(db,body){const name=clean(body.name,120);if(!name)throw new Error('Enter a department name.');const active=body.active!==false,sort=Number.isFinite(Number(body.sortOrder))?Math.round(Number(body.sortOrder)):100;await db.query(`INSERT INTO hub_attendance_departments(name,active,sort_order,created_at,updated_at) VALUES($1,$2,$3,NOW(),NOW()) ON CONFLICT(name) DO UPDATE SET active=EXCLUDED.active,sort_order=EXCLUDED.sort_order,updated_at=NOW()`,[name,active,sort]);return{name,active,sortOrder:sort}}
 
 export default async(request)=>{
- try{const session=attendanceSession(request);if(!session)return json(401,{error:'Warehouse Hub Team Lead or Manager sign-in is required.'});await ensureSchema();const db=pool(),url=new URL(request.url);
+ try{const session=attendanceSession(request);if(!session)return json(401,{error:'Warehouse Hub Team Lead or Admin sign-in is required.'});await ensureSchema();const db=pool(),url=new URL(request.url);
   if(request.method==='GET'){const key=clean(url.searchParams.get('person'),160);if(key)return json(200,await history(db,key));const date=validDate(url.searchParams.get('date'))||new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'}).format(new Date());return json(200,await snapshot(db,date))}
   if(request.method!=='POST')return json(405,{error:'Method not allowed.'});const body=await request.json().catch(()=>({})),action=clean(body.action,50);
   if(action==='saveDay'){const r=await saveDay(db,session,body);return json(200,{ok:true,...r,snapshot:await snapshot(db,validDate(body.date))})}
   if(action==='saveSettings'){
-    if(!isManager(session))return json(403,{error:'Manager access is required to change attendance rules.'});
+    if(!isManager(session))return json(403,{error:'Admin access is required to change attendance rules.'});
     return json(200,{ok:true,settings:await saveSettings(db,session,body)});
   }
   if(action==='upsertPerson'){
@@ -158,7 +158,7 @@ export default async(request)=>{
     return json(200,{ok:true,person:await savePerson(db,body)});
   }
   if(action==='upsertDepartment'){
-    if(!isManager(session))return json(403,{error:'Manager access is required to change attendance departments.'});
+    if(!isManager(session))return json(403,{error:'Admin access is required to change attendance departments.'});
     return json(200,{ok:true,department:await saveDepartment(db,body)});
   }
   return json(400,{error:'Unsupported attendance action.'});
