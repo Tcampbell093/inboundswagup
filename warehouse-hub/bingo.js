@@ -138,7 +138,10 @@
       if (!response.ok) throw new Error(body.error || 'Warehouse Bingo is unavailable.');
       state = body;
       state.drawResult = null;
-      message = '';
+      const recovered = Number(body.reconciledCoins || 0);
+      message = recovered > 0
+        ? `🪙 ${recovered} Bingo Coin${recovered === 1 ? '' : 's'} added from completed FairShift cleaning.`
+        : '';
       render();
     } catch (error) {
       root.innerHTML = `<div class="bingo-empty-card"><div><div class="bingo-kicker">Warehouse Bingo</div><h3>Couldn’t load your card.</h3><p>${esc(error?.message || 'Try again in a moment.')}</p></div><button class="action secondary" id="bingoRetry" type="button">Try again</button></div>`;
