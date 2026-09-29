@@ -159,7 +159,7 @@ function cleanDepartment(department) {
 }
 
 export default async (request) => {
-  if (!managerAuthorized(request)) return json(401, { error: 'Manager access denied.' });
+  if (!managerAuthorized(request)) return json(401, { error: 'Admin access denied.' });
 
   if (request.method === 'GET') {
     const path = `/api/dashboard?date=${encodeURIComponent(todayEastern())}`;
@@ -180,7 +180,7 @@ export default async (request) => {
   const payload = { ...body, action };
   if (['addEmployee', 'updateEmployee'].includes(action)) {
     const role = clean(payload.role || 'Associate', 40);
-    if (!['Associate', 'Team Lead', 'Manager'].includes(role)) return json(400, { error: 'Choose Associate, Team Lead, or Manager.' });
+    if (!['Associate', 'Team Lead', 'Manager'].includes(role)) return json(400, { error: 'Choose Associate, Team Lead, or Admin.' });
     payload.role = role;
   }
 
@@ -196,7 +196,7 @@ export default async (request) => {
     const bridgeMissing = result.status === 403 && /read-only|editor/i.test(raw);
     return json(result.status, {
       error: bridgeMissing
-        ? 'FairShift still needs the Warehouse Hub manager bridge update before roster changes can be saved here.'
+        ? 'FairShift still needs the Warehouse Hub admin bridge update before roster changes can be saved here.'
         : raw,
       bridgeMissing,
     });
