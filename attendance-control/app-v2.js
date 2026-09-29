@@ -60,10 +60,13 @@
       window.location.replace('/warehouse-hub/');
       return false;
     }
-    const ok=String(state.session.role||'').toLowerCase()==='manager';
-    $('managerPill').textContent=ok?`👤 ${state.session.name} · Manager`:'Access restricted';
+    const role=String(state.session.role||'').toLowerCase();
+    const ok=role==='manager'||role==='team lead';
+    $('managerPill').textContent=ok?`👤 ${state.session.name} · ${state.session.role || 'Attendance'}`:'Access restricted';
     $('accessGate').hidden=ok;
     $('app').hidden=!ok;
+    const settingsTab=document.querySelector('.tab[data-view="settings"]');
+    if(settingsTab) settingsTab.hidden=role!=='manager';
     document.body.classList.remove('auth-pending');
     return ok;
   }
