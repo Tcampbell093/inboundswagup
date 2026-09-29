@@ -123,7 +123,7 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
       disposition: dispositionCol >= 0 ? String(row[dispositionCol] ?? '').trim() : '',
       note: noteCol >= 0 ? String(row[noteCol] ?? '').trim() : '',
     }))
-    .filter((row: HoustonLocationRow): boolean => Boolean(row.location) && Boolean(row.deliveryId || row.po));
+    .filter((row: HoustonLocationRow): boolean => Boolean(row.associate) && Boolean(row.location) && Boolean(row.deliveryId || row.po));
 
   let result: HoustonSyncResult = {};
   if (rows.length) {
