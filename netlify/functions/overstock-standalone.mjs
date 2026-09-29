@@ -91,6 +91,26 @@ function normalizeOperationalDate(value) {
   return '';
 }
 
+function isUnknownAssociate(value) {
+  const name = str(value, 120).toLowerCase();
+  return !name || name === 'unknown' || name === 'unknown associate';
+}
+
+function excelEntryUpdate(entry, prepAssociate, patch = {}, now = Date.now()) {
+  const existingOriginal = str(entry?.originalAssociate || entry?.associate, 120);
+  const originalAssociate = isUnknownAssociate(existingOriginal) ? str(prepAssociate, 120) : existingOriginal;
+  return {
+    ...entry,
+    ...patch,
+    associate: originalAssociate || str(prepAssociate, 120),
+    originalAssociate: originalAssociate || str(prepAssociate, 120),
+    lastChangedBy: 'Excel Sync',
+    lastChangedAt: now,
+    sourceType: 'excel-location-sync',
+    updatedAt: now,
+  };
+}
+
 function tombId(t) {
   if (t == null) return '';
   return typeof t === 'object' ? str(t.id, 160) : str(t, 160);
@@ -237,6 +257,14 @@ async function importExcelLocations(rawRows, rawAssociates) {
       const containerCode = str(raw?.containerCode, 120).toUpperCase();
       const key = deliveryId || po || '(blank row)';
 
+      // Overstock should only receive workbook rows that have actually been
+      // assigned to a Prep associate. Unassigned rows remain in Excel until
+      // Prep ownership is known.
+      if (!associate) {
+        result.skipped.push(`${key}: no Prep By assigned.`);
+        continue;
+      }
+
       // Blank locations never clear Houston. This protects operational history
       // when a workbook row is incomplete or its formula has not recalculated.
       if (!location) {
@@ -286,6 +314,8 @@ async function importExcelLocations(rawRows, rawAssociates) {
           po,
           deliveryId,
           associate,
+          originalAssociate: associate,
+          lastChangedBy: 'Excel Sync',
           category,
           quantity: raw?.quantity,
           status: 'Not Donation',
@@ -320,7 +350,7 @@ async function importExcelLocations(rawRows, rawAssociates) {
         for (const match of matches) {
           const index = entries.findIndex(entry => String(entry?.id || '') === String(match?.id || ''));
           if (index < 0 || str(entries[index]?.category, 120) === category) continue;
-          entries[index] = { ...entries[index], category, sourceType: 'excel-location-sync', updatedAt: now };
+          entries[index] = excelEntryUpdate(entries[index], associate, { category }, now);
           changedEntryIds.add(String(entries[index].id));
         }
       }
@@ -329,7 +359,7 @@ async function importExcelLocations(rawRows, rawAssociates) {
         for (const match of matches) {
           const index = entries.findIndex(entry => String(entry?.id || '') === String(match?.id || ''));
           if (index < 0 || str(entries[index]?.date, 40) === operationalDate) continue;
-          entries[index] = { ...entries[index], date: operationalDate, sourceType: 'excel-location-sync', updatedAt: now };
+          entries[index] = excelEntryUpdate(entries[index], associate, { date: operationalDate }, now);
           changedEntryIds.add(String(entries[index].id));
         }
       }
@@ -339,10 +369,11 @@ async function importExcelLocations(rawRows, rawAssociates) {
           const index = entries.findIndex(entry => String(entry?.id || '') === String(match?.id || ''));
           if (index < 0) continue;
           const current = entries[index];
-          const nextAssociate = associate || str(current.associate, 120);
           const nextDeliveryId = deliveryId || str(current.deliveryId, 120);
-          if (str(current.associate, 120) === nextAssociate && str(current.deliveryId, 120) === nextDeliveryId) continue;
-          entries[index] = { ...current, associate: nextAssociate, deliveryId: nextDeliveryId, sourceType: 'excel-location-sync', updatedAt: now };
+          const needsPrepBackfill = isUnknownAssociate(current.originalAssociate || current.associate);
+          const needsExcelMarker = str(current.lastChangedBy, 120) !== 'Excel Sync';
+          if (!needsPrepBackfill && !needsExcelMarker && str(current.deliveryId, 120) === nextDeliveryId) continue;
+          entries[index] = excelEntryUpdate(current, associate, { deliveryId: nextDeliveryId }, now);
           changedEntryIds.add(String(current.id));
         }
       }
@@ -370,13 +401,10 @@ async function importExcelLocations(rawRows, rawAssociates) {
           if (!isMatch && String(entry.containerId) !== targetId) continue;
           const corrected = isMatch && (String(entry.containerId) !== targetId || str(entry.containerCode, 120).toUpperCase() !== containerCode);
           if (!corrected && str(entry.location, 120).toUpperCase() === location) continue;
-          entries[i] = {
-            ...entry,
+          entries[i] = excelEntryUpdate(entry, associate, {
             ...(isMatch ? { containerId: targetId, containerCode } : {}),
             location,
-            sourceType: 'excel-location-sync',
-            updatedAt: now,
-          };
+          }, now);
           changedEntryIds.add(String(entry.id));
         }
         // The previous box may hold other POs; leave it and its location alone.
@@ -400,14 +428,14 @@ async function importExcelLocations(rawRows, rawAssociates) {
         for (let i = 0; i < entries.length; i += 1) {
           if (!containerIds.has(String(entries[i]?.containerId || ''))) continue;
           if (str(entries[i]?.location, 120).toUpperCase() === location) continue;
-          entries[i] = { ...entries[i], location, sourceType: 'excel-location-sync', updatedAt: now };
+          entries[i] = excelEntryUpdate(entries[i], associate, { location }, now);
           changedEntryIds.add(String(entries[i].id));
         }
       } else {
         for (const match of matches) {
           const index = entries.findIndex(entry => String(entry?.id || '') === String(match?.id || ''));
           if (index < 0 || str(entries[index]?.location, 120).toUpperCase() === location) continue;
-          entries[index] = { ...entries[index], location, sourceType: 'excel-location-sync', updatedAt: now };
+          entries[index] = excelEntryUpdate(entries[index], associate, { location }, now);
           changedEntryIds.add(String(entries[index].id));
         }
       }
