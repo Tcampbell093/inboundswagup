@@ -10,6 +10,7 @@
 
   let feed = { announcements: [], policies: [], cleaning: [] };
   let tools = [];
+  let toolAccessState = { signedIn: null, employeeName: '', access: null };
   let toolOrderDirty = false;
   let managerKey = '';
   let adminData = null;
@@ -154,9 +155,19 @@
   }
 
   function renderTools() {
-    if (!tools.length) return;
     const grid = document.querySelector('.tool-grid');
     if (!grid) return;
+    if (toolAccessState.signedIn === false) {
+      grid.innerHTML = '<div class="empty">Sign in above to see the Hub tools available to you.</div>';
+      updateToolCount(0);
+      return;
+    }
+    if (!tools.length) {
+      const who = toolAccessState.employeeName ? ` for ${escapeHtml(toolAccessState.employeeName)}` : '';
+      grid.innerHTML = `<div class="empty">No Hub tools are assigned${who}. Ask a manager if you need access to another tool.</div>`;
+      updateToolCount(0);
+      return;
+    }
     grid.innerHTML = tools.map(toolCardHtml).join('');
     updateToolCount(tools.length);
   }
@@ -180,13 +191,20 @@
 
   async function loadTools() {
     try {
-      const r = await fetch(TOOLS_API, { cache: 'no-store' });
+      const r = await fetch(TOOLS_API, { cache: 'no-store', credentials: 'same-origin' });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || 'Tool cards unavailable.');
       tools = Array.isArray(j.tools) ? j.tools : [];
+      toolAccessState = {
+        signedIn: j.signedIn !== false,
+        employeeName: j.employeeName || '',
+        access: j.access || null,
+      };
       renderTools();
-    } catch (_) {
-      appendFallbackInsertCards();
+    } catch (error) {
+      const grid = document.querySelector('.tool-grid');
+      if (grid) grid.innerHTML = `<div class="empty">${escapeHtml(error.message || 'Unable to load your Hub tools.')}</div>`;
+      updateToolCount(0);
     }
   }
 
@@ -487,8 +505,188 @@
   async function refreshTeamAdmin(message = '') {
     teamAdminData = await teamAdminFetch();
     renderTeamAdmin();
+    renderAccessManager();
     await window.HubAssociate?.refreshRoster?.().catch?.(() => {});
     if (message) showMessage('managerMessage', message);
+  }
+
+
+  function injectAccessManager() {
+    if ($('accessManagerSection')) return;
+    const managerGrid = document.querySelector('.manager-grid');
+    if (!managerGrid) return;
+
+    const style = document.createElement('style');
+    style.textContent = `
+      .access-manager-section{grid-column:1/-1}
+      .access-top{display:grid;grid-template-columns:1.3fr 1fr 1.2fr auto;gap:10px;align-items:end}
+      .access-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+      .access-checks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+      .access-tool{display:flex;gap:8px;align-items:flex-start;border:1px solid var(--line);background:#fff;border-radius:11px;padding:10px}
+      .access-tool input{margin-top:3px}
+      .access-tool span{display:grid;gap:2px}
+      .access-tool small{color:var(--muted);line-height:1.35}
+      .access-summary{margin-top:10px;color:var(--muted);font-size:12px;font-weight:750}
+      @media(max-width:900px){.access-top{grid-template-columns:1fr 1fr}.access-checks{grid-template-columns:repeat(2,minmax(0,1fr))}}
+      @media(max-width:620px){.access-top{grid-template-columns:1fr}.access-checks{grid-template-columns:1fr}}
+    `;
+    document.head.appendChild(style);
+
+    const section = document.createElement('section');
+    section.className = 'manager-section access-manager-section';
+    section.id = 'accessManagerSection';
+    section.innerHTML = `
+      <h4>Hub access</h4>
+      <p class="policy-meta">Choose a preset for speed, then add or remove individual tools. Anyone without a saved access profile keeps Full Access until you change them.</p>
+      <div class="access-top">
+        <div class="field"><label>Team member</label><select id="accessEmployee"></select></div>
+        <div class="field"><label>Preset</label><select id="accessPreset"></select></div>
+        <div class="field"><label>Copy access from</label><select id="accessCopyFrom"><option value="">Choose person…</option></select></div>
+        <button class="action secondary" id="accessCopyBtn" type="button">Copy</button>
+      </div>
+      <div class="access-actions">
+        <button class="action secondary" id="accessSelectAll" type="button">Select all</button>
+        <button class="action secondary" id="accessClearAll" type="button">Clear all</button>
+        <button class="action" id="accessSaveBtn" type="button">Save access</button>
+      </div>
+      <div id="accessToolChecks" class="access-checks"></div>
+      <div id="accessSummary" class="access-summary"></div>
+    `;
+    const teamSection = $('teamManagerSection');
+    if (teamSection) teamSection.insertAdjacentElement('afterend', section);
+    else managerGrid.appendChild(section);
+
+    $('accessEmployee').addEventListener('change', loadSelectedAccess);
+    $('accessPreset').addEventListener('change', () => applyPreset($('accessPreset').value));
+    $('accessSelectAll').addEventListener('click', () => {
+      document.querySelectorAll('[data-access-tool]').forEach((box) => { box.checked = true; });
+      $('accessPreset').value = 'custom';
+      updateAccessSummary();
+    });
+    $('accessClearAll').addEventListener('click', () => {
+      document.querySelectorAll('[data-access-tool]').forEach((box) => { box.checked = false; });
+      $('accessPreset').value = 'custom';
+      updateAccessSummary();
+    });
+    $('accessCopyBtn').addEventListener('click', copyAccessFrom);
+    $('accessSaveBtn').addEventListener('click', saveSelectedAccess);
+  }
+
+  function accessRows() {
+    return Array.isArray(toolAdminData?.access) ? toolAdminData.access : [];
+  }
+
+  function accessPresets() {
+    return Array.isArray(toolAdminData?.presets) ? toolAdminData.presets : [];
+  }
+
+  function activeAdminTools() {
+    return (Array.isArray(toolAdminData?.tools) ? toolAdminData.tools : []).filter((tool) => tool.active !== false);
+  }
+
+  function accessForName(name) {
+    const key = normalizeName(name);
+    return accessRows().find((row) => normalizeName(row.employeeName) === key) || {
+      employeeName: name,
+      preset: 'full',
+      allowedToolIds: [],
+      defaulted: true,
+    };
+  }
+
+  function idsForAccess(access) {
+    const all = activeAdminTools().map((tool) => tool.id);
+    if (!access || access.preset === 'full') return all;
+    return Array.isArray(access.allowedToolIds) ? access.allowedToolIds : [];
+  }
+
+  function updateAccessSummary() {
+    const checked = [...document.querySelectorAll('[data-access-tool]:checked')].length;
+    const total = document.querySelectorAll('[data-access-tool]').length;
+    const preset = accessPresets().find((item) => item.id === $('accessPreset')?.value);
+    if ($('accessSummary')) $('accessSummary').textContent = `${checked} of ${total} tools visible · ${preset?.name || 'Custom'}`;
+  }
+
+  function renderAccessManager() {
+    if (!$('accessManagerSection')) return;
+    const employees = (Array.isArray(teamAdminData?.employees) ? teamAdminData.employees : [])
+      .filter((person) => person.active !== false)
+      .slice()
+      .sort((a,b) => String(a.name).localeCompare(String(b.name)));
+
+    const currentEmployee = $('accessEmployee').value;
+    $('accessEmployee').innerHTML = employees.length
+      ? employees.map((person) => `<option value="${escapeHtml(person.name)}">${escapeHtml(person.name)} · ${escapeHtml(person.role || 'Associate')}</option>`).join('')
+      : '<option value="">No active team members</option>';
+    if (employees.some((person) => person.name === currentEmployee)) $('accessEmployee').value = currentEmployee;
+
+    $('accessCopyFrom').innerHTML = '<option value="">Choose person…</option>' + employees
+      .map((person) => `<option value="${escapeHtml(person.name)}">${escapeHtml(person.name)}</option>`).join('');
+
+    $('accessPreset').innerHTML = accessPresets()
+      .map((preset) => `<option value="${escapeHtml(preset.id)}">${escapeHtml(preset.name)}</option>`).join('');
+
+    $('accessToolChecks').innerHTML = activeAdminTools().map((tool) => `
+      <label class="access-tool">
+        <input type="checkbox" data-access-tool value="${escapeHtml(tool.id)}" />
+        <span><b>${escapeHtml(tool.title)}</b><small>${escapeHtml(tool.label || 'Team tool')}</small></span>
+      </label>
+    `).join('');
+
+    document.querySelectorAll('[data-access-tool]').forEach((box) => box.addEventListener('change', () => {
+      $('accessPreset').value = 'custom';
+      updateAccessSummary();
+    }));
+
+    loadSelectedAccess();
+  }
+
+  function applyPreset(presetId) {
+    const preset = accessPresets().find((item) => item.id === presetId);
+    if (!preset || preset.id === 'custom') {
+      updateAccessSummary();
+      return;
+    }
+    const ids = new Set(preset.toolIds || []);
+    document.querySelectorAll('[data-access-tool]').forEach((box) => { box.checked = ids.has(box.value); });
+    updateAccessSummary();
+  }
+
+  function loadSelectedAccess() {
+    const name = $('accessEmployee')?.value || '';
+    if (!name) return;
+    const access = accessForName(name);
+    const ids = new Set(idsForAccess(access));
+    const presetId = accessPresets().some((item) => item.id === access.preset) ? access.preset : 'custom';
+    $('accessPreset').value = presetId;
+    document.querySelectorAll('[data-access-tool]').forEach((box) => { box.checked = ids.has(box.value); });
+    updateAccessSummary();
+  }
+
+  function copyAccessFrom() {
+    const sourceName = $('accessCopyFrom')?.value || '';
+    if (!sourceName) return;
+    const source = accessForName(sourceName);
+    const ids = new Set(idsForAccess(source));
+    $('accessPreset').value = source.preset === 'full' ? 'full' : 'custom';
+    document.querySelectorAll('[data-access-tool]').forEach((box) => { box.checked = ids.has(box.value); });
+    updateAccessSummary();
+  }
+
+  async function saveSelectedAccess() {
+    const employeeName = $('accessEmployee')?.value || '';
+    if (!employeeName) return;
+    const preset = $('accessPreset')?.value || 'custom';
+    const allowedToolIds = [...document.querySelectorAll('[data-access-tool]:checked')].map((box) => box.value);
+    try {
+      await toolAdminFetch({ action: 'setAccess', employeeName, preset, allowedToolIds });
+      toolAdminData = await toolAdminFetch();
+      renderAccessManager();
+      await loadTools();
+      showMessage('managerMessage', `Hub access saved for ${employeeName}.`);
+    } catch (error) {
+      showMessage('managerMessage', error.message || 'Could not save Hub access.', true);
+    }
   }
 
   function injectToolManager() {
@@ -633,6 +831,7 @@
       teamAdminData = results[2].status === 'fulfilled' ? results[2].value : { employees: [], departments: [] };
       renderAdmin();
       renderTeamAdmin();
+      renderAccessManager();
       $('managerMessage').style.display = 'none';
       $('managerDialog').showModal();
       if (results[2].status !== 'fulfilled') showMessage('managerMessage', results[2].reason?.message || 'Team management is temporarily unavailable.', true);
@@ -672,6 +871,7 @@
     bindAdminDeletes();
     renderTeamAdmin();
     renderToolAdmin();
+    renderAccessManager();
     setDefaultDates();
   }
 
@@ -700,6 +900,7 @@
   async function refreshToolAdmin(msg) {
     toolAdminData = await toolAdminFetch();
     renderToolAdmin();
+    renderAccessManager();
     await loadTools();
     if (msg) showMessage('managerMessage', msg);
   }
@@ -741,8 +942,10 @@
   });
 
   injectTeamManager();
+  injectAccessManager();
   injectToolManager();
   setDefaultDates();
   loadFeed();
   loadTools();
+  document.addEventListener('hub-associate-session', () => loadTools());
 })();
