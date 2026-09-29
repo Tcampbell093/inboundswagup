@@ -113,7 +113,7 @@
   rewardDialog.id = 'bingoRewardDialog';
   rewardDialog.innerHTML = `
     <div class="dialog-head">
-      <div><h3>Bingo Rewards</h3><p class="bingo-reward-intro" style="margin:4px 0 0">Manager / Team Lead reward ledger</p></div>
+      <div><h3>Bingo Rewards</h3><p class="bingo-reward-intro" style="margin:4px 0 0">Admin / Team Lead reward ledger</p></div>
       <button class="close" id="bingoRewardClose" type="button">×</button>
     </div>
     <div class="bingo-reward-body">
@@ -148,6 +148,7 @@
   let rewardLoading = false;
 
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const displayRole = (role) => String(role || '').toLowerCase() === 'manager' ? 'Admin' : String(role || '');
   const normalize = (v) => String(v || '').trim().toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-');
 
   function setError(message = '') {
@@ -285,7 +286,7 @@
 
   function updateButton() {
     if (session.signedIn) {
-      btn.textContent = `${session.name}${String(session.role || '').toLowerCase() === 'manager' ? ' · Manager' : (session.department ? ' · ' + session.department : '')}`;
+      btn.textContent = `${session.name}${String(session.role || '').toLowerCase() === 'manager' ? ' · Admin' : (session.department ? ' · ' + session.department : '')}`;
       btn.classList.add('signed-in');
       btn.title = 'Associate signed in for this shift';
     } else {
@@ -313,7 +314,7 @@
 
   function showSignedInState() {
     current.classList.add('show');
-    current.innerHTML = `<strong>Signed in as ${esc(session.name)}${session.role ? ' · ' + esc(session.role) : ''}</strong><span>${esc(session.department || 'Warehouse team')} · Your Hub session stays active for this shift.</span>`;
+    current.innerHTML = `<strong>Signed in as ${esc(session.name)}${session.role ? ' · ' + esc(displayRole(session.role)) : ''}</strong><span>${esc(session.department || 'Warehouse team')} · Your Hub session stays active for this shift.</span>`;
     form.style.display = 'none';
     const existing = current.querySelector('[data-signout]');
     if (!existing) {
@@ -358,7 +359,7 @@
   async function loadRoster(force = false) {
     const data = await api(`?action=roster${force ? '&refresh=1' : ''}`);
     roster = Array.isArray(data.employees) ? data.employees : [];
-    nameEl.innerHTML = `<option value="">Choose your name…</option>${roster.map((person) => `<option value="${esc(person.name)}">${esc(person.name)}${person.department ? ' · ' + esc(person.department) : ''}${person.role ? ' · ' + esc(person.role) : ''}</option>`).join('')}`;
+    nameEl.innerHTML = `<option value="">Choose your name…</option>${roster.map((person) => `<option value="${esc(person.name)}">${esc(person.name)}${person.department ? ' · ' + esc(person.department) : ''}${person.role ? ' · ' + esc(displayRole(person.role)) : ''}</option>`).join('')}`;
     if (data.selfServiceConnected === false) {
       note.textContent = 'If you already have a FairShift cleaning PIN, use the same one here. First-time PIN setup is available in the Hub; FairShift syncing will follow the same PIN when its self-service update is active.';
     }
