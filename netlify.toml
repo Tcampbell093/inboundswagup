@@ -2,7 +2,7 @@
   functions = "netlify/functions"
   # Writes version.js with the current git SHA, branch, and build time.
   # See build-version.js — runs on every Netlify deploy.
-  command = "node scripts/import-attendance-history.mjs && node build-version.js"
+  command = "node build-version.js"
 
 [[plugins]]
   package = "@netlify/plugin-functions-install-core"
