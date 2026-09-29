@@ -164,7 +164,7 @@
     }
     if (!tools.length) {
       const who = toolAccessState.employeeName ? ` for ${escapeHtml(toolAccessState.employeeName)}` : '';
-      grid.innerHTML = `<div class="empty">No Hub tools are assigned${who}. Ask a manager if you need access to another tool.</div>`;
+      grid.innerHTML = `<div class="empty">No Hub tools are assigned${who}. Ask an admin if you need access to another tool.</div>`;
       updateToolCount(0);
       return;
     }
@@ -283,7 +283,7 @@
     }
     const r = await fetch(url, opts);
     const j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'Manager request failed.');
+    if (!r.ok) throw new Error(j.error || 'Admin request failed.');
     return j;
   }
 
@@ -371,11 +371,11 @@
     section.id = 'teamManagerSection';
     section.innerHTML = `
       <h4>Team & departments</h4>
-      <p class="policy-meta team-manager-note">Manage the warehouse roster here instead of opening FairShift. Manager is a Hub-wide designation: Managers automatically get the Hub manager tools and full Warehouse Inventory management access after signing in with their Hub PIN.</p>
+      <p class="policy-meta team-manager-note">Manage the warehouse roster here instead of opening FairShift. Admin is the Hub-wide designation for elevated access: Admins automatically get the Hub admin tools and full Warehouse Inventory management access after signing in with their Hub PIN.</p>
       <form id="teamAddForm" class="team-add-grid">
         <div class="field team-add-name"><label>Name</label><input name="name" required maxlength="100" placeholder="Team member name" /></div>
         <div class="field"><label>Home department</label><select name="homeDepartment" id="teamAddDepartment"></select></div>
-        <div class="field"><label>Designation</label><select name="role"><option>Associate</option><option>Team Lead</option><option>Manager</option></select></div>
+        <div class="field"><label>Designation</label><select name="role"><option>Associate</option><option>Team Lead</option><option value="Manager">Admin</option></select></div>
         <button class="action" type="submit">Add person</button>
       </form>
       <div class="team-subhead">People</div>
@@ -432,7 +432,7 @@
         <select data-field="role" aria-label="Designation">
           <option${employee.role === 'Associate' ? ' selected' : ''}>Associate</option>
           <option${employee.role === 'Team Lead' ? ' selected' : ''}>Team Lead</option>
-          <option${employee.role === 'Manager' ? ' selected' : ''}>Manager</option>
+          <option value="Manager"${employee.role === 'Manager' ? ' selected' : ''}>Admin</option>
         </select>
         <label class="check"><input data-field="active" type="checkbox"${employee.active !== false ? ' checked' : ''} /> Active</label>
         <button class="mini-edit" type="button" data-save-team="${escapeHtml(employee.id)}">Save</button>
@@ -460,7 +460,7 @@
           await teamAdminFetch({ action: 'updateEmployee', id, name, homeDepartment, role, active });
           const current = window.HubAssociate?.getSession?.() || {};
           const note = current.signedIn && normalizeName(current.name) === normalizeName(name) && role === 'Manager'
-            ? ' Saved. Sign out and back in once to activate your new Manager access.'
+            ? ' Saved. Sign out and back in once to activate your new Admin access.'
             : '';
           await refreshTeamAdmin(`Team member saved.${note}`);
         } catch (error) {
@@ -818,7 +818,7 @@
     if (designatedManager) {
       managerKey = '';
     } else {
-      const key = window.prompt('Manager access key');
+      const key = window.prompt('Admin access key');
       if (!key) return;
       managerKey = key.trim();
     }
@@ -837,15 +837,15 @@
       if (results[2].status !== 'fulfilled') showMessage('managerMessage', results[2].reason?.message || 'Team management is temporarily unavailable.', true);
     } catch (e) {
       managerKey = '';
-      window.alert(e.message || 'Manager access denied.');
+      window.alert(e.message || 'Admin access denied.');
     }
   }
 
   function updateManagerButton() {
     const session = window.HubAssociate?.getSession?.() || {};
     const manager = session.signedIn && String(session.role || '').toLowerCase() === 'manager';
-    $('manageBtn').textContent = manager ? 'Manager tools' : 'Manage';
-    $('manageBtn').title = manager ? 'Open your Manager controls' : 'Manager controls';
+    $('manageBtn').textContent = manager ? 'Admin tools' : 'Admin';
+    $('manageBtn').title = manager ? 'Open your Admin controls' : 'Admin controls';
   }
 
   $('manageBtn').addEventListener('click', openManager);
