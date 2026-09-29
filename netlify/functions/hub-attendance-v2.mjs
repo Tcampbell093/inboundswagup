@@ -154,7 +154,7 @@ export default async(request)=>{
     return json(200,{ok:true,settings:await saveSettings(db,session,body)});
   }
   if(action==='upsertPerson'){
-    if(!isManager(session))return json(403,{error:'Manager access is required to change the attendance roster.'});
+    if(!isManager(session))return json(403,{error:'Admin access is required to change the attendance roster.'});
     return json(200,{ok:true,person:await savePerson(db,body)});
   }
   if(action==='upsertDepartment'){
