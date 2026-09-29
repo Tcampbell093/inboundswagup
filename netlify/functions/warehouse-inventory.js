@@ -535,7 +535,7 @@ exports.handler = async function handler(event) {
 
   if (event.httpMethod === 'GET' && (qs.managerCheck === '1' || qs.managerCheck === 'true')) {
     if (!hubSession(event)) return json(401, { error: 'Warehouse Hub sign-in required' });
-    if (!managerAuthorized(event)) return json(403, { error: 'Manager access key not accepted.' });
+    if (!managerAuthorized(event)) return json(403, { error: 'Admin access key not accepted.' });
     return json(200, { ok: true, role: 'admin' });
   }
 
