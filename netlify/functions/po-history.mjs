@@ -157,6 +157,30 @@ async function handleSync(request) {
 async function handleGet(request) {
   if (!await authorize(request)) return json(401, { error: 'Warehouse Hub sign-in required.' });
   const url = new URL(request.url);
+  const recordKey = clean(url.searchParams.get('recordKey'), 128);
+  if (recordKey) {
+    const selectedResult = await pool().query('SELECT * FROM po_history_records WHERE record_key=$1 LIMIT 1', [recordKey]);
+    const selected = selectedResult.rows[0];
+    if (!selected) return json(404, { error: 'PO record not found.' });
+
+    const related = await pool().query(`
+      SELECT * FROM po_history_records
+      WHERE record_key=$1
+         OR (COALESCE($2,'')<>'' AND delivery_id=$2)
+         OR (COALESCE($3,'')<>'' AND po=$3)
+      ORDER BY
+        CASE WHEN record_key=$1 THEN 0 ELSE 1 END,
+        activity_date ASC NULLS LAST,
+        first_seen_at ASC
+      LIMIT 100
+    `, [recordKey, selected.delivery_id || '', selected.po || '']);
+
+    return json(200, {
+      record: selected,
+      relatedRecords: related.rows,
+    });
+  }
+
   const q = clean(url.searchParams.get('q'), 200);
   const scope = ['current','archived'].includes(url.searchParams.get('scope')) ? url.searchParams.get('scope') : 'all';
   const sort = url.searchParams.get('sort') || 'newest';
