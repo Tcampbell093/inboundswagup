@@ -560,7 +560,7 @@
     $('accessPreset').addEventListener('change', () => applyPreset($('accessPreset').value));
     $('accessSelectAll').addEventListener('click', () => {
       document.querySelectorAll('[data-access-tool]').forEach((box) => { box.checked = true; });
-      $('accessPreset').value = 'custom';
+      $('accessPreset').value = 'full';
       updateAccessSummary();
     });
     $('accessClearAll').addEventListener('click', () => {
@@ -668,7 +668,7 @@
     if (!sourceName) return;
     const source = accessForName(sourceName);
     const ids = new Set(idsForAccess(source));
-    $('accessPreset').value = source.preset === 'full' ? 'full' : 'custom';
+    $('accessPreset').value = accessPresets().some((item) => item.id === source.preset) ? source.preset : 'custom';
     document.querySelectorAll('[data-access-tool]').forEach((box) => { box.checked = ids.has(box.value); });
     updateAccessSummary();
   }
