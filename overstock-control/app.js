@@ -108,7 +108,45 @@
     bindBoxes($('boxesGrid'));
   }
   function logMatches(e,q){const c=container(e.containerId);return!q||norm([e.po,e.deliveryId,e.category,e.status,e.action,e.location,e.containerCode,e.associate,e.originalAssociate,e.lastChangedBy,c?.code,c?.currentLocation].join(' ')).includes(q)}
-  function renderLog(){const q=norm($('logSearch').value),sort=$('logSort').value;let es=data.entries.filter(e=>norm(e.action)!=='donated').filter(e=>logMatches(e,q));if(sort==='oldest')es.sort((a,b)=>time(a)-time(b));else if(sort==='po')es.sort((a,b)=>cmp(a.po,b.po));else if(sort==='qty-desc')es.sort((a,b)=>Number(b.quantity||0)-Number(a.quantity||0));else if(sort==='qty-asc')es.sort((a,b)=>Number(a.quantity||0)-Number(b.quantity||0));else if(sort==='location')es.sort((a,b)=>cmp(container(a.containerId)?.currentLocation||a.location,container(b.containerId)?.currentLocation||b.location));else if(sort==='associate')es.sort((a,b)=>cmp(a.originalAssociate||a.associate,b.originalAssociate||b.associate));else es.sort((a,b)=>time(b)-time(a));const visible=es.slice(0,logLimit);$('logBody').innerHTML=visible.length?visible.map(e=>{const c=container(e.containerId),loc=c?.currentLocation||e.location||'—',code=c?.code||e.containerCode||'—',original=e.originalAssociate||e.associate||'Unknown',changed=e.lastChangedBy||original;return`<tr><td>${esc(e.date||fmt(time(e)))}</td><td><button class="po-link" data-entry="${esc(e.id)}">${esc(e.po||'—')}</button>${e.deliveryId?`<small><br>${esc(e.deliveryId)}</small>`:''}</td><td>${esc(e.category||'—')}</td><td><span class="qty">+${Number(e.quantity||0).toLocaleString()}</span></td><td><span class="tag">${esc(e.action||'—')}</span></td><td><span class="mono">${esc(loc)}</span><br><small>${esc(code)}</small></td><td>${esc(original)}</td><td>${esc(changed)}<small><br>${esc(fmt(e.updatedAt))}</small></td><td><button class="ghost" data-entry="${esc(e.id)}">Edit</button></td></tr>`}).join(''):'<tr><td colspan="9" class="empty">No entries match.</td></tr>';$('logCount').textContent=`Showing ${visible.length} of ${es.length}`;$('showMoreBtn').hidden=visible.length>=es.length;$('showMoreBtn').textContent=`Show more (${es.length-visible.length} remaining)`;document.querySelectorAll('[data-entry]').forEach(b=>b.onclick=()=>openEntry(b.dataset.entry))}
+  function renderLog(){
+    const q=norm($('logSearch').value),sort=$('logSort').value;
+    let es=data.entries.filter(e=>norm(e.action)!=='donated').filter(e=>logMatches(e,q));
+    if(sort==='oldest')es.sort((a,b)=>time(a)-time(b));
+    else if(sort==='po')es.sort((a,b)=>cmp(a.po,b.po));
+    else if(sort==='qty-desc')es.sort((a,b)=>Number(b.quantity||0)-Number(a.quantity||0));
+    else if(sort==='qty-asc')es.sort((a,b)=>Number(a.quantity||0)-Number(b.quantity||0));
+    else if(sort==='location')es.sort((a,b)=>cmp(container(a.containerId)?.currentLocation||a.location,container(b.containerId)?.currentLocation||b.location));
+    else if(sort==='associate')es.sort((a,b)=>cmp(a.originalAssociate||a.associate,b.originalAssociate||b.associate));
+    else es.sort((a,b)=>time(b)-time(a));
+
+    const visible=es.slice(0,logLimit);
+    $('logBody').innerHTML=visible.length?visible.map(e=>{
+      const c=container(e.containerId),loc=c?.currentLocation||e.location||'—',code=c?.code||e.containerCode||'—';
+      const storedOriginal=String(e.originalAssociate||'').trim();
+      const currentAssociate=String(e.associate||'').trim();
+      const original=/^unknown(?: associate)?$/i.test(storedOriginal)||!storedOriginal
+        ? (currentAssociate&&!/^unknown(?: associate)?$/i.test(currentAssociate)?currentAssociate:'Unknown')
+        : storedOriginal;
+      const fromExcel=norm(e.sourceType)==='excel-location-sync';
+      const changed=fromExcel?'Excel Sync':(e.lastChangedBy||original);
+      const sourceNote=fromExcel?'<span class="excel-source">From Excel</span>':'';
+      return `<tr>
+        <td>${esc(e.date||fmt(time(e)))}</td>
+        <td><button class="po-link" data-entry="${esc(e.id)}">${esc(e.po||'—')}</button>${e.deliveryId?`<small><br>${esc(e.deliveryId)}</small>`:''}</td>
+        <td>${esc(e.category||'—')}</td>
+        <td><span class="qty">+${Number(e.quantity||0).toLocaleString()}</span></td>
+        <td><span class="tag">${esc(e.action||'—')}</span></td>
+        <td><span class="mono">${esc(loc)}</span><br><small>${esc(code)}</small></td>
+        <td>${esc(original)}${fromExcel?'<small><br>Prep By</small>':''}</td>
+        <td>${esc(changed)}${sourceNote?`<small><br>${sourceNote}</small>`:''}<small><br>${esc(fmt(e.updatedAt))}</small></td>
+        <td><button class="ghost" data-entry="${esc(e.id)}">Edit</button></td>
+      </tr>`;
+    }).join(''):'<tr><td colspan="9" class="empty">No entries match.</td></tr>';
+    $('logCount').textContent=`Showing ${visible.length} of ${es.length}`;
+    $('showMoreBtn').hidden=visible.length>=es.length;
+    $('showMoreBtn').textContent=`Show more (${es.length-visible.length} remaining)`;
+    document.querySelectorAll('[data-entry]').forEach(b=>b.onclick=()=>openEntry(b.dataset.entry));
+  }
   function renderDonationPoolButton(){const rows=Array.isArray(data.donations)?data.donations:[];const count=rows.length,total=rows.reduce((n,d)=>n+Number(d.quantity||0),0);$('donationPoolBtn').innerHTML=`🎁 Donation Pool <span class="button-count">${count}</span>`;$('donationPoolBtn').title=`${count} donated PO${count===1?'':'s'} · ${total.toLocaleString()} units`;}
   function openDonationPool(){const rows=(Array.isArray(data.donations)?data.donations:[]).slice().sort((a,b)=>Number(b.donatedAt||b.updatedAt||0)-Number(a.donatedAt||a.updatedAt||0));const total=rows.reduce((n,d)=>n+Number(d.quantity||0),0);$('donationDialogSub').textContent=rows.length?`${rows.length} PO${rows.length===1?'':'s'} · ${total.toLocaleString()} units`:'Nothing donated yet.';$('donationDialogBody').innerHTML=rows.length?'<div class="donation-list">'+rows.map(d=>{const original=d.originalAssociate||d.associate||'Unknown',donor=d.donatedBy||d.lastChangedBy||original;return`<article class="donation-row"><div class="donation-main"><b>PO ${esc(d.po||'—')}</b><span class="qty">${Number(d.quantity||0).toLocaleString()} units</span></div><div class="donation-meta">${esc(d.category||'Uncategorized')}${d.deliveryId?` · ${esc(d.deliveryId)}`:''}</div><div class="donation-meta">From <b>${esc(d.containerCode||'Unknown box')}</b>${d.location?` · 📍 ${esc(d.location)}`:''}</div><div class="donation-meta">Originally added by <b>${esc(original)}</b></div><div class="donation-meta">Donated by <b>${esc(donor)}</b> · ${esc(fmt(d.donatedAt||d.updatedAt))}</div></article>`}).join('')+'</div>':'<div class="empty">The Donation Pool is empty.</div>';$('donationDialog').showModal();}
   function render(){lists();syncPill();renderDonationPoolButton();const stats=renderStats();renderCart(stats);renderLocations(stats);renderBoxes(stats);renderLog();renderActivityFeed()}
