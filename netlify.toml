@@ -37,3 +37,11 @@
     Strict-Transport-Security = "max-age=31536000; includeSubDomains"
     Permissions-Policy = "geolocation=(), microphone=(), payment=(), usb=(), camera=(self)"
     Content-Security-Policy-Report-Only = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://identity.netlify.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://identity.netlify.com https://*.netlify.app; frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self'"
+
+
+[[headers]]
+  for = "/attendance-control/*"
+  [headers.values]
+    Cache-Control = "private, no-store, max-age=0"
+    Pragma = "no-cache"
+    X-Robots-Tag = "noindex, nofollow, noarchive"
