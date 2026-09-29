@@ -2,6 +2,7 @@ import pg from 'pg';
 import crypto from 'node:crypto';
 
 const { Pool } = pg;
+const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
 const SESSION_COOKIE = 'hub_associate_session';
 const SESSION_VERSION = 2;
 const ROUND_ANCHOR = '2026-09-21';
@@ -172,8 +173,114 @@ async function ensureSchema() {
     );
 
     CREATE INDEX IF NOT EXISTS hub_bingo_players_round_idx ON hub_bingo_players(round_key);
+
+    CREATE TABLE IF NOT EXISTS hub_bingo_reconcile_state (
+      employee_key TEXT PRIMARY KEY,
+      last_synced_date DATE,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
   schemaReady = true;
+}
+
+async function fetchCompletedCleaningForDate(dateText, employeeKey) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(`${FAIRSHIFT_BASE}/api/dashboard?date=${encodeURIComponent(dateText)}`, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`FairShift returned ${response.status}`);
+    const data = await response.json();
+    const employees = new Map(
+      (Array.isArray(data.employees) ? data.employees : [])
+        .map((person) => [Number(person?.id), clean(person?.name, 100)]),
+    );
+    const ids = [];
+    for (const assignment of Array.isArray(data.assignments) ? data.assignments : []) {
+      if (!assignment || assignment.type !== 'cleaning' || assignment.dutyStatus !== 'completed') continue;
+      const assignmentId = Number(assignment.id);
+      if (!assignmentId) continue;
+      const scheduledName = clean(assignment.employeeName || employees.get(Number(assignment.employeeId)) || '', 100);
+      const actualName = assignment.actualEmployeeId
+        ? clean(employees.get(Number(assignment.actualEmployeeId)) || '', 100)
+        : '';
+      const completedBy = actualName || scheduledName;
+      if (slug(completedBy) === employeeKey) ids.push(assignmentId);
+    }
+    return ids;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function reconcileCleaningCoins(client, session, round) {
+  const employeeKey = slug(session.name);
+  if (!employeeKey) return 0;
+
+  const prior = await client.query(
+    `SELECT last_synced_date FROM hub_bingo_reconcile_state WHERE employee_key=$1 LIMIT 1`,
+    [employeeKey],
+  );
+  const currentDate = easternDate();
+  const roundStartDay = epochDay(round.start);
+  const currentDay = epochDay(currentDate);
+  const previousDate = prior.rows[0]?.last_synced_date
+    ? String(prior.rows[0].last_synced_date).slice(0, 10)
+    : '';
+  const previousDay = previousDate ? epochDay(previousDate) : roundStartDay;
+  const startDay = Math.max(roundStartDay, Math.min(currentDay, previousDay - (previousDate ? 1 : 0)));
+  const dates = [];
+  for (let day = startDay; day <= currentDay; day += 1) dates.push(dateFromEpoch(day));
+
+  const results = await Promise.allSettled(
+    dates.map((dateText) => fetchCompletedCleaningForDate(dateText, employeeKey)),
+  );
+  const assignmentIds = new Set();
+  let allSucceeded = true;
+  for (const result of results) {
+    if (result.status !== 'fulfilled') {
+      allSucceeded = false;
+      continue;
+    }
+    for (const id of result.value) assignmentIds.add(Number(id));
+  }
+
+  let awarded = 0;
+  for (const assignmentId of assignmentIds) {
+    const sourceKey = `fairshift:${assignmentId}:finish`;
+    const inserted = await client.query(`
+      INSERT INTO hub_bingo_coin_events(source_key,employee_key,employee_name,amount,assignment_id,created_at)
+      VALUES($1,$2,$3,1,$4,NOW())
+      ON CONFLICT(source_key) DO NOTHING
+      RETURNING source_key
+    `, [sourceKey, employeeKey, clean(session.name, 100), assignmentId]);
+    if (inserted.rowCount) awarded += 1;
+  }
+
+  if (awarded > 0) {
+    await client.query(`
+      INSERT INTO hub_bingo_wallet(employee_key,employee_name,coins,updated_at)
+      VALUES($1,$2,$3,NOW())
+      ON CONFLICT(employee_key) DO UPDATE SET
+        employee_name=EXCLUDED.employee_name,
+        coins=hub_bingo_wallet.coins + EXCLUDED.coins,
+        updated_at=NOW()
+    `, [employeeKey, clean(session.name, 100), awarded]);
+  }
+
+  if (allSucceeded) {
+    await client.query(`
+      INSERT INTO hub_bingo_reconcile_state(employee_key,last_synced_date,updated_at)
+      VALUES($1,$2,NOW())
+      ON CONFLICT(employee_key) DO UPDATE SET
+        last_synced_date=EXCLUDED.last_synced_date,
+        updated_at=NOW()
+    `, [employeeKey, currentDate]);
+  }
+
+  return awarded;
 }
 
 async function ensurePlayer(client, session, round) {
@@ -338,7 +445,9 @@ export default async (request) => {
     if (request.method === 'GET') {
       const client = await getPool().connect();
       try {
-        return json(200, await statePayload(client, session, roundInfo()));
+        const round = roundInfo();
+        const reconciledCoins = await reconcileCleaningCoins(client, session, round);
+        return json(200, await statePayload(client, session, round, { reconciledCoins }));
       } finally {
         client.release();
       }
