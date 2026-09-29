@@ -52,10 +52,20 @@
     if(!r.ok)throw new Error(j.error||`Request failed (${r.status})`);return j;
   }
   async function loadSession(){
-    try{state.session=await fetchJson(SESSION_API)}catch{state.session={signedIn:false}}
-    const ok=state.session?.signedIn&&String(state.session.role||'').toLowerCase()==='manager';
-    $('managerPill').textContent=ok?`👤 ${state.session.name} · Manager`:'Manager sign-in required';
-    $('accessGate').hidden=ok;$('app').hidden=!ok;return ok;
+    try{state.session=await fetchJson(SESSION_API)}catch{
+      window.location.replace('/warehouse-hub/');
+      return false;
+    }
+    if(!state.session?.signedIn){
+      window.location.replace('/warehouse-hub/');
+      return false;
+    }
+    const ok=String(state.session.role||'').toLowerCase()==='manager';
+    $('managerPill').textContent=ok?`👤 ${state.session.name} · Manager`:'Access restricted';
+    $('accessGate').hidden=ok;
+    $('app').hidden=!ok;
+    document.body.classList.remove('auth-pending');
+    return ok;
   }
   async function loadAll(showToast=false){
     if(!await loadSession())return;$('refreshBtn').disabled=true;
