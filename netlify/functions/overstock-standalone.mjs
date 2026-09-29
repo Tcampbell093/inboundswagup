@@ -111,6 +111,89 @@ function excelEntryUpdate(entry, prepAssociate, patch = {}, now = Date.now()) {
   };
 }
 
+function prepAssociateFromHistoryRow(rowJson) {
+  const row = rowJson && typeof rowJson === 'object' ? rowJson : {};
+  const exact = str(row['Prep By (Por)'] || row['Prep By'] || row['Prep Associate'], 120);
+  if (exact) return exact;
+  for (const [key, value] of Object.entries(row)) {
+    if (/^prep\s*(by|associate)|prep.*\(por\)|prep.*por/i.test(key)) {
+      const candidate = str(value, 120);
+      if (candidate) return candidate;
+    }
+  }
+  return '';
+}
+
+async function enrichExcelOwnershipFromHistory(db, rawEntries) {
+  const entries = Array.isArray(rawEntries) ? rawEntries : [];
+  const targets = entries.filter(entry =>
+    str(entry?.sourceType, 80) === 'excel-location-sync' &&
+    isUnknownAssociate(entry?.originalAssociate || entry?.associate)
+  );
+  if (!targets.length) return entries;
+
+  const deliveryIds = [...new Set(targets.map(entry => str(entry?.deliveryId, 120).toUpperCase()).filter(Boolean))];
+  const pos = [...new Set(targets.map(entry => normalizePo(entry?.po)).filter(Boolean))];
+  if (!deliveryIds.length && !pos.length) return entries.filter(entry => !targets.includes(entry));
+
+  let historyRows;
+  try {
+    historyRows = await db.query(`
+      SELECT delivery_id, po, row_json
+      FROM po_history_records
+      WHERE UPPER(COALESCE(delivery_id,'')) = ANY($1::text[])
+         OR UPPER(COALESCE(po,'')) = ANY($2::text[])
+      ORDER BY CASE WHEN lifecycle_state='current' THEN 0 ELSE 1 END,
+               activity_date DESC NULLS LAST,
+               first_seen_at DESC
+    `, [deliveryIds, pos]);
+  } catch {
+    // PO History may not be initialized yet. In that case do not hide data.
+    return entries;
+  }
+
+  const byDelivery = new Map();
+  const poCandidates = new Map();
+  for (const row of historyRows.rows) {
+    const prep = prepAssociateFromHistoryRow(row.row_json);
+    if (!prep) continue;
+    const deliveryId = str(row.delivery_id, 120).toUpperCase();
+    const po = normalizePo(row.po);
+    if (deliveryId && !byDelivery.has(deliveryId)) byDelivery.set(deliveryId, prep);
+    if (po) {
+      if (!poCandidates.has(po)) poCandidates.set(po, new Set());
+      poCandidates.get(po).add(prep);
+    }
+  }
+
+  const out = [];
+  for (const entry of entries) {
+    const needsRepair =
+      str(entry?.sourceType, 80) === 'excel-location-sync' &&
+      isUnknownAssociate(entry?.originalAssociate || entry?.associate);
+    if (!needsRepair) {
+      out.push(entry);
+      continue;
+    }
+    const deliveryId = str(entry?.deliveryId, 120).toUpperCase();
+    const po = normalizePo(entry?.po);
+    let prep = deliveryId ? byDelivery.get(deliveryId) : '';
+    if (!prep && po) {
+      const candidates = poCandidates.get(po);
+      if (candidates?.size === 1) prep = [...candidates][0];
+    }
+    // An Excel-created Overstock row with no Prep By should not be visible.
+    if (!prep) continue;
+    out.push({
+      ...entry,
+      associate: prep,
+      originalAssociate: prep,
+      lastChangedBy: 'Excel Sync',
+    });
+  }
+  return out;
+}
+
 function tombId(t) {
   if (t == null) return '';
   return typeof t === 'object' ? str(t.id, 160) : str(t, 160);
@@ -232,7 +315,7 @@ async function importExcelLocations(rawRows, rawAssociates) {
   workbookAssociates.sort((a, b) => a.localeCompare(b));
   const db = pool();
   const client = await db.connect();
-  const result = { received: rows.length, importedAssociates: workbookAssociates.length, createdEntries: 0, createdContainers: 0, updatedEntries: 0, updatedContainers: 0, unchanged: 0, skipped: [], unresolved: [] };
+  const result = { received: rows.length, importedAssociates: workbookAssociates.length, createdEntries: 0, createdContainers: 0, updatedEntries: 0, updatedContainers: 0, removedUnassignedEntries: 0, unchanged: 0, skipped: [], unresolved: [] };
 
   try {
     await client.query('BEGIN');
@@ -241,11 +324,26 @@ async function importExcelLocations(rawRows, rawAssociates) {
     const data = { ...(state.rows[0].data_json || {}) };
     const masters = { ...(state.rows[0].masters_json || {}) };
     const filtered = filterDeleted(data);
-    const entries = filtered.entries.slice();
+    let entries = filtered.entries.slice();
     const containers = filtered.containers.slice();
     const now = Date.now();
     const changedContainerIds = new Set();
     const changedEntryIds = new Set();
+
+    const incomingByDelivery = new Map();
+    const incomingByPo = new Map();
+    for (const raw of rows) {
+      const incoming = {
+        deliveryId: str(raw?.deliveryId, 120).toUpperCase(),
+        po: normalizePo(raw?.po),
+        associate: str(raw?.associate, 120),
+      };
+      if (incoming.deliveryId) incomingByDelivery.set(incoming.deliveryId, incoming);
+      if (incoming.po) {
+        if (!incomingByPo.has(incoming.po)) incomingByPo.set(incoming.po, []);
+        incomingByPo.get(incoming.po).push(incoming);
+      }
+    }
 
     for (const raw of rows) {
       const po = normalizePo(raw?.po);
@@ -441,6 +539,42 @@ async function importExcelLocations(rawRows, rawAssociates) {
       }
     }
 
+    // Reconcile legacy Excel-created rows from before Prep ownership was
+    // required. If the current workbook row has a Prep By, backfill it.
+    // If it still has no Prep By, remove the legacy Excel-created entry.
+    const reconciledEntries = [];
+    for (const entry of entries) {
+      const legacyUnknown =
+        str(entry?.sourceType, 80) === 'excel-location-sync' &&
+        isUnknownAssociate(entry?.originalAssociate || entry?.associate);
+      if (!legacyUnknown) {
+        reconciledEntries.push(entry);
+        continue;
+      }
+
+      const deliveryId = str(entry?.deliveryId, 120).toUpperCase();
+      const po = normalizePo(entry?.po);
+      let incoming = deliveryId ? incomingByDelivery.get(deliveryId) : null;
+      if (!incoming && po) {
+        const candidates = incomingByPo.get(po) || [];
+        if (candidates.length === 1) incoming = candidates[0];
+      }
+
+      if (!incoming) {
+        reconciledEntries.push(entry);
+        continue;
+      }
+      if (!incoming.associate) {
+        result.removedUnassignedEntries += 1;
+        continue;
+      }
+
+      const repaired = excelEntryUpdate(entry, incoming.associate, {}, now);
+      reconciledEntries.push(repaired);
+      changedEntryIds.add(String(repaired.id));
+    }
+    entries = reconciledEntries;
+
     result.updatedEntries = changedEntryIds.size;
     result.updatedContainers = changedContainerIds.size;
     result.unchanged = Math.max(0, rows.length - result.skipped.length - result.unresolved.length - result.createdEntries - result.updatedEntries);
@@ -508,15 +642,21 @@ async function readSnapshot(db) {
   const data = row.data_json || {};
   const masters = row.masters_json || {};
   const filtered = filterDeleted(data);
+  const visibleEntries = await enrichExcelOwnershipFromHistory(db, filtered.entries);
+  const visibleIds = new Set(visibleEntries.map(entry => String(entry.id)));
+  const visibleDonations = filtered.donations.filter(donation => {
+    const sourceEntryId = str(donation?.entryId, 160);
+    return !sourceEntryId || visibleIds.has(sourceEntryId) || !isUnknownAssociate(donation?.originalAssociate || donation?.associate);
+  });
   const locations = Array.isArray(masters.overstockLocations) && masters.overstockLocations.length
     ? masters.overstockLocations
     : Array.from({ length: 24 }, (_, i) => `E-${i + 1}`);
   const categories = Array.isArray(masters.categories) ? masters.categories : [];
   const associates = Array.isArray(masters.associates) ? masters.associates : [];
   return {
-    entries: filtered.entries,
+    entries: visibleEntries,
     containers: filtered.containers,
-    donations: filtered.donations,
+    donations: visibleDonations,
     activities: filtered.activities,
     locations,
     categories,
