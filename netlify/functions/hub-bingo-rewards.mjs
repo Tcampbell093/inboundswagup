@@ -164,7 +164,7 @@ async function markRewardGiven(db, session, body) {
       return {
         status: 409,
         body: {
-          error: `Reward already marked given by ${existing.rewarded_by || 'a manager/team lead'}.`,
+          error: `Reward already marked given by ${existing.rewarded_by || 'an admin/team lead'}.`,
           alreadyGiven: true,
           rewardedAt: existing.rewarded_at,
           rewardedBy: existing.rewarded_by || '',
@@ -229,7 +229,7 @@ async function markRewardGiven(db, session, body) {
 export default async (request) => {
   try {
     const session = rewardAdminSession(request);
-    if (!session) return json(403, { error: 'Manager or Team Lead access is required.' });
+    if (!session) return json(403, { error: 'Admin or Team Lead access is required.' });
 
     await ensureSchema();
     const db = getPool();
