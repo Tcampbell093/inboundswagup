@@ -803,6 +803,7 @@ async function readSnapshot(db) {
 
 async function mutate(action, body, actor = '') {
   const db = pool();
+  await ensureBoxAuditSchema(db);
   const client = await db.connect();
   let excelEvent = null;
   try {
@@ -819,6 +820,10 @@ async function mutate(action, body, actor = '') {
     let containerTombs = filtered.containerTombs.slice();
     let donationTombs = filtered.donationTombs.slice();
     const now = Date.now();
+    const boxEvents = [];
+    let savedEntryId = '';
+    let savedContainerId = '';
+    let transientIntakeContainer = null;
 
     const addActivity = ({ type='update', entry=null, container=null, summary='', po='', entryId='', containerId='', containerCode='', location='' } = {}) => {
       const activity = {
@@ -891,7 +896,50 @@ async function mutate(action, body, actor = '') {
       };
     };
 
-    if (action === 'upsertEntry') {
+    if (action === 'intakeAddEntry') {
+      const draft = { ...(body.container || {}) };
+      const candidate = { ...(body.entry || {}) };
+      const code = str(draft.code, 120).toUpperCase();
+      const quantity = Number(candidate.quantity);
+      if (!actor) throw new Error('Sign in to the Hub before starting Stock Intake.');
+      if (!code) throw new Error('A box code is required.');
+      if (!normalizePo(candidate.po)) throw new Error('A PO number is required.');
+      if (!Number.isSafeInteger(quantity) || quantity < 1) throw new Error('Enter a quantity of at least one.');
+      let target = containers.find(box => str(box.code, 120).toUpperCase() === code);
+      if (target && str(target.status, 80).toLowerCase() === 'closed') {
+        const index = containers.findIndex(box => String(box.id) === String(target.id));
+        const oldStatus = target.status;
+        target = { ...target, status: target.currentLocation ? 'Stored' : 'Open', updatedAt: now };
+        containers[index] = target;
+        boxEvent(boxEvents, target, 'reopened', 'Stock Intake', actor, { from: oldStatus });
+      }
+      if (!target) {
+        const location = str(draft.currentLocation, 120).toUpperCase();
+        if (!location) throw new Error('Choose a location for the new box.');
+        target = cleanContainer({
+          code, currentLocation: location, status: 'Stored',
+          notes: 'Created through Stock Intake',
+          createdSource: 'Stock Intake',
+          createdBy: actor,
+        });
+        if (body.donateNow === true) {
+          // A donation-only intake must not leave a box with zero POs.
+          transientIntakeContainer = target;
+        } else {
+          containers.push(target);
+          boxEvent(boxEvents, target, 'created', 'Stock Intake', actor,
+            { location, po: normalizePo(candidate.po) });
+          addActivity({ type: 'box', container: target,
+            summary: `created box ${target.code} through Stock Intake` });
+        }
+      }
+      body.entry = {
+        ...candidate, containerId: target.id, containerCode: target.code,
+        location: target.currentLocation, sourceType: 'stock-intake',
+      };
+    }
+
+    if (action === 'upsertEntry' || action === 'intakeAddEntry') {
       const incoming = { ...(body.entry || {}) };
       const idx = entries.findIndex(e => String(e?.id || '') === String(incoming.id || ''));
       const existing = idx >= 0 ? entries[idx] : null;
@@ -903,12 +951,28 @@ async function mutate(action, body, actor = '') {
       const saved = cleanEntry(incoming, existing);
       if (!saved.po) throw new Error('PO number is required.');
       if (!saved.containerId) throw new Error('A container is required.');
-      const container = containers.find(c => String(c.id) === saved.containerId);
+      const container = containers.find(c => String(c.id) === saved.containerId)
+        || (transientIntakeContainer?.id === saved.containerId ? transientIntakeContainer : null);
       if (!container) throw new Error('Selected container was not found.');
       saved.containerCode = container.code || saved.containerCode;
       saved.location = container.currentLocation || saved.location;
       if (idx >= 0) entries[idx] = saved; else entries.push(saved);
       entryTombs = entryTombs.filter(t => t.id !== saved.id);
+      savedEntryId = saved.id;
+      savedContainerId = transientIntakeContainer?.id === saved.containerId ? '' : saved.containerId;
+      const source = action === 'intakeAddEntry' ? 'Stock Intake' : 'Overstock';
+      if (!transientIntakeContainer) {
+        if (existing && String(existing.containerId) !== String(saved.containerId)) {
+          const previous = containers.find(box => String(box.id) === String(existing.containerId));
+          boxEvent(boxEvents, previous, 'po-moved-out', source, actor,
+            { po: saved.po, to: saved.containerCode, quantity: existing.quantity });
+          boxEvent(boxEvents, container, 'po-moved-in', source, actor,
+            { po: saved.po, from: previous?.code || existing.containerCode, quantity: saved.quantity });
+        } else {
+          boxEvent(boxEvents, container, existing ? 'po-updated' : 'po-added', source, actor,
+            { po: saved.po, quantity: saved.quantity, previousQuantity: existing?.quantity ?? null });
+        }
+      }
       let finalSaved = saved;
       if (body.donateNow === true) {
         donateRecordFor(saved, actor);
@@ -916,6 +980,8 @@ async function mutate(action, body, actor = '') {
         const savedIndex = entries.findIndex(e => String(e.id) === String(saved.id));
         if (savedIndex >= 0) entries[savedIndex] = finalSaved;
         addActivity({ type:'donation', entry:saved, summary:`sent PO ${saved.po} → Donation Pool` });
+        if (!transientIntakeContainer) boxEvent(boxEvents, container, 'po-donated', source, actor,
+          { po: saved.po, quantity: saved.quantity });
       } else if (!existing) {
         addActivity({ type:'added', entry:saved, summary:`added PO ${saved.po} → ${saved.containerCode || 'Overstock'}` });
       } else {
@@ -943,6 +1009,8 @@ async function mutate(action, body, actor = '') {
       const donated = detachAsDonated(existing, actor);
       entries[idx] = donated;
       addActivity({ type:'donation', entry:existing, summary:`sent PO ${existing.po} → Donation Pool` });
+      boxEvent(boxEvents, containers.find(box => String(box.id) === String(existing.containerId)),
+        'po-donated', 'Overstock', actor, { po: existing.po, quantity: existing.quantity });
       excelEvent = {
         event: 'entry.upserted',
         source: 'overstock-control',
@@ -960,6 +1028,9 @@ async function mutate(action, body, actor = '') {
         donateRecordFor(entry, actor);
         entries[i] = detachAsDonated(entry, actor);
         migrated.push(entries[i]);
+        boxEvent(boxEvents, containers.find(box => String(box.id) === String(entry.containerId)),
+          'po-donated', 'Migration', 'System', { po: entry.po, quantity: entry.quantity,
+            reason: 'Migrated an existing donation' });
       }
       excelEvent = migrated.length ? {
         event: 'entry.upserted',
@@ -971,7 +1042,11 @@ async function mutate(action, body, actor = '') {
       const id = str(body.id, 160);
       if (!id) throw new Error('Entry id is required.');
       const existing = entries.find(e => String(e.id) === id) || null;
-      if (existing) addActivity({ type:'deleted', entry:existing, summary:`deleted PO ${existing.po}` });
+      if (existing) {
+        addActivity({ type:'deleted', entry:existing, summary:`deleted PO ${existing.po}` });
+        boxEvent(boxEvents, containers.find(box => String(box.id) === String(existing.containerId)),
+          'po-deleted', 'Overstock', actor, { po: existing.po, quantity: existing.quantity });
+      }
       entries = entries.filter(e => String(e.id) !== id);
       entryTombs = normalizeTombs([...entryTombs, { id, ts: now }]);
       excelEvent = {
@@ -985,16 +1060,38 @@ async function mutate(action, body, actor = '') {
       const idx = containers.findIndex(c => String(c?.id || '') === String(incoming.id || ''));
       const existing = idx >= 0 ? containers[idx] : null;
       if (!str(incoming.code || existing?.code, 120)) incoming.code = nextContainerCode(containers);
-      const saved = cleanContainer(incoming, existing);
+      const saved = cleanContainer({
+        ...incoming,
+        ...(!existing ? { createdSource: 'Manual', createdBy: actor } : {}),
+      }, existing);
       if (!saved.code) throw new Error('Container code is required.');
       const duplicate = containers.find(c => c.id !== saved.id && String(c.code || '').toUpperCase() === saved.code.toUpperCase());
       if (duplicate) throw new Error(`Container ${saved.code} already exists.`);
       if (idx >= 0) containers[idx] = saved; else containers.push(saved);
       containerTombs = containerTombs.filter(t => t.id !== saved.id);
       entries = entries.map(e => String(e.containerId) === saved.id ? { ...e, containerCode: saved.code, location: saved.currentLocation, updatedAt: now } : e);
-      if (!existing) addActivity({ type:'box', container:saved, summary:`created box ${saved.code}${saved.currentLocation ? ` → ${saved.currentLocation}` : ''}` });
-      else if (str(existing.currentLocation,120) !== str(saved.currentLocation,120)) addActivity({ type:'box', container:saved, summary:`moved box ${saved.code} → ${saved.currentLocation || 'On cart'}` });
-      else if (str(existing.status,80) !== str(saved.status,80)) addActivity({ type:'box', container:saved, summary:`changed box ${saved.code} → ${saved.status || 'Updated'}` });
+      if (!existing) {
+        addActivity({ type:'box', container:saved, summary:`created box ${saved.code}${saved.currentLocation ? ` → ${saved.currentLocation}` : ''}` });
+        boxEvent(boxEvents, saved, 'created', 'Manual', actor,
+          { location: saved.currentLocation, notes: saved.notes });
+      } else {
+        const eventType = str(existing.code, 120) !== str(saved.code, 120)
+          ? 'renamed' : str(existing.currentLocation, 120) !== str(saved.currentLocation, 120)
+            ? 'location-changed' : str(existing.status, 80) !== str(saved.status, 80)
+              ? 'status-changed' : 'updated';
+        if (eventType === 'renamed') boxEvent(boxEvents, saved, eventType, 'Overstock', actor,
+          { from: existing.code, to: saved.code });
+        else if (eventType === 'location-changed') {
+          addActivity({ type:'box', container:saved, summary:`moved box ${saved.code} → ${saved.currentLocation || 'On cart'}` });
+          boxEvent(boxEvents, saved, eventType, 'Overstock', actor,
+            { from: existing.currentLocation, to: saved.currentLocation });
+        } else if (eventType === 'status-changed') {
+          addActivity({ type:'box', container:saved, summary:`changed box ${saved.code} → ${saved.status || 'Updated'}` });
+          boxEvent(boxEvents, saved, eventType, 'Overstock', actor,
+            { from: existing.status, to: saved.status });
+        } else boxEvent(boxEvents, saved, 'updated', 'Overstock', actor,
+          { notesChanged: str(existing.notes, 1000) !== str(saved.notes, 1000) });
+      }
       excelEvent = {
         event: 'container.updated',
         source: 'overstock-control',
@@ -1009,7 +1106,11 @@ async function mutate(action, body, actor = '') {
       if (!id) throw new Error('Container id is required.');
       if (entries.some(e => String(e.containerId) === id)) throw new Error('Move or remove the items in this container before deleting it.');
       const existing = containers.find(c => String(c.id) === id) || null;
-      if (existing) addActivity({ type:'deleted', container:existing, summary:`deleted box ${existing.code}` });
+      if (existing) {
+        addActivity({ type:'deleted', container:existing, summary:`deleted box ${existing.code}` });
+        boxEvent(boxEvents, existing, 'deleted', 'Overstock', actor,
+          { location: existing.currentLocation, notes: existing.notes });
+      }
       containers = containers.filter(c => String(c.id) !== id);
       containerTombs = normalizeTombs([...containerTombs, { id, ts: now }]);
       excelEvent = {
@@ -1032,12 +1133,13 @@ async function mutate(action, body, actor = '') {
     data.__deletedOverstockContainerIds = containerTombs;
     data.__deletedOverstockDonationIds = donationTombs;
 
+    await persistBoxEvents(client, boxEvents);
     await client.query(
       `UPDATE workflow_sync_state SET data_json=$1::jsonb, updated_at=NOW() WHERE state_key='default'`,
       [JSON.stringify(data)],
     );
     await client.query('COMMIT');
-    return { snapshot: await readSnapshot(db), excelEvent };
+    return { snapshot: await readSnapshot(db), excelEvent, savedEntryId, savedContainerId };
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch {}
     throw error;
