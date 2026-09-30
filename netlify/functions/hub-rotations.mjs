@@ -80,7 +80,7 @@ function sanitize(payload,action){
   const dates=['assignmentDate','availabilityDate','startDate','endDate'];
   const out={action};
   if(action==='acceptCleaningSuggestions'){
-    if(!Array.isArray(payload.entries)||payload.entries.length<1||payload.entries.length>75)throw new Error('Choose 1–75 assignments for a single week.');
+    if(!Array.isArray(payload.entries)||payload.entries.length<1||payload.entries.length>50)throw new Error('Choose 1–50 assignments for a single week.');
     out.entries=payload.entries.map(row=>({
       employeeId:Number(row.employeeId),alternateEmployeeId:Number(row.alternateEmployeeId)||null,
       assignmentDate:str(row.assignmentDate,10),department:str(row.department,100)
