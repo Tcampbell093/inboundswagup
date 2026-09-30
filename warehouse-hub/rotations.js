@@ -1,0 +1,459 @@
+(() => {
+  'use strict';
+  const API='/.netlify/functions/hub-rotations', CHECKIN='/.netlify/functions/hub-cleaning';
+  const $=id=>document.getElementById(id);
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const key=v=>String(v??'').trim().toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,'-');
+  const iso=d=>new Date(d).toISOString().slice(0,10);
+  const addDays=(day,n)=>{const d=new Date(day+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return iso(d);};
+  const dayGap=(a,b)=>a?Math.max(0,Math.round((new Date(b+'T12:00:00Z')-new Date(a+'T12:00:00Z'))/86400000)):999;
+  const today=()=>{
+    const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+    const t=Object.fromEntries(parts.map(x=>[x.type,x.value]));
+    return t.year+'-'+t.month+'-'+t.day;
+  };
+  const weekStart=day=>{const d=new Date(day+'T12:00:00Z'),dow=d.getUTCDay();return addDays(day,-(dow===0?6:dow-1));};
+  const dateText=day=>new Date(day+'T12:00:00Z').toLocaleDateString('en-US',{timeZone:'UTC',month:'short',day:'numeric'});
+  const dayName=day=>new Date(day+'T12:00:00Z').toLocaleDateString('en-US',{timeZone:'UTC',weekday:'short'});
+  const session=()=>window.HubAssociate?.getSession?.()||{signedIn:false};
+  const isAdmin=()=>session().signedIn&&String(session().role||'').toLowerCase()==='manager';
+  const isLead=()=>session().signedIn&&['manager','team lead'].includes(String(session().role||'').toLowerCase());
+
+  const top=document.querySelector('.top-actions');
+  if(!top)return;
+  const trigger=document.createElement('button');
+  trigger.id='hubRotationsBtn';
+  trigger.className='toolcount rotations-launch';
+  trigger.type='button';
+  trigger.textContent='🧹 Cleaning';
+  top.insertBefore(trigger,$('bingoRewardBtn')||$('manageBtn')||null);
+
+  const css=document.createElement('style');
+  css.textContent=`
+    .rotations-launch{cursor:pointer;color:var(--ink);border-color:#c5d9d1;background:var(--green-soft);white-space:nowrap}
+    .rotations-modal{border:0;border-radius:19px;padding:0;width:min(1000px,calc(100% - 22px));max-height:calc(100dvh - 30px);background:var(--bg);color:var(--ink);box-shadow:0 25px 90px rgba(18,61,52,.28)}
+    .rotations-modal::backdrop{background:rgba(12,28,24,.54);backdrop-filter:blur(3px)}
+    .rotations-header{display:flex;justify-content:space-between;gap:15px;align-items:start;padding:18px 22px 13px;border-bottom:1px solid var(--line)}
+    .rotations-header h2{font-size:21px;margin:0 0 3px}.rotations-header p{font-size:12px;color:var(--muted);margin:0}
+    .rotations-close{background:#e7efea;border:0;border-radius:9px;width:35px;height:35px;font-size:23px;cursor:pointer}
+    .rotations-tabs{display:flex;align-items:center;gap:7px;padding:11px 19px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+    .rotations-tabs button{border:1px solid transparent;background:transparent;color:#566960;border-radius:9px;padding:9px 12px;font-size:12px;font-weight:850;cursor:pointer}
+    .rotations-tabs button.active{background:var(--ink);color:white}
+    .rotations-refresh{margin-left:auto!important}
+    .rotations-body{padding:19px 21px 23px;overflow:auto;max-height:calc(100dvh - 210px)}
+    .rotations-note{font-size:12px;color:var(--muted);line-height:1.5;margin:0 0 14px}
+    .rotations-note.warning{background:#fff4dd;color:#684a15;border:1px solid #ebd5a1;padding:10px 12px;border-radius:10px}
+    .rotations-error{background:#ffebe7;border:1px solid #f0c5bd;color:#883526;padding:10px 13px;border-radius:10px;font-size:12px;font-weight:800;margin-bottom:13px}
+    .rotations-ok{background:#e7f6ed;border:1px solid #c1e6ce;color:#23583b;padding:10px 13px;border-radius:10px;font-size:12px;font-weight:800;margin-bottom:13px}
+    .rotations-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:9px;margin:8px 0 16px}
+    .rotations-toolbar button,.rotations-toolbar input,.rotations-toolbar select,.rotations-cell select,.rotations-absence select,.rotations-absence input{border:1px solid #cad8cd;border-radius:9px;background:#fff;color:var(--ink);padding:9px;font-size:12px}
+    .rotations-toolbar button{cursor:pointer;font-weight:850}.rotations-toolbar button.action{background:var(--ink);color:#fff}
+    .rotations-toolbar button:disabled,.rotations-cell button:disabled{opacity:.5;cursor:default}
+    .rotations-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0 17px}
+    .rotations-stat{border:1px solid var(--line);background:var(--paper);border-radius:12px;padding:13px}
+    .rotations-stat b{display:block;font-size:23px}.rotations-stat span{font-size:10px;color:var(--muted);font-weight:800}
+    .rotations-day{margin-bottom:17px;border:1px solid var(--line);background:var(--paper);border-radius:13px;padding:12px}
+    .rotations-day h3{font-size:13px;margin:0 0 10px}.rotations-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) auto;gap:9px;align-items:center;padding:9px 0;border-top:1px solid var(--line);font-size:12px}
+    .rotations-row:first-of-type{border-top:0}.rotations-row small{display:block;color:var(--muted);font-size:10px;margin-top:3px}
+    .rotations-row button,.rotations-absence button,.rotations-cell button{border:1px solid #bdd3c4;background:#eaf6ef;color:#23573d;border-radius:8px;padding:8px 9px;font-size:11px;font-weight:850;cursor:pointer}
+    .rotations-row button.danger{border-color:#eccabc;background:#fff0e9;color:#8b462d}
+    .rotations-area{font-weight:900}
+    .rotations-week-table{width:100%;border-collapse:separate;border-spacing:0 8px;table-layout:fixed}
+    .rotations-week-table th{text-align:left;font-size:11px;color:#60726b;padding:7px 8px}
+    .rotations-week-table td{padding:8px;vertical-align:top;border:1px solid var(--line);background:var(--paper);border-radius:9px;font-size:12px}
+    .rotations-week-table .rotations-cell{display:grid;gap:5px;min-width:0}
+    .rotations-cell select{width:100%;min-width:0;padding:7px;font-size:11px}
+    .rotations-cell small{font-size:10px;color:var(--muted);line-height:1.35}
+    .rotations-cell b{font-size:12px}.rotations-cell .done{color:var(--green);font-weight:900}
+    .rotations-fair-table{width:100%;border-collapse:collapse;font-size:12px;background:var(--paper);border-radius:12px;overflow:hidden}
+    .rotations-fair-table th,.rotations-fair-table td{padding:10px 8px;text-align:left;border-bottom:1px solid var(--line)}
+    .rotations-fair-table th{font-size:10px;color:var(--muted);font-weight:900}
+    .rotations-fair-table tr:last-child td{border-bottom:0}
+    .rotations-absence{border:1px solid var(--line);background:var(--paper);border-radius:11px;padding:12px;margin:12px 0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    .rotations-absence b{font-size:12px;margin-right:8px}
+    .rotations-badge{font-size:10px;font-weight:850;padding:3px 7px;border-radius:99px;background:#eff4f0;color:#476450}
+    .rotations-badge.warn{background:#ffebd2;color:#855f21}
+    .rotations-badge.done{background:#dcf2e5;color:#285d39}
+    .rotations-history{display:grid;gap:7px;max-height:400px;overflow:auto}
+    .rotations-history-row{display:flex;justify-content:space-between;gap:8px;background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:11px}
+    .rotations-history-row small{display:block;color:var(--muted);margin-top:3px}
+    @media(max-width:730px){
+      .top-actions{flex-wrap:wrap;justify-content:flex-end}.topbar{height:auto;min-height:74px;padding:8px 0}
+      .rotations-body{padding:12px;max-height:calc(100dvh - 200px)}
+      .rotations-header{padding:14px}.rotations-tabs{padding:8px}.rotations-row{grid-template-columns:1fr auto}
+      .rotations-row .rotations-assignee{grid-column:1/-1;grid-row:2}
+      .rotations-overview{gap:5px}.rotations-stat{padding:9px}.rotations-stat b{font-size:18px}
+      .rotations-week-wrap{overflow-x:auto}.rotations-week-table{min-width:700px}
+      .rotations-fair-wrap{overflow-x:auto}.rotations-fair-table{min-width:510px}
+    }`;
+  document.head.appendChild(css);
+
+  const dialog=document.createElement('dialog');
+  dialog.className='rotations-modal';
+  dialog.id='hubRotationsDialog';
+  dialog.innerHTML=`
+    <div class="rotations-header">
+      <div><h2>🧹 Cleaning & Rotations</h2><p id="rotationsSubtitle">Fair schedules · one team across every cleaning area</p></div>
+      <button class="rotations-close" type="button" id="rotationsClose" aria-label="Close">×</button>
+    </div>
+    <div class="rotations-tabs">
+      <button type="button" data-rot-tab="today" class="active">Today</button>
+      <button type="button" data-rot-tab="week">Weekly schedule</button>
+      <button type="button" data-rot-tab="fairness">Fairness & history</button>
+      <button type="button" class="rotations-refresh" id="rotationsRefresh">↻ Refresh</button>
+    </div>
+    <div class="rotations-body">
+      <div id="rotationsMessage" aria-live="polite"></div>
+      <div id="rotationsContent"><p class="rotations-note">Loading cleaning assignments…</p></div>
+    </div>`;
+  document.body.appendChild(dialog);
+
+  let data=null,tab='today',week=weekStart(today()),draft=[],busy=false,message='',isError=false;
+  const role=()=>isAdmin()?'admin':isLead()?'lead':'associate';
+  const person=id=>data?.employees.find(e=>e.id===Number(id));
+  const personName=id=>person(id)?.name||'Unassigned';
+  const available=(id,date)=>!(data?.availability||[]).some(x=>x.employeeId===Number(id)&&x.date===date&&x.status==='unavailable');
+  const areas=()=>data?.departments.filter(d=>d.active&&d.cleaningActive).map(d=>d.name)||[];
+  const associates=()=>data?.employees.filter(e=>e.active&&e.role==='Associate')||[];
+  const duty=(date,area)=>data?.assignments.find(a=>a.date===date&&a.area===area)||null;
+  const weekDays=()=>Array.from({length:5},(_,i)=>addDays(week,i));
+  const optionList=(date,selected,excluded=[],allowEmpty=false)=>{
+    const people=associates().filter(e=>available(e.id,date)&&(!excluded.includes(e.id)||e.id===Number(selected)))
+      .sort((a,b)=>a.name.localeCompare(b.name));
+    return(allowEmpty?'<option value="">No alternate</option>':'<option value="">Choose cleaner…</option>')
+      +people.map(e=>`<option value="${e.id}"${e.id===Number(selected)?' selected':''}>${esc(e.name)}</option>`).join('');
+  };
+  const showMessage=(text,error=false)=>{message=text;isError=error;const el=$('rotationsMessage');if(el)el.innerHTML=text?`<div class="rotations-${error?'error':'ok'}">${esc(text)}</div>`:'';};
+  async function fetchJSON(url,options={}){
+    const response=await fetch(url,{credentials:'same-origin',cache:'no-store',...options});
+    const out=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(out.error||'Cleaning request failed.');
+    return out;
+  }
+  async function load(preserveMessage=false){
+    if(!dialog.open)return;
+    $('rotationsContent').innerHTML='<p class="rotations-note">Loading cleaning assignments…</p>';
+    if(!preserveMessage)showMessage('');
+    try{
+      data=await fetchJSON(API+'?date='+encodeURIComponent(today()));
+      if(data?.source)$('rotationsSubtitle').textContent='Warehouse-wide cleaning · '+data.source;
+      draft=[];
+      render();
+    }catch(error){
+      data=null;
+      $('rotationsContent').innerHTML='<p class="rotations-note warning">'+esc(error.message||'Cleaning scheduler is unavailable.')+'</p>';
+    }
+  }
+  async function send(body,success){
+    if(busy)return;
+    busy=true;
+    try{
+      await fetchJSON(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      await load(true);
+      showMessage(success);
+      document.dispatchEvent(new CustomEvent('hub-cleaning-refresh'));
+      return true;
+    }catch(error){showMessage(error.message||'Could not update cleaning.',true);return false;}
+    finally{busy=false;}
+  }
+  // Actual worked credit and leave protection are intentionally separate.
+  // Leave protection maintains rotation position, but never creates worked
+  // minutes or a Bingo coin. Department affinity never enters eligibility.
+  function fairness(){
+    if(!data)return[];
+    const now=today(),start=addDays(now,-89),pool=associates();
+    const totals=new Map(pool.map(e=>[e.id,{
+      ...e,minutes:0,protected:0,rotations:0,last:null,byArea:Object.fromEntries(areas().map(a=>[a,0])),
+      lastArea:Object.fromEntries(areas().map(a=>[a,null])),dates:[],outDays:0,
+    }]));
+    const done=data.assignments.filter(a=>a.status==='completed'&&a.date>=start&&a.date<=now);
+    for(const item of done){
+      const p=totals.get(item.actualEmployeeId||item.employeeId);
+      if(!p)continue;
+      p.minutes+=15;p.rotations++;p.dates.push(item.date);
+      if(!p.last||p.last<item.date)p.last=item.date;
+      p.byArea[item.area]=(p.byArea[item.area]||0)+1;
+      if(!p.lastArea[item.area]||p.lastArea[item.area]<item.date)p.lastArea[item.area]=item.date;
+    }
+    const byDate=new Map();
+    for(const item of done)byDate.set(item.date,(byDate.get(item.date)||0)+1);
+    const out=new Map();
+    for(const r of data.availability)if(r.status==='unavailable'&&r.date>=start&&r.date<=now){
+      if(!out.has(r.date))out.set(r.date,new Set());
+      out.get(r.date).add(r.employeeId);
+    }
+    for(const [date,away] of out){
+      const remaining=pool.filter(e=>!away.has(e.id)).length;
+      const protection=remaining?15*(byDate.get(date)||0)/remaining:0;
+      for(const id of away){
+        const p=totals.get(id);
+        if(p){p.protected+=protection;p.outDays++;}
+      }
+    }
+    const gap=(p,date)=>{
+      if(!date)return 999;
+      let count=0;
+      for(let d=addDays(date,1);d<=now;d=addDays(d,1))if(!(out.get(d)||new Set()).has(p.id))count++;
+      return count;
+    };
+    return [...totals.values()].map(p=>({
+      ...p,protected:Math.round(p.protected),
+      balance:p.minutes+p.protected,daysSince:gap(p,p.last)
+    })).sort((a,b)=>a.balance-b.balance||b.daysSince-a.daysSince||a.name.localeCompare(b.name));
+  }
+  function buildSuggestions(){
+    if(!data)return[];
+    const current=today(),pool=associates(),fields=areas(),score=new Map(fairness().map(p=>[p.id,{
+      minutes:p.balance,worked:p.minutes,week:0,last:p.last,area:{...p.byArea},lastArea:{...p.lastArea}
+    }]));
+    const planned=[];
+    for(const row of data.assignments.filter(a=>a.date>=week&&a.date<=addDays(week,4))){
+      if(row.status==='completed'||row.status==='missed')continue;
+      const target=score.get(row.actualEmployeeId||row.employeeId);
+      if(target){target.minutes+=15;target.week++;target.area[row.area]=(target.area[row.area]||0)+1;target.last=row.date;target.lastArea[row.area]=row.date;}
+    }
+    for(const date of weekDays()){
+      if(date<current)continue;
+      const occupied=new Set(data.assignments.filter(a=>a.date===date&&a.status!=='missed')
+        .flatMap(a=>[a.employeeId,a.alternateEmployeeId,a.actualEmployeeId].filter(Boolean)));
+      for(const area of fields){
+        if(duty(date,area))continue;
+        const eligible=pool.filter(p=>available(p.id,date)&&!occupied.has(p.id));
+        if(!eligible.length)continue;
+        const preferred=eligible.filter(p=>(score.get(p.id)?.week||0)<2);
+        const choices=(preferred.length?preferred:eligible).sort((a,b)=>{
+          const sa=score.get(a.id),sb=score.get(b.id);
+          return (sa?.minutes||0)-(sb?.minutes||0)
+            ||(sa?.area[area]||0)-(sb?.area[area]||0)
+            ||(sa?.week||0)-(sb?.week||0)
+            ||dayGap(sb?.lastArea[area],date)-dayGap(sa?.lastArea[area],date)
+            ||dayGap(sb?.last,date)-dayGap(sa?.last,date)
+            ||a.name.localeCompare(b.name);
+        });
+        const primary=choices[0];occupied.add(primary.id);
+        const t=score.get(primary.id);
+        if(t){t.minutes+=15;t.week++;t.area[area]=(t.area[area]||0)+1;t.last=date;t.lastArea[area]=date;}
+        planned.push({assignmentDate:date,department:area,employeeId:primary.id,alternateEmployeeId:null});
+      }
+      for(const plannedRow of planned.filter(r=>r.assignmentDate===date)){
+        const alternates=pool.filter(p=>available(p.id,date)&&!occupied.has(p.id));
+        alternates.sort((a,b)=>(score.get(a.id)?.week||0)-(score.get(b.id)?.week||0)
+          ||(score.get(a.id)?.minutes||0)-(score.get(b.id)?.minutes||0)||a.name.localeCompare(b.name));
+        if(alternates[0]){plannedRow.alternateEmployeeId=alternates[0].id;occupied.add(alternates[0].id);}
+      }
+    }
+    return planned;
+  }
+  function render(){
+    if(!dialog.open||!data)return;
+    document.querySelectorAll('[data-rot-tab]').forEach(b=>b.classList.toggle('active',b.dataset.rotTab===tab));
+    $('rotationsMessage').innerHTML=message?`<div class="rotations-${isError?'error':'ok'}">${esc(message)}</div>`:'';
+    if(tab==='today')renderToday();
+    else if(tab==='week')renderWeek();
+    else renderFairness();
+  }
+  function renderToday(){
+    const now=today(),rows=areas().map(area=>({area,record:duty(now,area)}));
+    const finished=rows.filter(r=>r.record?.status==='completed').length;
+    const mine=rows.filter(r=>r.record&&[r.record.employeeId,r.record.actualEmployeeId].includes(Number(session().employeeId))
+      &&r.record.status!=='completed');
+    $('rotationsContent').innerHTML=`
+      <div class="rotations-overview">
+        <div class="rotations-stat"><b>${rows.length}</b><span>Cleaning areas</span></div>
+        <div class="rotations-stat"><b>${finished}</b><span>Completed today</span></div>
+        <div class="rotations-stat"><b>${mine.length}</b><span>My outstanding duties</span></div>
+      </div>
+      <p class="rotations-note">Today's assignments · ${esc(dateText(now))}. Each completed duty counts as 15 minutes of cleaning and earns one Bingo coin through the existing check-in.</p>
+      <div id="rotationsTodayRows">${rows.map(({area,record})=>{
+        const status=record?.status||'Unassigned',original=record?personName(record.employeeId):'Not scheduled';
+        const assigned=record?personName(record.actualEmployeeId||record.employeeId):'';
+        const isMine=record&&[record.actualEmployeeId||record.employeeId].includes(Number(session().employeeId));
+        const canCheck=isMine&&['scheduled','alternate_assigned','in_progress'].includes(record.status);
+        const canChange=isLead()&&record&&record.status!=='completed';
+        return `<div class="rotations-day">
+          <div class="rotations-row">
+            <div><div class="rotations-area">${esc(area)}</div>
+              <small>${record&&record.actualEmployeeId&&record.actualEmployeeId!==record.employeeId?'Originally '+esc(original):'15-minute duty'}</small></div>
+            <div class="rotations-assignee"><b>${esc(assigned||original)}</b>
+              <small>${record?.alternateEmployeeId?'Backup: '+esc(personName(record.alternateEmployeeId)):'No alternate selected'}</small></div>
+            <div><span class="rotations-badge ${status==='completed'?'done':status==='missed'?'warn':''}">${esc(status.replace(/_/g,' '))}</span></div>
+          </div>
+          ${canCheck?`<div class="rotations-toolbar"><button class="action" type="button" data-clean-check="${record.id}" data-next="${record.status==='in_progress'?'finish':'start'}">${record.status==='in_progress'?'✓ Finish cleaning':'▶ Start cleaning'}</button></div>`:''}
+          ${canChange?`<div class="rotations-toolbar">
+            <button type="button" data-today-reassign="${record.id}">Change assignment</button>
+            <button type="button" class="danger" data-today-absent="${record.id}">${record.alternateEmployeeId?'Absent → use backup':'Mark absent'}</button>
+          </div>`:''}
+        </div>`;
+      }).join('')}</div>
+      ${isLead()?`<div class="rotations-note">To plan or adjust future duties, open the Weekly schedule tab. Replacements receive the completed cleaning credit, not the absent employee.</div>`:''}
+    `;
+    document.querySelectorAll('[data-clean-check]').forEach(b=>b.onclick=()=>runCheckin(Number(b.dataset.cleanCheck),b.dataset.next,b));
+    document.querySelectorAll('[data-today-absent]').forEach(b=>b.onclick=async()=>{
+      const r=data.assignments.find(a=>a.id===Number(b.dataset.todayAbsent));
+      if(r&&confirm(`Mark ${personName(r.employeeId)} absent and ${r.alternateEmployeeId?'assign '+personName(r.alternateEmployeeId):'leave this duty unassigned'}?`))
+        await send({action:'markCleaningAbsent',assignmentId:r.id},'Availability and backup assignment updated.');
+    });
+    document.querySelectorAll('[data-today-reassign]').forEach(b=>b.onclick=()=>{
+      const r=data.assignments.find(a=>a.id===Number(b.dataset.todayReassign));
+      if(r){week=weekStart(r.date);tab='week';render();$('rotationsContent').scrollTo?.(0,0);}
+    });
+  }
+  async function runCheckin(id,action,button){
+    if(busy)return;
+    const row=data.assignments.find(a=>a.id===id);
+    if(!row)return;
+    if(!session().fairShiftVerified){
+      showMessage('Your cleaning sign-in needs to be refreshed before starting or finishing this duty. Sign out and back into Hub.',true);return;
+    }
+    button.disabled=true;busy=true;
+    try{
+      const out=await fetchJSON(CHECKIN,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({action,assignmentId:id})});
+      await load(true);
+      showMessage(action==='finish'?
+        `Cleaning completed. 15 minutes credited.${out.bingoCoinAwarded?' One Bingo coin added.':''}`
+        :'Cleaning started. Finish when your area is done.');
+      document.dispatchEvent(new CustomEvent('hub-bingo-refresh'));
+      document.dispatchEvent(new CustomEvent('hub-cleaning-refresh'));
+    }catch(e){showMessage(e.message,true);button.disabled=false;}
+    finally{busy=false;}
+  }
+  function renderWeek(){
+    const dates=weekDays(),now=today(),fields=areas(),existing=data.assignments.filter(a=>dates.includes(a.date));
+    const published=existing.filter(a=>a.status!=='missed').length;
+    const rows=dates.map(date=>({date,items:fields.map(area=>({area,record:duty(date,area),
+      suggestion:draft.find(x=>x.assignmentDate===date&&x.department===area)}))}));
+    $('rotationsContent').innerHTML=`
+      <div class="rotations-toolbar">
+        <button type="button" id="rotationsPrev">← Previous</button>
+        <b>${esc(dateText(week))} – ${esc(dateText(addDays(week,4)))}</b>
+        <button type="button" id="rotationsNext">Next →</button>
+        ${isAdmin()?`<button class="action" type="button" id="rotationsSuggest">✦ Generate suggestions</button>
+        <button type="button" id="rotationsPublish" ${!draft.length?'disabled':''}>Publish ${draft.length} suggested</button>`:''}
+      </div>
+      <p class="rotations-note">Everyone in the active Associate pool can rotate through every cleaning area, regardless of home department. Suggestions balance the last 90 days of completed minutes, leave protection, area variety and this week's assignments. Existing assignments and completed work are preserved.</p>
+      ${isAdmin()&&draft.length?`<p class="rotations-note warning">Review the proposed people and backups below, then publish. Changing a selection updates the draft only until you publish.</p>`:''}
+      <div class="rotations-week-wrap"><table class="rotations-week-table"><thead><tr><th style="width:90px">Area</th>${dates.map(d=>`<th>${esc(dayName(d))}<br>${esc(dateText(d))}</th>`).join('')}</tr></thead>
+      <tbody>${fields.map(area=>`<tr><th>${esc(area)}</th>${dates.map(date=>{
+        const row=rows.find(r=>r.date===date).items.find(r=>r.area===area),r=row.record,d=row.suggestion;
+        const locked=date<now||r?.status==='completed';
+        if(r)return`<td><div class="rotations-cell"><b>${esc(personName(r.actualEmployeeId||r.employeeId))}</b>
+          <small>${esc(r.status.replace(/_/g,' '))}${r.alternateEmployeeId?' · Backup: '+esc(personName(r.alternateEmployeeId)):''}</small>
+          ${r.status==='completed'?'<small class="done">✓ 15 min credited</small>':''}
+          ${isLead()&&!locked?`<button data-edit-slot="${esc(date)}|${esc(area)}">Edit / reassign</button>`:''}
+        </div></td>`;
+        if(d)return`<td><div class="rotations-cell">
+          <select aria-label="Cleaner for ${esc(area)} on ${date}" data-draft-primary="${esc(date)}|${esc(area)}">${optionList(date,d.employeeId,[],false)}</select>
+          <select aria-label="Backup for ${esc(area)} on ${date}" data-draft-alternate="${esc(date)}|${esc(area)}">${optionList(date,d.alternateEmployeeId,[d.employeeId],true)}</select>
+          <small>Suggested · 15 min</small>
+        </div></td>`;
+        return`<td><div class="rotations-cell"><small>${locked?'Not scheduled':'Open slot'}</small>
+          ${isLead()&&!locked?`<button data-edit-slot="${esc(date)}|${esc(area)}">+ Assign</button>`:''}
+        </div></td>`;
+      }).join('')}</tr>`).join('')}</tbody></table></div>
+      ${isAdmin()&&existing.some(x=>x.status!=='completed'&&x.date>=now)?'<div class="rotations-toolbar"><button id="rotationsClear" type="button">Clear unfinished days this week</button></div>':''}
+    `;
+    $('rotationsPrev').onclick=()=>{week=addDays(week,-7);draft=[];render();};
+    $('rotationsNext').onclick=()=>{week=addDays(week,7);draft=[];render();};
+    if($('rotationsSuggest'))$('rotationsSuggest').onclick=()=>{
+      draft=buildSuggestions();render();if(!draft.length)showMessage('No open slots to suggest for this week.');
+    };
+    if($('rotationsPublish'))$('rotationsPublish').onclick=async()=>{
+      if(!draft.length)return;
+      if(!confirm(`Publish ${draft.length} suggested cleaning assignments? The current schedule will update immediately.`))return;
+      const ok=await send({action:'acceptCleaningSuggestions',entries:draft},'Weekly cleaning assignments published.');
+      if(ok)draft=[];
+    };
+    if($('rotationsClear'))$('rotationsClear').onclick=async()=>{
+      const days=dates.filter(d=>d>=now&&data.assignments.some(a=>a.date===d&&a.status!=='completed'));
+      if(days.length&&confirm('Clear unfinished cleaning assignments for '+days.length+' day(s)? Completed work stays protected.'))
+        await send({action:'clearCleaningScheduleDays',dates:days},'Unfinished schedule cleared.');
+    };
+    document.querySelectorAll('[data-draft-primary]').forEach(sel=>sel.onchange=()=>{
+      const [date,area]=sel.dataset.draftPrimary.split('|'),r=draft.find(x=>x.assignmentDate===date&&x.department===area);
+      r.employeeId=Number(sel.value)||0;
+      if(r.alternateEmployeeId===r.employeeId)r.alternateEmployeeId=null;
+      render();
+    });
+    document.querySelectorAll('[data-draft-alternate]').forEach(sel=>sel.onchange=()=>{
+      const [date,area]=sel.dataset.draftAlternate.split('|'),r=draft.find(x=>x.assignmentDate===date&&x.department===area);
+      r.alternateEmployeeId=Number(sel.value)||null;render();
+    });
+    document.querySelectorAll('[data-edit-slot]').forEach(b=>b.onclick=()=>{
+      const [date,area]=b.dataset.editSlot.split('|');renderSlotEditor(date,area);
+    });
+  }
+  function renderSlotEditor(date,area){
+    const r=duty(date,area),areaName=area,old=r?.employeeId||0;
+    const todayDate=today();
+    if(date<todayDate||r?.status==='completed')return showMessage('Completed and past assignments cannot be changed.',true);
+    const host=document.createElement('div');host.className='rotations-absence';
+    host.innerHTML=`<b>${esc(dayName(date))} · ${esc(areaName)}</b>
+      <label class="rotations-note">Cleaner <select id="slotPrimary">${optionList(date,old,[],false)}</select></label>
+      <label class="rotations-note">Backup <select id="slotAlternate">${optionList(date,r?.alternateEmployeeId||0,[old],true)}</select></label>
+      <button type="button" id="slotSave">Save assignment</button>
+      <button type="button" id="slotCancel">Cancel</button>`;
+    const panel=$('rotationsContent');panel.prepend(host);
+    $('slotPrimary').onchange=()=>{
+      const backup=$('slotAlternate'),backupId=Number(backup.value)||null;
+      backup.innerHTML=optionList(date,backupId,[Number($('slotPrimary').value)],true);
+      if(backupId===Number($('slotPrimary').value))backup.value='';
+    };
+    $('slotSave').onclick=async()=>{
+      const primary=Number($('slotPrimary').value),alternate=Number($('slotAlternate').value)||null;
+      if(!primary)return showMessage('Select the cleaner first.',true);
+      if(!confirm(`Assign ${personName(primary)} to ${areaName} on ${date}?`))return;
+      await send({action:'setCleaningSchedule',employeeId:primary,alternateEmployeeId:alternate,assignmentDate:date,department:areaName},
+        'Cleaning assignment saved.');
+    };
+    $('slotCancel').onclick=()=>host.remove();
+  }
+  function renderFairness(){
+    const history=fairness(),completed=data.assignments.filter(a=>a.status==='completed')
+      .sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id).slice(0,90);
+    $('rotationsContent').innerHTML=`
+      <p class="rotations-note">Last 90 days. Actual minutes are awarded only after completed work. Leave protection affects scheduling priority, not credited minutes or Bingo coins. No one is tied to a particular department.</p>
+      <div class="rotations-fair-wrap"><table class="rotations-fair-table"><thead><tr><th>Associate</th><th>Worked</th><th>Leave protection</th><th>Rotation balance</th>${areas().map(a=>`<th>${esc(a)}</th>`).join('')}</tr></thead><tbody>
+      ${history.map(h=>`<tr><td><b>${esc(h.name)}</b><small style="display:block;color:var(--muted)">Last: ${esc(h.last||'Never')}</small></td>
+        <td>${h.minutes} min</td><td>${h.protected} min</td><td><b>${Math.round(h.balance)} min</b></td>
+        ${areas().map(a=>`<td>${h.byArea[a]||0}</td>`).join('')}</tr>`).join('')}
+      </tbody></table></div>
+      ${isAdmin()?`<div class="rotations-absence">
+        <b>Record absence / leave</b>
+        <select id="rotationsAbsentEmployee" aria-label="Employee">${associates().map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
+        <input type="date" id="rotationsAbsentStart" value="${today()}" aria-label="Start date" />
+        <input type="date" id="rotationsAbsentEnd" value="${today()}" aria-label="End date" />
+        <select id="rotationsAbsentStatus" aria-label="Availability"><option value="unavailable">Out / unavailable</option><option value="available">Available again</option></select>
+        <button type="button" id="rotationsAbsentSave">Save dates</button>
+      </div>`:''}
+      <h3 style="font-size:13px;margin:17px 0 10px">Completed cleaning history</h3>
+      <div class="rotations-history">${completed.length?completed.map(a=>`
+        <div class="rotations-history-row"><span><b>${esc(personName(a.actualEmployeeId||a.employeeId))}</b><small>${esc(a.area)} · ${esc(a.date)}</small></span>
+        <span class="rotations-badge done">15 min ✓</span></div>`).join(''):'<p class="rotations-note">No completed duties in the loaded history.</p>'}</div>
+    `;
+    if($('rotationsAbsentSave'))$('rotationsAbsentSave').onclick=async()=>{
+      const employeeId=Number($('rotationsAbsentEmployee').value),startDate=$('rotationsAbsentStart').value,
+        endDate=$('rotationsAbsentEnd').value,status=$('rotationsAbsentStatus').value;
+      if(!startDate||!endDate||endDate<startDate)return showMessage('Choose a valid start and end date.',true);
+      if(confirm(`Mark ${personName(employeeId)} ${status} from ${startDate} through ${endDate}?`))
+        await send({action:'setAvailabilityRange',employeeId,startDate,endDate,status},'Availability saved. Suggestions will account for it.');
+    };
+  }
+
+  async function open(){
+    if(!session().signedIn){
+      window.HubAssociate?.open?.();return;
+    }
+    tab='today';week=weekStart(today());draft=[];message='';
+    if(!dialog.open)dialog.showModal();
+    await load();
+  }
+  trigger.onclick=()=>void open();
+  $('rotationsClose').onclick=()=>dialog.close();
+  $('rotationsRefresh').onclick=()=>void load();
+  dialog.querySelectorAll('[data-rot-tab]').forEach(b=>b.onclick=()=>{
+    tab=b.dataset.rotTab;render();
+  });
+  document.addEventListener('hub-associate-session',()=>{if(dialog.open)void load();});
+  window.HubRotations={open,refresh:()=>dialog.open?load(true):Promise.resolve()};
+})();
