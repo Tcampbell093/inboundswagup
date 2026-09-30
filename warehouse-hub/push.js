@@ -94,8 +94,17 @@
     syncButton();if(!admin()||!dialog.open)return;
     if(!supported()){show('This browser does not support background web push. Use a current Chrome, Edge, Firefox or Safari version on a supported desktop.',true);toggle.disabled=true;test.disabled=true;return;}
     if(Notification.permission==='denied'){
-      show('Notifications are blocked in this browser. Allow notifications for this site in your browser settings, then reopen this window.',true);
-      toggle.disabled=true;test.disabled=true;return;
+      const subscription=await browserSub().catch(()=>null);
+      let subscribed=false;
+      if(subscription){
+        const r=await fetch(API+'?action=status&endpoint='+encodeURIComponent(subscription.endpoint),{credentials:'same-origin',cache:'no-store'});
+        if(r.ok)subscribed=!!(await r.json()).subscribed;
+      }
+      updateState(subscribed);
+      if(!subscribed)toggle.disabled=true;
+      test.disabled=true;
+      show('Notifications are blocked by this browser. You can disable this computer, or allow notifications for this site in browser settings and reopen this window.',true);
+      return;
     }
     try{
       show('Checking this computer…');toggle.disabled=true;test.disabled=true;
@@ -132,7 +141,6 @@
     finally{busy=false;}
   }
   async function disable(silent=false){
-    if(busy&&!silent)return false;
     const subscription=supported()?await browserSub().catch(()=>null):null;
     if(!subscription){if(!silent){updateState(false);show('Notifications are disabled on this computer.');}return true;}
     try{
