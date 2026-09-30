@@ -141,6 +141,11 @@ export default async(request)=>{
   if(adminOnly.has(action)&&role!=='admin')return json(403,{error:'Admin access required for weekly scheduling and leave ranges.'});
   let payload;
   try{payload=sanitize(body,action);}catch(error){return json(400,{error:error.message});}
+  if(role==='lead'){
+    const current=easternToday();
+    if(action==='setCleaningSchedule'&&payload.assignmentDate!==current)return json(403,{error:'Team Leads can reassign today only.'});
+    if(action==='setAvailability'&&payload.availabilityDate!==current)return json(403,{error:'Team Leads can change today’s availability only.'});
+  }
   if(action==='markCleaningAbsent'||action==='useCleaningAlternate'
     || action==='setCleaningSchedule'||action==='acceptCleaningSuggestions'||action==='clearCleaningScheduleDays'){
     const state=await remote('/api/dashboard?date='+easternToday());
@@ -149,12 +154,14 @@ export default async(request)=>{
     if(action==='markCleaningAbsent'||action==='useCleaningAlternate'){
       const duty=all.find(x=>Number(x.id)===payload.assignmentId);
       if(!duty||duty.dutyStatus==='completed')return json(409,{error:'This cleaning assignment is complete or no longer exists.'});
+      if(duty.dutyStatus==='in_progress')return json(409,{error:'Cleaning has already started. Finish or resolve the duty before reassigning.'});
       if(duty.assignmentDate<easternToday())return json(409,{error:'Past assignments cannot be changed.'});
+      if(role==='lead'&&duty.assignmentDate!==easternToday())return json(403,{error:'Team Leads can change today’s assignments only.'});
     }
     if(action==='setCleaningSchedule'||action==='acceptCleaningSuggestions'||action==='clearCleaningScheduleDays'){
       const updates=action==='setCleaningSchedule'?[payload]:action==='acceptCleaningSuggestions'?payload.entries:[];
       const dates=action==='clearCleaningScheduleDays'?payload.dates:updates.map(x=>x.assignmentDate);
-      if(all.some(x=>dates.includes(x.assignmentDate)&&x.dutyStatus==='completed'
+      if(all.some(x=>dates.includes(x.assignmentDate)&&['completed','in_progress'].includes(x.dutyStatus)
         &&(action==='clearCleaningScheduleDays'
           ||updates.some(d=>d.assignmentDate===x.assignmentDate&&d.department===x.toDepartment))))
         return json(409,{error:'Completed cleaning records are protected. They cannot be replaced or cleared.'});
