@@ -22,6 +22,7 @@
 
 const { Pool } = require('pg');
 const crypto = require('node:crypto');
+const {sendAdmins:sendAdminPush}=require('./_hub_push');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -353,6 +354,23 @@ function rowToItem(r) {
   };
 }
 
+// Notify only on entry into a critical state or worsening Low -> Out of Stock.
+function stockSeverity(item){
+  if(!item||item.archived)return 0;
+  const state=computeStatus(item.quantity,item.min_stock,item.needs_review);
+  return state==='Out of Stock'?2:state==='Low Stock'?1:0;
+}
+async function notifyStockTransition(previous,next){
+  const before=stockSeverity(previous),after=stockSeverity(next);
+  if(after<=before)return;
+  const item=rowToItem(next);
+  await sendAdminPush(pool,{
+    eventKey:'inventory-stock:'+item.id+':'+after+':'+new Date(next.updated_at).getTime(),
+    title:'Warehouse Inventory · '+(after===2?'Out of stock':'Low stock'),
+    body:item.itemName+' · '+(item.department||'Warehouse')+' · '+(item.quantity??'?')+' '+(item.unitType||'units')+' remaining',
+    tag:'inventory-stock-'+item.id+'-'+after,url:'/inventory-control/'
+  });
+}
 function reqToObj(r) {
   return {
     id: r.id, itemId: r.item_id, itemName: r.item_name || '', category: r.category || '',
@@ -823,6 +841,7 @@ exports.handler = async function handler(event) {
           newItem.product_key = key;
         }
       }
+      await notifyStockTransition(null,newItem);
       return json(200, { ok: true, item: rowToItem(newItem) });
     }
 
@@ -831,6 +850,7 @@ exports.handler = async function handler(event) {
       if (!canManage) return json(403, { error: 'Admin only' });
       const id = body.id; const f = body.fields || {};
       if (!id) return json(400, { error: 'id required' });
+      const beforeItem=await pool.query('SELECT quantity,min_stock,needs_review,archived FROM hub_inventory_items WHERE id=$1',[id]);
       const sets = [], vals = []; let i = 1;
       const map = { itemName: 'item_name', category: 'category', department: 'department', location: 'location', spot: 'spot',
         unitType: 'unit_type', minStock: 'min_stock', vendor: 'vendor', sku: 'sku', orderLink: 'order_link', notes: 'notes' };
@@ -859,6 +879,7 @@ exports.handler = async function handler(event) {
       vals.push(id);
       const r = await pool.query(`UPDATE hub_inventory_items SET ${sets.join(', ')} WHERE id=$${i} RETURNING *;`, vals);
       if (!r.rows.length) return json(404, { error: 'not found' });
+      await notifyStockTransition(beforeItem.rows[0],r.rows[0]);
       return json(200, { ok: true, item: rowToItem(r.rows[0]) });
     }
 
@@ -886,6 +907,7 @@ exports.handler = async function handler(event) {
            last_updated_by=$3, updated_at=NOW() WHERE id=$4 RETURNING *;`,
         [next, notes, who(caller), id]
       );
+      await notifyStockTransition(cur.rows[0],r.rows[0]);
       return json(200, { ok: true, item: rowToItem(r.rows[0]) });
     }
 
@@ -1018,8 +1040,14 @@ exports.handler = async function handler(event) {
          rq.reason || '', rq.orderLink || '', who(caller)]
       );
       const created = reqToObj(r.rows[0]);
-      // Request-alert subscribers are notified through the Warehouse Hub badge.
-      // Email notifications are intentionally no longer sent.
+      // Keep the existing in-app badge; send Web Push only to opted-in Admin devices.
+      await sendAdminPush(pool,{
+        eventKey:'inventory-request:'+created.id+':created',
+        title:(created.urgency==='Urgent'||created.urgency==='High'?'⚠️ ':'')+'New inventory request',
+        body:created.itemName+' · '+(created.department||'Warehouse')+
+          (created.quantity!=null?' · Qty '+created.quantity:'')+' · '+created.urgency+' priority',
+        tag:'inventory-request-'+created.id,url:'/inventory-control/'
+      });
       return json(200, { ok: true, request: created });
     }
 
