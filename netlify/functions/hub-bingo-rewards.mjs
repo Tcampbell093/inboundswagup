@@ -115,6 +115,20 @@ async function ensureSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS hub_bingo_photos (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL DEFAULT '',
+      mime_type TEXT NOT NULL,
+      image_bytes BYTEA NOT NULL,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_by TEXT NOT NULL DEFAULT '',
+      removed_at TIMESTAMPTZ,
+      removed_by TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS hub_bingo_photos_active_idx
+      ON hub_bingo_photos(active, created_at DESC);
+
     INSERT INTO hub_bingo_settings(id,board_size,anchor_date,reset_number,reset_by,updated_at)
     VALUES(1,5,'2026-09-21',0,'',NOW())
     ON CONFLICT(id) DO NOTHING;
@@ -179,6 +193,76 @@ async function resetBingoRound(db, session) {
       message: 'Bingo reset complete. Everyone has a fresh card and a new round starting today. Existing Bingo Coins and reward history were kept.',
       resetNumber,
       settings: await bingoSettings(db),
+    },
+  };
+}
+
+
+function bingoPhotoUrl(id) {
+  return `/api/bingo-photo?id=${encodeURIComponent(id)}`;
+}
+
+async function bingoPhotos(db) {
+  const result = await db.query(`
+    SELECT id,label,created_at,created_by
+    FROM hub_bingo_photos
+    WHERE active=TRUE
+    ORDER BY created_at DESC,id ASC
+  `);
+  return result.rows.map((row) => ({
+    id: row.id,
+    label: clean(row.label, 100) || 'Bingo photo',
+    url: bingoPhotoUrl(row.id),
+    createdAt: row.created_at || null,
+    createdBy: clean(row.created_by, 100),
+  }));
+}
+
+function decodePhotoDataUrl(value) {
+  const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(value || ''));
+  if (!match) throw new Error('Choose a JPG, PNG, or WebP image.');
+  const bytes = Buffer.from(match[2], 'base64');
+  if (!bytes.length) throw new Error('That photo could not be read.');
+  if (bytes.length > 650000) throw new Error('That photo is too large after processing. Try a smaller image.');
+  return { mimeType: match[1], bytes };
+}
+
+async function addBingoPhoto(db, session, body) {
+  const { mimeType, bytes } = decodePhotoDataUrl(body.dataUrl);
+  const id = crypto.randomUUID();
+  const label = clean(body.label, 100) || 'Bingo photo';
+  await db.query(`
+    INSERT INTO hub_bingo_photos(id,label,mime_type,image_bytes,active,created_at,created_by)
+    VALUES($1,$2,$3,$4,TRUE,NOW(),$5)
+  `, [id, label, mimeType, bytes, clean(session.name, 100)]);
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      message: `${label} added to the Bingo photo pool.`,
+      photo: { id, label, url: bingoPhotoUrl(id) },
+      photos: await bingoPhotos(db),
+    },
+  };
+}
+
+async function removeBingoPhoto(db, session, body) {
+  const id = clean(body.photoId, 80);
+  if (!id) return { status: 400, body: { error: 'Photo information is missing.' } };
+  const result = await db.query(`
+    UPDATE hub_bingo_photos
+    SET active=FALSE,removed_at=NOW(),removed_by=$2
+    WHERE id=$1 AND active=TRUE
+    RETURNING id,label
+  `, [id, clean(session.name, 100)]);
+  const row = result.rows[0];
+  if (!row) return { status: 404, body: { error: 'That Bingo photo is no longer in the active pool.' } };
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      message: `${clean(row.label, 100) || 'Photo'} removed from future Bingo cards.`,
+      photos: await bingoPhotos(db),
     },
   };
 }
@@ -337,6 +421,7 @@ export default async (request) => {
         },
         ...(await rewardLedger(db)),
         settings: await bingoSettings(db),
+        photos: await bingoPhotos(db),
       });
     }
 
@@ -359,7 +444,17 @@ export default async (request) => {
       return json(result.status, result.body);
     }
 
-    return json(400, { error: 'Unsupported reward action.' });
+    if (action === 'addPhoto') {
+      const result = await addBingoPhoto(db, session, body);
+      return json(result.status, result.body);
+    }
+
+    if (action === 'removePhoto') {
+      const result = await removeBingoPhoto(db, session, body);
+      return json(result.status, result.body);
+    }
+
+    return json(400, { error: 'Unsupported Bingo admin action.' });
   } catch (error) {
     return json(400, { error: clean(error?.message || 'Bingo rewards are temporarily unavailable.', 300) });
   }

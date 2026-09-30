@@ -11,6 +11,24 @@
     'FREE':'Free square',
   };
 
+  function photoIdFromToken(token) {
+    const match = /^PHOTO\|([^|]+)\|\d+$/.exec(String(token || ''));
+    return match ? match[1] : '';
+  }
+
+  function tokenMeta(token) {
+    const photoId = photoIdFromToken(token);
+    if (photoId) {
+      const photo = state?.photos?.[photoId] || {};
+      return {
+        kind: 'photo',
+        label: photo.label || 'Bingo photo',
+        url: photo.url || `/api/bingo-photo?id=${encodeURIComponent(photoId)}`,
+      };
+    }
+    return { kind: 'symbol', label: symbolNames[token] || 'Bingo symbol', symbol: token };
+  }
+
   let loading = false;
   let state = null;
   let message = '';
@@ -44,22 +62,29 @@
     document.getElementById('bingoSignIn')?.addEventListener('click', () => window.HubAssociate?.open?.());
   }
 
-  function squareHtml(symbol, index, marked) {
-    const isFree = symbol === 'FREE';
+  function squareHtml(token, index, marked) {
+    const isFree = token === 'FREE';
     const isMarked = marked.includes(index);
-    const label = symbolNames[symbol] || 'Bingo symbol';
+    const meta = tokenMeta(token);
+    const label = isFree ? 'Free square' : meta.label;
+    const visual = isFree
+      ? '<div class="bingo-symbol">🆓</div>'
+      : meta.kind === 'photo'
+        ? `<div class="bingo-symbol bingo-photo-symbol"><img class="bingo-photo" src="${esc(meta.url)}" alt="${esc(meta.label)}" loading="lazy" /></div>`
+        : `<div class="bingo-symbol">${esc(meta.symbol)}</div>`;
     return `
-      <div class="bingo-square${isMarked ? ' marked' : ''}${isFree ? ' free' : ''}" aria-label="${esc(label)}${isMarked ? ', marked' : ', not marked'}">
-        <div class="bingo-symbol">${isFree ? '🆓' : esc(symbol)}</div>
+      <div class="bingo-square${isMarked ? ' marked' : ''}${isFree ? ' free' : ''}${meta.kind === 'photo' ? ' has-photo' : ''}" aria-label="${esc(label)}${isMarked ? ', marked' : ', not marked'}">
+        ${visual}
         <div class="bingo-square-label">${isFree ? 'FREE' : (isMarked ? 'FOUND' : 'NEEDED')}</div>
       </div>`;
   }
 
   function drawMessage(result) {
     if (!result) return message;
-    if (result.bingo) return `🎉 BINGO! ${result.symbol} completed a line.`;
-    if (result.matched) return `🎯 ${result.symbol} was on your card — square marked.`;
-    return `${result.symbol} wasn't on your card. Keep it moving — that symbol won't repeat this round.`;
+    const label = result.symbol === 'FREE' ? 'FREE' : tokenMeta(result.symbol).label;
+    if (result.bingo) return `🎉 BINGO! ${label} completed a line.`;
+    if (result.matched) return `🎯 ${label} was on your card — square marked.`;
+    return `${label} wasn't on your card. Keep it moving — that square won't repeat this round.`;
   }
 
   function render() {
@@ -112,8 +137,8 @@
           <div class="bingo-info-card">
             <div class="bingo-kicker">How it works</div>
             <div class="bingo-rule"><span>1</span><p>Finish cleaning in FairShift → earn <strong>1 Bingo Coin</strong>.</p></div>
-            <div class="bingo-rule"><span>2</span><p>Spend a coin for a random symbol. Everyone also gets <strong>1 free draw each week</strong>.</p></div>
-            <div class="bingo-rule"><span>3</span><p>Every draw marks one square on your <strong>${boardSize}×${boardSize}</strong> card. Drawn symbols don't repeat.</p></div>
+            <div class="bingo-rule"><span>2</span><p>Spend a coin for a random Bingo square. Everyone also gets <strong>1 free draw each week</strong>.</p></div>
+            <div class="bingo-rule"><span>3</span><p>Every draw marks one square on your <strong>${boardSize}×${boardSize}</strong> card. Drawn squares don't repeat.</p></div>
           </div>
           <div class="bingo-round-card">
             <div><strong>${Number(state.stats?.players || 0)}</strong><span>playing</span></div>
