@@ -96,7 +96,7 @@
     box.querySelectorAll('[data-checkin]').forEach((btn) => btn.addEventListener('click', () => openCheckin(btn.dataset)));
 
     const sourceLabel = $('cleaningSourceLabel');
-    if (sourceLabel) sourceLabel.textContent = feed.cleaningSource === 'fairshift' ? 'Live from FairShift · 15 min credit' : 'FairShift connection unavailable · fallback view';
+    if (sourceLabel) sourceLabel.textContent = feed.cleaningSource === 'fairshift' ? 'Cleaning schedule · 15 min credit' : 'Cleaning schedule temporarily unavailable';
 
     const anns = activeAnnouncements(t).sort((a, b) => Number(b.pinned) - Number(a.pinned));
     $('announcementCount').textContent = `${anns.length} active`;
@@ -130,6 +130,7 @@
 
   function render() { renderToday(); renderWeek(); }
 
+  document.addEventListener('hub-cleaning-refresh', () => loadFeed());
   async function loadFeed() {
     try {
       const r = await fetch(API, { cache: 'no-store' });
@@ -146,6 +147,9 @@
 
   function toolCardHtml(tool) {
     const accentClass = tool.accent === 'green' ? ' green' : tool.accent === 'blue' ? ' blue' : '';
+    if (tool.id === 'fairshift-rotations') {
+      return `<a class="tool-card${accentClass}" data-tool-id="fairshift-rotations" href="#today"><div class="tool-top"><div class="iconbox">🧹</div><div class="open">Open modal ↗</div></div><div class="tool-label">Cleaning & rotations</div><h3>Cleaning Planner</h3><p>Plan fair weekly rotations, manage absences, and check cleaning history here in the Hub.</p></a>`;
+    }
     return `<a class="tool-card${accentClass}" data-tool-id="${escapeHtml(tool.id || '')}" href="${escapeHtml(tool.url)}" target="_blank" rel="noopener"><div class="tool-top"><div class="iconbox">${escapeHtml(tool.icon || '◫')}</div><div class="open">Open ↗</div></div><div class="tool-label">${escapeHtml(tool.label || 'Team tool')}</div><h3>${escapeHtml(tool.title)}</h3><p>${escapeHtml(tool.description || `Open ${tool.title}.`)}</p></a>`;
   }
 
@@ -211,6 +215,10 @@
   document.querySelector('.tool-grid')?.addEventListener('click', (event) => {
     const card = event.target.closest('a[data-tool-id]');
     if (!card || !card.dataset.toolId) return;
+    if (card.dataset.toolId === 'fairshift-rotations') {
+      event.preventDefault();
+      window.HubRotations?.open?.();
+    }
     toolOrderDirty = true;
     const payload = JSON.stringify({ action: 'recordClick', id: card.dataset.toolId });
     try {
