@@ -64,6 +64,22 @@
     .bingo-reset-btn{border-color:#d9aaa4;color:#8f2d22;background:#fff7f5}
     .bingo-reset-btn:hover{background:#f8e9e6}
     .bingo-admin-current{font-size:11px;color:var(--muted);font-weight:800;text-align:right}
+    .bingo-photo-admin{border:1px solid var(--line);border-radius:16px;background:var(--paper);padding:14px;margin-bottom:16px}
+    .bingo-photo-admin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+    .bingo-photo-admin h4{margin:0 0 5px;font-size:14px}
+    .bingo-photo-admin p{margin:0;color:var(--muted);font-size:11px;line-height:1.45}
+    .bingo-photo-count{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;background:var(--green-soft);color:var(--green);font-size:10px;font-weight:900;white-space:nowrap}
+    .bingo-photo-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+    .bingo-photo-upload{border:1px solid var(--green);border-radius:10px;background:var(--green);color:#fff;padding:9px 12px;font-weight:900;cursor:pointer}
+    .bingo-photo-upload:disabled{opacity:.55;cursor:not-allowed}
+    .bingo-photo-tip{font-size:10px;color:var(--muted);font-weight:750}
+    .bingo-photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:9px;margin-top:12px}
+    .bingo-photo-card{position:relative;border:1px solid var(--line);border-radius:13px;background:#fff;overflow:hidden}
+    .bingo-photo-card img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;background:#eef2ef}
+    .bingo-photo-card-footer{display:flex;align-items:center;justify-content:space-between;gap:5px;padding:7px}
+    .bingo-photo-card-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:850;color:#46534d}
+    .bingo-photo-remove{border:0;border-radius:8px;background:#fff0ed;color:#922f25;width:25px;height:25px;display:grid;place-items:center;font-weight:950;cursor:pointer;flex:0 0 auto}
+    .bingo-photo-empty{grid-column:1/-1;padding:16px;border:1px dashed var(--line);border-radius:12px;text-align:center;color:var(--muted);font-size:11px;line-height:1.45}
     @media(max-width:620px){.associate-btn{max-width:145px}.associate-actions{display:grid}.associate-actions .action{width:100%}.bingo-reward-btn{padding-left:9px;padding-right:9px}.bingo-reward-actions{grid-template-columns:1fr}.bingo-reward-body{padding:13px}.bingo-admin-control-row{display:grid}.bingo-admin-current{text-align:left}}
   `;
   document.head.appendChild(style);
@@ -148,6 +164,21 @@
           <button class="bingo-reset-btn" id="bingoResetRound" type="button">Reset Bingo</button>
         </div>
       </section>
+      <section class="bingo-photo-admin">
+        <div class="bingo-photo-admin-head">
+          <div>
+            <h4>Bingo photos</h4>
+            <p>Upload the faces you want used on fresh Bingo cards. Removing a photo stops it from appearing on future cards; existing cards keep working until the next reset.</p>
+          </div>
+          <span class="bingo-photo-count" id="bingoPhotoCount">0 active</span>
+        </div>
+        <div class="bingo-photo-actions">
+          <input id="bingoPhotoInput" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden />
+          <button class="bingo-photo-upload" id="bingoPhotoPick" type="button">＋ Upload photos</button>
+          <span class="bingo-photo-tip">Photos are cropped square and compressed automatically.</span>
+        </div>
+        <div class="bingo-photo-grid" id="bingoPhotoGrid"></div>
+      </section>
       <p class="bingo-reward-intro">Bingo wins appear below automatically. Mark a reward given only after the winner actually receives it.</p>
       <section class="bingo-reward-section">
         <h4><span>Pending rewards</span><span id="bingoPendingLabel">0 pending</span></h4>
@@ -176,10 +207,15 @@
   const rewardHistoryList = document.getElementById('bingoHistoryList');
   const bingoAdminCurrent = document.getElementById('bingoAdminCurrent');
   const bingoResetRound = document.getElementById('bingoResetRound');
+  const bingoPhotoInput = document.getElementById('bingoPhotoInput');
+  const bingoPhotoPick = document.getElementById('bingoPhotoPick');
+  const bingoPhotoGrid = document.getElementById('bingoPhotoGrid');
+  const bingoPhotoCount = document.getElementById('bingoPhotoCount');
   const bingoSizeButtons = [...rewardDialog.querySelectorAll('[data-bingo-size]')];
-  let rewardLedger = { pendingCount: 0, pending: [], history: [], settings: { boardSize: 5 } };
+  let rewardLedger = { pendingCount: 0, pending: [], history: [], photos: [], settings: { boardSize: 5 } };
   let rewardLoading = false;
   let bingoControlSaving = false;
+  let bingoPhotoSaving = false;
 
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
   const displayRole = (role) => String(role || '').toLowerCase() === 'manager' ? 'Admin' : String(role || '');
@@ -231,7 +267,12 @@
 
   function renderBingoControls() {
     const size = Number(rewardLedger.settings?.boardSize || 5);
-    bingoSizeButtons.forEach((button) => {
+    bingoPhotoPick.addEventListener('click', () => {
+    if (!bingoPhotoSaving) bingoPhotoInput.click();
+  });
+  bingoPhotoInput.addEventListener('change', () => uploadBingoPhotos(bingoPhotoInput.files));
+
+  bingoSizeButtons.forEach((button) => {
       const active = Number(button.dataset.bingoSize) === size;
       button.classList.toggle('active', active);
       button.setAttribute('aria-pressed', active ? 'true' : 'false');
@@ -243,6 +284,111 @@
     bingoAdminCurrent.textContent = resetAt
       ? `Current board: ${size} × ${size} · Last reset ${rewardDate(resetAt)}${resetBy ? ' by ' + resetBy : ''}`
       : `Current board: ${size} × ${size}`;
+  }
+
+  function renderBingoPhotos() {
+    const photos = Array.isArray(rewardLedger.photos) ? rewardLedger.photos : [];
+    bingoPhotoCount.textContent = `${photos.length} active`;
+    bingoPhotoPick.disabled = bingoPhotoSaving;
+    bingoPhotoPick.textContent = bingoPhotoSaving ? 'Uploading…' : '＋ Upload photos';
+    bingoPhotoGrid.innerHTML = photos.length
+      ? photos.map((photo) => `
+          <article class="bingo-photo-card">
+            <img src="${esc(photo.url)}" alt="${esc(photo.label || 'Bingo photo')}" loading="lazy" />
+            <div class="bingo-photo-card-footer">
+              <span class="bingo-photo-card-name" title="${esc(photo.label || 'Bingo photo')}">${esc(photo.label || 'Bingo photo')}</span>
+              <button class="bingo-photo-remove" type="button" data-bingo-photo-remove="${esc(photo.id)}" aria-label="Remove ${esc(photo.label || 'Bingo photo')}">×</button>
+            </div>
+          </article>`).join('')
+      : '<div class="bingo-photo-empty">No custom photos yet. Bingo will keep using the current symbol cards until you upload photos and start a fresh round.</div>';
+
+    bingoPhotoGrid.querySelectorAll('[data-bingo-photo-remove]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        if (bingoPhotoSaving) return;
+        const photo = photos.find((item) => item.id === button.dataset.bingoPhotoRemove);
+        if (!photo) return;
+        if (!confirm(`Remove "${photo.label || 'this photo'}" from future Bingo cards? Existing cards will keep working.`)) return;
+        bingoPhotoSaving = true;
+        renderBingoPhotos();
+        try {
+          const body = await postBingoAdmin('removePhoto', { photoId: photo.id });
+          rewardLedger.photos = Array.isArray(body.photos) ? body.photos : rewardLedger.photos.filter((item) => item.id !== photo.id);
+          setRewardMessage(body.message || 'Photo removed from future Bingo cards.');
+        } catch (error) {
+          setRewardMessage(error.message || 'Could not remove the Bingo photo.', true);
+        } finally {
+          bingoPhotoSaving = false;
+          renderBingoPhotos();
+        }
+      });
+    });
+  }
+
+  function fileAsDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Could not read that photo.'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function prepareBingoPhoto(file) {
+    if (!/^image\/(jpeg|png|webp)$/i.test(file?.type || '')) throw new Error('Choose a JPG, PNG, or WebP image.');
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const node = new Image();
+        node.onload = () => resolve(node);
+        node.onerror = () => reject(new Error(`${file.name || 'Photo'} could not be opened.`));
+        node.src = objectUrl;
+      });
+      const side = Math.min(img.naturalWidth || img.width, img.naturalHeight || img.height);
+      if (!side) throw new Error(`${file.name || 'Photo'} has no usable image data.`);
+      const sx = Math.max(0, ((img.naturalWidth || img.width) - side) / 2);
+      const sy = Math.max(0, ((img.naturalHeight || img.height) - side) / 2);
+      const canvas = document.createElement('canvas');
+      canvas.width = 640;
+      canvas.height = 640;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#f4f6f4';
+      ctx.fillRect(0, 0, 640, 640);
+      ctx.drawImage(img, sx, sy, side, side, 0, 0, 640, 640);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', .84));
+      if (!blob) throw new Error(`${file.name || 'Photo'} could not be processed.`);
+      if (blob.size > 650000) throw new Error(`${file.name || 'Photo'} is still too large after processing.`);
+      return {
+        label: String(file.name || 'Bingo photo').replace(/\.[^.]+$/, '').slice(0, 100) || 'Bingo photo',
+        dataUrl: await fileAsDataUrl(blob),
+      };
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
+  async function uploadBingoPhotos(fileList) {
+    const files = [...(fileList || [])];
+    if (!files.length || bingoPhotoSaving) return;
+    bingoPhotoSaving = true;
+    renderBingoPhotos();
+    let uploaded = 0;
+    try {
+      for (const file of files) {
+        setRewardMessage(`Preparing ${file.name || 'photo'}…`);
+        const photo = await prepareBingoPhoto(file);
+        const body = await postBingoAdmin('addPhoto', photo);
+        if (Array.isArray(body.photos)) rewardLedger.photos = body.photos;
+        uploaded += 1;
+        renderBingoPhotos();
+      }
+      setRewardMessage(`${uploaded} photo${uploaded === 1 ? '' : 's'} added. Start a fresh Bingo round whenever you want everyone to get cards from the updated photo pool.`);
+    } catch (error) {
+      setRewardMessage(error.message || 'Could not upload the Bingo photos.', true);
+    } finally {
+      bingoPhotoSaving = false;
+      bingoPhotoInput.value = '';
+      renderBingoPhotos();
+    }
   }
 
   async function postBingoAdmin(action, payload = {}) {
@@ -292,6 +438,7 @@
       ? history.map((row) => rewardCard(row, false)).join('')
       : '<div class="bingo-reward-empty">No rewards have been marked given yet.</div>';
     renderBingoControls();
+    renderBingoPhotos();
     rewardPendingList.querySelectorAll('[data-reward-given]').forEach((button) => {
       button.addEventListener('click', async () => {
         const card = button.closest('[data-reward-row]');
