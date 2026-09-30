@@ -90,9 +90,17 @@
     const t = today();
     const rows = feed.cleaning.filter((r) => r.date === t);
     const box = $('todayCleaning');
-    box.innerHTML = rows.length
-      ? rows.map((r) => `<div class="cleaning-row"><div class="area">${escapeHtml(r.area)}</div><div class="person">${escapeHtml(r.employeeName)}</div><span class="status ${escapeHtml(r.status)}">${escapeHtml(statusLabel(r.status))}</span>${actionForCleaning(r)}</div>`).join('')
-      : `<div class="empty">${feed.cleaningSource === 'fairshift' ? 'No cleaning assignments are scheduled in FairShift for today.' : 'FairShift could not be reached, and no manual fallback assignments are available.'}</div>`;
+    const sideOf = (r) => r.side === 'Outbound' ? 'Outbound' : 'Inbound';
+    const renderSide = (side) => {
+      const assignments = rows.filter((r) => sideOf(r) === side);
+      return `<section class="cleaning-side" aria-label="${side} cleaning">
+        <h4 class="cleaning-side-title">${side}<span>${assignments.length} assigned</span></h4>
+        <div class="cleaning-side-rows">${assignments.length
+          ? assignments.map((r) => `<div class="cleaning-row"><div class="area">${escapeHtml(r.area)}</div><div class="person">${escapeHtml(r.employeeName)}</div><span class="status ${escapeHtml(r.status)}">${escapeHtml(statusLabel(r.status))}</span>${actionForCleaning(r)}</div>`).join('')
+          : `<div class="cleaning-side-empty">${feed.cleaningSource === 'fairshift' ? 'No cleaning assignments for ${side} today.' : 'Cleaning schedule temporarily unavailable.'}</div>`}
+        </div></section>`;
+    };
+    box.innerHTML = ['Inbound','Outbound'].map(renderSide).join('');
     box.querySelectorAll('[data-checkin]').forEach((btn) => btn.addEventListener('click', () => openCheckin(btn.dataset)));
 
     const sourceLabel = $('cleaningSourceLabel');
@@ -116,11 +124,12 @@
     const todayIso = today();
     $('weekTitle').textContent = `Week of ${fmtDay(dates[0])} – ${fmtDay(dates[4])}`;
     $('weekCalendar').innerHTML = dates.map((date) => {
-      const clean = feed.cleaning.filter((r) => r.date === date);
+      const clean = feed.cleaning.filter((r) => r.date === date)
+        .sort((a,b) => Number(a.side === 'Outbound') - Number(b.side === 'Outbound'));
       const ann = activeAnnouncements(date).filter((a) => a.startDate === date || a.pinned);
       const pol = policiesForDate(date);
       const events = [];
-      clean.forEach((r, i) => events.push(`<div class="week-event"><div class="event-label">${i === 0 ? 'Cleaning' : ''}</div><div class="event-title">${escapeHtml(r.area)}</div><div class="event-meta">${escapeHtml(r.employeeName)} • ${escapeHtml(statusLabel(r.status))}</div></div>`));
+      clean.forEach((r, i) => events.push(`<div class="week-event"><div class="event-label">${i === 0 || r.side !== clean[i-1]?.side ? escapeHtml(r.side || 'Inbound') + ' cleaning' : ''}</div><div class="event-title">${escapeHtml(r.area)}</div><div class="event-meta">${escapeHtml(r.employeeName)} • ${escapeHtml(statusLabel(r.status))}</div></div>`));
       ann.slice(0, 3).forEach((a) => events.push(`<div class="week-event"><div class="event-label">Announcement</div><div class="event-title">${escapeHtml(a.title)}</div><div class="event-meta">${escapeHtml(a.department || 'All teams')}</div></div>`));
       pol.forEach((p) => events.push(`<div class="week-event"><div class="event-label">Policy</div><div class="event-title">${escapeHtml(p.title)}</div><div class="event-meta">${p.readRequired ? 'Read required' : 'Effective'}</div></div>`));
       if (!events.length) events.push('<div class="event-meta">Nothing published.</div>');
