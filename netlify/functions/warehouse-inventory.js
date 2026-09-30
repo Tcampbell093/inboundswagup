@@ -1046,7 +1046,7 @@ exports.handler = async function handler(event) {
         title:(created.urgency==='Urgent'||created.urgency==='High'?'⚠️ ':'')+'New inventory request',
         body:created.itemName+' · '+(created.department||'Warehouse')+
           (created.quantity!=null?' · Qty '+created.quantity:'')+' · '+created.urgency+' priority',
-        tag:'inventory-request-'+created.id,url:'/inventory-control/'
+        tag:'inventory-request-'+created.id,url:'/inventory-control/?view=requests'
       });
       return json(200, { ok: true, request: created });
     }
