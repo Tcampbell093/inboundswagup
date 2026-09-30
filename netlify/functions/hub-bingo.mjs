@@ -7,7 +7,9 @@ const SESSION_COOKIE = 'hub_associate_session';
 const SESSION_VERSION = 2;
 const ROUND_ANCHOR = '2026-09-21';
 const ROUND_DAYS = 28;
-const SYMBOLS = ['⭐','🎵','☕','🚗','🌴','🌮','🍕','🎬','🍩','⚽','🎧','🌞','🍓','🎈','🥤','🎲'];
+const BOARD_SIZE = 5;
+const FREE_INDEX = 12;
+const SYMBOLS = ['⭐','🎵','☕','🚗','🌴','🌮','🍕','🎬','🍩','⚽','🎧','🌞','🍓','🎈','🥤','🎲','📦','🚚','🧤','🧹','🎯','🛠️','💡','🏆'];
 let poolInstance = null;
 let schemaReady = false;
 
@@ -122,17 +124,25 @@ function shuffle(values) {
 }
 
 function makeCard() {
-  const chosen = shuffle(SYMBOLS).slice(0, 8);
-  return [chosen[0], chosen[1], chosen[2], chosen[3], 'FREE', chosen[4], chosen[5], chosen[6], chosen[7]];
+  const chosen = shuffle(SYMBOLS);
+  return [
+    ...chosen.slice(0, FREE_INDEX),
+    'FREE',
+    ...chosen.slice(FREE_INDEX),
+  ];
 }
 
 function hasBingo(marked) {
   const set = new Set((Array.isArray(marked) ? marked : []).map(Number));
-  const lines = [
-    [0,1,2],[3,4,5],[6,7,8],
-    [0,3,6],[1,4,7],[2,5,8],
-    [0,4,8],[2,4,6],
-  ];
+  const lines = [];
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    lines.push(Array.from({ length: BOARD_SIZE }, (_, col) => row * BOARD_SIZE + col));
+  }
+  for (let col = 0; col < BOARD_SIZE; col += 1) {
+    lines.push(Array.from({ length: BOARD_SIZE }, (_, row) => row * BOARD_SIZE + col));
+  }
+  lines.push(Array.from({ length: BOARD_SIZE }, (_, index) => index * BOARD_SIZE + index));
+  lines.push(Array.from({ length: BOARD_SIZE }, (_, index) => index * BOARD_SIZE + (BOARD_SIZE - 1 - index)));
   return lines.some((line) => line.every((index) => set.has(index)));
 }
 
@@ -162,7 +172,7 @@ async function ensureSchema() {
       employee_name TEXT NOT NULL,
       employee_id BIGINT,
       card JSONB NOT NULL,
-      marked JSONB NOT NULL DEFAULT '[4]'::jsonb,
+      marked JSONB NOT NULL DEFAULT '[12]'::jsonb,
       drawn JSONB NOT NULL DEFAULT '[]'::jsonb,
       weekly_free_key TEXT,
       won_at TIMESTAMPTZ,
@@ -301,9 +311,31 @@ async function ensurePlayer(client, session, round) {
     const card = makeCard();
     await client.query(`
       INSERT INTO hub_bingo_players(round_key,employee_key,employee_name,employee_id,card,marked,drawn,created_at,updated_at)
-      VALUES($1,$2,$3,$4,$5::jsonb,'[4]'::jsonb,'[]'::jsonb,NOW(),NOW())
+      VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'[]'::jsonb,NOW(),NOW())
       ON CONFLICT(round_key,employee_key) DO NOTHING
-    `, [round.key, employeeKey, clean(session.name, 100), session.employeeId || null, JSON.stringify(card)]);
+    `, [round.key, employeeKey, clean(session.name, 100), session.employeeId || null, JSON.stringify(card), JSON.stringify([FREE_INDEX])]);
+    result = await client.query(`
+      SELECT round_key,employee_key,employee_name,employee_id,card,marked,drawn,weekly_free_key,won_at
+      FROM hub_bingo_players
+      WHERE round_key=$1 AND employee_key=$2
+      LIMIT 1
+    `, [round.key, employeeKey]);
+  }
+
+  const current = result.rows[0];
+  if (current && (!Array.isArray(current.card) || current.card.length !== BOARD_SIZE * BOARD_SIZE)) {
+    const card = makeCard();
+    const drawn = (Array.isArray(current.drawn) ? current.drawn : []).filter((symbol) => SYMBOLS.includes(symbol));
+    const marked = new Set([FREE_INDEX]);
+    for (const symbol of drawn) {
+      const index = card.indexOf(symbol);
+      if (index >= 0) marked.add(index);
+    }
+    await client.query(`
+      UPDATE hub_bingo_players
+      SET card=$3::jsonb,marked=$4::jsonb,drawn=$5::jsonb,updated_at=NOW()
+      WHERE round_key=$1 AND employee_key=$2
+    `, [round.key, employeeKey, JSON.stringify(card), JSON.stringify([...marked].sort((a,b)=>a-b)), JSON.stringify(drawn)]);
     result = await client.query(`
       SELECT round_key,employee_key,employee_name,employee_id,card,marked,drawn,weekly_free_key,won_at
       FROM hub_bingo_players
@@ -325,7 +357,7 @@ async function statePayload(client, session, round, extra = {}) {
       WHERE round_key=$1
     `, [round.key]),
   ]);
-  const marked = Array.isArray(player.marked) ? player.marked.map(Number) : [4];
+  const marked = Array.isArray(player.marked) ? player.marked.map(Number) : [FREE_INDEX];
   const drawn = Array.isArray(player.drawn) ? player.drawn : [];
   return {
     ok: true,
@@ -392,7 +424,7 @@ async function drawSymbol(session) {
     const symbol = remaining[crypto.randomInt(remaining.length)];
     drawn.push(symbol);
     const card = Array.isArray(player.card) ? player.card : [];
-    const marked = new Set((Array.isArray(player.marked) ? player.marked : [4]).map(Number));
+    const marked = new Set((Array.isArray(player.marked) ? player.marked : [FREE_INDEX]).map(Number));
     const cardIndex = card.indexOf(symbol);
     const matched = cardIndex >= 0;
     if (matched) marked.add(cardIndex);
