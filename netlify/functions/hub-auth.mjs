@@ -288,15 +288,14 @@ async function publicRoster(force = false) {
   const maps = await authMaps();
   return {
     selfServiceConnected: roster.selfService,
-    pinSource: roster.selfService ? 'mixed' : 'hub-fallback',
+    pinSource: 'hub',
     employees: roster.people.map((person) => {
       const key = slug(person.name);
       const hubConfigured = maps.modern.get(key) === true || maps.legacy.get(key) === true;
       return {
         ...person,
-        hubPinConfigured: person.fairShiftSelfService
-          ? person.pinConfigured === true
-          : hubConfigured,
+        hubPinConfigured: hubConfigured,
+        fairShiftPinConfigured: person.pinConfigured === true,
       };
     }),
   };
@@ -392,45 +391,15 @@ async function resetEmployeePin(request, body) {
   if (!/^\d{4,8}$/.test(pin)) return json(400, { error: 'Enter a 4–8 digit PIN.' });
   if (pin !== clean(body.confirmPin, 8)) return json(400, { error: 'The two PINs do not match.' });
 
+  // Hub is authoritative. Save the reset here first; FairShift sync is
+  // best-effort and must never veto a valid Hub credential again.
+  const auditId = crypto.randomUUID();
   let scope = 'Warehouse Hub';
-  if (person.fairShiftSelfService !== false) {
-    if (!roster.selfService) return json(503, { error: 'FairShift is unavailable. No PIN was changed.' });
-    // Never accept a Hub-only reset for a cleaning-eligible associate: their
-    // normal Hub login verifies directly against FairShift.
-    const payload = JSON.stringify({
-      action: 'adminResetPin',
-      employeeId: person.id,
-      employeeName: person.name,
-      pin,
-    });
-    const remote = await fairShiftRequest('/api/checkin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: payload,
-    }).catch(() => ({ ok: false, body: { error: 'FairShift is temporarily unavailable.' } }));
-    if (!remote.ok || remote.body?.ok === false) {
-      return json(503, {
-        error: clean(remote.body?.error || 'FairShift has not enabled its Admin PIN reset integration. No PIN was changed in Hub.', 300),
-        fairShiftRequired: true,
-      });
-    }
-    const verified = await verifyFairShiftPin(person, pin).catch(() => ({ ok: false }));
-    if (!verified.ok || verified.body?.ok !== true) {
-      return json(503, {
-        error: 'FairShift accepted the reset but could not verify the new PIN. Please check FairShift before trying again. Hub was not updated.',
-        fairShiftRequired: true,
-      });
-    }
-    scope = 'Warehouse Hub + FairShift';
-  }
-
   const db = getPool();
   const client = await db.connect();
   try {
     await client.query('BEGIN');
     await saveModernPin(person, pin, client);
-    // Retire the old legacy fallback PIN too. Otherwise an older login
-    // path could continue accepting it after the modern PIN is reset.
     await client.query(`
       UPDATE hub_employee_pins
       SET pin_hash=$2,employee_name=$3,department=$4,active=TRUE,updated_at=NOW()
@@ -440,7 +409,7 @@ async function resetEmployeePin(request, body) {
       INSERT INTO hub_pin_reset_audit
         (id,employee_key,employee_name,employee_id,reset_by,scope,reset_at)
       VALUES($1,$2,$3,$4,$5,$6,NOW())
-    `, [crypto.randomUUID(), slug(person.name), person.name, person.id, admin.name, scope]);
+    `, [auditId, slug(person.name), person.name, person.id, admin.name, scope]);
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
@@ -448,13 +417,45 @@ async function resetEmployeePin(request, body) {
   } finally {
     client.release();
   }
+
+  let fairShiftSynced = person.fairShiftSelfService === false;
+  let warning = '';
+  if (person.fairShiftSelfService !== false && roster.selfService) {
+    try {
+      const payload = JSON.stringify({
+        action: 'adminResetPin',
+        employeeId: person.id,
+        employeeName: person.name,
+        pin,
+      });
+      const remote = await fairShiftRequest('/api/checkin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+      });
+      if (remote.ok && remote.body?.ok !== false) {
+        const verified = await verifyFairShiftPin(person, pin).catch(() => ({ ok: false }));
+        fairShiftSynced = verified.ok && verified.body?.ok === true;
+      }
+    } catch {}
+  }
+
+  if (fairShiftSynced && person.fairShiftSelfService !== false) {
+    scope = 'Warehouse Hub + FairShift';
+    await db.query('UPDATE hub_pin_reset_audit SET scope=$2 WHERE id=$1', [auditId, scope]).catch(() => {});
+  } else if (person.fairShiftSelfService !== false) {
+    warning = 'Hub PIN reset succeeded. FairShift cleaning still has a separate older PIN, but it can no longer block Warehouse Hub sign-in.';
+  }
+
   rosterCache.expiresAt = 0;
   return json(200, {
     ok: true,
     employeeName: person.name,
     scope,
     resetBy: admin.name,
-    message: `PIN reset for ${person.name}. The new PIN is saved for ${scope}.`,
+    fairShiftSynced,
+    warning,
+    message: `PIN reset for ${person.name}. The new Warehouse Hub PIN is active.`,
   });
 }
 
@@ -545,66 +546,68 @@ export default async (request) => {
       const confirmPin = clean(body.confirmPin, 8);
       if (pin !== confirmPin) return json(400, { error: 'The two PINs do not match.' });
 
-      // Team Leads and any other active team members intentionally excluded
-      // from FairShift cleaning self-service still need Hub access. Give them a
-      // Hub-only PIN; this does not enroll them in cleaning or alter FairShift.
-      if (person.fairShiftSelfService === false) {
-        const maps = await authMaps();
-        const key = slug(person.name);
-        if (maps.modern.get(key) === true || maps.legacy.get(key) === true) {
-          return json(409, {
-            error: 'This person already has a Hub PIN. An Admin must use Reset PIN to change it.',
-          });
-        }
-        await saveModernPin(person, pin);
-        const session = createSession(person, pin, false);
-        return json(200, { ok: true, ...session.public }, { 'Set-Cookie': sessionCookie(session.payload) });
-      }
-
-      if (!lookup.roster.selfService) {
-        return json(503, { error: 'FairShift PIN setup is temporarily unavailable. Try again in a moment so your Hub and cleaning PIN stay the same.' });
-      }
-      if (person.pinConfigured === true) {
-        return json(409, { error: 'A FairShift cleaning PIN already exists for this team member. Sign in with that PIN instead.' });
-      }
-
-      const bodyText = JSON.stringify({ action: 'selfSetPin', employeeId: person.id, employeeName: person.name, pin });
-      const provision = await fairShiftRequest('/api/checkin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: bodyText,
-      });
-      if (!provision.ok) {
-        return json(provision.status || 400, { error: clean(provision.body?.error || 'FairShift could not save this PIN.', 250) });
+      const maps = await authMaps();
+      const key = slug(person.name);
+      if (maps.modern.get(key) === true || maps.legacy.get(key) === true) {
+        return json(409, {
+          error: 'This person already has a Warehouse Hub PIN. An Admin must use Reset PIN to change it.',
+        });
       }
 
       await saveModernPin(person, pin);
       rosterCache.expiresAt = 0;
-      const session = createSession(person, pin, true);
-      return json(200, { ok: true, ...session.public }, { 'Set-Cookie': sessionCookie(session.payload) });
-    }
 
-    if (action === 'login') {
-      if (lookup.roster.selfService && person.fairShiftSelfService !== false) {
-        const verified = await verifyFairShiftPin(person, pin);
-        if (!verified.ok || verified.body?.ok !== true) {
-          const errorMessage = verified.status === 401
-            ? 'The Hub could not verify FairShift right now. Refresh and try again.'
-            : 'Name or FairShift cleaning PIN is incorrect.';
-          return json(verified.status === 401 ? 503 : 403, { error: errorMessage });
-        }
-        await saveModernPin(person, pin);
-        const session = createSession(person, pin, true);
-        return json(200, { ok: true, ...session.public }, { 'Set-Cookie': sessionCookie(session.payload) });
+      let fairShiftVerified = person.fairShiftSelfService === false;
+      if (person.fairShiftSelfService !== false && lookup.roster.selfService) {
+        try {
+          if (person.pinConfigured === true) {
+            const verified = await verifyFairShiftPin(person, pin);
+            fairShiftVerified = verified.ok && verified.body?.ok === true;
+          } else {
+            const bodyText = JSON.stringify({ action: 'selfSetPin', employeeId: person.id, employeeName: person.name, pin });
+            const provision = await fairShiftRequest('/api/checkin', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: bodyText,
+            });
+            fairShiftVerified = provision.ok && provision.body?.ok !== false;
+          }
+        } catch {}
       }
 
-      const verified = await verifyHubFallback(person, pin);
-      if (!verified) return json(403, { error: 'Name or PIN is incorrect.' });
-      const session = createSession(person, pin, false);
+      const session = createSession(person, pin, fairShiftVerified);
       return json(200, {
         ok: true,
         ...session.public,
-        warning: 'FairShift verification is temporarily unavailable. Cleaning check-in will require a refreshed sign-in once FairShift reconnects.',
+        warning: fairShiftVerified || person.fairShiftSelfService === false
+          ? ''
+          : 'Warehouse Hub PIN created successfully. Cleaning check-in still needs the FairShift PIN migration.',
+      }, { 'Set-Cookie': sessionCookie(session.payload) });
+    }
+
+    if (action === 'login') {
+      // Warehouse Hub is the source of truth for Hub authentication.
+      // FairShift verification is now best-effort and cannot reject a valid
+      // Hub PIN. This prevents stale FairShift credentials from locking an
+      // associate out after an Admin reset.
+      const verified = await verifyHubFallback(person, pin);
+      if (!verified) return json(403, { error: 'Name or PIN is incorrect.' });
+
+      let fairShiftVerified = person.fairShiftSelfService === false;
+      if (person.fairShiftSelfService !== false && lookup.roster.selfService) {
+        try {
+          const remote = await verifyFairShiftPin(person, pin);
+          fairShiftVerified = remote.ok && remote.body?.ok === true;
+        } catch {}
+      }
+
+      const session = createSession(person, pin, fairShiftVerified);
+      return json(200, {
+        ok: true,
+        ...session.public,
+        warning: fairShiftVerified || person.fairShiftSelfService === false
+          ? ''
+          : 'You are signed in to Warehouse Hub. Cleaning check-in is still linked to the older FairShift PIN until that migration is completed.',
       }, { 'Set-Cookie': sessionCookie(session.payload) });
     }
 
