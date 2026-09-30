@@ -128,7 +128,7 @@ async function sendAdmins(pool,{eventKey,title,body,url='/inventory-control/',ta
       ON CONFLICT(event_key) DO NOTHING RETURNING event_key`,[eventKey]);
     if(!lock.rows.length)return {sent:0,reason:'already-dispatched'};
     const payload={title:clean(title,120),body:clean(body,240),
-      url:url==='/inventory-control/'?url:'/inventory-control/',tag:clean(tag||eventKey,160)};
+      url:url==='/inventory-control/?view=requests'?url:'/inventory-control/',tag:clean(tag||eventKey,160)};
     let sent=0;
     // Limit simultaneous push requests to avoid exhaustively opening connections.
     for(let i=0;i<r.rows.length;i+=8){
