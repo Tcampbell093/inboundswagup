@@ -26,7 +26,7 @@
 
     <div class="view-panel active" id="todayView" role="tabpanel" aria-labelledby="todayDot">
       <div class="dashboard-grid">
-        <div class="card"><div class="card-title"><h3>Today’s cleaning</h3><span class="smallpill">FairShift</span></div><div class="cleaning-list" id="todayCleaning"></div><div class="cleaning-footer"><span id="cleaningSourceLabel">FairShift schedule · 15 min credit</span><a class="linkbtn" href="https://fairshift-rotations.thandoyordani.chatgpt.site/" target="_blank" rel="noopener">Open FairShift ↗</a></div></div>
+        <div class="card"><div class="card-title"><h3>Today’s cleaning</h3><span class="smallpill">FairShift</span></div><div class="cleaning-list" id="todayCleaning"></div><div class="cleaning-footer"><span id="cleaningSourceLabel">Cleaning schedule · 15 min credit</span><button class="linkbtn" type="button" onclick="window.HubRotations?.open?.()">Open Cleaning ↗</button></div></div>
         <div class="stack"><div class="card"><div class="card-title"><h3>Announcements</h3><span class="smallpill" id="announcementCount">0 active</span></div><div id="todayAnnouncements"></div></div><div class="card"><div class="card-title"><h3>Policy updates</h3><span class="smallpill" id="policyCount">0 current</span></div><div id="todayPolicies"></div></div></div>
       </div>
     </div>
@@ -41,7 +41,7 @@
   </section>
 
   <section class="section tools" id="tools"><div class="section-head"><div><div class="eyebrow">Daily tools</div><h2>Choose where you need to go</h2></div><div class="section-note">The team's most opened links appear first. Each tool opens in a new tab.</div></div><div class="tool-grid">
-    <a class="tool-card" href="https://fairshift-rotations.thandoyordani.chatgpt.site/" target="_blank" rel="noopener"><div class="tool-top"><div class="iconbox">♙</div><div class="open">Open ↗</div></div><div class="tool-label">Labor planning</div><h3>FairShift Rotations</h3><p>Plan team rotations, cleaning schedules, time off, and fair task assignments.</p></a>
+    <a class="tool-card" href="#today" onclick="event.preventDefault();window.HubRotations?.open?.()"><div class="tool-top"><div class="iconbox">🧹</div><div class="open">Open modal ↗</div></div><div class="tool-label">Cleaning & rotations</div><h3>Cleaning Planner</h3><p>Plan fair weekly rotations, manage absences, and review cleaning history in Hub.</p></a>
     <a class="tool-card green" href="https://inboundswagup.netlify.app/" target="_blank" rel="noopener"><div class="tool-top"><div class="iconbox">▤</div><div class="open">Open ↗</div></div><div class="tool-label">Warehouse control</div><h3>Houston Control</h3><p>Run inbound operations, review active work, and keep the production flow moving.</p></a>
     <a class="tool-card blue" href="https://bdainc4-my.sharepoint.com/:x:/r/personal/tcampbell_bdainc_com/Documents/New%20Daily%20Rec..xlsx?d=wbd4f19ff22fd4f8a8b25e264b42e1b1a&amp;csf=1&amp;web=1&amp;e=qERi2r" target="_blank" rel="noopener"><div class="tool-top"><div class="iconbox">▧</div><div class="open">Open ↗</div></div><div class="tool-label">Shared workbook</div><h3>Daily Received</h3><p>Open the shared Excel workbook used for daily receiving updates and recaps.</p></a>
     <a class="tool-card green" href="https://bdainc4-my.sharepoint.com/:x:/r/personal/jmateo_bdainc_com/_layouts/15/Doc.aspx?action=edit&amp;sourcedoc=%7B2678bff3-263f-4512-bdf5-81a2de97afab%7D&amp;wdExp=TEAMS-TREATMENT&amp;web=1" target="_blank" rel="noopener"><div class="tool-top"><div class="iconbox">▤</div><div class="open">Open ↗</div></div><div class="tool-label">Assembly workbook</div><h3>Assembly Screen</h3><p>Open the shared Assembly screen used by the team for current assembly work.</p></a>
@@ -63,7 +63,7 @@
 <dialog class="dialog" id="managerDialog"><div class="dialog-head"><h3>Admin Hub tools</h3><button class="close" data-close="managerDialog" type="button">×</button></div><div class="dialog-body"><div class="message" id="managerMessage"></div><div class="manager-grid">
   <section class="manager-section"><h4>Announcement</h4><form id="announcementForm"><div class="field"><label>Title</label><input name="title" required maxlength="120" /></div><div class="field"><label>Message</label><textarea name="message" required maxlength="1200"></textarea></div><div class="form-row"><div class="field"><label>Start date</label><input name="startDate" type="date" required /></div><div class="field"><label>End date (optional)</label><input name="endDate" type="date" /></div></div><div class="field"><label>Department</label><input name="department" value="All teams" maxlength="80" /></div><label class="check"><input name="pinned" type="checkbox" /> Pin this announcement</label><button class="action" type="submit">Post announcement</button></form><div class="admin-list" id="announcementAdminList"></div></section>
   <section class="manager-section"><h4>Policy update</h4><form id="policyForm"><div class="field"><label>Title</label><input name="title" required maxlength="140" /></div><div class="field"><label>Summary</label><textarea name="summary" required maxlength="1600"></textarea></div><div class="field"><label>Effective date</label><input name="effectiveDate" type="date" required /></div><label class="check"><input name="readRequired" type="checkbox" /> Mark as read required</label><button class="action" type="submit">Publish policy</button></form><div class="admin-list" id="policyAdminList"></div></section>
-  <section class="manager-section"><h4>FairShift cleaning</h4><p class="policy-meta">FairShift still powers cleaning rotations, leave protection, and fairness credit. Team members, designations, departments, and cleaning-area settings are now managed directly in this Hub admin window.</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px"><a class="action" href="https://fairshift-rotations.thandoyordani.chatgpt.site/" target="_blank" rel="noopener">Open rotation planner ↗</a></div></section>
+  <section class="manager-section"><h4>Cleaning & rotations</h4><p class="policy-meta">Create weekly schedules, balance cleaning assignments, update leave, and manage replacements in the new Hub modal. The existing cleaning database remains connected during the transition so current assignments and Bingo credits continue.</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px"><button class="action" type="button" onclick="document.getElementById('managerDialog').close();window.HubRotations?.open?.()">Open Cleaning Planner</button></div></section>
 </div></div></dialog>
 <script>
 (() => {
@@ -76,7 +76,8 @@
 </script>
 <script src="associate-auth.js?v=20260929-adminlabels2"></script>
 <script src="request-alerts.js?v=20260925-2"></script>
-<script src="script.js?v=20260930-pinreset1"></script>
+<script src="script.js?v=20260930-cleaningmod1"></script>
+<script src="rotations.js?v=20260930-cleaningmod1"></script>
 <script src="cleaning-inline.js?v=20260924-1415"></script>
 <script src="bingo.js?v=20260929-coinfix1"></script>
 </body>
