@@ -352,7 +352,15 @@
       .team-manager-section{grid-column:1/-1}
       .team-manager-note{margin:-5px 0 15px;line-height:1.5}
       .team-add-grid{display:grid;grid-template-columns:1.3fr 1fr .8fr auto;gap:9px;align-items:end}
-      .team-person-row{display:grid;grid-template-columns:1.25fr 1fr .8fr auto auto;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+      .team-person-row{display:grid;grid-template-columns:1.25fr 1fr .8fr auto auto auto;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+      .pin-reset-dialog{width:min(510px,calc(100% - 24px))}
+      .pin-reset-dialog .field{margin:12px 0}
+      .pin-reset-dialog input{width:100%;border:1px solid #cfd6d0;border-radius:9px;padding:11px}
+      .pin-reset-dialog .pin-reset-actions{display:flex;flex-wrap:wrap;gap:9px;align-items:center}
+      .pin-reset-note{font-size:12px;color:var(--muted);line-height:1.5;margin:10px 0}
+      .pin-reset-record{border-bottom:1px solid var(--line);padding:8px 0;font-size:12px}
+      .pin-reset-record strong{font-size:12px}
+      .pin-reset-record small{display:block;color:var(--muted);margin-top:4px}
       .team-person-row input,.team-person-row select,.dept-admin-row input{width:100%;border:1px solid #cfd6d0;border-radius:9px;background:#fff;padding:9px;color:var(--ink)}
       .team-person-row .check{margin:0;white-space:nowrap}
       .dept-admin-row{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
@@ -380,6 +388,8 @@
       </form>
       <div class="team-subhead">People</div>
       <div id="teamAdminList"></div>
+      <div class="team-subhead">Recent PIN resets</div>
+      <div id="teamPinResetHistory" class="policy-meta">Only Admins can reset and view PIN reset history.</div>
       <div class="team-subhead">Departments</div>
       <form id="departmentAddForm" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
         <input name="name" required maxlength="100" placeholder="New department" style="flex:1;min-width:190px;border:1px solid #cfd6d0;border-radius:9px;background:#fff;padding:10px;color:var(--ink)" />
@@ -388,6 +398,94 @@
       <div id="departmentAdminList"></div>
     `;
     managerGrid.appendChild(section);
+
+    const pinDialog = document.createElement('dialog');
+    pinDialog.className = 'dialog pin-reset-dialog';
+    pinDialog.id = 'pinResetDialog';
+    pinDialog.innerHTML = `
+      <div class="dialog-head">
+        <div><h3 id="pinResetTitle">Reset employee PIN</h3>
+          <p class="pin-reset-note" id="pinResetScope">Hub and FairShift share a PIN for cleaning-eligible employees.</p></div>
+        <button id="pinResetClose" type="button" aria-label="Close">×</button>
+      </div>
+      <form id="pinResetForm" class="dialog-body">
+        <input type="hidden" id="pinResetEmployeeId" />
+        <input type="hidden" id="pinResetEmployeeName" />
+        <p class="pin-reset-note">Set a new 4–8 digit PIN or generate a six-digit PIN. Existing PINs cannot be viewed.</p>
+        <div class="field"><label for="pinResetNew">New PIN</label>
+          <input id="pinResetNew" type="password" inputmode="numeric" pattern="[0-9]{4,8}"
+            maxlength="8" autocomplete="new-password" required /></div>
+        <div class="field"><label for="pinResetConfirm">Confirm new PIN</label>
+          <input id="pinResetConfirm" type="password" inputmode="numeric" pattern="[0-9]{4,8}"
+            maxlength="8" autocomplete="new-password" required /></div>
+        <div class="pin-reset-actions">
+          <button type="button" class="ghost" id="pinResetGenerate">Generate PIN</button>
+          <label class="check"><input type="checkbox" id="pinResetReveal" /> Show PIN</label>
+        </div>
+        <p id="pinResetResult" class="pin-reset-note" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button class="action" type="submit" id="pinResetSubmit">Confirm PIN reset</button>
+          <button class="ghost" type="button" id="pinResetCancel">Cancel</button>
+        </div>
+      </form>`;
+    document.body.appendChild(pinDialog);
+    const dismissPinDialog=()=>{
+      pinDialog.close();
+      $('pinResetForm').reset();
+      $('pinResetResult').textContent='';
+    };
+    $('pinResetClose').onclick=dismissPinDialog;
+    $('pinResetCancel').onclick=dismissPinDialog;
+    $('pinResetGenerate').onclick=()=>{
+      const random=new Uint32Array(1);
+      crypto.getRandomValues(random);
+      const generated=String(100000+(random[0]%900000));
+      $('pinResetNew').value=generated;
+      $('pinResetConfirm').value=generated;
+      $('pinResetReveal').checked=true;
+      $('pinResetNew').type='text';
+      $('pinResetConfirm').type='text';
+      $('pinResetResult').textContent='Generated PIN: '+generated+'. Give it privately to the employee.';
+    };
+    $('pinResetReveal').onchange=()=>{
+      const mode=$('pinResetReveal').checked?'text':'password';
+      $('pinResetNew').type=mode;
+      $('pinResetConfirm').type=mode;
+    };
+    $('pinResetForm').onsubmit=async(event)=>{
+      event.preventDefault();
+      const id=Number($('pinResetEmployeeId').value);
+      const employeeName=$('pinResetEmployeeName').value;
+      const pin=$('pinResetNew').value,confirmPin=$('pinResetConfirm').value;
+      if(!/^\d{4,8}$/.test(pin)||pin!==confirmPin){
+        $('pinResetResult').textContent='Enter a matching 4–8 digit PIN.';
+        return;
+      }
+      if(!window.confirm(`Reset the PIN for ${employeeName}? This changes the PIN used for future sign-ins.`))return;
+      const submit=$('pinResetSubmit');
+      submit.disabled=true;
+      submit.textContent='Resetting…';
+      try{
+        const response=await fetch('/.netlify/functions/hub-auth',{
+          method:'POST',credentials:'same-origin',cache:'no-store',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({action:'adminResetPin',employeeId:id,employeeName,pin,confirmPin}),
+        });
+        const result=await response.json().catch(()=>({}));
+        if(!response.ok)throw new Error(result.error||'Could not reset the PIN.');
+        $('pinResetResult').textContent=`PIN reset for ${employeeName} (${result.scope}). Give them the new PIN privately. `
+          +(normalizeName(employeeName)===normalizeName(window.HubAssociate?.getSession?.()?.name)
+            ? 'You must sign out and back in with your new PIN.':'');
+        submit.textContent='PIN reset saved';
+        submit.disabled=true;
+        await loadPinResetHistory();
+        await window.HubAssociate?.refreshRoster?.().catch?.(()=>{});
+      }catch(error){
+        $('pinResetResult').textContent=error.message||'PIN reset failed. No success was recorded.';
+        submit.textContent='Confirm PIN reset';
+        submit.disabled=false;
+      }
+    };
 
     $('teamAddForm').addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -436,6 +534,7 @@
         </select>
         <label class="check"><input data-field="active" type="checkbox"${employee.active !== false ? ' checked' : ''} /> Active</label>
         <button class="mini-edit" type="button" data-save-team="${escapeHtml(employee.id)}">Save</button>
+        <button class="mini-edit" type="button" data-reset-team-pin="${escapeHtml(employee.id)}">Reset PIN</button>
       </div>
     `).join('') : '<div class="policy-meta">No team members found.</div>';
 
@@ -447,6 +546,25 @@
         <button class="mini-delete" type="button" data-remove-dept="${escapeHtml(department.id)}">Remove</button>
       </div>
     `).join('') : '<div class="policy-meta">No departments found.</div>';
+
+    document.querySelectorAll('[data-reset-team-pin]').forEach(button=>{
+      button.onclick=()=>{
+        const employee=employees.find(person=>person.id===Number(button.dataset.resetTeamPin));
+        if(!employee)return;
+        $('pinResetForm').reset();
+        $('pinResetNew').type='password';
+        $('pinResetConfirm').type='password';
+        $('pinResetEmployeeId').value=String(employee.id);
+        $('pinResetEmployeeName').value=employee.name;
+        $('pinResetTitle').textContent=`Reset PIN · ${employee.name}`;
+        $('pinResetResult').textContent='';
+        $('pinResetSubmit').disabled=false;
+        $('pinResetSubmit').textContent='Confirm PIN reset';
+        $('pinResetScope').textContent='If this employee uses FairShift cleaning, the reset must be accepted by FairShift too. If it cannot be verified, no Hub reset is saved.';
+        $('pinResetDialog').showModal();
+        $('pinResetNew').focus();
+      };
+    });
 
     document.querySelectorAll('[data-save-team]').forEach((button) => {
       button.onclick = async () => {
@@ -502,11 +620,32 @@
     return String(value || '').trim().toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-');
   }
 
+  async function loadPinResetHistory() {
+    const target=$('teamPinResetHistory');
+    if(!target)return;
+    try{
+      const response=await fetch('/.netlify/functions/hub-auth?action=pinResetHistory',{
+        credentials:'same-origin',cache:'no-store',
+      });
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(result.error||'Could not load PIN reset history.');
+      const history=Array.isArray(result.history)?result.history:[];
+      target.innerHTML=history.length?history.slice(0,15).map(row=>`
+        <div class="pin-reset-record">
+          <strong>${escapeHtml(row.employeeName)}</strong> · ${escapeHtml(row.scope)}
+          <small>${escapeHtml(new Date(row.resetAt).toLocaleString())} · Reset by ${escapeHtml(row.resetBy)}</small>
+        </div>`).join(''):'No PIN resets recorded yet.';
+    }catch(error){
+      target.textContent=error.message||'PIN reset history is unavailable.';
+    }
+  }
+
   async function refreshTeamAdmin(message = '') {
     teamAdminData = await teamAdminFetch();
     renderTeamAdmin();
     renderAccessManager();
     await window.HubAssociate?.refreshRoster?.().catch?.(() => {});
+    await loadPinResetHistory();
     if (message) showMessage('managerMessage', message);
   }
 
@@ -872,6 +1011,7 @@
     renderTeamAdmin();
     renderToolAdmin();
     renderAccessManager();
+    loadPinResetHistory();
     setDefaultDates();
   }
 
