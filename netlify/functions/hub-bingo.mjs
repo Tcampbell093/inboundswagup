@@ -141,9 +141,39 @@ function shuffle(values) {
   return list;
 }
 
-function makeCard(boardSize) {
+function photoIdFromToken(token) {
+  const match = /^PHOTO\|([^|]+)\|\d+$/.exec(String(token || ''));
+  return match ? match[1] : '';
+}
+
+async function activePhotoIds(client) {
+  const result = await client.query(`
+    SELECT id
+    FROM hub_bingo_photos
+    WHERE active=TRUE
+    ORDER BY created_at DESC,id ASC
+  `);
+  return result.rows.map((row) => clean(row.id, 80)).filter(Boolean);
+}
+
+function makeCard(boardSize, photoIds = []) {
   const meta = boardMeta(boardSize);
-  const chosen = shuffle(SYMBOLS).slice(0, meta.playableCount);
+  let chosen = [];
+  const photos = [...new Set((Array.isArray(photoIds) ? photoIds : []).map((id) => clean(id, 80)).filter(Boolean))];
+
+  if (photos.length) {
+    let variant = 1;
+    while (chosen.length < meta.playableCount) {
+      for (const id of shuffle(photos)) {
+        chosen.push(`PHOTO|${id}|${variant}`);
+        if (chosen.length >= meta.playableCount) break;
+      }
+      variant += 1;
+    }
+  } else {
+    chosen = shuffle(SYMBOLS).slice(0, meta.playableCount);
+  }
+
   return [
     ...chosen.slice(0, meta.freeIndex),
     'FREE',
@@ -218,6 +248,20 @@ async function ensureSchema() {
       reset_by TEXT NOT NULL DEFAULT '',
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS hub_bingo_photos (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL DEFAULT '',
+      mime_type TEXT NOT NULL,
+      image_bytes BYTEA NOT NULL,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_by TEXT NOT NULL DEFAULT '',
+      removed_at TIMESTAMPTZ,
+      removed_by TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS hub_bingo_photos_active_idx
+      ON hub_bingo_photos(active, created_at DESC);
 
     INSERT INTO hub_bingo_settings(id,board_size,anchor_date,reset_number,reset_by,updated_at)
     VALUES(1,5,'2026-09-21',0,'',NOW())
@@ -361,7 +405,7 @@ async function ensurePlayer(client, session, round, settings) {
   `, [round.key, employeeKey]);
 
   if (!result.rows[0]) {
-    const card = makeCard(meta.size);
+    const card = makeCard(meta.size, await activePhotoIds(client));
     await client.query(`
       INSERT INTO hub_bingo_players(round_key,employee_key,employee_name,employee_id,card,marked,drawn,created_at,updated_at)
       VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'[]'::jsonb,NOW(),NOW())
@@ -377,7 +421,7 @@ async function ensurePlayer(client, session, round, settings) {
 
   const current = result.rows[0];
   if (current && (!Array.isArray(current.card) || current.card.length !== meta.total)) {
-    const card = makeCard(meta.size);
+    const card = makeCard(meta.size, await activePhotoIds(client));
     const cardSymbols = new Set(card.filter((symbol) => symbol !== 'FREE'));
     const drawn = (Array.isArray(current.drawn) ? current.drawn : []).filter((symbol) => cardSymbols.has(symbol));
     const marked = new Set([meta.freeIndex]);
@@ -413,6 +457,23 @@ async function statePayload(client, session, round, settings, extra = {}) {
   ]);
   const marked = Array.isArray(player.marked) ? player.marked.map(Number) : [meta.freeIndex];
   const drawn = Array.isArray(player.drawn) ? player.drawn : [];
+  const card = Array.isArray(player.card) ? player.card : [];
+  const photoIds = [...new Set(card.map(photoIdFromToken).filter(Boolean))];
+  const photos = {};
+  if (photoIds.length) {
+    const photoResult = await client.query(`
+      SELECT id,label
+      FROM hub_bingo_photos
+      WHERE id = ANY($1::text[])
+    `, [photoIds]);
+    for (const row of photoResult.rows) {
+      photos[row.id] = {
+        id: row.id,
+        label: clean(row.label, 100) || 'Bingo photo',
+        url: `/api/bingo-photo?id=${encodeURIComponent(row.id)}`,
+      };
+    }
+  }
   return {
     ok: true,
     signedIn: true,
@@ -423,7 +484,7 @@ async function statePayload(client, session, round, settings, extra = {}) {
       name: clean(session.name, 100),
       department: clean(session.department, 100),
       coins: Number(walletResult.rows[0]?.coins || 0),
-      card: Array.isArray(player.card) ? player.card : [],
+      card,
       marked,
       drawn,
       bingo: !!player.won_at || hasBingo(marked, meta.size),
@@ -439,6 +500,7 @@ async function statePayload(client, session, round, settings, extra = {}) {
       players: Number(statsResult.rows[0]?.players || 0),
       winners: Number(statsResult.rows[0]?.winners || 0),
     },
+    photos,
     ...extra,
   };
 }
