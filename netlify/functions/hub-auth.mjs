@@ -549,6 +549,13 @@ export default async (request) => {
       // from FairShift cleaning self-service still need Hub access. Give them a
       // Hub-only PIN; this does not enroll them in cleaning or alter FairShift.
       if (person.fairShiftSelfService === false) {
+        const maps = await authMaps();
+        const key = slug(person.name);
+        if (maps.modern.get(key) === true || maps.legacy.get(key) === true) {
+          return json(409, {
+            error: 'This person already has a Hub PIN. An Admin must use Reset PIN to change it.',
+          });
+        }
         await saveModernPin(person, pin);
         const session = createSession(person, pin, false);
         return json(200, { ok: true, ...session.public }, { 'Set-Cookie': sessionCookie(session.payload) });
