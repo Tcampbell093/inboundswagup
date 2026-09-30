@@ -56,13 +56,13 @@ function cookieMap(request) {
   }));
 }
 
-function hubActor(request) {
+function hubSession(request) {
   const token = cookieMap(request)[HUB_SESSION_COOKIE];
   const secret = env('HUB_ASSOCIATE_SESSION_SECRET');
-  if (!token || !secret) return '';
+  if (!token || !secret) return null;
   try {
     const [ivText, tagText, dataText] = String(token).split('.');
-    if (!ivText || !tagText || !dataText) return '';
+    if (!ivText || !tagText || !dataText) return null;
     const key = crypto.createHash('sha256').update(secret).digest();
     const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivText, 'base64url'));
     decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
@@ -71,11 +71,20 @@ function hubActor(request) {
       decipher.final(),
     ]).toString('utf8');
     const session = JSON.parse(plain);
-    if (!session?.name || Number(session.exp || 0) <= Date.now()) return '';
-    return str(session.name, 120);
+    if (!session?.name || Number(session.exp || 0) <= Date.now()) return null;
+    return session;
   } catch {
-    return '';
+    return null;
   }
+}
+
+function hubActor(request) {
+  return str(hubSession(request)?.name, 120);
+}
+
+function hubIsAdminOrLead(request) {
+  const role = str(hubSession(request)?.role, 60).toLowerCase();
+  return role === 'manager' || role === 'team lead';
 }
 
 function normalizePo(value) {
@@ -691,7 +700,8 @@ async function importExcelLocations(rawRows, rawAssociates) {
     );
     for (let i = 0; i < containers.length; i += 1) {
       const box = containers[i];
-      if (!isExcelCreatedBox(box) || str(box.status, 80).toLowerCase() === 'closed') continue;
+      if (!isExcelCreatedBox(box) || box.retainEmpty === true
+        || str(box.status, 80).toLowerCase() === 'closed') continue;
       if (referencedCodes.has(str(box.code, 120).toUpperCase())) continue;
       if (entries.some(entry => String(entry.containerId || '') === String(box.id))) continue;
       containers[i] = {
@@ -891,7 +901,7 @@ async function readSnapshot(db) {
   };
 }
 
-async function mutate(action, body, actor = '') {
+async function mutate(action, body, actor = '', adminOrLead = false) {
   const db = pool();
   await ensureBoxAuditSchema(db);
   const client = await db.connect();
@@ -913,6 +923,7 @@ async function mutate(action, body, actor = '') {
     const boxEvents = [];
     let savedEntryId = '';
     let savedContainerId = '';
+    let retiredEmptyExcelBoxes = 0;
     let transientIntakeContainer = null;
 
     const addActivity = ({ type='update', entry=null, container=null, summary='', po='', entryId='', containerId='', containerCode='', location='' } = {}) => {
@@ -986,7 +997,26 @@ async function mutate(action, body, actor = '') {
       };
     };
 
-    if (action === 'intakeAddEntry') {
+    if (action === 'reconcileEmptyExcelBoxes') {
+      if (!adminOrLead) throw new Error('Admin or Team Lead access is required to reconcile boxes.');
+      // Existing unknown-prepper rows may be hidden from the Overstock screen.
+      // Use the same visible-record rule as the UI, never touching manual boxes.
+      const visible = await enrichExcelOwnershipFromHistory(client, entries);
+      const occupiedIds = new Set(visible.filter(entry => str(entry.action, 120).toLowerCase() !== 'donated')
+        .map(entry => String(entry.containerId || '')).filter(Boolean));
+      for (let i = 0; i < containers.length; i += 1) {
+        const box = containers[i];
+        if (!isExcelCreatedBox(box) || box.retainEmpty === true
+          || str(box.status, 80).toLowerCase() === 'closed'
+          || occupiedIds.has(String(box.id))) continue;
+        containers[i] = { ...box, status: 'Closed', updatedAt: now };
+        retiredEmptyExcelBoxes += 1;
+        boxEvent(boxEvents, containers[i], 'auto-retired-empty', 'Reconciliation', actor,
+          { reason: 'Excel-generated box has no visible POs; retained for physical review' });
+        addActivity({ type:'box', container:containers[i],
+          summary:`retired empty Excel-generated box ${box.code}` });
+      }
+    } else if (action === 'intakeAddEntry') {
       const draft = { ...(body.container || {}) };
       const candidate = { ...(body.entry || {}) };
       const code = str(draft.code, 120).toUpperCase();
@@ -1153,6 +1183,9 @@ async function mutate(action, body, actor = '') {
       const saved = cleanContainer({
         ...incoming,
         ...(!existing ? { createdSource: 'Manual', createdBy: actor } : {}),
+        ...(existing && str(existing.status, 80).toLowerCase() === 'closed'
+          && str(incoming.status, 80).toLowerCase() !== 'closed'
+          ? { retainEmpty: true } : {}),
       }, existing);
       if (!saved.code) throw new Error('Container code is required.');
       const duplicate = containers.find(c => c.id !== saved.id && String(c.code || '').toUpperCase() === saved.code.toUpperCase());
@@ -1229,7 +1262,7 @@ async function mutate(action, body, actor = '') {
       [JSON.stringify(data)],
     );
     await client.query('COMMIT');
-    return { snapshot: await readSnapshot(db), excelEvent, savedEntryId, savedContainerId };
+    return { snapshot: await readSnapshot(db), excelEvent, savedEntryId, savedContainerId, retiredEmptyExcelBoxes };
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch {}
     throw error;
@@ -1285,7 +1318,7 @@ export default async (request) => {
 
     const actor = hubActor(request);
     if (!actor) return json(401, { error: 'Sign in to the Work Hub before making Overstock changes.' });
-    const result = await mutate(action, body, actor);
+    const result = await mutate(action, body, actor, hubIsAdminOrLead(request));
     const excelWrite = result.excelEvent ? await sendExcelEvent(result.excelEvent) : { configured: false, ok: false, status: 'no-event' };
     return json(200, { ok: true, ...result.snapshot, excelWrite });
   } catch (error) {
