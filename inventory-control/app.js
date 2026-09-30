@@ -1341,6 +1341,7 @@
   function init() {
     injectStyles();
     buildShell();
+    if (new URLSearchParams(window.location.search).get('view') === 'requests') switchView('requests');
     if (isActive()) loadData();
     document.addEventListener('hub-associate-session', function (event) {
       if (!event.detail || !event.detail.signedIn) return;
