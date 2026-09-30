@@ -256,9 +256,70 @@ function cleanContainer(raw, existing = null) {
     currentLocation: str(raw.currentLocation ?? source.currentLocation, 120).toUpperCase(),
     status: str(raw.status ?? source.status, 80) || 'Open',
     notes: str(raw.notes ?? source.notes, 1000),
+    createdSource: str(source.createdSource || raw.createdSource, 60) || 'Legacy / unknown',
+    createdBy: str(source.createdBy || raw.createdBy, 120),
     createdAt: num(source.createdAt || raw.createdAt, now),
     updatedAt: now,
   };
+}
+
+let boxAuditSchemaReady = false;
+
+async function ensureBoxAuditSchema(db) {
+  if (boxAuditSchemaReady) return;
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS overstock_box_events (
+      id TEXT PRIMARY KEY,
+      container_id TEXT NOT NULL,
+      container_code TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      source TEXT NOT NULL,
+      actor TEXT NOT NULL DEFAULT '',
+      po TEXT NOT NULL DEFAULT '',
+      detail JSONB NOT NULL DEFAULT '{}'::jsonb,
+      occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS overstock_box_events_container_idx
+      ON overstock_box_events(container_id, occurred_at DESC);
+    CREATE INDEX IF NOT EXISTS overstock_box_events_code_idx
+      ON overstock_box_events(UPPER(container_code), occurred_at DESC);
+  `);
+  boxAuditSchemaReady = true;
+}
+
+function boxEvent(events, box, type, source, actor, detail = {}) {
+  if (!box?.id) return;
+  events.push({
+    id: crypto.randomUUID(),
+    container_id: str(box.id, 160),
+    container_code: str(box.code, 120),
+    event_type: str(type, 80),
+    source: str(source, 80),
+    actor: str(actor, 120),
+    po: str(detail.po, 120),
+    detail,
+    occurred_at: new Date().toISOString(),
+  });
+}
+
+async function persistBoxEvents(client, events) {
+  if (!events.length) return;
+  await client.query(`
+    INSERT INTO overstock_box_events
+      (id,container_id,container_code,event_type,source,actor,po,detail,occurred_at)
+    SELECT x.id,x.container_id,x.container_code,x.event_type,x.source,
+           x.actor,x.po,x.detail,x.occurred_at::timestamptz
+    FROM jsonb_to_recordset($1::jsonb) AS x(
+      id text,container_id text,container_code text,event_type text,
+      source text,actor text,po text,detail jsonb,occurred_at text
+    )
+    ON CONFLICT(id) DO NOTHING
+  `, [JSON.stringify(events)]);
+}
+
+function isExcelCreatedBox(box) {
+  return str(box?.createdSource, 80).toLowerCase() === 'excel sync'
+    || str(box?.notes, 1000).startsWith('Created from New Daily Rec Excel sync.');
 }
 
 function nextContainerCode(containers) {
@@ -314,8 +375,9 @@ async function importExcelLocations(rawRows, rawAssociates) {
   }
   workbookAssociates.sort((a, b) => a.localeCompare(b));
   const db = pool();
+  await ensureBoxAuditSchema(db);
   const client = await db.connect();
-  const result = { received: rows.length, importedAssociates: workbookAssociates.length, createdEntries: 0, createdContainers: 0, updatedEntries: 0, updatedContainers: 0, removedUnassignedEntries: 0, unchanged: 0, skipped: [], unresolved: [] };
+  const result = { received: rows.length, importedAssociates: workbookAssociates.length, createdEntries: 0, createdContainers: 0, updatedEntries: 0, updatedContainers: 0, retiredEmptyExcelBoxes: 0, removedUnassignedEntries: 0, unchanged: 0, skipped: [], unresolved: [] };
 
   try {
     await client.query('BEGIN');
@@ -329,6 +391,8 @@ async function importExcelLocations(rawRows, rawAssociates) {
     const now = Date.now();
     const changedContainerIds = new Set();
     const changedEntryIds = new Set();
+    const boxEvents = [];
+    const excelActivities = [];
 
     const incomingByDelivery = new Map();
     const incomingByPo = new Map();
@@ -398,14 +462,25 @@ async function importExcelLocations(rawRows, rawAssociates) {
             currentLocation: location,
             status: 'Open',
             notes: 'Created from New Daily Rec Excel sync.',
+            createdSource: 'Excel Sync',
+            createdBy: 'Excel Sync',
           });
           containers.push(targetContainer);
           result.createdContainers += 1;
+          boxEvent(boxEvents, targetContainer, 'created', 'Excel Sync', 'Excel Sync', { po, deliveryId, prepBy: associate, location });
+          excelActivities.unshift({
+            id: crypto.randomUUID(), type: 'box', actor: 'Excel Sync',
+            summary: `created box ${targetContainer.code} for PO ${po} (Prep: ${associate})`,
+            po, containerId: targetContainer.id, containerCode: targetContainer.code,
+            location, createdAt: now,
+          });
         } else if (str(targetContainer.currentLocation, 120).toUpperCase() !== location) {
           const index = containers.findIndex(container => String(container?.id || '') === String(targetContainer.id));
-          targetContainer = { ...targetContainer, currentLocation: location, updatedAt: now };
+          const previousLocation = targetContainer.currentLocation;
+          targetContainer = { ...targetContainer, currentLocation: location, status: str(targetContainer.status, 40).toLowerCase() === 'closed' ? 'Stored' : targetContainer.status, updatedAt: now };
           containers[index] = targetContainer;
           changedContainerIds.add(String(targetContainer.id));
+          boxEvent(boxEvents, targetContainer, 'location-changed', 'Excel Sync', 'Excel Sync', { po, deliveryId, prepBy: associate, from: previousLocation, to: location });
         }
 
         const created = cleanEntry({
@@ -426,6 +501,7 @@ async function importExcelLocations(rawRows, rawAssociates) {
           containerCode: targetContainer.code,
         });
         entries.push(created);
+        boxEvent(boxEvents, targetContainer, 'po-added', 'Excel Sync', 'Excel Sync', { po, deliveryId, prepBy: associate, quantity: created.quantity });
         result.createdEntries += 1;
         continue;
       }
@@ -479,17 +555,35 @@ async function importExcelLocations(rawRows, rawAssociates) {
       if (containerCode) {
         let target = containers.find(container => str(container?.code, 120).toUpperCase() === containerCode);
         if (!target) {
-          target = cleanContainer({ code: containerCode, currentLocation: location, status: 'Open', notes: 'Created from New Daily Rec Excel sync.' });
+          target = cleanContainer({
+            code: containerCode, currentLocation: location, status: 'Open',
+            notes: 'Created from New Daily Rec Excel sync.',
+            createdSource: 'Excel Sync', createdBy: 'Excel Sync',
+          });
           containers.push(target);
           result.createdContainers += 1;
+          boxEvent(boxEvents, target, 'created', 'Excel Sync', 'Excel Sync', { po, deliveryId, prepBy: associate, location });
+          excelActivities.unshift({
+            id: crypto.randomUUID(), type: 'box', actor: 'Excel Sync',
+            summary: `created box ${target.code} for PO ${po} (Prep: ${associate})`,
+            po, containerId: target.id, containerCode: target.code,
+            location, createdAt: now,
+          });
         }
         const targetId = String(target.id);
         const matchIds = new Set(matches.map(entry => String(entry.id)));
         for (let i = 0; i < containers.length; i += 1) {
           if (String(containers[i]?.id) !== targetId) continue;
-          if (str(containers[i]?.currentLocation, 120).toUpperCase() !== location) {
-            containers[i] = { ...containers[i], currentLocation: location, updatedAt: now };
+          if (str(containers[i]?.currentLocation, 120).toUpperCase() !== location || str(containers[i]?.status, 80).toLowerCase() === 'closed') {
+            const oldLocation = containers[i].currentLocation;
+            const wasClosed = str(containers[i].status, 80).toLowerCase() === 'closed';
+            containers[i] = {
+              ...containers[i], currentLocation: location,
+              status: wasClosed ? 'Stored' : containers[i].status, updatedAt: now,
+            };
             changedContainerIds.add(targetId);
+            boxEvent(boxEvents, containers[i], wasClosed ? 'reopened' : 'location-changed', 'Excel Sync', 'Excel Sync',
+              { po, deliveryId, prepBy: associate, from: oldLocation, to: location });
           }
           break;
         }
@@ -503,6 +597,11 @@ async function importExcelLocations(rawRows, rawAssociates) {
             ...(isMatch ? { containerId: targetId, containerCode } : {}),
             location,
           }, now);
+          if (isMatch && String(entry.containerId) !== targetId) {
+            const oldBox = containers.find(box => String(box.id) === String(entry.containerId));
+            boxEvent(boxEvents, oldBox, 'po-moved-out', 'Excel Sync', 'Excel Sync', { po: entry.po, deliveryId, to: containerCode });
+            boxEvent(boxEvents, target, 'po-moved-in', 'Excel Sync', 'Excel Sync', { po: entry.po, deliveryId, from: oldBox?.code || entry.containerCode });
+          }
           changedEntryIds.add(String(entry.id));
         }
         // The previous box may hold other POs; leave it and its location alone.
@@ -565,6 +664,9 @@ async function importExcelLocations(rawRows, rawAssociates) {
         continue;
       }
       if (!incoming.associate) {
+        const oldBox = containers.find(box => String(box.id) === String(entry.containerId));
+        boxEvent(boxEvents, oldBox, 'po-removed', 'Excel Sync', 'Excel Sync',
+          { po: entry.po, deliveryId: entry.deliveryId, reason: 'No Prep By assigned in workbook' });
         result.removedUnassignedEntries += 1;
         continue;
       }
@@ -575,12 +677,45 @@ async function importExcelLocations(rawRows, rawAssociates) {
     }
     entries = reconciledEntries;
 
+    // Never delete a potentially physical box automatically. Only the
+    // unmistakably Excel-generated boxes with no attached PO are retired.
+    // Manual/Stock Intake boxes stay untouched, and closed boxes remain
+    // searchable and reopenable if a valid workbook entry references them.
+    const referencedCodes = new Set(
+      rows.filter(raw => str(raw?.associate, 120) && str(raw?.location, 120))
+        .map(raw => str(raw?.containerCode, 120).toUpperCase()).filter(Boolean)
+    );
+    for (let i = 0; i < containers.length; i += 1) {
+      const box = containers[i];
+      if (!isExcelCreatedBox(box) || str(box.status, 80).toLowerCase() === 'closed') continue;
+      if (referencedCodes.has(str(box.code, 120).toUpperCase())) continue;
+      if (entries.some(entry => String(entry.containerId || '') === String(box.id))) continue;
+      containers[i] = {
+        ...box,
+        status: 'Closed',
+        updatedAt: now,
+      };
+      changedContainerIds.add(String(box.id));
+      result.retiredEmptyExcelBoxes += 1;
+      boxEvent(boxEvents, containers[i], 'auto-retired-empty', 'Excel Sync', 'Excel Sync',
+        { reason: 'No attached PO after Excel reconciliation; box retained for physical review' });
+      excelActivities.unshift({
+        id: crypto.randomUUID(), type: 'box', actor: 'Excel Sync',
+        summary: `retired empty Excel-created box ${box.code}`,
+        containerId: box.id, containerCode: box.code,
+        location: box.currentLocation, createdAt: now,
+      });
+    }
+
     result.updatedEntries = changedEntryIds.size;
     result.updatedContainers = changedContainerIds.size;
     result.unchanged = Math.max(0, rows.length - result.skipped.length - result.unresolved.length - result.createdEntries - result.updatedEntries);
     data.overstockEntries = entries;
     data.overstockContainers = containers;
+    if (excelActivities.length) data.overstockActivity =
+      [...excelActivities, ...(Array.isArray(data.overstockActivity) ? data.overstockActivity : [])].slice(0, 50);
     if (workbookAssociates.length) masters.associates = workbookAssociates;
+    await persistBoxEvents(client, boxEvents);
     await client.query(
       `UPDATE workflow_sync_state SET data_json=$1::jsonb, masters_json=$2::jsonb, updated_at=NOW() WHERE state_key='default'`,
       [JSON.stringify(data), JSON.stringify(masters)],
