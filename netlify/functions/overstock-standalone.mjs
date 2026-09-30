@@ -267,6 +267,7 @@ function cleanContainer(raw, existing = null) {
     notes: str(raw.notes ?? source.notes, 1000),
     createdSource: str(source.createdSource || raw.createdSource, 60) || 'Legacy / unknown',
     createdBy: str(source.createdBy || raw.createdBy, 120),
+    retainEmpty: raw.retainEmpty === true || source.retainEmpty === true,
     createdAt: num(source.createdAt || raw.createdAt, now),
     updatedAt: now,
   };
