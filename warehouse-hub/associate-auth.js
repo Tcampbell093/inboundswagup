@@ -104,7 +104,7 @@
           <button class="associate-link" id="associateNotNow" type="button">Not now</button>
         </div>
       </form>
-      <div class="associate-note" id="associateNote">If you already use a FairShift cleaning PIN, use that same PIN here. Team Leads and new team members can create a Hub PIN when one has not been set yet.</div>
+      <div class="associate-note" id="associateNote">Warehouse Hub manages associate PINs. If you do not have a Hub PIN yet, create one here; the Hub will sync it to Cleaning automatically when available.</div>
     </div>`;
   document.body.appendChild(dialog);
 
@@ -309,7 +309,7 @@
     confirmWrap.style.display = 'none';
     submit.textContent = 'Continue';
     submit.disabled = false;
-    note.textContent = 'If you already use a FairShift cleaning PIN, use that same PIN here. New associates can create a PIN when one has not been set yet.';
+    note.textContent = 'Warehouse Hub manages associate PINs. If you do not have a Hub PIN yet, create one here; the Hub will sync it to Cleaning automatically when available.';
   }
 
   function showSignedInState() {
@@ -361,7 +361,7 @@
     roster = Array.isArray(data.employees) ? data.employees : [];
     nameEl.innerHTML = `<option value="">Choose your name…</option>${roster.map((person) => `<option value="${esc(person.name)}">${esc(person.name)}${person.department ? ' · ' + esc(person.department) : ''}${person.role ? ' · ' + esc(displayRole(person.role)) : ''}</option>`).join('')}`;
     if (data.selfServiceConnected === false) {
-      note.textContent = 'If you already have a FairShift cleaning PIN, use the same one here. First-time PIN setup is available in the Hub; FairShift syncing will follow the same PIN when its self-service update is active.';
+      note.textContent = 'Create and manage associate PINs in Warehouse Hub. Cleaning will use the same PIN after its sync connection is available.';
     }
   }
 
