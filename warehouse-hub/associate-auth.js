@@ -385,7 +385,7 @@
       return;
     }
     pinWrap.style.display = 'block';
-    const configured = selected.hubPinConfigured || selected.pinConfigured === true;
+    const configured = selected.hubPinConfigured === true;
     if (configured) {
       document.getElementById('associatePinLabel').firstChild.nodeValue = 'PIN';
       confirmWrap.style.display = 'none';
@@ -395,9 +395,7 @@
       document.getElementById('associatePinLabel').firstChild.nodeValue = 'Create a PIN';
       confirmWrap.style.display = 'block';
       submit.textContent = 'Create PIN & sign in';
-      note.textContent = selected.fairShiftSelfService === false
-        ? 'Create a private 4–8 digit Warehouse Hub PIN. This gives Team Leads Hub access without adding them to FairShift cleaning rotations.'
-        : 'Choose a private 4–8 digit PIN you can remember. If you already have a FairShift cleaning PIN, use that same number here.';
+      note.textContent = 'Create a private 4–8 digit Warehouse Hub PIN. This PIN is managed from the Hub and is used for Hub sign-in.';
     }
     setTimeout(() => pinEl.focus(), 30);
   });
@@ -409,7 +407,7 @@
     if (!selected) return setError('Choose your name first.');
     const pin = pinEl.value.trim();
     if (!/^\d{4,8}$/.test(pin)) return setError('Enter a 4–8 digit PIN.');
-    const configured = selected.hubPinConfigured || selected.pinConfigured === true;
+    const configured = selected.hubPinConfigured === true;
     const action = configured ? 'login' : 'setup';
     if (action === 'setup' && pin !== confirmEl.value.trim()) return setError('The two PINs do not match.');
     submit.disabled = true;
@@ -423,8 +421,8 @@
       session = data;
       updateButton();
       sessionStorage.removeItem('hubAssociatePromptDismissed');
-      setSuccess(action === 'setup' ? 'PIN saved. You’re signed in for this shift.' : 'You’re signed in for this shift.');
-      setTimeout(() => dialog.close(), 650);
+      setSuccess(data.warning || (action === 'setup' ? 'PIN saved. You’re signed in for this shift.' : 'You’re signed in for this shift.'));
+      setTimeout(() => dialog.close(), data.warning ? 1800 : 650);
       document.dispatchEvent(new CustomEvent('hub-associate-session', { detail: session }));
     } catch (err) {
       setError(err.message || 'Could not sign in.');
