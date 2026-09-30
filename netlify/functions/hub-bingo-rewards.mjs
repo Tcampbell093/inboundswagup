@@ -4,6 +4,9 @@ import crypto from 'node:crypto';
 const { Pool } = pg;
 const SESSION_COOKIE = 'hub_associate_session';
 const SESSION_VERSION = 2;
+const DEFAULT_BOARD_SIZE = 5;
+const SUPPORTED_BOARD_SIZES = [3, 5];
+const DEFAULT_ROUND_ANCHOR = '2026-09-21';
 let poolInstance = null;
 let schemaReady = false;
 
@@ -67,6 +70,22 @@ function rewardAdminSession(request) {
   return session && (role === 'manager' || role === 'team lead') ? session : null;
 }
 
+function easternDate() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${map.year}-${map.month}-${map.day}`;
+}
+
+function normalizeBoardSize(value) {
+  const size = Number(value);
+  return SUPPORTED_BOARD_SIZES.includes(size) ? size : DEFAULT_BOARD_SIZE;
+}
+
 async function ensureSchema() {
   if (schemaReady) return;
   const db = getPool();
@@ -85,8 +104,83 @@ async function ensureSchema() {
     );
     CREATE INDEX IF NOT EXISTS hub_bingo_rewards_rewarded_idx
       ON hub_bingo_rewards(rewarded_at DESC);
+
+    CREATE TABLE IF NOT EXISTS hub_bingo_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      board_size INTEGER NOT NULL DEFAULT 5,
+      anchor_date DATE NOT NULL DEFAULT '2026-09-21',
+      reset_number INTEGER NOT NULL DEFAULT 0,
+      reset_at TIMESTAMPTZ,
+      reset_by TEXT NOT NULL DEFAULT '',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    INSERT INTO hub_bingo_settings(id,board_size,anchor_date,reset_number,reset_by,updated_at)
+    VALUES(1,5,'2026-09-21',0,'',NOW())
+    ON CONFLICT(id) DO NOTHING;
   `);
   schemaReady = true;
+}
+
+async function bingoSettings(db) {
+  const result = await db.query(`
+    SELECT board_size,anchor_date,reset_number,reset_at,reset_by
+    FROM hub_bingo_settings
+    WHERE id=1
+    LIMIT 1
+  `);
+  const row = result.rows[0] || {};
+  return {
+    boardSize: normalizeBoardSize(row.board_size),
+    anchorDate: row.anchor_date ? String(row.anchor_date).slice(0, 10) : DEFAULT_ROUND_ANCHOR,
+    resetNumber: Math.max(0, Number(row.reset_number || 0)),
+    resetAt: row.reset_at || null,
+    resetBy: clean(row.reset_by, 100),
+  };
+}
+
+async function setBoardSize(db, session, body) {
+  const size = Number(body.boardSize);
+  if (!SUPPORTED_BOARD_SIZES.includes(size)) {
+    return { status: 400, body: { error: 'Choose either a 3×3 or 5×5 Bingo board.' } };
+  }
+  await db.query(`
+    UPDATE hub_bingo_settings
+    SET board_size=$1,updated_at=NOW()
+    WHERE id=1
+  `, [size]);
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      message: `Bingo board size changed to ${size}×${size}. Current cards will resize when opened.`,
+      settings: await bingoSettings(db),
+    },
+  };
+}
+
+async function resetBingoRound(db, session) {
+  const today = easternDate();
+  const result = await db.query(`
+    UPDATE hub_bingo_settings
+    SET anchor_date=$1,
+        reset_number=reset_number+1,
+        reset_at=NOW(),
+        reset_by=$2,
+        updated_at=NOW()
+    WHERE id=1
+    RETURNING reset_number
+  `, [today, clean(session.name, 100)]);
+  const resetNumber = Number(result.rows[0]?.reset_number || 0);
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      message: 'Bingo reset complete. Everyone has a fresh card and a new round starting today. Existing Bingo Coins and reward history were kept.',
+      resetNumber,
+      settings: await bingoSettings(db),
+    },
+  };
 }
 
 async function rewardLedger(db) {
@@ -242,6 +336,7 @@ export default async (request) => {
           role: clean(session.role, 50),
         },
         ...(await rewardLedger(db)),
+        settings: await bingoSettings(db),
       });
     }
 
@@ -251,6 +346,16 @@ export default async (request) => {
 
     if (action === 'markGiven') {
       const result = await markRewardGiven(db, session, body);
+      return json(result.status, result.body);
+    }
+
+    if (action === 'setBoardSize') {
+      const result = await setBoardSize(db, session, body);
+      return json(result.status, result.body);
+    }
+
+    if (action === 'resetRound') {
+      const result = await resetBingoRound(db, session);
       return json(result.status, result.body);
     }
 
