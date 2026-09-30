@@ -81,9 +81,11 @@
     const q=norm($('boxSearch').value),sort=$('boxSort').value;
     const activeBoxes=stats.active.filter(c=>items(c.id).length>0);
     const emptyBoxes=stats.active.filter(c=>items(c.id).length===0);
-    let bs=(boxView==='empty'?emptyBoxes:activeBoxes).filter(c=>{
+    const retiredBoxes=data.containers.filter(c=>status(c)==='closed');
+    const eligible=boxView==='retired'?retiredBoxes:boxView==='empty'?emptyBoxes:activeBoxes;
+    let bs=eligible.filter(c=>{
       const content=items(c.id).map(e=>`${e.po} ${e.deliveryId||''}`).join(' ');
-      return !q||norm(`${c.code} ${c.currentLocation} ${c.status} ${content}`).includes(q)
+      return !q||norm(`${c.code} ${c.currentLocation} ${c.status} ${content}`).includes(q);
     });
     if(sort==='name')bs.sort((a,b)=>cmp(a.code,b.code));
     else if(sort==='location')bs.sort((a,b)=>cmp(a.currentLocation,b.currentLocation)||cmp(a.code,b.code));
@@ -91,20 +93,21 @@
 
     $('boxActiveCount').textContent=activeBoxes.length;
     $('boxEmptyCount').textContent=emptyBoxes.length;
-    $('boxCount').textContent=`${bs.length} ${boxView==='empty'?'empty container':'box'}${bs.length===1?'':'es'}`;
-    $('boxViewTitle').textContent=boxView==='empty'?'Empty containers':'Active boxes';
-    $('boxViewNote').textContent=boxView==='empty'
-      ? 'Empty containers are kept here for reuse without cluttering the active box list.'
-      : 'Containers currently holding one or more Overstock records.';
+    $('boxRetiredCount').textContent=retiredBoxes.length;
+    $('boxCount').textContent=`${bs.length} ${boxView==='empty'?'empty':boxView==='retired'?'retired':'active'} box${bs.length===1?'':'es'}`;
+    $('boxViewTitle').textContent=boxView==='retired'?'Retired / closed boxes':boxView==='empty'?'Empty containers':'Active boxes';
+    $('boxViewNote').textContent=boxView==='retired'
+      ? 'Retired Excel-generated boxes and manually closed boxes remain here for review, history and reuse.'
+      : boxView==='empty'
+        ? 'Reusable empty containers are kept here without cluttering active inventory.'
+        : 'Containers currently holding one or more Overstock records.';
     document.querySelectorAll('[data-box-view]').forEach(btn=>{
       const on=btn.dataset.boxView===boxView;
       btn.classList.toggle('active',on);
       btn.setAttribute('aria-current',on?'true':'false');
     });
-
-    $('boxesGrid').innerHTML=bs.length
-      ? bs.map(c=>boxCard(c)).join('')
-      : `<div class="empty">${boxView==='empty'?'No empty containers right now.':'No active boxes match.'}</div>`;
+    $('boxesGrid').innerHTML=bs.length?bs.map(c=>boxCard(c)).join('')
+      : `<div class="empty">${boxView==='retired'?'No retired boxes.':boxView==='empty'?'No empty containers right now.':'No active boxes match.'}</div>`;
     bindBoxes($('boxesGrid'));
   }
   function logMatches(e,q){const c=container(e.containerId);return!q||norm([e.po,e.deliveryId,e.category,e.status,e.action,e.location,e.containerCode,e.associate,e.originalAssociate,e.lastChangedBy,c?.code,c?.currentLocation].join(' ')).includes(q)}
@@ -150,7 +153,98 @@
   function renderDonationPoolButton(){const rows=Array.isArray(data.donations)?data.donations:[];const count=rows.length,total=rows.reduce((n,d)=>n+Number(d.quantity||0),0);$('donationPoolBtn').innerHTML=`🎁 Donation Pool <span class="button-count">${count}</span>`;$('donationPoolBtn').title=`${count} donated PO${count===1?'':'s'} · ${total.toLocaleString()} units`;}
   function openDonationPool(){const rows=(Array.isArray(data.donations)?data.donations:[]).slice().sort((a,b)=>Number(b.donatedAt||b.updatedAt||0)-Number(a.donatedAt||a.updatedAt||0));const total=rows.reduce((n,d)=>n+Number(d.quantity||0),0);$('donationDialogSub').textContent=rows.length?`${rows.length} PO${rows.length===1?'':'s'} · ${total.toLocaleString()} units`:'Nothing donated yet.';$('donationDialogBody').innerHTML=rows.length?'<div class="donation-list">'+rows.map(d=>{const original=d.originalAssociate||d.associate||'Unknown',donor=d.donatedBy||d.lastChangedBy||original;return`<article class="donation-row"><div class="donation-main"><b>PO ${esc(d.po||'—')}</b><span class="qty">${Number(d.quantity||0).toLocaleString()} units</span></div><div class="donation-meta">${esc(d.category||'Uncategorized')}${d.deliveryId?` · ${esc(d.deliveryId)}`:''}</div><div class="donation-meta">From <b>${esc(d.containerCode||'Unknown box')}</b>${d.location?` · 📍 ${esc(d.location)}`:''}</div><div class="donation-meta">Originally added by <b>${esc(original)}</b></div><div class="donation-meta">Donated by <b>${esc(donor)}</b> · ${esc(fmt(d.donatedAt||d.updatedAt))}</div></article>`}).join('')+'</div>':'<div class="empty">The Donation Pool is empty.</div>';$('donationDialog').showModal();}
   function render(){lists();syncPill();renderDonationPoolButton();const stats=renderStats();renderCart(stats);renderLocations(stats);renderBoxes(stats);renderLog();renderActivityFeed()}
-  function openBox(id){const c=container(id);if(!c)return;const its=items(id);$('boxDialogTitle').textContent=c.code||'Box';$('boxDialogSub').textContent=`${c.currentLocation||'On cart'} · ${its.length} PO(s) · ${units(id)} units`;$('boxDialogBody').innerHTML=`<div class="box-summary"><b>${esc(c.code)}</b> is ${esc(c.status||'Open')} at <b>${esc(c.currentLocation||'no assigned location')}</b>.</div><div class="action-grid"><button class="action-btn" data-act="add">➕ Add a PO</button><button class="action-btn" data-act="audit">🔍 Audit contents</button><button class="action-btn" data-act="move">↗ Move location</button><button class="action-btn" data-act="edit">✏️ Edit box</button>${its.length===0?'<button class="action-btn" data-act="delete">🗑 Delete empty box</button>':''}</div>`;$('boxDialog').showModal();$('boxDialogBody').querySelector('[data-act="add"]').onclick=()=>{close('boxDialog');newEntry(id)};$('boxDialogBody').querySelector('[data-act="audit"]').onclick=()=>auditBox(id);$('boxDialogBody').querySelector('[data-act="move"]').onclick=()=>editContainer(id,true);$('boxDialogBody').querySelector('[data-act="edit"]').onclick=()=>editContainer(id);$('boxDialogBody').querySelector('[data-act="delete"]')?.addEventListener('click',()=>deleteContainer(id))}
+  async function openBoxHistory(reference=''){
+    await loadHubSession();
+    if(!requireHubUser())return;
+    const dialog=$('boxHistoryDialog');
+    const box=container(reference)||data.containers.find(c=>norm(c.code)===norm(reference));
+    $('boxHistoryCode').value=box?.code||reference||'';
+    $('boxHistoryTitle').textContent=box?.code?`${box.code} · Box History`:'Box History';
+    $('boxHistorySubtitle').textContent='Creation source, PO movements, changes and the people or processes responsible.';
+    $('boxHistoryBody').innerHTML=reference?'<div class="box-history-empty">Loading history…</div>':'<div class="box-history-empty">Enter a box code to view its history, including retired boxes.</div>';
+    if($('boxDialog').open)$('boxDialog').close();
+    if(!dialog.open)dialog.showModal();
+    if(reference)await loadBoxHistory(box?.id||reference);
+  }
+
+  function historyDetail(detail){
+    if(!detail||typeof detail!=='object')return'';
+    const labels={po:'PO',from:'From',to:'To',prepBy:'Prep By',quantity:'Quantity',previousQuantity:'Previous quantity',location:'Location',reason:'Reason',notes:'Notes',summary:'Details',deliveryId:'Delivery ID'};
+    return Object.entries(detail).filter(([k,v])=>labels[k]&&v!==null&&v!==undefined&&String(v).trim())
+      .map(([k,v])=>`<span><b>${esc(labels[k])}:</b> ${esc(v)}</span>`).join(' · ');
+  }
+
+  async function loadBoxHistory(reference){
+    const body=$('boxHistoryBody');
+    body.innerHTML='<div class="box-history-empty">Loading history…</div>';
+    try{
+      const res=await fetch(`${API}?${new URLSearchParams({boxHistory:reference})}`,{cache:'no-store',credentials:'same-origin'});
+      const result=await res.json().catch(()=>({}));
+      if(!res.ok)throw new Error(result.error||'Could not retrieve box history.');
+      const box=result.box||{},events=Array.isArray(result.events)?result.events:[];
+      $('boxHistoryTitle').textContent=`${box.code||reference} · Box History`;
+      $('boxHistoryCode').value=box.code||reference;
+      body.innerHTML=`
+        <section class="box-history-summary">
+          <strong>${esc(box.code||reference)}</strong> · ${esc(box.status||'Unknown status')}
+          ${box.location?` · 📍 ${esc(box.location)}`:''}
+          ${box.poCount!==undefined?` · ${esc(box.poCount)} PO(s)`:''}
+          <small>Originally created by: ${esc(box.createdBy||'Not recorded')} · Source: ${esc(box.createdSource||'Unknown')}
+          ${box.createdAt?` · ${esc(new Date(box.createdAt).toLocaleString())}`:''}</small>
+          ${box.notes?`<small>Notes: ${esc(box.notes)}</small>`:''}
+        </section>
+        ${events.length?`<div class="box-history-timeline">${events.map(event=>`
+          <article class="box-history-event">
+            <strong>${esc(String(event.type||'changed').replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase()))}</strong>
+            <span class="box-history-source">${esc(event.source||'Not recorded')}</span>
+            <div class="box-history-event-meta">${esc(event.at?new Date(event.at).toLocaleString():'Date unavailable')} · ${esc(event.actor||'Not recorded')}</div>
+            ${historyDetail(event.detail)?`<div class="box-history-event-detail">${historyDetail(event.detail)}</div>`:''}
+          </article>`).join('')}</div>`
+          :'<div class="box-history-empty">No detailed events survived for this box. Historical tracking starts with this update.</div>'}
+      `;
+    }catch(error){
+      body.innerHTML=`<div class="box-history-empty">${esc(error.message||'Unable to retrieve box history.')}</div>`;
+    }
+  }
+
+  function openBox(id){
+    const c=container(id);
+    if(!c)return;
+    const its=items(id),closed=status(c)==='closed';
+    $('boxDialogTitle').textContent=c.code||'Box';
+    $('boxDialogSub').textContent=`${c.currentLocation||'On cart'} · ${its.length} PO(s) · ${units(id)} units`;
+    $('boxDialogBody').innerHTML=`
+      <div class="box-summary"><b>${esc(c.code)}</b> is ${esc(c.status||'Open')} at
+        <b>${esc(c.currentLocation||'no assigned location')}</b>.
+        ${c.createdSource?`<br><small>Created via ${esc(c.createdSource)}${c.createdBy?` · ${esc(c.createdBy)}`:''}</small>`:''}
+      </div>
+      <div class="action-grid">
+        ${closed?'<button class="action-btn" data-act="reopen">↻ Reopen box</button>':'<button class="action-btn" data-act="add">➕ Add a PO</button>'}
+        <button class="action-btn" data-act="history">📜 Box history</button>
+        <button class="action-btn" data-act="audit">🔍 Audit contents</button>
+        ${closed?'':'<button class="action-btn" data-act="move">↗ Move location</button>'}
+        <button class="action-btn" data-act="edit">✏️ Edit box</button>
+        ${its.length===0?'<button class="action-btn" data-act="delete">🗑 Delete empty box</button>':''}
+      </div>`;
+    $('boxDialog').showModal();
+    $('boxDialogBody').querySelector('[data-act="add"]')?.addEventListener('click',()=>{close('boxDialog');newEntry(id)});
+    $('boxDialogBody').querySelector('[data-act="history"]').onclick=()=>openBoxHistory(id);
+    $('boxDialogBody').querySelector('[data-act="audit"]').onclick=()=>auditBox(id);
+    $('boxDialogBody').querySelector('[data-act="move"]')?.addEventListener('click',()=>editContainer(id,true));
+    $('boxDialogBody').querySelector('[data-act="edit"]').onclick=()=>editContainer(id);
+    $('boxDialogBody').querySelector('[data-act="delete"]')?.addEventListener('click',()=>deleteContainer(id));
+    $('boxDialogBody').querySelector('[data-act="reopen"]')?.addEventListener('click',async()=>{
+      if(!requireHubUser())return;
+      try{
+        const j=await request({action:'upsertContainer',container:{...c,status:c.currentLocation?'Stored':'Open',retainEmpty:true}});
+        data={...data,...j};
+        close('boxDialog');
+        render();
+        openBox(id);
+        toast('Box reopened. It will not be automatically retired while marked for reuse.');
+      }catch(error){toast(error.message,true)}
+    });
+  }
   function auditBox(id){const c=container(id),its=items(id);$('boxDialogTitle').textContent=`Audit ${c.code}`;$('boxDialogSub').textContent='Verify the physical contents against this list.';$('boxDialogBody').innerHTML=`<div class="box-summary">📍 <b>${esc(c.currentLocation||'On cart')}</b> · ${units(id)} total units</div><div class="audit-list">${its.length?its.map(e=>`<div class="audit-row"><span><b>PO ${esc(e.po)}</b>${e.deliveryId?` · ${esc(e.deliveryId)}`:''}<br><small>${esc(e.category||'Uncategorized')} · ${esc(e.associate||'Unknown associate')}</small></span><span><b>${Number(e.quantity||0)}</b> units <button class="ghost" data-audit-entry="${esc(e.id)}">Edit</button></span></div>`).join(''):'<div class="empty">This box has no POs.</div>'}</div>`;document.querySelectorAll('[data-audit-entry]').forEach(b=>b.onclick=()=>{close('boxDialog');openEntry(b.dataset.auditEntry,id)})}
   function openLocation(loc){const bs=data.containers.filter(c=>norm(c.currentLocation)===norm(loc)&&status(c)!=='closed');$('locationDialogTitle').textContent=loc;$('locationDialogSub').textContent=`${bs.length} box(es) · ${bs.reduce((n,c)=>n+units(c.id),0)} units`;$('locationDialogBody').innerHTML=bs.length?`<div class="card-grid">${bs.map(c=>boxCard(c)).join('')}</div>`:'<div class="empty">This location is free.</div>';$('locationDialog').showModal();bindBoxes($('locationDialogBody'))}
   function close(id){$(id)?.close()}
@@ -198,9 +292,70 @@
   $('containerForm').onsubmit=async ev=>{ev.preventDefault();if(!requireHubUser())return;const d=Object.fromEntries(new FormData(ev.currentTarget)),old=container(d.id)||{},saved={...old,id:d.id||undefined,code:d.code,currentLocation:d.currentLocation,status:d.currentLocation&&['Open','On Cart'].includes(d.status)?'Stored':d.status,notes:d.notes};try{const j=await request({action:'upsertContainer',container:saved});data={...data,...j};close('containerDialog');render();toast(mutationMessage(d.id?'Box updated.':'Box created.',j))}catch(e){toast(e.message,true)}};
   $('boxLookupForm').onsubmit=e=>{e.preventDefault();const code=norm($('boxLookupInput').value),c=data.containers.find(x=>norm(x.code)===code);if(c){$('boxLookupStatus').textContent=`Found ${c.code} · ${c.currentLocation||'On cart'} · ${items(c.id).length} PO(s)`;openBox(c.id)}else{$('boxLookupStatus').textContent='Box not found. Opening Stock Intake to create it.';openIntake();$('siContainerCode').value=$('boxLookupInput').value.trim().toUpperCase()}};
   $('siContainerCode').oninput=inspectIntake;
-  $('siContainerForm').onsubmit=async ev=>{ev.preventDefault();const actor=requireHubUser();if(!actor)return;const code=$('siContainerCode').value.trim().toUpperCase(),loc=$('siContainerLocation').value;let c=data.containers.find(x=>norm(x.code)===norm(code));try{if(!c){if(!loc)throw new Error('Choose a location for the new box.');const j=await request({action:'upsertContainer',container:{code,currentLocation:loc,status:'Stored',notes:'Created through Stock Intake'}});data={...data,...j};c=data.containers.find(x=>norm(x.code)===norm(code))}if(!c)throw new Error('Box could not be opened.');intake.container=c;intake.touched.add(String(c.id));intakeStats();$('siActiveContainer').textContent=`${c.code} · ${c.currentLocation||'On cart'} · Hub user: ${actor}`;$('siContainerStep').hidden=true;$('siItemStep').hidden=false;setTimeout(()=>$('siPo').focus(),20)}catch(e){toast(e.message,true)}};
-  $('siItemForm').onsubmit=async ev=>{ev.preventDefault();const c=intake.container,po=$('siPo').value.trim(),qty=Number($('siQty').value||0),donateNow=ev.submitter?.dataset.intent==='donate';if(!c||!po||qty<1)return toast('Enter a PO and quantity.',true);if(donateNow){const eligible=await confirmDonationEligibility({po,quantity:qty,containerCode:c.code});if(!eligible)return}const actor=requireHubUser();if(!actor)return;const entry={po,deliveryId:$('siDeliveryId').value.trim(),quantity:qty,category:$('siCategory').value.trim(),status:'Not Donation',action:$('siAction').value,note:$('siNote').value.trim(),containerId:c.id,containerCode:c.code,location:c.currentLocation,date:new Date().toISOString().slice(0,10),sourceType:'stock-intake'};try{const j=await request({action:'upsertEntry',entry,donateNow});data={...data,...j};const saved=data.entries.slice().sort((a,b)=>time(b)-time(a)).find(e=>e.po===po)||entry;intake.items.push({...saved,containerCode:c.code});intakeStats();['siPo','siDeliveryId','siQty','siCategory','siNote'].forEach(id=>$(id).value='');setTimeout(()=>$('siPo').focus(),20);toast(donateNow?`PO ${po} moved to the Donation Pool.`:`PO ${po} added to ${c.code}.`)}catch(e){toast(e.message,true)}};
+  $('siContainerForm').onsubmit=ev=>{
+    ev.preventDefault();
+    const actor=requireHubUser();
+    if(!actor)return;
+    const code=$('siContainerCode').value.trim().toUpperCase(),loc=$('siContainerLocation').value;
+    if(!code)return toast('Enter a box code.',true);
+    let c=data.containers.find(x=>norm(x.code)===norm(code));
+    if(!c&&!loc)return toast('Choose a location for the new box.',true);
+    // This is only a draft. The backend creates the box and its first PO
+    // together in one transaction when the first item is actually submitted.
+    if(!c)c={id:'',code,currentLocation:loc,status:'Stored',pending:true};
+    intake.container=c;
+    if(c.id)intake.touched.add(String(c.id));
+    intakeStats();
+    $('siActiveContainer').textContent=`${c.code} · ${c.currentLocation||'On cart'} · Hub user: ${actor}${c.pending?' · Not saved until first PO':''}`;
+    $('siContainerStep').hidden=true;
+    $('siItemStep').hidden=false;
+    setTimeout(()=>$('siPo').focus(),20);
+  };
+  $('siItemForm').onsubmit=async ev=>{
+    ev.preventDefault();
+    const form=ev.currentTarget;
+    if(form.dataset.saving==='1')return;
+    const c=intake.container,po=$('siPo').value.trim(),qty=Number($('siQty').value||0),
+      donateNow=ev.submitter?.dataset.intent==='donate';
+    if(!c||!po||!Number.isSafeInteger(qty)||qty<1)return toast('Enter a PO and a valid quantity.',true);
+    form.dataset.saving='1';
+    try{
+      if(donateNow){
+        const eligible=await confirmDonationEligibility({po,quantity:qty,containerCode:c.code});
+        if(!eligible)return;
+      }
+      const actor=requireHubUser();
+      if(!actor)return;
+      const entry={
+        po,deliveryId:$('siDeliveryId').value.trim(),quantity:qty,
+        category:$('siCategory').value.trim(),status:'Not Donation',
+        action:$('siAction').value,note:$('siNote').value.trim(),
+        date:new Date().toISOString().slice(0,10),sourceType:'stock-intake',
+      };
+      const j=await request({action:'intakeAddEntry',container:{code:c.code,currentLocation:c.currentLocation},entry,donateNow});
+      data={...data,...j};
+      const saved=data.entries.find(e=>String(e.id)===String(j.savedEntryId))||entry;
+      const resolved=data.containers.find(box=>String(box.id)===String(j.savedContainerId));
+      if(resolved){
+        intake.container=resolved;
+        intake.touched.add(String(resolved.id));
+        $('siActiveContainer').textContent=`${resolved.code} · ${resolved.currentLocation||'On cart'} · Hub user: ${actor}`;
+      }
+      intake.items.push({...saved,containerCode:c.code});
+      intakeStats();
+      ['siPo','siDeliveryId','siQty','siCategory','siNote'].forEach(id=>$(id).value='');
+      setTimeout(()=>$('siPo').focus(),20);
+      toast(donateNow?`PO ${po} moved to the Donation Pool.`:`PO ${po} added to ${c.code}.`);
+    }catch(error){toast(error.message,true)}
+    finally{delete form.dataset.saving}
+  };
   $('siSwitchContainer').onclick=()=>{intake.container=null;$('siItemStep').hidden=true;$('siContainerStep').hidden=false;$('siContainerCode').value='';$('siExistingContainer').hidden=true};$('stockIntakeBtn').onclick=()=>openIntake();$('stockIntakeCancel').onclick=()=>{if(!intake.items.length||confirm('Cancel? Saved items will remain in Houston.'))closeIntake()};$('stockIntakeComplete').onclick=()=>{toast(`Stock Intake complete · ${intake.items.length} item(s) added.`);closeIntake()};
-  $('activityFeedHide').onclick=()=>setActivityHidden(true);$('activityFeedShow').onclick=()=>setActivityHidden(false);$('refreshBtn').onclick=()=>load(true);$('donationPoolBtn').onclick=openDonationPool;$('newBoxBtn').onclick=()=>editContainer();$('boxSearch').oninput=()=>renderBoxes(renderStats());$('boxSort').onchange=()=>renderBoxes(renderStats());document.querySelectorAll('[data-box-view]').forEach(btn=>btn.onclick=()=>{boxView=btn.dataset.boxView==='empty'?'empty':'active';renderBoxes(renderStats())});$('logSearch').oninput=()=>{logLimit=50;renderLog()};$('logSort').onchange=()=>{logLimit=50;renderLog()};$('showMoreBtn').onclick=()=>{logLimit+=50;renderLog()};$('editBackBtn').onclick=returnToBoxList;$('editCloseBtn').onclick=closeEdit;document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>close(b.dataset.close));
+  $('activityFeedHide').onclick=()=>setActivityHidden(true);$('activityFeedShow').onclick=()=>setActivityHidden(false);$('refreshBtn').onclick=()=>load(true);$('donationPoolBtn').onclick=openDonationPool;
+  $('boxHistoryBtn').onclick=()=>openBoxHistory();
+  $('boxHistorySearchForm').onsubmit=e=>{
+    e.preventDefault();
+    const code=$('boxHistoryCode').value.trim().toUpperCase();
+    if(code)loadBoxHistory(code);
+  };$('newBoxBtn').onclick=()=>editContainer();$('boxSearch').oninput=()=>renderBoxes(renderStats());$('boxSort').onchange=()=>renderBoxes(renderStats());document.querySelectorAll('[data-box-view]').forEach(btn=>btn.onclick=()=>{boxView=['active','empty','retired'].includes(btn.dataset.boxView)?btn.dataset.boxView:'active';renderBoxes(renderStats())});$('logSearch').oninput=()=>{logLimit=50;renderLog()};$('logSort').onchange=()=>{logLimit=50;renderLog()};$('showMoreBtn').onclick=()=>{logLimit+=50;renderLog()};$('editBackBtn').onclick=returnToBoxList;$('editCloseBtn').onclick=closeEdit;document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>close(b.dataset.close));
   load().then?.(()=>{lastActivityId=data.activities?.[0]?.id||'';renderActivityFeed()});setInterval(()=>{if(!document.hidden)pollActivityFeed()},5000);setInterval(()=>{if(!document.hidden&&!document.querySelector('dialog[open]')&&!document.activeElement?.matches('input,select,textarea')&&$('stockIntakeOverlay').hidden)load()},60000);
 })();
