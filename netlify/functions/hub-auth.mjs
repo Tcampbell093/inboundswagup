@@ -62,6 +62,16 @@ async function ensureSchema() {
     );
     CREATE INDEX IF NOT EXISTS hub_associate_auth_name_idx ON hub_associate_auth(employee_name);
     ALTER TABLE hub_associate_auth ADD COLUMN IF NOT EXISTS pin_iterations INTEGER NOT NULL DEFAULT 120000;
+    CREATE TABLE IF NOT EXISTS hub_pin_reset_audit (
+      id TEXT PRIMARY KEY,
+      employee_key TEXT NOT NULL,
+      employee_name TEXT NOT NULL,
+      employee_id BIGINT,
+      reset_by TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      reset_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS hub_pin_reset_audit_recent_idx ON hub_pin_reset_audit(reset_at DESC);
   `);
   schemaReady = true;
 }
@@ -293,8 +303,8 @@ async function findPerson(name, force = false) {
   };
 }
 
-async function saveModernPin(person, pin) {
-  const pool = getPool();
+async function saveModernPin(person, pin, queryClient = getPool()) {
+  const pool = queryClient;
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPin(pin, salt, HUB_PIN_ITERATIONS);
   await pool.query(`
@@ -328,6 +338,120 @@ async function verifyHubFallback(person, pin) {
   const legacy = await pool.query(`SELECT pin_hash,active FROM hub_employee_pins WHERE employee_key=$1 LIMIT 1`, [key]).catch(() => ({ rows: [] }));
   const row = legacy.rows[0];
   return !!(row && row.active !== false && safeEqualHex(legacyHash(pin), row.pin_hash));
+}
+
+function authorizedAdmin(session, roster) {
+  if (!session || clean(session.role, 60).toLowerCase() !== 'manager') return null;
+  return roster.people.find(person =>
+    slug(person.name) === slug(session.name) &&
+    Number(person.id) === Number(session.employeeId) &&
+    clean(person.role, 60).toLowerCase() === 'manager'
+  ) || null;
+}
+
+async function pinResetHistory() {
+  const result = await getPool().query(`
+    SELECT employee_name,employee_id,reset_by,scope,reset_at
+    FROM hub_pin_reset_audit
+    ORDER BY reset_at DESC,id DESC LIMIT 75
+  `);
+  return result.rows.map(row => ({
+    employeeName: row.employee_name,
+    employeeId: row.employee_id,
+    resetBy: row.reset_by,
+    scope: row.scope,
+    resetAt: row.reset_at,
+  }));
+}
+
+async function resetEmployeePin(request, body) {
+  const session = decryptSession(cookieMap(request)[SESSION_COOKIE]);
+  if (!session || clean(session.role, 60).toLowerCase() !== 'manager')
+    return json(403, { error: 'Admin sign-in is required to reset employee PINs.' });
+
+  const roster = await loadRoster(true);
+  const admin = authorizedAdmin(session, roster);
+  if (!admin) return json(403, { error: 'Admin access could not be verified. Sign out and sign in again.' });
+
+  const targetId = Number(body.employeeId);
+  const name = clean(body.employeeName, 100);
+  const person = Number.isSafeInteger(targetId) && targetId > 0
+    ? roster.people.find(candidate => candidate.id === targetId && slug(candidate.name) === slug(name))
+    : null;
+  if (!person) return json(404, { error: 'The selected employee could not be verified in the current roster.' });
+
+  const pin = clean(body.pin, 8);
+  if (!/^\d{4,8}$/.test(pin)) return json(400, { error: 'Enter a 4–8 digit PIN.' });
+  if (pin !== clean(body.confirmPin, 8)) return json(400, { error: 'The two PINs do not match.' });
+
+  let scope = 'Warehouse Hub';
+  if (person.fairShiftSelfService !== false) {
+    if (!roster.selfService) return json(503, { error: 'FairShift is unavailable. No PIN was changed.' });
+    // Never accept a Hub-only reset for a cleaning-eligible associate: their
+    // normal Hub login verifies directly against FairShift.
+    const payload = JSON.stringify({
+      action: 'adminResetPin',
+      employeeId: person.id,
+      employeeName: person.name,
+      pin,
+    });
+    const remote = await fairShiftRequest('/api/checkin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+    }).catch(() => ({ ok: false, body: { error: 'FairShift is temporarily unavailable.' } }));
+    if (!remote.ok || remote.body?.ok === false) {
+      return json(503, {
+        error: clean(remote.body?.error || 'FairShift has not enabled its Admin PIN reset integration. No PIN was changed in Hub.', 300),
+        fairShiftRequired: true,
+      });
+    }
+    const verified = await verifyFairShiftPin(person, pin).catch(() => ({ ok: false }));
+    if (!verified.ok || verified.body?.ok !== true) {
+      return json(503, {
+        error: 'FairShift accepted the reset but could not verify the new PIN. Please check FairShift before trying again. Hub was not updated.',
+        fairShiftRequired: true,
+      });
+    }
+    scope = 'Warehouse Hub + FairShift';
+  }
+
+  const db = getPool();
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    await saveModernPin(person, pin, client);
+    // Retire the old legacy fallback PIN too. Otherwise an older login
+    // path could continue accepting it after the modern PIN is reset.
+    try {
+      await client.query(`
+        UPDATE hub_employee_pins
+        SET pin_hash=$2,employee_name=$3,department=$4,active=TRUE,updated_at=NOW()
+        WHERE employee_key=$1
+      `, [slug(person.name), legacyHash(pin), person.name, person.department || '']);
+    } catch (error) {
+      if (error?.code !== '42P01') throw error;
+    }
+    await client.query(`
+      INSERT INTO hub_pin_reset_audit
+        (id,employee_key,employee_name,employee_id,reset_by,scope,reset_at)
+      VALUES($1,$2,$3,$4,$5,$6,NOW())
+    `, [crypto.randomUUID(), slug(person.name), person.name, person.id, admin.name, scope]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+  rosterCache.expiresAt = 0;
+  return json(200, {
+    ok: true,
+    employeeName: person.name,
+    scope,
+    resetBy: admin.name,
+    message: `PIN reset for ${person.name}. The new PIN is saved for ${scope}.`,
+  });
 }
 
 async function verifyFairShiftPin(person, pin) {
@@ -372,6 +496,14 @@ export default async (request) => {
     if (request.method === 'GET') {
       const action = url.searchParams.get('action') || 'session';
       if (action === 'roster') return json(200, await publicRoster(url.searchParams.get('refresh') === '1'));
+      if (action === 'pinResetHistory') {
+        const session = decryptSession(cookieMap(request)[SESSION_COOKIE]);
+        if (!session || clean(session.role, 60).toLowerCase() !== 'manager')
+          return json(403, { error: 'Admin sign-in required.' });
+        const roster = await loadRoster(true);
+        if (!authorizedAdmin(session, roster)) return json(403, { error: 'Admin access could not be verified.' });
+        return json(200, { history: await pinResetHistory() });
+      }
       if (action === 'session') {
         const token = cookieMap(request)[SESSION_COOKIE];
         const session = decryptSession(token);
@@ -396,6 +528,7 @@ export default async (request) => {
     if (action === 'logout') {
       return json(200, { ok: true, signedIn: false }, { 'Set-Cookie': clearSessionCookie() });
     }
+    if (action === 'adminResetPin') return resetEmployeePin(request, body);
 
     const lookup = await findPerson(body.employeeName, true);
     const person = lookup.person;
