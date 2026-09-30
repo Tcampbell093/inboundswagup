@@ -431,7 +431,7 @@ async function importExcelLocations(rawRows, rawAssociates) {
       // Overstock should only receive workbook rows that have actually been
       // assigned to a Prep associate. Unassigned rows remain in Excel until
       // Prep ownership is known.
-      if (!associate) {
+      if (isUnknownAssociate(associate)) {
         result.skipped.push(`${key}: no Prep By assigned.`);
         continue;
       }
@@ -461,13 +461,21 @@ async function importExcelLocations(rawRows, rawAssociates) {
           result.unresolved.push(`${key}: a PO number is required to create a Houston record.`);
           continue;
         }
+        if (!containerCode) {
+          result.unresolved.push(`${key}: new PO requires an Overstock container code in Excel; no box was generated.`);
+          continue;
+        }
+        if (num(raw?.quantity, 0) <= 0) {
+          result.unresolved.push(`${key}: new PO has zero Overstock quantity; no empty box was generated.`);
+          continue;
+        }
 
         let targetContainer = containerCode
           ? containers.find(container => str(container?.code, 120).toUpperCase() === containerCode)
           : null;
         if (!targetContainer) {
           targetContainer = cleanContainer({
-            code: containerCode || nextContainerCode(containers),
+            code: containerCode,
             currentLocation: location,
             status: 'Open',
             notes: 'Created from New Daily Rec Excel sync.',
@@ -568,6 +576,10 @@ async function importExcelLocations(rawRows, rawAssociates) {
       if (containerCode) {
         let target = containers.find(container => str(container?.code, 120).toUpperCase() === containerCode);
         if (!target) {
+          if (num(raw?.quantity, 0) <= 0) {
+            result.unresolved.push(`${key}: cannot create a new box for a zero-quantity PO.`);
+            continue;
+          }
           target = cleanContainer({
             code: containerCode, currentLocation: location, status: 'Open',
             notes: 'Created from New Daily Rec Excel sync.',
@@ -676,7 +688,7 @@ async function importExcelLocations(rawRows, rawAssociates) {
         reconciledEntries.push(entry);
         continue;
       }
-      if (!incoming.associate) {
+      if (isUnknownAssociate(incoming.associate)) {
         const oldBox = containers.find(box => String(box.id) === String(entry.containerId));
         boxEvent(boxEvents, oldBox, 'po-removed', 'Excel Sync', 'Excel Sync',
           { po: entry.po, deliveryId: entry.deliveryId, reason: 'No Prep By assigned in workbook' });
