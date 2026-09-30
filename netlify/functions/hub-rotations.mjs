@@ -141,12 +141,35 @@ export default async(request)=>{
   if(adminOnly.has(action)&&role!=='admin')return json(403,{error:'Admin access required for weekly scheduling and leave ranges.'});
   let payload;
   try{payload=sanitize(body,action);}catch(error){return json(400,{error:error.message});}
-  if(action==='markCleaningAbsent'||action==='useCleaningAlternate'){
+  if(action==='markCleaningAbsent'||action==='useCleaningAlternate'
+    || action==='setCleaningSchedule'||action==='acceptCleaningSuggestions'||action==='clearCleaningScheduleDays'){
     const state=await remote('/api/dashboard?date='+easternToday());
     if(!state.ok)return json(503,{error:'Could not verify current assignment state.'});
-    const duty=(state.data.assignments||[]).find(x=>Number(x.id)===payload.assignmentId&&x.type==='cleaning');
-    if(!duty||duty.dutyStatus==='completed')return json(409,{error:'This cleaning assignment is complete or no longer exists.'});
-    if(duty.assignmentDate<easternToday())return json(409,{error:'Past assignments cannot be changed.'});
+    const all=(state.data.assignments||[]).filter(x=>x.type==='cleaning');
+    if(action==='markCleaningAbsent'||action==='useCleaningAlternate'){
+      const duty=all.find(x=>Number(x.id)===payload.assignmentId);
+      if(!duty||duty.dutyStatus==='completed')return json(409,{error:'This cleaning assignment is complete or no longer exists.'});
+      if(duty.assignmentDate<easternToday())return json(409,{error:'Past assignments cannot be changed.'});
+    }
+    if(action==='setCleaningSchedule'||action==='acceptCleaningSuggestions'||action==='clearCleaningScheduleDays'){
+      const updates=action==='setCleaningSchedule'?[payload]:action==='acceptCleaningSuggestions'?payload.entries:[];
+      const dates=action==='clearCleaningScheduleDays'?payload.dates:updates.map(x=>x.assignmentDate);
+      if(all.some(x=>dates.includes(x.assignmentDate)&&x.dutyStatus==='completed'
+        &&(action==='clearCleaningScheduleDays'
+          ||updates.some(d=>d.assignmentDate===x.assignmentDate&&d.department===x.toDepartment))))
+        return json(409,{error:'Completed cleaning records are protected. They cannot be replaced or cleared.'});
+      if(action==='acceptCleaningSuggestions'){
+        const daily=new Map();
+        for(const r of updates){
+          if(!daily.has(r.assignmentDate))daily.set(r.assignmentDate,new Set());
+          const used=daily.get(r.assignmentDate);
+          for(const id of [r.employeeId,r.alternateEmployeeId].filter(Boolean)){
+            if(used.has(id))return json(409,{error:'The same person cannot be assigned to two areas on one day.'});
+            used.add(id);
+          }
+        }
+      }
+    }
   }
   const res=await remote('/api/dashboard',{method:'POST',body:JSON.stringify(payload)});
   return json(res.status,res.ok?{ok:true,...res.data}:{
