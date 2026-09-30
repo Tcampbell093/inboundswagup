@@ -422,7 +422,7 @@
     pinDialog.innerHTML = `
       <div class="dialog-head">
         <div><h3 id="pinResetTitle">Reset employee PIN</h3>
-          <p class="pin-reset-note" id="pinResetScope">Hub and FairShift share a PIN for cleaning-eligible employees.</p></div>
+          <p class="pin-reset-note" id="pinResetScope">Warehouse Hub is the sign-in authority. Resetting here always changes the Hub PIN; cleaning PIN sync is handled separately when available.</p></div>
         <button id="pinResetClose" type="button" aria-label="Close">×</button>
       </div>
       <form id="pinResetForm" class="dialog-body">
@@ -491,6 +491,7 @@
         const result=await response.json().catch(()=>({}));
         if(!response.ok)throw new Error(result.error||'Could not reset the PIN.');
         $('pinResetResult').textContent=`PIN reset for ${employeeName} (${result.scope}). Give them the new PIN privately. `
+          +(result.warning ? result.warning+' ' : '')
           +(normalizeName(employeeName)===normalizeName(window.HubAssociate?.getSession?.()?.name)
             ? 'You must sign out and back in with your new PIN.':'');
         submit.textContent='PIN reset saved';
