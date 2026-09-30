@@ -474,13 +474,17 @@ async function importExcelLocations(rawRows, rawAssociates) {
             po, containerId: targetContainer.id, containerCode: targetContainer.code,
             location, createdAt: now,
           });
-        } else if (str(targetContainer.currentLocation, 120).toUpperCase() !== location) {
+        } else if (str(targetContainer.currentLocation, 120).toUpperCase() !== location
+          || str(targetContainer.status, 80).toLowerCase() === 'closed') {
           const index = containers.findIndex(container => String(container?.id || '') === String(targetContainer.id));
           const previousLocation = targetContainer.currentLocation;
+          const wasClosed = str(targetContainer.status, 80).toLowerCase() === 'closed';
           targetContainer = { ...targetContainer, currentLocation: location, status: str(targetContainer.status, 40).toLowerCase() === 'closed' ? 'Stored' : targetContainer.status, updatedAt: now };
           containers[index] = targetContainer;
           changedContainerIds.add(String(targetContainer.id));
-          boxEvent(boxEvents, targetContainer, 'location-changed', 'Excel Sync', 'Excel Sync', { po, deliveryId, prepBy: associate, from: previousLocation, to: location });
+          boxEvent(boxEvents, targetContainer, wasClosed ? 'reopened' : 'location-changed',
+            'Excel Sync', 'Excel Sync',
+            { po, deliveryId, prepBy: associate, from: previousLocation, to: location });
         }
 
         const created = cleanEntry({
@@ -769,6 +773,92 @@ async function sendExcelEvent(event) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function readBoxHistory(db, search) {
+  await ensureBoxAuditSchema(db);
+  const term = str(search, 160);
+  if (!term) throw new Error('Enter a box code to view its history.');
+  const state = await db.query(
+    `SELECT data_json FROM workflow_sync_state WHERE state_key='default' LIMIT 1`
+  );
+  const data = state.rows[0]?.data_json || {};
+  const filtered = filterDeleted(data);
+  const box = filtered.containers.find(item =>
+    String(item.id) === term || str(item.code, 120).toUpperCase() === term.toUpperCase()
+  ) || null;
+  const code = box ? str(box.code, 120) : term.toUpperCase();
+  const events = await db.query(box
+    ? `SELECT * FROM overstock_box_events WHERE container_id=$1 ORDER BY occurred_at DESC,id DESC`
+    : `SELECT * FROM overstock_box_events WHERE UPPER(container_code)=$1 ORDER BY occurred_at DESC,id DESC`,
+    [box ? String(box.id) : code]);
+  const history = events.rows.map(row => ({
+    id: row.id,
+    type: row.event_type,
+    source: row.source,
+    actor: row.actor,
+    po: row.po,
+    detail: row.detail || {},
+    at: row.occurred_at,
+  }));
+
+  // The previous activity feed kept only 50 entries. Include any older
+  // activity that still survives it, without duplicating new durable events.
+  const firstPermanentAt = history.length
+    ? Math.min(...history.map(item => new Date(item.at).getTime()))
+    : Infinity;
+  const activities = Array.isArray(filtered.activities) ? filtered.activities : [];
+  for (const activity of activities) {
+    const sameBox = box
+      ? String(activity.containerId) === String(box.id)
+      : str(activity.containerCode, 120).toUpperCase() === code;
+    if (!sameBox || Number(activity.createdAt || 0) >= firstPermanentAt - 1000) continue;
+    history.push({
+      id: String(activity.id || crypto.randomUUID()),
+      type: str(activity.type, 80),
+      source: 'Legacy activity',
+      actor: str(activity.actor, 120),
+      po: str(activity.po, 120),
+      detail: { summary: str(activity.summary, 300), location: str(activity.location, 120) },
+      at: new Date(Number(activity.createdAt || Date.now())).toISOString(),
+    });
+  }
+
+  if (box && !history.some(event => event.type === 'created'
+      || (event.source === 'Legacy activity' && /created box/i.test(str(event.detail?.summary, 300))))) {
+    const relatedCreation = activities.find(a =>
+      String(a.containerId) === String(box.id)
+      && /created box/i.test(str(a.summary, 300))
+    );
+    const source = box.createdSource || (isExcelCreatedBox(box) ? 'Excel Sync' : 'Legacy / unknown');
+    history.push({
+      id: `legacy-created:${box.id}`,
+      type: 'created',
+      source,
+      actor: box.createdBy || relatedCreation?.actor || (isExcelCreatedBox(box) ? 'Excel Sync' : 'Not recorded'),
+      po: '',
+      detail: {
+        summary: 'Original creation record (detailed tracking began later)',
+        location: box.currentLocation || '',
+        notes: box.notes || '',
+      },
+      at: new Date(Number(box.createdAt || Date.now())).toISOString(),
+    });
+  }
+  history.sort((a,b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  return {
+    box: box
+      ? {
+          id: box.id, code: box.code, status: box.status,
+          location: box.currentLocation, notes: box.notes,
+          createdAt: box.createdAt || null,
+          createdSource: box.createdSource || (isExcelCreatedBox(box) ? 'Excel Sync' : 'Legacy / unknown'),
+          createdBy: box.createdBy || '',
+          poCount: filtered.entries.filter(entry => String(entry.containerId) === String(box.id)).length,
+        }
+      : { id: '', code, status: 'Deleted or not in current inventory', createdSource: 'Unknown' },
+    events: history,
+  };
 }
 
 async function readSnapshot(db) {
@@ -1162,8 +1252,12 @@ export default async (request) => {
       });
     }
     if (request.method === 'GET') {
-      const snapshot = await readSnapshot(pool());
       const requestUrl = new URL(request.url);
+      if (requestUrl.searchParams.has('boxHistory')) {
+        if (!hubActor(request)) return json(401, { error: 'Sign in to the Work Hub to view box history.' });
+        return json(200, await readBoxHistory(pool(), requestUrl.searchParams.get('boxHistory')));
+      }
+      const snapshot = await readSnapshot(pool());
       if (requestUrl.searchParams.get('activity') === '1') return json(200, { activities: (snapshot.activities || []).slice(0, 5), updatedAt: snapshot.updatedAt });
       return json(200, snapshot);
     }
