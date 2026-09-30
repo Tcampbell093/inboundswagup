@@ -118,7 +118,7 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
       associate: String(row[prepAssociateCol] ?? '').trim(),
       category: String(row[categoryCol] ?? '').trim(),
       operationalDate: String(row[operationalDateCol] ?? '').trim(),
-      quantity: Math.max(0, Math.round(Number(row[quantityCol] ?? 0) || 0)),
+      quantity: Math.max(0, Math.round(Number(String(row[quantityCol] ?? 0).replace(/,/g, '')) || 0)),
       location: String(row[locationCol] ?? '').trim(),
       containerCode: String(row[containerCol] ?? '').trim(),
       disposition: dispositionCol >= 0 ? String(row[dispositionCol] ?? '').trim() : '',
