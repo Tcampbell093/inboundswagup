@@ -434,6 +434,7 @@
   });
 
   async function logout() {
+    try { await window.HubPush?.disableForSignout?.(); } catch {}
     try {
       await api('', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'logout' }) });
     } catch {}
