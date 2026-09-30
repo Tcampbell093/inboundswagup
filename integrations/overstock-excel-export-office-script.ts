@@ -22,6 +22,7 @@ interface HoustonSyncResult {
   updatedContainers?: number;
   createdEntries?: number;
   createdContainers?: number;
+  retiredEmptyExcelBoxes?: number;
   unchanged?: number;
   skipped?: string[];
   unresolved?: string[];
@@ -187,8 +188,11 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
     `${result.createdEntries ?? 0} new item(s) added`,
     `${result.updatedContainers ?? 0} container(s) moved`,
     `${result.createdContainers ?? 0} new container(s) added`,
+    `${result.retiredEmptyExcelBoxes ?? 0} empty Excel box(es) retired`,
     `${result.unchanged ?? 0} already current`,
-    `${result.unresolved?.length ?? 0} unmatched`,
+    `${result.unresolved?.length ?? 0} row(s) need review`,
+    `${result.skipped?.length ?? 0} row(s) skipped`,
+    [...(result.unresolved ?? []), ...(result.skipped ?? [])].slice(0, 8).join(' | '),
     `${result.importedAssociates ?? 0} associate name(s) loaded`,
     `${historyResult.current ?? 0} current PO row(s) copied`,
     `${historyResult.archive ?? 0} archived PO row(s) copied`,
