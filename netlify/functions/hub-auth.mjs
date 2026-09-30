@@ -554,24 +554,38 @@ export default async (request) => {
         });
       }
 
+      let fairShiftVerified = person.fairShiftSelfService === false;
+
+      // Safe one-time migration: if FairShift already has a PIN for this
+      // associate, prove possession of that existing credential before
+      // creating the first Hub credential. Admin Reset is the recovery path
+      // when that legacy PIN no longer works.
+      if (person.fairShiftSelfService !== false && person.pinConfigured === true) {
+        if (!lookup.roster.selfService) {
+          return json(503, { error: 'Existing account verification is temporarily unavailable. Ask an Admin to reset the Warehouse Hub PIN.' });
+        }
+        const remote = await verifyFairShiftPin(person, pin).catch(() => ({ ok: false }));
+        if (!remote.ok || remote.body?.ok !== true) {
+          return json(403, { error: 'This associate already has an older cleaning PIN. Use that PIN once, or ask an Admin to reset the Warehouse Hub PIN.' });
+        }
+        fairShiftVerified = true;
+      }
+
       await saveModernPin(person, pin);
       rosterCache.expiresAt = 0;
 
-      let fairShiftVerified = person.fairShiftSelfService === false;
-      if (person.fairShiftSelfService !== false && lookup.roster.selfService) {
+      // New associates without a legacy FairShift PIN can be provisioned
+      // downstream as a convenience, but downstream failure never rolls back
+      // their valid Hub credential.
+      if (person.fairShiftSelfService !== false && person.pinConfigured !== true && lookup.roster.selfService) {
         try {
-          if (person.pinConfigured === true) {
-            const verified = await verifyFairShiftPin(person, pin);
-            fairShiftVerified = verified.ok && verified.body?.ok === true;
-          } else {
-            const bodyText = JSON.stringify({ action: 'selfSetPin', employeeId: person.id, employeeName: person.name, pin });
-            const provision = await fairShiftRequest('/api/checkin', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: bodyText,
-            });
-            fairShiftVerified = provision.ok && provision.body?.ok !== false;
-          }
+          const bodyText = JSON.stringify({ action: 'selfSetPin', employeeId: person.id, employeeName: person.name, pin });
+          const provision = await fairShiftRequest('/api/checkin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: bodyText,
+          });
+          fairShiftVerified = provision.ok && provision.body?.ok !== false;
         } catch {}
       }
 
