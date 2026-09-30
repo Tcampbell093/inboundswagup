@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import pg from 'pg';
 
 const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
 const SESSION_COOKIE = 'hub_associate_session';
@@ -202,5 +203,20 @@ export default async (request) => {
     });
   }
 
+  // An employee who is no longer an Admin must not keep receiving background
+  // inventory notifications on previously enrolled desktops.
+  if(action==='updateEmployee'&&(payload.role!=='Manager'||payload.active===false)){
+    const employeeId=Number(payload.id);
+    const connectionString=env('DATABASE_URL')||process.env.DATABASE_URL;
+    if(Number.isSafeInteger(employeeId)&&employeeId>0&&connectionString){
+      const db=new pg.Pool({connectionString,ssl:{rejectUnauthorized:false}});
+      try{
+        await db.query('UPDATE hub_admin_push_subscriptions SET enabled=FALSE,updated_at=NOW() WHERE employee_id=$1',[employeeId]);
+      }catch(error){
+        // The push table may not exist yet if nobody has enabled notifications.
+        if(error.code!=='42P01')console.warn('Could not revoke former Admin push subscriptions:',error.message);
+      }finally{await db.end().catch(()=>{});}
+    }
+  }
   return json(result.status || 200, result.body || { ok: true });
 };
