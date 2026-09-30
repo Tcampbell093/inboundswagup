@@ -66,6 +66,11 @@ async function ensureSchema() {
       credit_minutes INTEGER NOT NULL DEFAULT 0,source TEXT NOT NULL DEFAULT 'hub',updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS hub_cleaning_work_date_idx ON hub_cleaning_assignments(work_date);
+    CREATE TABLE IF NOT EXISTS hub_cleaning_area_sides (
+      department_id BIGINT PRIMARY KEY,department_name TEXT NOT NULL,
+      side TEXT NOT NULL CHECK (side IN ('Inbound','Outbound')),
+      updated_by TEXT NOT NULL,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS hub_employee_pins (
       employee_key TEXT PRIMARY KEY,employee_name TEXT NOT NULL,department TEXT,pin_hash TEXT NOT NULL,
       active BOOLEAN NOT NULL DEFAULT TRUE,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -91,6 +96,7 @@ function normalizeLocalCleaning(row) {
   if (!['completed', 'reported_not_done'].includes(status) && workDate && workDate < todayEastern()) status = 'missed';
   return { id: row.id, date: workDate, area: row.area, task: row.task || '', employeeName: row.employee_name, status, startedAt: row.started_at || null, finishedAt: row.finished_at || null, completedBy: row.completed_by || null, creditMinutes: Number(row.credit_minutes || 0), source: row.source || 'hub', updatedAt: row.updated_at || null };
 }
+function defaultCleaningSide(name) { return /fulfill?ment|outbound|inventory|shipping|dispatch|pack.?out/i.test(text(name,100)) ? 'Outbound' : 'Inbound'; }
 function fairShiftStatus(value) {
   if (value === 'completed') return 'completed';
   if (value === 'in_progress') return 'in_progress';
@@ -137,7 +143,7 @@ async function fetchFairShiftCleaning() {
           updatedAt: a.createdAt || null,
         };
       });
-    return { ok: true, cleaning, error: null };
+    return { ok: true, cleaning, departments: Array.isArray(data.departments)?data.departments:[], error: null };
   } catch (error) {
     return { ok: false, cleaning: [], error: text(error?.message || 'FairShift unavailable', 200) };
   } finally {
@@ -146,17 +152,31 @@ async function fetchFairShiftCleaning() {
 }
 
 async function readFeed(includeAdmin = false) {
-  const [a, p, c, fs] = await Promise.all([
+  const [a, p, c, fs, sideRows] = await Promise.all([
     pool.query(`SELECT id,title,message,start_date,end_date,department,pinned,updated_at FROM hub_announcements ORDER BY pinned DESC,start_date DESC,updated_at DESC`),
     pool.query(`SELECT id,title,summary,effective_date,read_required,updated_at FROM hub_policies ORDER BY effective_date DESC,updated_at DESC`),
     pool.query(`SELECT * FROM hub_cleaning_assignments ORDER BY work_date,area,employee_name`),
     fetchFairShiftCleaning(),
+    pool.query('SELECT department_id,department_name,side FROM hub_cleaning_area_sides'),
   ]);
-  const manualCleaning = c.rows.map(normalizeLocalCleaning);
+  const savedById=new Map(sideRows.rows.map(x=>[Number(x.department_id),x.side]));
+  const savedByName=new Map(sideRows.rows.map(x=>[text(x.department_name,100).toLowerCase(),x.side]));
+  const departments=Array.isArray(fs.departments)?fs.departments:[];
+  const areaSides=new Map(departments.map(d=>[text(d.name,100).toLowerCase(),
+    savedById.get(Number(d.id))||defaultCleaningSide(d.name)]));
+  const sideFor=name=>areaSides.get(text(name,100).toLowerCase())
+    ||savedByName.get(text(name,100).toLowerCase())||defaultCleaningSide(name);
+  const manualCleaning = c.rows.map(x=>({...normalizeLocalCleaning(x),side:sideFor(x.area)}));
+  const activeCleaning=fs.ok?fs.cleaning.map(x=>({...x,side:sideFor(x.area)})):manualCleaning;
+  const knownAreas=departments.filter(d=>d.active!==false&&d.cleaningActive===true)
+    .map(d=>({name:text(d.name,100),side:sideFor(d.name)}));
+  const cleaningAreas=knownAreas.length?knownAreas:
+    [...new Set(activeCleaning.map(x=>x.area))].map(name=>({name,side:sideFor(name)}));
   const result = {
     announcements: a.rows.map(r => ({ id: r.id, title: r.title, message: r.message, startDate: dateValue(r.start_date), endDate: r.end_date ? dateValue(r.end_date) : '', department: r.department, pinned: !!r.pinned, updatedAt: r.updated_at })),
     policies: p.rows.map(r => ({ id: r.id, title: r.title, summary: r.summary, effectiveDate: dateValue(r.effective_date), readRequired: !!r.read_required, updatedAt: r.updated_at })),
-    cleaning: fs.ok ? fs.cleaning : manualCleaning,
+    cleaning: activeCleaning,
+    cleaningAreas,
     cleaningSource: fs.ok ? 'fairshift' : 'hub-fallback',
     fairshiftConnected: !!fs.ok,
     generatedAt: new Date().toISOString(),
