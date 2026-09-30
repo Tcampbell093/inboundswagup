@@ -62,6 +62,14 @@ async function ensureSchema() {
     );
     CREATE INDEX IF NOT EXISTS hub_associate_auth_name_idx ON hub_associate_auth(employee_name);
     ALTER TABLE hub_associate_auth ADD COLUMN IF NOT EXISTS pin_iterations INTEGER NOT NULL DEFAULT 120000;
+    CREATE TABLE IF NOT EXISTS hub_employee_pins (
+      employee_key TEXT PRIMARY KEY,
+      employee_name TEXT NOT NULL,
+      department TEXT,
+      pin_hash TEXT NOT NULL,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS hub_pin_reset_audit (
       id TEXT PRIMARY KEY,
       employee_key TEXT NOT NULL,
@@ -423,15 +431,11 @@ async function resetEmployeePin(request, body) {
     await saveModernPin(person, pin, client);
     // Retire the old legacy fallback PIN too. Otherwise an older login
     // path could continue accepting it after the modern PIN is reset.
-    try {
-      await client.query(`
-        UPDATE hub_employee_pins
-        SET pin_hash=$2,employee_name=$3,department=$4,active=TRUE,updated_at=NOW()
-        WHERE employee_key=$1
-      `, [slug(person.name), legacyHash(pin), person.name, person.department || '']);
-    } catch (error) {
-      if (error?.code !== '42P01') throw error;
-    }
+    await client.query(`
+      UPDATE hub_employee_pins
+      SET pin_hash=$2,employee_name=$3,department=$4,active=TRUE,updated_at=NOW()
+      WHERE employee_key=$1
+    `, [slug(person.name), legacyHash(pin), person.name, person.department || '']);
     await client.query(`
       INSERT INTO hub_pin_reset_audit
         (id,employee_key,employee_name,employee_id,reset_by,scope,reset_at)
