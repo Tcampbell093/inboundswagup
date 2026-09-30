@@ -1,10 +1,20 @@
 import crypto from 'node:crypto';
+import pg from 'pg';
 
 const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
 const SESSION_COOKIE = 'hub_associate_session';
 const SESSION_VERSION = 2;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 let signingKeyPromise;
+let poolInstance=null;
+let areaSchemaReady=false;
+const {Pool}=pg;
+function pool(){if(!poolInstance){const url=env('DATABASE_URL');if(!url)throw new Error('Cleaning area settings database is unavailable.');poolInstance=new Pool({connectionString:url,ssl:{rejectUnauthorized:false}});}return poolInstance;}
+function defaultSide(name){return /fulfill?ment|outbound|inventory|shipping|dispatch|pack.?out/i.test(str(name,100))?'Outbound':'Inbound';}
+async function ensureAreaSchema(){if(areaSchemaReady)return;await pool().query(`CREATE TABLE IF NOT EXISTS hub_cleaning_area_sides (
+ department_id BIGINT PRIMARY KEY, department_name TEXT NOT NULL, side TEXT NOT NULL CHECK (side IN ('Inbound','Outbound')),
+ updated_by TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());`);areaSchemaReady=true;}
+async function loadSides(){await ensureAreaSchema();const r=await pool().query('SELECT department_id,department_name,side FROM hub_cleaning_area_sides');return new Map(r.rows.map(x=>[Number(x.department_id),x.side]));}
 
 function env(name) { return globalThis.Netlify?.env?.get(name) || ''; }
 function str(value, max=120) { return String(value ?? '').trim().slice(0,max); }
@@ -70,13 +80,17 @@ function sanitize(payload,action){
   const dates=['assignmentDate','availabilityDate','startDate','endDate'];
   const out={action};
   if(action==='acceptCleaningSuggestions'){
-    if(!Array.isArray(payload.entries)||payload.entries.length<1||payload.entries.length>15)throw new Error('Choose 1–15 assignments for a single week.');
+    if(!Array.isArray(payload.entries)||payload.entries.length<1||payload.entries.length>75)throw new Error('Choose 1–75 assignments for a single week.');
     out.entries=payload.entries.map(row=>({
       employeeId:Number(row.employeeId),alternateEmployeeId:Number(row.alternateEmployeeId)||null,
       assignmentDate:str(row.assignmentDate,10),department:str(row.department,100)
     }));
     for(const row of out.entries)if(!Number.isSafeInteger(row.employeeId)||row.employeeId<1||!dateOK(row.assignmentDate)||!row.department)throw new Error('Invalid weekly assignment.');
     if(new Set(out.entries.map(r=>r.department+':'+r.assignmentDate)).size!==out.entries.length)throw new Error('Duplicate area and date in schedule.');
+    const first=out.entries.map(r=>r.assignmentDate).sort()[0],w=new Date(first+'T12:00:00Z').getUTCDay();
+    const start=new Date(first+'T12:00:00Z');start.setUTCDate(start.getUTCDate()-(w===0?6:w-1));
+    const end=new Date(start);end.setUTCDate(start.getUTCDate()+4);
+    if(out.entries.some(r=>r.assignmentDate<start.toISOString().slice(0,10)||r.assignmentDate>end.toISOString().slice(0,10)))throw new Error('A weekly schedule must stay within one Monday–Friday week.');
   }else if(action==='setCleaningSchedule'){
     Object.assign(out,{employeeId:Number(payload.employeeId)||0,alternateEmployeeId:Number(payload.alternateEmployeeId)||null,
       assignmentDate:str(payload.assignmentDate,10),department:str(payload.department,100)});
@@ -112,6 +126,8 @@ export default async(request)=>{
     const result=await remote('/api/dashboard?date='+encodeURIComponent(date));
     if(!result.ok)return json(result.status,{error:str(result.data?.error||'Cleaning data is unavailable.',300)});
     const source=result.data||{};
+    let sides;try{sides=await loadSides();}catch(error){return json(503,{error:str(error.message,240)});}
+    const departmentSides=new Map((Array.isArray(source.departments)?source.departments:[]).map(d=>[str(d.name,100),sides.get(Number(d.id))||defaultSide(d.name)]));
     return json(200,{
       source:'FairShift (transition)',role,viewer:session.name,date,
       employees:(Array.isArray(source.employees)?source.employees:[]).map(x=>({
@@ -119,10 +135,12 @@ export default async(request)=>{
         homeDepartment:str(x.homeDepartment,100)
       })),
       departments:(Array.isArray(source.departments)?source.departments:[]).map(x=>({
-        id:Number(x.id),name:str(x.name,100),cleaningActive:x.cleaningActive===true,active:x.active!==false
+        id:Number(x.id),name:str(x.name,100),cleaningActive:x.cleaningActive===true,active:x.active!==false,
+        side:sides.get(Number(x.id))||defaultSide(x.name)
       })),
       assignments:(Array.isArray(source.assignments)?source.assignments:[]).filter(x=>x.type==='cleaning').map(x=>({
         id:Number(x.id),date:str(x.assignmentDate,10),area:str(x.toDepartment||x.homeDepartment,100),
+        side:departmentSides.get(str(x.toDepartment||x.homeDepartment,100))||defaultSide(x.toDepartment||x.homeDepartment),
         employeeId:Number(x.employeeId),alternateEmployeeId:Number(x.alternateEmployeeId)||null,
         actualEmployeeId:Number(x.actualEmployeeId)||null,status:str(x.dutyStatus,40),
         startTime:x.startTime||null,endTime:x.endTime||null,
@@ -137,6 +155,23 @@ export default async(request)=>{
   if(role!=='admin'&&role!=='lead')return json(403,{error:'Admin or Team Lead access required to change the cleaning schedule.'});
   const body=await request.json().catch(()=>({}));
   const action=str(body.action,60);
+  if(action==='setCleaningAreaSide'){
+    if(role!=='admin')return json(403,{error:'Admin access is required to designate Inbound or Outbound areas.'});
+    const departmentId=Number(body.departmentId),side=str(body.side,20);
+    if(!Number.isSafeInteger(departmentId)||departmentId<1||!['Inbound','Outbound'].includes(side))return json(400,{error:'Choose a valid department and side.'});
+    const live=await remote('/api/dashboard?date='+encodeURIComponent(easternToday()));
+    if(!live.ok)return json(503,{error:'Could not verify the current department roster.'});
+    const department=(live.data.departments||[]).find(d=>Number(d.id)===departmentId);
+    if(!department)return json(404,{error:'Department is no longer in the warehouse roster.'});
+    try{
+      await ensureAreaSchema();
+      await pool().query(`INSERT INTO hub_cleaning_area_sides(department_id,department_name,side,updated_by,updated_at)
+        VALUES($1,$2,$3,$4,NOW()) ON CONFLICT(department_id) DO UPDATE SET
+        department_name=EXCLUDED.department_name,side=EXCLUDED.side,updated_by=EXCLUDED.updated_by,updated_at=NOW()`,
+        [departmentId,str(department.name,100),side,str(session.name,100)]);
+      return json(200,{ok:true,departmentId,side});
+    }catch(error){return json(503,{error:str(error.message,240)});}
+  }
   const adminOnly=new Set(['acceptCleaningSuggestions','clearCleaningScheduleDays','setAvailabilityRange']);
   if(adminOnly.has(action)&&role!=='admin')return json(403,{error:'Admin access required for weekly scheduling and leave ranges.'});
   let payload;
