@@ -15,7 +15,10 @@
   const items=id=>data.entries.filter(e=>String(e.containerId)===String(id));
   const units=id=>items(id).reduce((n,e)=>n+Number(e.quantity||0),0);
   function toast(msg,error=false){const el=$('toast');el.textContent=msg;el.className='toast show'+(error?' error':'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className='toast',3300)}
-  function renderHubUser(){const p=$('hubUserPill');if(!p)return;const name=hubSession?.signedIn?String(hubSession.name||'').trim():'';p.textContent=name?`👤 ${name}`:'⚠ Hub sign-in required';p.classList.toggle('connected',!!name);if($('siHubUser'))$('siHubUser').textContent=name?`Signed in as ${name}`:'Sign in through the Work Hub before using Stock Intake.';if($('editCurrentUser'))$('editCurrentUser').textContent=name||'Not signed in'}
+  function renderHubUser(){const p=$('hubUserPill');if(!p)return;const name=hubSession?.signedIn?String(hubSession.name||'').trim():'';p.textContent=name?`👤 ${name}`:'⚠ Hub sign-in required';p.classList.toggle('connected',!!name);if($('siHubUser'))$('siHubUser').textContent=name?`Signed in as ${name}`:'Sign in through the Work Hub before using Stock Intake.';if($('editCurrentUser'))$('editCurrentUser').textContent=name||'Not signed in';
+    const elevated=['manager','team lead'].includes(String(hubSession?.role||'').toLowerCase());
+    if($('retireEmptyExcelBtn'))$('retireEmptyExcelBtn').hidden=!(name&&elevated);
+  }
   async function loadHubSession(){try{const r=await fetch(HUB_SESSION_API,{cache:'no-store',credentials:'same-origin'});hubSession=r.ok?await r.json():{signedIn:false};}catch{hubSession={signedIn:false};}renderHubUser();return hubSession}
   function hubUser(){return hubSession?.signedIn?String(hubSession.name||'').trim():''}
   function requireHubUser(){const name=hubUser();if(!name)toast('Sign in to the Work Hub first. Overstock changes are tied to the signed-in Hub user.',true);return name}
@@ -352,6 +355,23 @@
   $('siSwitchContainer').onclick=()=>{intake.container=null;$('siItemStep').hidden=true;$('siContainerStep').hidden=false;$('siContainerCode').value='';$('siExistingContainer').hidden=true};$('stockIntakeBtn').onclick=()=>openIntake();$('stockIntakeCancel').onclick=()=>{if(!intake.items.length||confirm('Cancel? Saved items will remain in Houston.'))closeIntake()};$('stockIntakeComplete').onclick=()=>{toast(`Stock Intake complete · ${intake.items.length} item(s) added.`);closeIntake()};
   $('activityFeedHide').onclick=()=>setActivityHidden(true);$('activityFeedShow').onclick=()=>setActivityHidden(false);$('refreshBtn').onclick=()=>load(true);$('donationPoolBtn').onclick=openDonationPool;
   $('boxHistoryBtn').onclick=()=>openBoxHistory();
+  $('retireEmptyExcelBtn').onclick=async()=>{
+    await loadHubSession();
+    if(!requireHubUser())return;
+    if(!['manager','team lead'].includes(String(hubSession?.role||'').toLowerCase()))
+      return toast('Admin or Team Lead access is required.',true);
+    if(!confirm('Retire empty Excel-created boxes? They will be marked CLOSED, not deleted. Manually created boxes and boxes holding POs are left alone. Physically review any box before reusing it.'))return;
+    const btn=$('retireEmptyExcelBtn');
+    btn.disabled=true;
+    try{
+      const j=await request({action:'reconcileEmptyExcelBoxes'});
+      data={...data,...j};
+      boxView='retired';
+      render();
+      toast(`${Number(j.retiredEmptyExcelBoxes||0)} empty Excel-generated boxes retired. Review them in the Retired view.`);
+    }catch(error){toast(error.message||'Could not reconcile boxes.',true)}
+    finally{btn.disabled=false}
+  };
   $('boxHistorySearchForm').onsubmit=e=>{
     e.preventDefault();
     const code=$('boxHistoryCode').value.trim().toUpperCase();
