@@ -255,8 +255,8 @@
   function renderToday(){
     const now=today(),rows=areas().map(area=>({area,record:duty(now,area)}));
     const finished=rows.filter(r=>r.record?.status==='completed').length;
-    const mine=rows.filter(r=>r.record&&[r.record.employeeId,r.record.actualEmployeeId].includes(Number(session().employeeId))
-      &&r.record.status!=='completed');
+    const mine=rows.filter(r=>r.record&&(r.record.actualEmployeeId||r.record.employeeId)===Number(session().employeeId)
+      &&!['completed','missed'].includes(r.record.status));
     $('rotationsContent').innerHTML=`
       <div class="rotations-overview">
         <div class="rotations-stat"><b>${rows.length}</b><span>Cleaning areas</span></div>
@@ -269,7 +269,7 @@
         const assigned=record?personName(record.actualEmployeeId||record.employeeId):'';
         const isMine=record&&[record.actualEmployeeId||record.employeeId].includes(Number(session().employeeId));
         const canCheck=isMine&&['scheduled','alternate_assigned','in_progress'].includes(record.status);
-        const canChange=isLead()&&record&&record.status!=='completed';
+        const canChange=isLead()&&record&&!['completed','in_progress'].includes(record.status);
         return `<div class="rotations-day">
           <div class="rotations-row">
             <div><div class="rotations-area">${esc(area)}</div>
@@ -336,11 +336,11 @@
       <div class="rotations-week-wrap"><table class="rotations-week-table"><thead><tr><th style="width:90px">Area</th>${dates.map(d=>`<th>${esc(dayName(d))}<br>${esc(dateText(d))}</th>`).join('')}</tr></thead>
       <tbody>${fields.map(area=>`<tr><th>${esc(area)}</th>${dates.map(date=>{
         const row=rows.find(r=>r.date===date).items.find(r=>r.area===area),r=row.record,d=row.suggestion;
-        const locked=date<now||r?.status==='completed';
+        const locked=date<now||['completed','in_progress'].includes(r?.status);
         if(r)return`<td><div class="rotations-cell"><b>${esc(personName(r.actualEmployeeId||r.employeeId))}</b>
           <small>${esc(r.status.replace(/_/g,' '))}${r.alternateEmployeeId?' · Backup: '+esc(personName(r.alternateEmployeeId)):''}</small>
           ${r.status==='completed'?'<small class="done">✓ 15 min credited</small>':''}
-          ${isLead()&&!locked?`<button data-edit-slot="${esc(date)}|${esc(area)}">Edit / reassign</button>`:''}
+          ${isLead()&&(isAdmin()||date===now)&&!locked?`<button data-edit-slot="${esc(date)}|${esc(area)}">Edit / reassign</button>`:''}
         </div></td>`;
         if(d)return`<td><div class="rotations-cell">
           <select aria-label="Cleaner for ${esc(area)} on ${date}" data-draft-primary="${esc(date)}|${esc(area)}">${optionList(date,d.employeeId,[],false)}</select>
@@ -348,7 +348,7 @@
           <small>Suggested · 15 min</small>
         </div></td>`;
         return`<td><div class="rotations-cell"><small>${locked?'Not scheduled':'Open slot'}</small>
-          ${isLead()&&!locked?`<button data-edit-slot="${esc(date)}|${esc(area)}">+ Assign</button>`:''}
+          ${isLead()&&(isAdmin()||date===now)&&!locked?`<button data-edit-slot="${esc(date)}|${esc(area)}">+ Assign</button>`:''}
         </div></td>`;
       }).join('')}</tr>`).join('')}</tbody></table></div>
       ${isAdmin()&&existing.some(x=>x.status!=='completed'&&x.date>=now)?'<div class="rotations-toolbar"><button id="rotationsClear" type="button">Clear unfinished days this week</button></div>':''}
@@ -386,7 +386,7 @@
   function renderSlotEditor(date,area){
     const r=duty(date,area),areaName=area,old=r?.employeeId||0;
     const todayDate=today();
-    if(date<todayDate||r?.status==='completed')return showMessage('Completed and past assignments cannot be changed.',true);
+    if(date<todayDate||['completed','in_progress'].includes(r?.status))return showMessage('Completed, in-progress and past assignments cannot be changed.',true);
     const host=document.createElement('div');host.className='rotations-absence';
     host.innerHTML=`<b>${esc(dayName(date))} · ${esc(areaName)}</b>
       <label class="rotations-note">Cleaner <select id="slotPrimary">${optionList(date,old,[],false)}</select></label>
