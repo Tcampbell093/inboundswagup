@@ -643,9 +643,18 @@ async function importExcelLocations(rawRows, rawAssociates) {
       if (containerIds.size) {
         for (let i = 0; i < containers.length; i += 1) {
           if (!containerIds.has(String(containers[i]?.id || ''))) continue;
-          if (str(containers[i]?.currentLocation, 120).toUpperCase() === location) continue;
-          containers[i] = { ...containers[i], currentLocation: location, updatedAt: now };
+          const wasClosed = str(containers[i]?.status, 80).toLowerCase() === 'closed';
+          if (str(containers[i]?.currentLocation, 120).toUpperCase() === location && !wasClosed) continue;
+          const previous = containers[i].currentLocation;
+          containers[i] = {
+            ...containers[i], currentLocation: location,
+            status: wasClosed ? 'Stored' : containers[i].status,
+            updatedAt: now,
+          };
           changedContainerIds.add(String(containers[i].id));
+          boxEvent(boxEvents, containers[i], wasClosed ? 'reopened' : 'location-changed',
+            'Excel Sync', 'Excel Sync',
+            { po, deliveryId, prepBy: associate, from: previous, to: location });
         }
         for (let i = 0; i < entries.length; i += 1) {
           if (!containerIds.has(String(entries[i]?.containerId || ''))) continue;
