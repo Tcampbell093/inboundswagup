@@ -1071,7 +1071,9 @@ async function mutate(action, body, actor = '', adminOrLead = false) {
       };
     }
 
-    if (action === 'upsertEntry' || action === 'intakeAddEntry') {
+    if (action === 'reconcileEmptyExcelBoxes') {
+      // Already handled above. Proceed to the shared transaction commit.
+    } else if (action === 'upsertEntry' || action === 'intakeAddEntry') {
       const incoming = { ...(body.entry || {}) };
       const idx = entries.findIndex(e => String(e?.id || '') === String(incoming.id || ''));
       const existing = idx >= 0 ? entries[idx] : null;
