@@ -54,7 +54,17 @@
     .bingo-reward-message{display:none;margin-bottom:10px;border-radius:10px;padding:9px 10px;font-size:12px;font-weight:800}
     .bingo-reward-message.show{display:block;background:var(--green-soft);color:var(--green)}
     .bingo-reward-message.error{display:block;background:#f8e9e6;color:#8f2d22}
-    @media(max-width:620px){.associate-btn{max-width:145px}.associate-actions{display:grid}.associate-actions .action{width:100%}.bingo-reward-btn{padding-left:9px;padding-right:9px}.bingo-reward-actions{grid-template-columns:1fr}.bingo-reward-body{padding:13px}}
+    .bingo-admin-controls{border:1px solid var(--line);border-radius:16px;background:var(--paper);padding:14px;margin-bottom:16px}
+    .bingo-admin-controls h4{margin:0 0 5px;font-size:14px}
+    .bingo-admin-controls p{margin:0;color:var(--muted);font-size:11px;line-height:1.45}
+    .bingo-admin-control-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+    .bingo-size-buttons{display:flex;gap:7px;flex-wrap:wrap}
+    .bingo-size-btn,.bingo-reset-btn{border:1px solid #cbd7d0;border-radius:10px;background:#fff;color:var(--ink);padding:9px 12px;font-weight:900;cursor:pointer}
+    .bingo-size-btn.active{background:var(--ink);border-color:var(--ink);color:#fff}
+    .bingo-reset-btn{border-color:#d9aaa4;color:#8f2d22;background:#fff7f5}
+    .bingo-reset-btn:hover{background:#f8e9e6}
+    .bingo-admin-current{font-size:11px;color:var(--muted);font-weight:800;text-align:right}
+    @media(max-width:620px){.associate-btn{max-width:145px}.associate-actions{display:grid}.associate-actions .action{width:100%}.bingo-reward-btn{padding-left:9px;padding-right:9px}.bingo-reward-actions{grid-template-columns:1fr}.bingo-reward-body{padding:13px}.bingo-admin-control-row{display:grid}.bingo-admin-current{text-align:left}}
   `;
   document.head.appendChild(style);
 
@@ -72,7 +82,7 @@
   rewardBtn.type = 'button';
   rewardBtn.className = 'toolcount bingo-reward-btn';
   rewardBtn.id = 'bingoRewardBtn';
-  rewardBtn.innerHTML = '🎁 Bingo Rewards';
+  rewardBtn.innerHTML = '🎲 Bingo Admin';
   topActions.insertBefore(rewardBtn, document.getElementById('manageBtn') || null);
 
   const dialog = document.createElement('dialog');
@@ -113,12 +123,32 @@
   rewardDialog.id = 'bingoRewardDialog';
   rewardDialog.innerHTML = `
     <div class="dialog-head">
-      <div><h3>Bingo Rewards</h3><p class="bingo-reward-intro" style="margin:4px 0 0">Admin / Team Lead reward ledger</p></div>
+      <div><h3>Bingo Admin</h3><p class="bingo-reward-intro" style="margin:4px 0 0">Board controls + reward ledger</p></div>
       <button class="close" id="bingoRewardClose" type="button">×</button>
     </div>
     <div class="bingo-reward-body">
-      <p class="bingo-reward-intro">Bingo wins appear here automatically. Mark a reward given only after the winner actually receives it.</p>
       <div class="bingo-reward-message" id="bingoRewardMessage"></div>
+      <section class="bingo-admin-controls">
+        <h4>Game controls</h4>
+        <p>Choose 3×3 for a faster game or 5×5 for traditional Bingo with a center FREE square. 4×4 is intentionally skipped because it has no single center square.</p>
+        <div class="bingo-admin-control-row">
+          <div>
+            <div class="bingo-size-buttons">
+              <button class="bingo-size-btn" type="button" data-bingo-size="3">3 × 3</button>
+              <button class="bingo-size-btn" type="button" data-bingo-size="5">5 × 5</button>
+            </div>
+          </div>
+          <div class="bingo-admin-current" id="bingoAdminCurrent">Current board: 5 × 5</div>
+        </div>
+        <div class="bingo-admin-control-row">
+          <div>
+            <strong style="font-size:12px">Start a fresh round</strong>
+            <p>Resets everyone’s card, draws, wins, and weekly free draw. Bingo Coins and reward history stay.</p>
+          </div>
+          <button class="bingo-reset-btn" id="bingoResetRound" type="button">Reset Bingo</button>
+        </div>
+      </section>
+      <p class="bingo-reward-intro">Bingo wins appear below automatically. Mark a reward given only after the winner actually receives it.</p>
       <section class="bingo-reward-section">
         <h4><span>Pending rewards</span><span id="bingoPendingLabel">0 pending</span></h4>
         <div class="bingo-reward-list" id="bingoPendingList"></div>
@@ -144,8 +174,12 @@
   const rewardMessage = document.getElementById('bingoRewardMessage');
   const rewardPendingList = document.getElementById('bingoPendingList');
   const rewardHistoryList = document.getElementById('bingoHistoryList');
-  let rewardLedger = { pendingCount: 0, pending: [], history: [] };
+  const bingoAdminCurrent = document.getElementById('bingoAdminCurrent');
+  const bingoResetRound = document.getElementById('bingoResetRound');
+  const bingoSizeButtons = [...rewardDialog.querySelectorAll('[data-bingo-size]')];
+  let rewardLedger = { pendingCount: 0, pending: [], history: [], settings: { boardSize: 5 } };
   let rewardLoading = false;
+  let bingoControlSaving = false;
 
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
   const displayRole = (role) => String(role || '').toLowerCase() === 'manager' ? 'Admin' : String(role || '');
@@ -184,15 +218,44 @@
     rewardBtn.classList.toggle('show', allowed);
     rewardBtn.hidden = !allowed;
     if (!allowed) {
-      rewardBtn.innerHTML = '🎁 Bingo Rewards';
+      rewardBtn.innerHTML = '🎲 Bingo Admin';
       if (rewardDialog.open) rewardDialog.close();
       return;
     }
     const count = Number(rewardLedger.pendingCount || 0);
     rewardBtn.innerHTML = count > 0
-      ? `🎁 Bingo Rewards <span class="bingo-reward-count">${count}</span>`
-      : '🎁 Bingo Rewards';
-    rewardBtn.title = count > 0 ? `${count} Bingo reward${count === 1 ? '' : 's'} waiting to be given` : 'Bingo reward history';
+      ? `🎲 Bingo Admin <span class="bingo-reward-count">${count}</span>`
+      : '🎲 Bingo Admin';
+    rewardBtn.title = count > 0 ? `${count} Bingo reward${count === 1 ? '' : 's'} waiting to be given` : 'Bingo game controls and reward history';
+  }
+
+  function renderBingoControls() {
+    const size = Number(rewardLedger.settings?.boardSize || 5);
+    bingoSizeButtons.forEach((button) => {
+      const active = Number(button.dataset.bingoSize) === size;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      button.disabled = bingoControlSaving;
+    });
+    bingoResetRound.disabled = bingoControlSaving;
+    const resetBy = rewardLedger.settings?.resetBy;
+    const resetAt = rewardLedger.settings?.resetAt;
+    bingoAdminCurrent.textContent = resetAt
+      ? `Current board: ${size} × ${size} · Last reset ${rewardDate(resetAt)}${resetBy ? ' by ' + resetBy : ''}`
+      : `Current board: ${size} × ${size}`;
+  }
+
+  async function postBingoAdmin(action, payload = {}) {
+    const response = await fetch('/api/bingo-rewards', {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || 'Could not update Bingo.');
+    return body;
   }
 
   function rewardCard(row, pending = false) {
@@ -228,6 +291,7 @@
     rewardHistoryList.innerHTML = history.length
       ? history.map((row) => rewardCard(row, false)).join('')
       : '<div class="bingo-reward-empty">No rewards have been marked given yet.</div>';
+    renderBingoControls();
     rewardPendingList.querySelectorAll('[data-reward-given]').forEach((button) => {
       button.addEventListener('click', async () => {
         const card = button.closest('[data-reward-row]');
@@ -443,6 +507,52 @@
   }
 
   btn.addEventListener('click', () => openDialog());
+
+  bingoSizeButtons.forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (bingoControlSaving) return;
+      const size = Number(button.dataset.bingoSize);
+      const currentSize = Number(rewardLedger.settings?.boardSize || 5);
+      if (size === currentSize) return;
+      if (!confirm(`Switch Warehouse Bingo to ${size}×${size}? Active cards will resize. Bingo Coins and reward history will stay.`)) return;
+      bingoControlSaving = true;
+      renderBingoControls();
+      try {
+        const body = await postBingoAdmin('setBoardSize', { boardSize: size });
+        rewardLedger.settings = body.settings || { ...rewardLedger.settings, boardSize: size };
+        setRewardMessage(body.message || `Bingo changed to ${size}×${size}.`);
+        document.dispatchEvent(new CustomEvent('hub-bingo-refresh'));
+        await loadRewardLedger(false);
+      } catch (error) {
+        setRewardMessage(error.message || 'Could not change the Bingo board size.', true);
+      } finally {
+        bingoControlSaving = false;
+        renderBingoControls();
+      }
+    });
+  });
+
+  bingoResetRound.addEventListener('click', async () => {
+    if (bingoControlSaving) return;
+    if (!confirm('Reset Warehouse Bingo for everyone now? Everyone gets a fresh card and a new 28-day round. Bingo Coins and reward history will NOT be deleted.')) return;
+    bingoControlSaving = true;
+    bingoResetRound.textContent = 'Resetting…';
+    renderBingoControls();
+    try {
+      const body = await postBingoAdmin('resetRound');
+      rewardLedger.settings = body.settings || rewardLedger.settings;
+      setRewardMessage(body.message || 'Bingo reset complete.');
+      document.dispatchEvent(new CustomEvent('hub-bingo-refresh'));
+      await loadRewardLedger(false);
+    } catch (error) {
+      setRewardMessage(error.message || 'Could not reset Bingo.', true);
+    } finally {
+      bingoControlSaving = false;
+      bingoResetRound.textContent = 'Reset Bingo';
+      renderBingoControls();
+    }
+  });
+
   rewardBtn.addEventListener('click', async () => {
     setRewardMessage('');
     if (!isRewardAdmin()) return;
