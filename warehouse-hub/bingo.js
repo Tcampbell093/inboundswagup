@@ -7,6 +7,7 @@
   const symbolNames = {
     '⭐':'Star','🎵':'Music','☕':'Coffee','🚗':'Car','🌴':'Palm tree','🌮':'Taco','🍕':'Pizza','🎬':'Movie',
     '🍩':'Donut','⚽':'Soccer ball','🎧':'Headphones','🌞':'Sun','🍓':'Strawberry','🎈':'Balloon','🥤':'Drink','🎲':'Dice',
+    '📦':'Box','🚚':'Truck','🧤':'Gloves','🧹':'Broom','🎯':'Target','🛠️':'Tools','💡':'Idea','🏆':'Trophy',
     'FREE':'Free square',
   };
 
@@ -64,13 +65,13 @@
   function render() {
     if (!state?.player) return renderSignedOut();
     const p = state.player;
-    const marked = Array.isArray(p.marked) ? p.marked.map(Number) : [4];
+    const marked = Array.isArray(p.marked) ? p.marked.map(Number) : [12];
     const found = marked.length;
     const drawReady = p.weeklyFreeAvailable || Number(p.coins || 0) > 0;
     const drawLabel = p.weeklyFreeAvailable ? '🎁 Free weekly draw' : '🎲 Draw symbol · 1 coin';
     const statusText = p.bingo
       ? 'BINGO complete!'
-      : `${found} of 9 squares found`;
+      : `${found} of 25 squares found`;
     const activeMessage = drawMessage(state.drawResult);
 
     root.innerHTML = `
@@ -94,7 +95,7 @@
           <div class="bingo-card-footer">
             <div>
               <strong>${esc(statusText)}</strong>
-              <span>${p.bingo ? 'Nice work — your board is locked until the next round.' : 'Complete a row, column, or diagonal.'}</span>
+              <span>${p.bingo ? 'Nice work — your board is locked until the next round.' : 'Complete any 5-square row, column, or diagonal.'}</span>
             </div>
             <button class="action bingo-draw-btn" id="bingoDraw" type="button" ${(!drawReady || p.bingo || loading) ? 'disabled' : ''}>${loading ? 'Drawing…' : esc(drawLabel)}</button>
           </div>
@@ -108,7 +109,7 @@
             <div class="bingo-kicker">How it works</div>
             <div class="bingo-rule"><span>1</span><p>Finish cleaning in FairShift → earn <strong>1 Bingo Coin</strong>.</p></div>
             <div class="bingo-rule"><span>2</span><p>Spend a coin for a random symbol. Everyone also gets <strong>1 free draw each week</strong>.</p></div>
-            <div class="bingo-rule"><span>3</span><p>If the symbol is on your card, it marks automatically. Drawn symbols don't repeat.</p></div>
+            <div class="bingo-rule"><span>3</span><p>Every draw marks one square on your 5×5 card. Drawn symbols don't repeat.</p></div>
           </div>
           <div class="bingo-round-card">
             <div><strong>${Number(state.stats?.players || 0)}</strong><span>playing</span></div>
