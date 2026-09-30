@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const API='/.netlify/functions/hub-rotations', CHECKIN='/.netlify/functions/hub-cleaning';
+  const API='/.netlify/functions/hub-rotations', CHECKIN='/.netlify/functions/hub-cleaning', TEAM_API='/.netlify/functions/hub-team-admin';
   const $=id=>document.getElementById(id);
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const key=v=>String(v??'').trim().toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,'-');
@@ -52,7 +52,17 @@
     .rotations-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0 17px}
     .rotations-stat{border:1px solid var(--line);background:var(--paper);border-radius:12px;padding:13px}
     .rotations-stat b{display:block;font-size:23px}.rotations-stat span{font-size:10px;color:var(--muted);font-weight:800}
-    .rotations-day{margin-bottom:17px;border:1px solid var(--line);background:var(--paper);border-radius:13px;padding:12px}
+    .rotations-day{margin-bottom:12px;border:1px solid var(--line);background:var(--paper);border-radius:13px;padding:12px}
+    .rotations-side{display:grid;gap:8px;margin-bottom:18px}
+    .rotations-side-title{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:0 2px 8px;margin:10px 0 0;font-size:13px;font-weight:950;color:var(--ink)}
+    .rotations-side-title small{font-size:10px;font-weight:750;color:var(--muted)}
+    .rotations-side-empty{border:1px dashed var(--line);border-radius:10px;padding:11px 12px;color:var(--muted);font-size:12px}
+    .rotations-group-row th{background:var(--green-soft);color:var(--ink);font-size:11px;letter-spacing:.05em;text-transform:uppercase;text-align:left;padding:9px 10px!important;border-radius:9px}
+    .rotations-area-config{display:grid;grid-template-columns:1.5fr 1fr auto;gap:12px;align-items:center;border:1px solid var(--line);background:var(--paper);border-radius:12px;padding:12px;margin:9px 0}
+    .rotations-area-config small{display:block;color:var(--muted);font-size:11px;margin-top:3px}
+    .rotations-area-config select{width:100%;border:1px solid #cad8cd;border-radius:9px;background:#fff;padding:9px;font-size:12px}
+    .rotations-area-config label{font-size:11px;white-space:nowrap;font-weight:800}
+    @media(max-width:560px){.rotations-area-config{grid-template-columns:1fr auto}.rotations-area-config>div:first-child{grid-column:1/-1}}
     .rotations-day h3{font-size:13px;margin:0 0 10px}.rotations-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) auto;gap:9px;align-items:center;padding:9px 0;border-top:1px solid var(--line);font-size:12px}
     .rotations-row:first-of-type{border-top:0}.rotations-row small{display:block;color:var(--muted);font-size:10px;margin-top:3px}
     .rotations-row button,.rotations-absence button,.rotations-cell button{border:1px solid #bdd3c4;background:#eaf6ef;color:#23573d;border-radius:8px;padding:8px 9px;font-size:11px;font-weight:850;cursor:pointer}
@@ -100,6 +110,7 @@
       <button type="button" data-rot-tab="today" class="active">Today</button>
       <button type="button" data-rot-tab="week">Weekly schedule</button>
       <button type="button" data-rot-tab="fairness">Fairness & history</button>
+      <button type="button" data-rot-tab="areas" hidden>Areas</button>
       <button type="button" class="rotations-refresh" id="rotationsRefresh">↻ Refresh</button>
     </div>
     <div class="rotations-body">
@@ -113,7 +124,13 @@
   const person=id=>data?.employees.find(e=>e.id===Number(id));
   const personName=id=>person(id)?.name||'Unassigned';
   const available=(id,date)=>!(data?.availability||[]).some(x=>x.employeeId===Number(id)&&x.date===date&&x.status==='unavailable');
-  const areas=()=>data?.departments.filter(d=>d.active&&d.cleaningActive).map(d=>d.name)||[];
+  const areaSide=area=>{
+    const match=data?.departments.find(d=>d.name.toLowerCase()===String(area||'').toLowerCase());
+    return match?.side==='Outbound'?'Outbound':match?.side==='Inbound'?'Inbound':
+      /fulfill?ment|outbound|inventory|shipping|dispatch|pack.?out/i.test(String(area||''))?'Outbound':'Inbound';
+  };
+  const areas=()=>data?.departments.filter(d=>d.active&&d.cleaningActive)
+    .sort((a,b)=>Number(a.side==='Outbound')-Number(b.side==='Outbound')).map(d=>d.name)||[];
   const associates=()=>data?.employees.filter(e=>e.active&&e.role==='Associate')||[];
   const duty=(date,area)=>data?.assignments.find(a=>a.date===date&&a.area===area)||null;
   const weekDays=()=>Array.from({length:5},(_,i)=>addDays(week,i));
@@ -144,11 +161,11 @@
       $('rotationsContent').innerHTML='<p class="rotations-note warning">'+esc(error.message||'Cleaning scheduler is unavailable.')+'</p>';
     }
   }
-  async function send(body,success){
+  async function send(body,success,endpoint=API){
     if(busy)return;
     busy=true;
     try{
-      await fetchJSON(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      await fetchJSON(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       await load(true);
       showMessage(success);
       document.dispatchEvent(new CustomEvent('hub-cleaning-refresh'));
@@ -246,10 +263,14 @@
   }
   function render(){
     if(!dialog.open||!data)return;
-    document.querySelectorAll('[data-rot-tab]').forEach(b=>b.classList.toggle('active',b.dataset.rotTab===tab));
+    document.querySelectorAll('[data-rot-tab]').forEach(b=>{
+      b.classList.toggle('active',b.dataset.rotTab===tab);
+      if(b.dataset.rotTab==='areas')b.hidden=!isAdmin();
+    });
     $('rotationsMessage').innerHTML=message?`<div class="rotations-${isError?'error':'ok'}">${esc(message)}</div>`:'';
     if(tab==='today')renderToday();
     else if(tab==='week')renderWeek();
+    else if(tab==='areas'&&isAdmin())renderAreas();
     else renderFairness();
   }
   function renderToday(){
@@ -264,7 +285,11 @@
         <div class="rotations-stat"><b>${mine.length}</b><span>My outstanding duties</span></div>
       </div>
       <p class="rotations-note">Today's assignments · ${esc(dateText(now))}. Each completed duty counts as 15 minutes of cleaning and earns one Bingo coin through the existing check-in.</p>
-      <div id="rotationsTodayRows">${rows.map(({area,record})=>{
+      <div id="rotationsTodayRows">${['Inbound','Outbound'].map(side=>`
+        <section class="rotations-side">
+          <h3 class="rotations-side-title">${side}<small>${rows.filter(r=>areaSide(r.area)===side).length} areas</small></h3>
+          ${rows.some(r=>areaSide(r.area)===side)
+            ?rows.filter(r=>areaSide(r.area)===side).map(({area,record})=>{
         const status=record?.status||'Unassigned',original=record?personName(record.employeeId):'Not scheduled';
         const assigned=record?personName(record.actualEmployeeId||record.employeeId):'';
         const isMine=record&&[record.actualEmployeeId||record.employeeId].includes(Number(session().employeeId));
@@ -284,7 +309,9 @@
             <button type="button" class="danger" data-today-absent="${record.id}">${record.alternateEmployeeId?'Absent → use backup':'Mark absent'}</button>
           </div>`:''}
         </div>`;
-      }).join('')}</div>
+      }).join('')
+            :`<p class="rotations-side-empty">No ${side} cleaning areas are enabled. Admins can add them under Areas.</p>`}
+        </section>`).join('')}</div>
       ${isLead()?`<div class="rotations-note">To plan or adjust future duties, open the Weekly schedule tab. Replacements receive the completed cleaning credit, not the absent employee.</div>`:''}
     `;
     document.querySelectorAll('[data-clean-check]').forEach(b=>b.onclick=()=>runCheckin(Number(b.dataset.cleanCheck),b.dataset.next,b));
@@ -334,7 +361,8 @@
       <p class="rotations-note">Everyone in the active Associate pool can rotate through every cleaning area, regardless of home department. Suggestions balance the last 90 days of completed minutes, leave protection, area variety and this week's assignments. Existing assignments and completed work are preserved.</p>
       ${isAdmin()&&draft.length?`<p class="rotations-note warning">Review the proposed people and backups below, then publish. Changing a selection updates the draft only until you publish.</p>`:''}
       <div class="rotations-week-wrap"><table class="rotations-week-table"><thead><tr><th style="width:90px">Area</th>${dates.map(d=>`<th>${esc(dayName(d))}<br>${esc(dateText(d))}</th>`).join('')}</tr></thead>
-      <tbody>${fields.map(area=>`<tr><th>${esc(area)}</th>${dates.map(date=>{
+      <tbody>${fields.map((area,i)=>`${i===0||areaSide(fields[i-1])!==areaSide(area)
+        ?`<tr class="rotations-group-row"><th colspan="${dates.length+1}">${esc(areaSide(area))}</th></tr>`:''}<tr><th>${esc(area)}</th>${dates.map(date=>{
         const row=rows.find(r=>r.date===date).items.find(r=>r.area===area),r=row.record,d=row.suggestion;
         const locked=date<now||['completed','in_progress'].includes(r?.status);
         if(r)return`<td><div class="rotations-cell"><b>${esc(personName(r.actualEmployeeId||r.employeeId))}</b>
@@ -428,7 +456,7 @@
       </div>`:''}
       <h3 style="font-size:13px;margin:17px 0 10px">Completed cleaning history</h3>
       <div class="rotations-history">${completed.length?completed.map(a=>`
-        <div class="rotations-history-row"><span><b>${esc(personName(a.actualEmployeeId||a.employeeId))}</b><small>${esc(a.area)} · ${esc(a.date)}</small></span>
+        <div class="rotations-history-row"><span><b>${esc(personName(a.actualEmployeeId||a.employeeId))}</b><small>${esc(areaSide(a.area))} · ${esc(a.area)} · ${esc(a.date)}</small></span>
         <span class="rotations-badge done">15 min ✓</span></div>`).join(''):'<p class="rotations-note">No completed duties in the loaded history.</p>'}</div>
     `;
     if($('rotationsAbsentSave'))$('rotationsAbsentSave').onclick=async()=>{
@@ -438,6 +466,34 @@
       if(confirm(`Mark ${personName(employeeId)} ${status} from ${startDate} through ${endDate}?`))
         await send({action:'setAvailabilityRange',employeeId,startDate,endDate,status},'Availability saved. Suggestions will account for it.');
     };
+  }
+
+  function renderAreas(){
+    if(!isAdmin()){tab='today';return render();}
+    const departments=data.departments.filter(d=>d.active).slice()
+      .sort((a,b)=>Number(a.side==='Outbound')-Number(b.side==='Outbound')||a.name.localeCompare(b.name));
+    $('rotationsContent').innerHTML=`
+      <p class="rotations-note">Assign every cleaning area to Inbound or Outbound. This changes its section on the dashboard and weekly planner, not which employees can clean it. Enable Cleaning area for Dock, Fulfillment, Inventory or any other department you want included.</p>
+      ${departments.map(d=>`<div class="rotations-area-config">
+        <div><b>${esc(d.name)}</b><small>${d.cleaningActive?'Included in the cleaning schedule':'Not currently a cleaning area'}</small></div>
+        <select aria-label="Warehouse side for ${esc(d.name)}" data-side-dept="${d.id}">
+          <option value="Inbound"${areaSide(d.name)==='Inbound'?' selected':''}>Inbound</option>
+          <option value="Outbound"${areaSide(d.name)==='Outbound'?' selected':''}>Outbound</option>
+        </select>
+        <label><input type="checkbox" data-cleaning-active="${d.id}"${d.cleaningActive?' checked':''} /> Cleaning area</label>
+      </div>`).join('')}
+      <p class="rotations-note">Missing a department? Add it in Admin Tools → Team & departments, then return here to activate cleaning and assign its side. Existing assignments and Bingo history are unaffected by moving an area between sides.</p>
+    `;
+    document.querySelectorAll('[data-side-dept]').forEach(select=>select.onchange=async()=>{
+      const departmentId=Number(select.dataset.sideDept),side=select.value;
+      await send({action:'setCleaningAreaSide',departmentId,side},
+        `${data.departments.find(d=>d.id===departmentId)?.name||'Area'} is now under ${side}.`);
+    });
+    document.querySelectorAll('[data-cleaning-active]').forEach(box=>box.onchange=async()=>{
+      const id=Number(box.dataset.cleaningActive),cleaningActive=box.checked;
+      await send({action:'setCleaningDepartment',id,cleaningActive},
+        cleaningActive?'Cleaning area enabled.':'Cleaning area disabled for new schedules.',TEAM_API);
+    });
   }
 
   async function open(){
