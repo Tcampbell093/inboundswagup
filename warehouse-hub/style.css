@@ -13,7 +13,7 @@
 
 
 /* Warehouse Bingo */
-.bingo-layout{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(250px,.8fr);gap:18px;align-items:start}
+.bingo-layout{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(250px,.7fr);gap:18px;align-items:start}
 .bingo-card-shell,.bingo-info-card,.bingo-round-card{background:rgba(255,255,255,.74);border:1px solid var(--line);border-radius:22px;box-shadow:0 8px 28px rgba(18,61,52,.04)}
 .bingo-card-shell{padding:24px}
 .bingo-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
@@ -22,11 +22,11 @@
 .bingo-balance{min-width:110px;text-align:right}
 .bingo-balance strong{display:block;font-size:22px;line-height:1.05}
 .bingo-balance span{display:block;font-size:11px;color:var(--muted);font-weight:800;margin-top:4px}
-.bingo-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:470px;margin:0 auto}
-.bingo-square{aspect-ratio:1/1;border:1px solid var(--line);border-radius:18px;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;min-width:0;transition:.18s ease background,.18s ease border-color,.18s ease transform}
+.bingo-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;max-width:650px;margin:0 auto}
+.bingo-square{aspect-ratio:1/1;border:1px solid var(--line);border-radius:14px;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-width:0;transition:.18s ease background,.18s ease border-color,.18s ease transform}
 .bingo-square.marked{background:var(--green-soft);border-color:#9fcdbd}
 .bingo-square.free{border-style:dashed}
-.bingo-symbol{font-size:clamp(30px,4vw,46px);line-height:1}
+.bingo-symbol{font-size:clamp(24px,3vw,38px);line-height:1}
 .bingo-square-label{font-size:9px;font-weight:900;letter-spacing:.11em;color:var(--muted)}
 .bingo-square.marked .bingo-square-label{color:var(--green)}
 .bingo-card-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:18px;padding-top:17px;border-top:1px solid var(--line)}
@@ -54,7 +54,7 @@
 .bingo-empty-card p{margin:0;max-width:620px;color:var(--muted);line-height:1.55}
 .bingo-empty-icon{width:46px;height:46px;border-radius:14px;background:var(--ink);color:white;display:grid;place-items:center;font-size:20px}
 @media(max-width:900px){.bingo-layout{grid-template-columns:1fr}.bingo-side{grid-template-columns:1fr 1fr}.bingo-round-note{grid-column:1/-1}}
-@media(max-width:620px){.bingo-card-shell{padding:16px}.bingo-card-head{align-items:center}.bingo-grid{gap:7px}.bingo-square{border-radius:14px}.bingo-symbol{font-size:32px}.bingo-card-footer{display:grid}.bingo-draw-btn{width:100%}.bingo-side{grid-template-columns:1fr}.bingo-round-note{grid-column:auto}.bingo-round-card{padding:11px}.bingo-balance strong{font-size:19px}}
+@media(max-width:620px){.bingo-card-shell{padding:14px}.bingo-card-head{align-items:center}.bingo-grid{gap:5px}.bingo-square{border-radius:10px;gap:3px}.bingo-symbol{font-size:clamp(22px,8vw,30px)}.bingo-square-label{font-size:7px;letter-spacing:.06em}.bingo-card-footer{display:grid}.bingo-draw-btn{width:100%}.bingo-side{grid-template-columns:1fr}.bingo-round-note{grid-column:auto}.bingo-round-card{padding:11px}.bingo-balance strong{font-size:19px}}
 
 /* Group the existing Today cleaning card without changing its check-in rows. */
 .cleaning-side+.cleaning-side{margin-top:13px}
