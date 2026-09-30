@@ -64,7 +64,6 @@ function decryptSession(token) {
     const payload = JSON.parse(plain);
     if (
       payload?.v !== SESSION_VERSION ||
-      payload?.fairShiftVerified !== true ||
       !payload?.name ||
       Number(payload.exp || 0) <= Date.now()
     ) return null;
