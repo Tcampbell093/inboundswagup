@@ -5,10 +5,10 @@ const { Pool } = pg;
 const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
 const SESSION_COOKIE = 'hub_associate_session';
 const SESSION_VERSION = 2;
-const ROUND_ANCHOR = '2026-09-21';
+const DEFAULT_ROUND_ANCHOR = '2026-09-21';
 const ROUND_DAYS = 28;
-const BOARD_SIZE = 5;
-const FREE_INDEX = 12;
+const DEFAULT_BOARD_SIZE = 5;
+const SUPPORTED_BOARD_SIZES = [3, 5];
 const SYMBOLS = ['⭐','🎵','☕','🚗','🌴','🌮','🍕','🎬','🍩','⚽','🎧','🌞','🍓','🎈','🥤','🎲','📦','🚚','🧤','🧹','🎯','🛠️','💡','🏆'];
 let poolInstance = null;
 let schemaReady = false;
@@ -96,21 +96,39 @@ function dateFromEpoch(day) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
-function roundInfo() {
+function normalizeBoardSize(value) {
+  const size = Number(value);
+  return SUPPORTED_BOARD_SIZES.includes(size) ? size : DEFAULT_BOARD_SIZE;
+}
+
+function boardMeta(value) {
+  const size = normalizeBoardSize(value);
+  return {
+    size,
+    total: size * size,
+    freeIndex: Math.floor((size * size) / 2),
+    playableCount: size * size - 1,
+  };
+}
+
+function roundInfo(settings = {}) {
   const current = easternDate();
   const currentDay = epochDay(current);
-  const anchorDay = epochDay(ROUND_ANCHOR);
-  const cycle = Math.floor((currentDay - anchorDay) / ROUND_DAYS);
+  const requestedAnchor = clean(settings.anchorDate || '', 20);
+  const anchor = /^\d{4}-\d{2}-\d{2}$/.test(requestedAnchor) ? requestedAnchor : DEFAULT_ROUND_ANCHOR;
+  const anchorDay = epochDay(anchor);
+  const cycle = Math.max(0, Math.floor((currentDay - anchorDay) / ROUND_DAYS));
   const startDay = anchorDay + cycle * ROUND_DAYS;
   const endDay = startDay + ROUND_DAYS - 1;
   const weekNumber = Math.max(1, Math.floor((currentDay - startDay) / 7) + 1);
   const start = dateFromEpoch(startDay);
+  const resetNumber = Math.max(0, Number(settings.resetNumber || 0));
   return {
-    key: start,
+    key: resetNumber > 0 ? `${start}:r${resetNumber}` : start,
     start,
     end: dateFromEpoch(endDay),
     daysLeft: Math.max(0, endDay - currentDay + 1),
-    weekKey: `${start}:w${weekNumber}`,
+    weekKey: `${start}:r${resetNumber}:w${weekNumber}`,
   };
 }
 
@@ -123,26 +141,28 @@ function shuffle(values) {
   return list;
 }
 
-function makeCard() {
-  const chosen = shuffle(SYMBOLS);
+function makeCard(boardSize) {
+  const meta = boardMeta(boardSize);
+  const chosen = shuffle(SYMBOLS).slice(0, meta.playableCount);
   return [
-    ...chosen.slice(0, FREE_INDEX),
+    ...chosen.slice(0, meta.freeIndex),
     'FREE',
-    ...chosen.slice(FREE_INDEX),
+    ...chosen.slice(meta.freeIndex),
   ];
 }
 
-function hasBingo(marked) {
+function hasBingo(marked, boardSize) {
+  const meta = boardMeta(boardSize);
   const set = new Set((Array.isArray(marked) ? marked : []).map(Number));
   const lines = [];
-  for (let row = 0; row < BOARD_SIZE; row += 1) {
-    lines.push(Array.from({ length: BOARD_SIZE }, (_, col) => row * BOARD_SIZE + col));
+  for (let row = 0; row < meta.size; row += 1) {
+    lines.push(Array.from({ length: meta.size }, (_, col) => row * meta.size + col));
   }
-  for (let col = 0; col < BOARD_SIZE; col += 1) {
-    lines.push(Array.from({ length: BOARD_SIZE }, (_, row) => row * BOARD_SIZE + col));
+  for (let col = 0; col < meta.size; col += 1) {
+    lines.push(Array.from({ length: meta.size }, (_, row) => row * meta.size + col));
   }
-  lines.push(Array.from({ length: BOARD_SIZE }, (_, index) => index * BOARD_SIZE + index));
-  lines.push(Array.from({ length: BOARD_SIZE }, (_, index) => index * BOARD_SIZE + (BOARD_SIZE - 1 - index)));
+  lines.push(Array.from({ length: meta.size }, (_, index) => index * meta.size + index));
+  lines.push(Array.from({ length: meta.size }, (_, index) => index * meta.size + (meta.size - 1 - index)));
   return lines.some((line) => line.every((index) => set.has(index)));
 }
 
@@ -188,8 +208,40 @@ async function ensureSchema() {
       last_synced_date DATE,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS hub_bingo_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      board_size INTEGER NOT NULL DEFAULT 5,
+      anchor_date DATE NOT NULL DEFAULT '2026-09-21',
+      reset_number INTEGER NOT NULL DEFAULT 0,
+      reset_at TIMESTAMPTZ,
+      reset_by TEXT NOT NULL DEFAULT '',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    INSERT INTO hub_bingo_settings(id,board_size,anchor_date,reset_number,reset_by,updated_at)
+    VALUES(1,5,'2026-09-21',0,'',NOW())
+    ON CONFLICT(id) DO NOTHING;
   `);
   schemaReady = true;
+}
+
+async function getSettings(db) {
+  const result = await db.query(`
+    SELECT board_size,anchor_date,reset_number,reset_at,reset_by
+    FROM hub_bingo_settings
+    WHERE id=1
+    LIMIT 1
+  `);
+  const row = result.rows[0] || {};
+  const anchorDate = row.anchor_date ? String(row.anchor_date).slice(0, 10) : DEFAULT_ROUND_ANCHOR;
+  return {
+    boardSize: normalizeBoardSize(row.board_size),
+    anchorDate,
+    resetNumber: Math.max(0, Number(row.reset_number || 0)),
+    resetAt: row.reset_at || null,
+    resetBy: clean(row.reset_by, 100),
+  };
 }
 
 async function fetchCompletedCleaningForDate(dateText, employeeKey) {
@@ -292,8 +344,9 @@ async function reconcileCleaningCoins(client, session, round) {
   return awarded;
 }
 
-async function ensurePlayer(client, session, round) {
+async function ensurePlayer(client, session, round, settings) {
   const employeeKey = slug(session.name);
+  const meta = boardMeta(settings.boardSize);
   await client.query(`
     INSERT INTO hub_bingo_wallet(employee_key, employee_name, coins, updated_at)
     VALUES($1,$2,0,NOW())
@@ -308,12 +361,12 @@ async function ensurePlayer(client, session, round) {
   `, [round.key, employeeKey]);
 
   if (!result.rows[0]) {
-    const card = makeCard();
+    const card = makeCard(meta.size);
     await client.query(`
       INSERT INTO hub_bingo_players(round_key,employee_key,employee_name,employee_id,card,marked,drawn,created_at,updated_at)
       VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'[]'::jsonb,NOW(),NOW())
       ON CONFLICT(round_key,employee_key) DO NOTHING
-    `, [round.key, employeeKey, clean(session.name, 100), session.employeeId || null, JSON.stringify(card), JSON.stringify([FREE_INDEX])]);
+    `, [round.key, employeeKey, clean(session.name, 100), session.employeeId || null, JSON.stringify(card), JSON.stringify([meta.freeIndex])]);
     result = await client.query(`
       SELECT round_key,employee_key,employee_name,employee_id,card,marked,drawn,weekly_free_key,won_at
       FROM hub_bingo_players
@@ -323,10 +376,11 @@ async function ensurePlayer(client, session, round) {
   }
 
   const current = result.rows[0];
-  if (current && (!Array.isArray(current.card) || current.card.length !== BOARD_SIZE * BOARD_SIZE)) {
-    const card = makeCard();
-    const drawn = (Array.isArray(current.drawn) ? current.drawn : []).filter((symbol) => SYMBOLS.includes(symbol));
-    const marked = new Set([FREE_INDEX]);
+  if (current && (!Array.isArray(current.card) || current.card.length !== meta.total)) {
+    const card = makeCard(meta.size);
+    const cardSymbols = new Set(card.filter((symbol) => symbol !== 'FREE'));
+    const drawn = (Array.isArray(current.drawn) ? current.drawn : []).filter((symbol) => cardSymbols.has(symbol));
+    const marked = new Set([meta.freeIndex]);
     for (const symbol of drawn) {
       const index = card.indexOf(symbol);
       if (index >= 0) marked.add(index);
@@ -345,9 +399,9 @@ async function ensurePlayer(client, session, round) {
   }
   return result.rows[0];
 }
-
-async function statePayload(client, session, round, extra = {}) {
-  const player = await ensurePlayer(client, session, round);
+async function statePayload(client, session, round, settings, extra = {}) {
+  const meta = boardMeta(settings.boardSize);
+  const player = await ensurePlayer(client, session, round, settings);
   const employeeKey = slug(session.name);
   const [walletResult, statsResult] = await Promise.all([
     client.query(`SELECT coins FROM hub_bingo_wallet WHERE employee_key=$1 LIMIT 1`, [employeeKey]),
@@ -357,11 +411,14 @@ async function statePayload(client, session, round, extra = {}) {
       WHERE round_key=$1
     `, [round.key]),
   ]);
-  const marked = Array.isArray(player.marked) ? player.marked.map(Number) : [FREE_INDEX];
+  const marked = Array.isArray(player.marked) ? player.marked.map(Number) : [meta.freeIndex];
   const drawn = Array.isArray(player.drawn) ? player.drawn : [];
   return {
     ok: true,
     signedIn: true,
+    settings: {
+      boardSize: meta.size,
+    },
     player: {
       name: clean(session.name, 100),
       department: clean(session.department, 100),
@@ -369,10 +426,11 @@ async function statePayload(client, session, round, extra = {}) {
       card: Array.isArray(player.card) ? player.card : [],
       marked,
       drawn,
-      bingo: !!player.won_at || hasBingo(marked),
+      bingo: !!player.won_at || hasBingo(marked, meta.size),
       weeklyFreeAvailable: player.weekly_free_key !== round.weekKey,
     },
     round: {
+      key: round.key,
       start: round.start,
       end: round.end,
       daysLeft: round.daysLeft,
@@ -384,15 +442,16 @@ async function statePayload(client, session, round, extra = {}) {
     ...extra,
   };
 }
-
 async function drawSymbol(session) {
   const pool = getPool();
   const client = await pool.connect();
-  const round = roundInfo();
   const employeeKey = slug(session.name);
   try {
     await client.query('BEGIN');
-    await ensurePlayer(client, session, round);
+    const settings = await getSettings(client);
+    const meta = boardMeta(settings.boardSize);
+    const round = roundInfo(settings);
+    await ensurePlayer(client, session, round, settings);
 
     const playerResult = await client.query(`
       SELECT round_key,employee_key,employee_name,employee_id,card,marked,drawn,weekly_free_key,won_at
@@ -401,9 +460,9 @@ async function drawSymbol(session) {
       FOR UPDATE
     `, [round.key, employeeKey]);
     const player = playerResult.rows[0];
-    if (player.won_at || hasBingo(player.marked)) {
+    if (player.won_at || hasBingo(player.marked, meta.size)) {
       await client.query('COMMIT');
-      return { status: 409, body: await statePayload(client, session, round, { error: 'You already completed Bingo for this round.' }) };
+      return { status: 409, body: await statePayload(client, session, round, settings, { error: 'You already completed Bingo for this round.' }) };
     }
 
     const walletResult = await client.query(`SELECT coins FROM hub_bingo_wallet WHERE employee_key=$1 FOR UPDATE`, [employeeKey]);
@@ -411,25 +470,26 @@ async function drawSymbol(session) {
     const useFree = player.weekly_free_key !== round.weekKey;
     if (!useFree && coins < 1) {
       await client.query('COMMIT');
-      return { status: 409, body: await statePayload(client, session, round, { error: 'You need a Bingo Coin to draw another symbol.' }) };
+      return { status: 409, body: await statePayload(client, session, round, settings, { error: 'You need a Bingo Coin to draw another symbol.' }) };
     }
 
+    const card = Array.isArray(player.card) ? player.card : [];
     const drawn = Array.isArray(player.drawn) ? [...player.drawn] : [];
-    const remaining = SYMBOLS.filter((symbol) => !drawn.includes(symbol));
+    const availableSymbols = card.filter((symbol) => symbol && symbol !== 'FREE');
+    const remaining = availableSymbols.filter((symbol) => !drawn.includes(symbol));
     if (!remaining.length) {
       await client.query('COMMIT');
-      return { status: 409, body: await statePayload(client, session, round, { error: 'All symbols have already been drawn for this card.' }) };
+      return { status: 409, body: await statePayload(client, session, round, settings, { error: 'All symbols have already been drawn for this card.' }) };
     }
 
     const symbol = remaining[crypto.randomInt(remaining.length)];
     drawn.push(symbol);
-    const card = Array.isArray(player.card) ? player.card : [];
-    const marked = new Set((Array.isArray(player.marked) ? player.marked : [FREE_INDEX]).map(Number));
+    const marked = new Set((Array.isArray(player.marked) ? player.marked : [meta.freeIndex]).map(Number));
     const cardIndex = card.indexOf(symbol);
     const matched = cardIndex >= 0;
     if (matched) marked.add(cardIndex);
     const markedArray = [...marked].sort((a, b) => a - b);
-    const bingo = hasBingo(markedArray);
+    const bingo = hasBingo(markedArray, meta.size);
 
     if (!useFree) {
       await client.query(`UPDATE hub_bingo_wallet SET coins=coins-1,updated_at=NOW() WHERE employee_key=$1`, [employeeKey]);
@@ -455,7 +515,7 @@ async function drawSymbol(session) {
     await client.query('COMMIT');
     return {
       status: 200,
-      body: await statePayload(client, session, round, {
+      body: await statePayload(client, session, round, settings, {
         drawResult: { symbol, matched, usedFree: useFree, bingo },
       }),
     };
@@ -466,7 +526,6 @@ async function drawSymbol(session) {
     client.release();
   }
 }
-
 export default async (request) => {
   try {
     await ensureSchema();
@@ -476,9 +535,10 @@ export default async (request) => {
     if (request.method === 'GET') {
       const client = await getPool().connect();
       try {
-        const round = roundInfo();
+        const settings = await getSettings(client);
+        const round = roundInfo(settings);
         const reconciledCoins = await reconcileCleaningCoins(client, session, round);
-        return json(200, await statePayload(client, session, round, { reconciledCoins }));
+        return json(200, await statePayload(client, session, round, settings, { reconciledCoins }));
       } finally {
         client.release();
       }
