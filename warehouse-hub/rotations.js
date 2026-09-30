@@ -30,7 +30,7 @@
 
   const css=document.createElement('style');
   css.textContent=`
-    .rotations-launch{cursor:pointer;color:var(--ink);border-color:#c5d9d1;background:var(--green-soft);white-space:nowrap}
+    .rotations-launch{display:inline-flex;cursor:pointer;color:var(--ink);border-color:#c5d9d1;background:var(--green-soft);white-space:nowrap}
     .rotations-modal{border:0;border-radius:19px;padding:0;width:min(1000px,calc(100% - 22px));max-height:calc(100dvh - 30px);background:var(--bg);color:var(--ink);box-shadow:0 25px 90px rgba(18,61,52,.28)}
     .rotations-modal::backdrop{background:rgba(12,28,24,.54);backdrop-filter:blur(3px)}
     .rotations-header{display:flex;justify-content:space-between;gap:15px;align-items:start;padding:18px 22px 13px;border-bottom:1px solid var(--line)}
@@ -496,11 +496,11 @@
     });
   }
 
-  async function open(){
+  async function open(targetTab='today'){
     if(!session().signedIn){
       window.HubAssociate?.open?.();return;
     }
-    tab='today';week=weekStart(today());draft=[];message='';
+    tab=['today','week','fairness','areas'].includes(targetTab)?targetTab:'today';week=weekStart(today());draft=[];message='';
     if(!dialog.open)dialog.showModal();
     await load();
   }
