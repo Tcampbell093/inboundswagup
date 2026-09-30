@@ -180,7 +180,7 @@
     if(!data)return[];
     const now=today(),start=addDays(now,-89),pool=associates();
     const totals=new Map(pool.map(e=>[e.id,{
-      ...e,minutes:0,protected:0,rotations:0,last:null,byArea:Object.fromEntries(areas().map(a=>[a,0])),
+      ...e,minutes:0,protected:0,rotations:0,last:null,bySide:{Inbound:0,Outbound:0},byArea:Object.fromEntries(areas().map(a=>[a,0])),
       lastArea:Object.fromEntries(areas().map(a=>[a,null])),dates:[],outDays:0,
     }]));
     const done=data.assignments.filter(a=>a.status==='completed'&&a.date>=start&&a.date<=now);
@@ -190,6 +190,7 @@
       p.minutes+=15;p.rotations++;p.dates.push(item.date);
       if(!p.last||p.last<item.date)p.last=item.date;
       p.byArea[item.area]=(p.byArea[item.area]||0)+1;
+      p.bySide[areaSide(item.area)]+=1;
       if(!p.lastArea[item.area]||p.lastArea[item.area]<item.date)p.lastArea[item.area]=item.date;
     }
     const byDate=new Map();
@@ -221,13 +222,13 @@
   function buildSuggestions(){
     if(!data)return[];
     const current=today(),pool=associates(),fields=areas(),score=new Map(fairness().map(p=>[p.id,{
-      minutes:p.balance,worked:p.minutes,week:0,last:p.last,area:{...p.byArea},lastArea:{...p.lastArea}
+      minutes:p.balance,worked:p.minutes,week:0,last:p.last,side:{...p.bySide},area:{...p.byArea},lastArea:{...p.lastArea}
     }]));
     const planned=[];
     for(const row of data.assignments.filter(a=>a.date>=week&&a.date<=addDays(week,4))){
       if(row.status==='completed'||row.status==='missed')continue;
       const target=score.get(row.actualEmployeeId||row.employeeId);
-      if(target){target.minutes+=15;target.week++;target.area[row.area]=(target.area[row.area]||0)+1;target.last=row.date;target.lastArea[row.area]=row.date;}
+      if(target){target.minutes+=15;target.week++;target.side[areaSide(row.area)]+=1;target.area[row.area]=(target.area[row.area]||0)+1;target.last=row.date;target.lastArea[row.area]=row.date;}
     }
     for(const date of weekDays()){
       if(date<current)continue;
@@ -241,6 +242,7 @@
         const choices=(preferred.length?preferred:eligible).sort((a,b)=>{
           const sa=score.get(a.id),sb=score.get(b.id);
           return (sa?.minutes||0)-(sb?.minutes||0)
+            ||(sa?.side[areaSide(area)]||0)-(sb?.side[areaSide(area)]||0)
             ||(sa?.area[area]||0)-(sb?.area[area]||0)
             ||(sa?.week||0)-(sb?.week||0)
             ||dayGap(sb?.lastArea[area],date)-dayGap(sa?.lastArea[area],date)
@@ -249,7 +251,7 @@
         });
         const primary=choices[0];occupied.add(primary.id);
         const t=score.get(primary.id);
-        if(t){t.minutes+=15;t.week++;t.area[area]=(t.area[area]||0)+1;t.last=date;t.lastArea[area]=date;}
+        if(t){t.minutes+=15;t.week++;t.side[areaSide(area)]+=1;t.area[area]=(t.area[area]||0)+1;t.last=date;t.lastArea[area]=date;}
         planned.push({assignmentDate:date,department:area,employeeId:primary.id,alternateEmployeeId:null});
       }
       for(const plannedRow of planned.filter(r=>r.assignmentDate===date)){
@@ -440,10 +442,10 @@
     const history=fairness(),completed=data.assignments.filter(a=>a.status==='completed')
       .sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id).slice(0,90);
     $('rotationsContent').innerHTML=`
-      <p class="rotations-note">Last 90 days. Actual minutes are awarded only after completed work. Leave protection affects scheduling priority, not credited minutes or Bingo coins. No one is tied to a particular department.</p>
-      <div class="rotations-fair-wrap"><table class="rotations-fair-table"><thead><tr><th>Associate</th><th>Worked</th><th>Leave protection</th><th>Rotation balance</th>${areas().map(a=>`<th>${esc(a)}</th>`).join('')}</tr></thead><tbody>
+      <p class="rotations-note">Last 90 days. Actual minutes are awarded only after completed work. Leave protection affects scheduling priority, not credited minutes or Bingo coins. The shared pool rotates across both Inbound and Outbound.</p>
+      <div class="rotations-fair-wrap"><table class="rotations-fair-table"><thead><tr><th>Associate</th><th>Worked</th><th>Leave protection</th><th>Rotation balance</th><th>Inbound</th><th>Outbound</th>${areas().map(a=>`<th>${esc(a)}</th>`).join('')}</tr></thead><tbody>
       ${history.map(h=>`<tr><td><b>${esc(h.name)}</b><small style="display:block;color:var(--muted)">Last: ${esc(h.last||'Never')}</small></td>
-        <td>${h.minutes} min</td><td>${h.protected} min</td><td><b>${Math.round(h.balance)} min</b></td>
+        <td>${h.minutes} min</td><td>${h.protected} min</td><td><b>${Math.round(h.balance)} min</b></td><td>${h.bySide.Inbound}</td><td>${h.bySide.Outbound}</td>
         ${areas().map(a=>`<td>${h.byArea[a]||0}</td>`).join('')}</tr>`).join('')}
       </tbody></table></div>
       ${isAdmin()?`<div class="rotations-absence">
