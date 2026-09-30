@@ -124,7 +124,7 @@
 
   async function load() {
     const current = session();
-    if (!current.signedIn || current.fairShiftVerified !== true) {
+    if (!current.signedIn) {
       renderSignedOut();
       return;
     }
