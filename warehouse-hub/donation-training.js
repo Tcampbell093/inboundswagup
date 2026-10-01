@@ -490,7 +490,7 @@
         <div class="crm-actions"><button>Follow</button><button>Re-sync with Base Product</button><button>Edit</button><button>Inventory</button></div>
       </div>
       <div class="account-layout">
-        <div class="account-hero">${isPack ? `<div class="pack-visual"><i></i><i></i><i></i><i></i><i></i><i></i></div>` : '<div class="fake-product">BULK<br>ITEM</div>'}</div>
+        <div class="account-hero">${isPack ? `<div class="pack-product-preview"><img src="/warehouse-hub/assets/donation-pack-preview.svg" alt="Swag pack product preview"></div>` : '<div class="fake-product">BULK<br>ITEM</div>'}</div>
         <div class="tabs">
           <button class="tab" type="button">Related</button>
           <button class="tab" type="button">Approval History</button>
