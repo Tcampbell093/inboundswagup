@@ -15,7 +15,7 @@
   const scenarios = [
     {
       id: 'qa-too-new',
-      po: 'PO-TR-41021',
+      po: 'PO-41021',
       client: 'Harbor Youth Network',
       bulkProduct: 'Harbor / Welcome Kit Water Bottle',
       qaApproved: '2026-09-25',
@@ -23,7 +23,7 @@
       bulk: {
         stockRows: [{ size: 'One Size', sku: 'TRAIN-101', total: 0, location: '—', quantity: 0 }],
         events: [
-          { date: '2026-09-10 11:10 AM', type: 'Shipping', id: 'P-TR-1011' },
+          { date: '2026-09-10 11:10 AM', type: 'Shipping', id: 'P-71011' },
           { date: '2026-08-01 08:35 AM', type: 'New Inventory', id: 'TR-41021' },
         ],
       },
@@ -32,18 +32,18 @@
     },
     {
       id: 'pb-pending',
-      po: 'PO-TR-41034',
+      po: 'PO-41034',
       client: 'Northview Community Care',
       bulkProduct: 'Northview / Canvas Tote',
       qaApproved: '2026-09-10',
       packBuilder: {
-        exists: true, status: 'Pending', name: 'PB-TR-20041', product: 'Northview New Hire Pack',
+        exists: true, status: 'Pending', name: 'PB-20041', product: 'Northview New Hire Pack',
         newInventory: '2026-07-01', firstShipment: '2026-07-10',
       },
       bulk: {
         stockRows: [{ size: 'One Size', sku: 'TRAIN-102', total: 0, location: '—', quantity: 0 }],
         events: [
-          { date: '2026-07-10 09:15 AM', type: 'Shipping', id: 'P-TR-1201' },
+          { date: '2026-07-10 09:15 AM', type: 'Shipping', id: 'P-71201' },
           { date: '2026-07-01 09:00 AM', type: 'New Inventory', id: 'TR-41034' },
         ],
       },
@@ -52,18 +52,18 @@
     },
     {
       id: 'pack-too-new',
-      po: 'PO-TR-41056',
+      po: 'PO-41056',
       client: 'BrightPath Learning',
       bulkProduct: 'BrightPath / Soft Touch Pen',
       qaApproved: '2026-08-28',
       packBuilder: {
-        exists: true, status: 'Complete', name: 'PB-TR-20056', product: 'BrightPath Teacher Pack',
+        exists: true, status: 'Complete', name: 'PB-20056', product: 'BrightPath Teacher Pack',
         newInventory: '2026-09-15', firstShipment: '2026-09-16',
       },
       bulk: {
         stockRows: [{ size: 'One Size', sku: 'TRAIN-103', total: 0, location: '—', quantity: 0 }],
         events: [
-          { date: '2026-08-12 09:15 AM', type: 'Shipping', id: 'P-TR-1301' },
+          { date: '2026-08-12 09:15 AM', type: 'Shipping', id: 'P-71301' },
           { date: '2026-07-01 09:00 AM', type: 'New Inventory', id: 'TR-41056' },
         ],
       },
@@ -72,7 +72,7 @@
     },
     {
       id: 'bulk-stock',
-      po: 'PO-TR-41072',
+      po: 'PO-41072',
       client: 'Civic Arts Foundation',
       bulkProduct: 'Civic Arts / Enamel Pin',
       qaApproved: '2026-08-10',
@@ -82,7 +82,7 @@
           { size: 'One Size', sku: 'TRAIN-104', total: 14, location: 'E-12', quantity: 14 },
         ],
         events: [
-          { date: '2026-08-05 01:20 PM', type: 'Shipping', id: 'P-TR-1401' },
+          { date: '2026-08-05 01:20 PM', type: 'Shipping', id: 'P-71401' },
           { date: '2026-07-15 10:05 AM', type: 'New Inventory', id: 'TR-41072' },
         ],
       },
@@ -91,7 +91,7 @@
     },
     {
       id: 'bulk-too-new',
-      po: 'PO-TR-41083',
+      po: 'PO-41083',
       client: 'Evergreen Family Services',
       bulkProduct: 'Evergreen / Phone Wallet',
       qaApproved: '2026-08-01',
@@ -99,8 +99,8 @@
       bulk: {
         stockRows: [{ size: 'One Size', sku: 'TRAIN-105', total: 0, location: '—', quantity: 0 }],
         events: [
-          { date: '2026-09-26 02:16 PM', type: 'Shipping', id: 'P-TR-1502' },
-          { date: '2026-09-06 09:02 AM', type: 'Shipping', id: 'P-TR-1501' },
+          { date: '2026-09-26 02:16 PM', type: 'Shipping', id: 'P-71502' },
+          { date: '2026-09-06 09:02 AM', type: 'Shipping', id: 'P-71501' },
           { date: '2026-09-05 08:41 AM', type: 'New Inventory', id: 'TR-41083' },
         ],
       },
@@ -109,20 +109,20 @@
     },
     {
       id: 'qualifies-pack',
-      po: 'PO-TR-41102',
+      po: 'PO-41102',
       client: 'Women Forward Initiative',
       bulkProduct: 'Women Forward / Performance Cap',
       qaApproved: '2026-08-11',
       packBuilder: {
-        exists: true, status: 'Complete', name: 'PB-TR-20102', product: 'Women Forward Legacy Pack',
+        exists: true, status: 'Complete', name: 'PB-20102', product: 'Women Forward Legacy Pack',
         newInventory: '2026-08-24', firstShipment: '2026-08-25',
       },
       bulk: {
         stockRows: [{ size: 'One Size', sku: 'TRAIN-106', total: 0, location: '—', quantity: 0 }],
         events: [
-          { date: '2026-09-10 11:34 AM', type: 'Shipping', id: 'P-TR-1603' },
-          { date: '2026-08-28 02:03 PM', type: 'Shipping', id: 'P-TR-1602' },
-          { date: '2026-08-06 12:11 PM', type: 'Shipping', id: 'P-TR-1601' },
+          { date: '2026-09-10 11:34 AM', type: 'Shipping', id: 'P-71603' },
+          { date: '2026-08-28 02:03 PM', type: 'Shipping', id: 'P-71602' },
+          { date: '2026-08-06 12:11 PM', type: 'Shipping', id: 'P-71601' },
           { date: '2026-07-20 04:09 PM', type: 'New Inventory', id: 'TR-41102' },
         ],
       },
@@ -130,7 +130,7 @@
     },
     {
       id: 'qualifies-no-pack',
-      po: 'PO-TR-41117',
+      po: 'PO-41117',
       client: 'CareBridge Outreach',
       bulkProduct: 'CareBridge / Stress Ball',
       qaApproved: '2026-07-20',
@@ -138,9 +138,9 @@
       bulk: {
         stockRows: [{ size: 'One Size', sku: 'TRAIN-107', total: 0, location: '—', quantity: 0 }],
         events: [
-          { date: '2026-09-10 11:30 AM', type: 'Shipping', id: 'P-TR-1704' },
-          { date: '2026-08-06 12:14 PM', type: 'Shipping', id: 'P-TR-1702' },
-          { date: '2026-07-11 10:15 AM', type: 'Shipping', id: 'P-TR-1701' },
+          { date: '2026-09-10 11:30 AM', type: 'Shipping', id: 'P-71704' },
+          { date: '2026-08-06 12:14 PM', type: 'Shipping', id: 'P-71702' },
+          { date: '2026-07-11 10:15 AM', type: 'Shipping', id: 'P-71701' },
           { date: '2026-07-10 09:20 AM', type: 'New Inventory', id: 'TR-41117' },
         ],
       },
@@ -148,12 +148,12 @@
     },
     {
       id: 'no-bulk-history',
-      po: 'PO-TR-41129',
+      po: 'PO-41129',
       client: 'Summit Veterans Project',
       bulkProduct: 'Summit Veterans / Knit Cap',
       qaApproved: '2026-08-05',
       packBuilder: {
-        exists: true, status: 'Complete', name: 'PB-TR-20129', product: 'Summit Veterans Welcome Pack',
+        exists: true, status: 'Complete', name: 'PB-20129', product: 'Summit Veterans Welcome Pack',
         newInventory: '2026-07-20', firstShipment: '2026-07-21',
       },
       bulk: {
@@ -454,7 +454,7 @@
         </div>
         <div class="side-pane">
           <div class="side-card"><h4>Stock Information</h4><div class="side-card-content"><table class="stock-table"><tr><th>Size</th><th>Stock</th><th>Storage</th></tr><tr><td>One Size</td><td>0</td><td>P3B3</td></tr></table></div></div>
-          <div class="side-card"><h4>Sales Orders (1)</h4><div class="side-card-content"><button class="crm-link">SORD-TR-51002</button></div></div>
+          <div class="side-card"><h4>Sales Orders (1)</h4><div class="side-card-content"><button class="crm-link">SORD-51002</button></div></div>
           ${packBuilderCard(sc)}
           <div class="side-card"><h4>Barcode</h4><div class="side-card-content"><div class="barcode"></div><div style="text-align:center;font-size:10px">${esc(sc.po)}</div></div></div>
         </div>
@@ -467,7 +467,7 @@
   function inventoryHistoryRows(sc, kind) {
     if (kind === 'pack') {
       const rows = [
-        { date: addTime(sc.packBuilder.firstShipment,'02:16 AM'), type:'Shipping', id:'P-TR-PACK-07' },
+        { date: addTime(sc.packBuilder.firstShipment,'02:16 AM'), type:'Shipping', id:'P-72007' },
         { date: addTime(sc.packBuilder.newInventory,'10:41 AM'), type:'New Inventory', id:sc.packBuilder.name },
         { date: offsetDate(sc.packBuilder.newInventory,-45) + ' 02:27 PM', type:'Setup', id:'' },
       ];
@@ -515,7 +515,7 @@
           <section class="inventory-section clickable ${hintClass(isPack?'packhistory':'bulkhistory')}" data-review="${isPack?'packhistory':'bulkhistory'}">
             <div class="inventory-title"><span class="inventory-icon blue">↺</span> Inventory History</div>
             <div style="padding:8px"><table class="history-table"><thead><tr><th>Created Date</th><th>Event Type</th><th>Event ID</th><th>Tracking ID#</th><th>WO</th></tr></thead>
-            <tbody>${rows.map(r=>`<tr><td>${esc(fmtDateTime(r.date))}</td><td><b>${esc(r.type)}</b></td><td>${esc(r.id||'')}</td><td>${r.type==='Shipping'?'trk_training_...':''}</td><td>${r.type==='Shipping'?'WO-TR':''}</td></tr>`).join('')}</tbody></table>
+            <tbody>${rows.map(r=>`<tr><td>${esc(fmtDateTime(r.date))}</td><td><b>${esc(r.type)}</b></td><td>${esc(r.id||'')}</td><td>${r.type==='Shipping'?'trk_training_...':''}</td><td>${r.type==='Shipping'?'WO-7201':''}</td></tr>`).join('')}</tbody></table>
             ${historyGuidance(sc,kind)}
             </div>
           </section>
