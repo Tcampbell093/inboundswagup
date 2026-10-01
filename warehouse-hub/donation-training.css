@@ -136,3 +136,6 @@ h1{margin:5px 0 9px;font-size:clamp(30px,4vw,48px);letter-spacing:-.04em}
 body.embedded .topbar{display:none}
 body.embedded .page{width:min(100% - 18px,1420px);margin:10px auto 28px}
 body.embedded .coach-panel{top:10px}
+
+.pack-product-preview{width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:8px 12px;background:#fff;overflow:hidden}
+.pack-product-preview img{display:block;width:100%;height:100%;object-fit:contain}
