@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#123d34" />
+  <meta name="robots" content="noindex" />
+  <title>Donation Qualification Trainer · Operations Hub</title>
+  <link rel="stylesheet" href="donation-training.css?v=20261001-1" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/warehouse-hub/"><span class="brandmark">◇</span><span>Operations Hub</span></a>
+    <div class="topbar-actions">
+      <span class="training-pill">Practice data only</span>
+      <a class="back-link" href="/warehouse-hub/">Back to Hub</a>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="intro-card" id="introCard">
+      <div>
+        <div class="eyebrow">Training simulator</div>
+        <h1>Donation Qualification Practice</h1>
+        <p>Practice the same decision path used to confirm whether inventory qualifies for Donations. All names, POs, products, dates, and quantities in this trainer are fictional.</p>
+      </div>
+      <div class="mode-picker" role="group" aria-label="Training mode">
+        <button class="mode-btn active" data-mode="guided" type="button">
+          <strong>Guided Training</strong>
+          <span>Hints explain what to inspect next.</span>
+        </button>
+        <button class="mode-btn" data-mode="test" type="button">
+          <strong>Practice Test</strong>
+          <span>No hints until you submit your decision.</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="rule-strip" aria-label="Donation qualification rules">
+      <div><span>1</span><b>QA Approved</b><small>10+ days ago</small></div>
+      <div><span>2</span><b>Pack Builder</b><small>Complete or none</small></div>
+      <div><span>3</span><b>Pack history</b><small>30+ days after first shipment</small></div>
+      <div><span>4</span><b>Bulk inventory</b><small>Purple section must be 0</small></div>
+      <div><span>5</span><b>Bulk history</b><small>30+ days after first shipment</small></div>
+    </section>
+
+    <section class="trainer-shell">
+      <aside class="coach-panel">
+        <div class="coach-head">
+          <div>
+            <div class="eyebrow">Current case</div>
+            <h2 id="caseLabel">Case 1</h2>
+          </div>
+          <span class="score-pill" id="scorePill">100 pts</span>
+        </div>
+
+        <div class="today-box">
+          <span>Training date</span>
+          <strong id="trainingDate">Oct 1, 2026</strong>
+        </div>
+
+        <div class="coach-card" id="guidedCoach">
+          <div class="coach-title">Next check</div>
+          <p id="coachText">Open the PO's Related tab and locate the QA Approved date in Purchase Order History.</p>
+        </div>
+
+        <div class="checklist" id="checklist"></div>
+
+        <div class="decision-actions">
+          <button class="decision-btn danger" id="notDonationBtn" type="button">Stop — Not Donations</button>
+          <button class="decision-btn success" id="donationBtn" type="button">✓ Qualifies for Donations</button>
+        </div>
+
+        <button class="secondary-btn" id="restartCaseBtn" type="button">Restart this case</button>
+      </aside>
+
+      <section class="simulator" aria-label="Simulated warehouse system">
+        <div class="sim-browserbar">
+          <div class="browser-dots"><i></i><i></i><i></i></div>
+          <div class="sim-address">training://warehouse/donation-check</div>
+          <span class="sim-badge">SIMULATOR</span>
+        </div>
+        <div id="simScreen"></div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="decisionDialog" class="decision-dialog">
+    <form method="dialog" id="decisionForm">
+      <div class="dialog-head">
+        <div>
+          <div class="eyebrow">Submit your call</div>
+          <h3 id="decisionTitle">Why is this not Donations?</h3>
+        </div>
+        <button class="icon-close" value="cancel" aria-label="Close">×</button>
+      </div>
+      <div class="dialog-body">
+        <p id="decisionIntro"></p>
+        <div id="reasonOptions" class="reason-options"></div>
+        <div class="feedback" id="decisionFeedback"></div>
+      </div>
+      <div class="dialog-actions">
+        <button class="secondary-btn" value="cancel">Cancel</button>
+        <button class="primary-btn" id="submitDecisionBtn" type="button">Submit decision</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="resultDialog" class="result-dialog">
+    <div class="dialog-head">
+      <div>
+        <div class="eyebrow">Case complete</div>
+        <h3 id="resultTitle">Correct</h3>
+      </div>
+    </div>
+    <div class="dialog-body">
+      <div class="result-score" id="resultScore">100</div>
+      <p id="resultSummary"></p>
+      <div class="result-breakdown" id="resultBreakdown"></div>
+    </div>
+    <div class="dialog-actions">
+      <button class="secondary-btn" id="reviewCaseBtn" type="button">Review case</button>
+      <button class="primary-btn" id="nextCaseBtn" type="button">Next practice case</button>
+    </div>
+  </dialog>
+
+  <script src="donation-training.js?v=20261001-1"></script>
+</body>
+</html>
