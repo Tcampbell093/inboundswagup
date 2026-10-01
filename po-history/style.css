@@ -53,3 +53,43 @@ dialog#details{width:min(980px,calc(100% - 28px));max-height:min(88vh,920px);ove
   .raw-grid{grid-template-columns:1fr}
   .record{grid-template-columns:1fr 1fr}
 }
+
+/* Live Overstock details inside PO History */
+.overstock-section{border-color:#c8dcd5}
+.overstock-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
+.overstock-summary .overview-card{background:#f7fbf9}
+.overstock-subsection{margin-top:17px}
+.overstock-subsection h4{margin:0 0 9px;font-size:.82rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.overstock-records{display:grid;gap:9px}
+.overstock-record{border:1px solid #dfe8e3;border-radius:14px;padding:13px 14px;background:#fbfdfc}
+.overstock-record.active{border-left:4px solid var(--green)}
+.overstock-record.donated{border-left:4px solid #c88c2c;background:#fffdf8}
+.overstock-record-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.overstock-record-head>div{display:grid;gap:2px}
+.overstock-record-head b{font-size:.96rem}
+.overstock-record-head small{color:var(--muted);font-size:.7rem}
+.overstock-qty{white-space:nowrap;border-radius:999px;background:#edf6f2;color:var(--green);padding:4px 8px;font-size:.72rem;font-weight:900}
+.overstock-record.donated .overstock-qty{background:#fff0d8;color:#8c5b0a}
+.overstock-record-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 14px;margin-top:10px}
+.overstock-record-grid span{font-size:.76rem;color:var(--muted);overflow-wrap:anywhere}
+.overstock-record-grid b{color:var(--ink);font-size:.69rem;text-transform:uppercase;letter-spacing:.04em;margin-right:4px}
+.overstock-note{margin-top:9px;background:#f1f5f2;border-radius:9px;padding:8px 9px;color:#50615b;font-size:.75rem}
+.overstock-events{margin-top:16px;border-top:1px solid #e2e9e5;padding-top:12px}
+.overstock-events summary{cursor:pointer;font-weight:850;font-size:.82rem;color:var(--blue)}
+.overstock-event-list{display:grid;gap:0;margin-top:12px}
+.overstock-event{display:grid;grid-template-columns:18px 1fr;gap:9px;position:relative;padding:0 0 13px}
+.overstock-event:before{content:'';position:absolute;left:5px;top:13px;bottom:-2px;width:2px;background:#d8e4de}
+.overstock-event:last-child:before{display:none}
+.overstock-event-dot{width:12px;height:12px;border-radius:50%;margin-top:3px;background:var(--green);border:2px solid #fff;box-shadow:0 0 0 1px #b8d2c7;z-index:1}
+.overstock-event-head{display:flex;justify-content:space-between;gap:12px}
+.overstock-event-head b{font-size:.8rem}
+.overstock-event-head span{font-size:.7rem;color:var(--muted);white-space:nowrap}
+.overstock-event-meta{font-size:.72rem;color:var(--muted);margin-top:2px}
+.overstock-event-detail{display:flex;flex-wrap:wrap;gap:5px 12px;margin-top:5px}
+.overstock-event-detail span{font-size:.7rem;color:#596b64}
+.overstock-empty{border:1px dashed #cddbd4;border-radius:12px;padding:14px;color:var(--muted);font-size:.82rem;background:#fafcfb}
+@media(max-width:760px){
+  .overstock-summary{grid-template-columns:1fr 1fr}
+  .overstock-record-grid{grid-template-columns:1fr}
+  .overstock-event-head{display:grid;gap:1px}
+}

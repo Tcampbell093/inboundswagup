@@ -154,6 +154,154 @@ async function handleSync(request) {
   } finally { client.release(); }
 }
 
+function normalizePo(value) {
+  return clean(value, 120).replace(/^PO[-\s]*/i, '').trim().toUpperCase();
+}
+
+function tombstoneIds(values) {
+  return new Set((Array.isArray(values) ? values : []).map((item) =>
+    clean(item && typeof item === 'object' ? item.id : item, 160)
+  ).filter(Boolean));
+}
+
+function overstockTime(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+async function overstockForRecord(selected) {
+  const po = normalizePo(selected?.po);
+  const deliveryId = clean(selected?.delivery_id, 120).toUpperCase();
+  const empty = {
+    available: false,
+    matched: false,
+    entries: [],
+    donations: [],
+    events: [],
+    summary: {
+      state: 'No Overstock record',
+      activeUnits: 0,
+      donatedUnits: 0,
+      boxes: [],
+      locations: [],
+    },
+  };
+
+  try {
+    const stateResult = await pool().query(
+      "SELECT data_json FROM workflow_sync_state WHERE state_key='default' LIMIT 1"
+    );
+    if (!stateResult.rows.length) return empty;
+
+    const data = stateResult.rows[0].data_json || {};
+    const deadEntries = tombstoneIds(data.__deletedOverstockEntryIds);
+    const deadDonations = tombstoneIds(data.__deletedOverstockDonationIds);
+    const containers = Array.isArray(data.overstockContainers) ? data.overstockContainers : [];
+    const containerMap = new Map(containers.filter((c) => c?.id).map((c) => [String(c.id), c]));
+
+    const sameRecord = (row) => {
+      const rowPo = normalizePo(row?.po);
+      const rowDelivery = clean(row?.deliveryId, 120).toUpperCase();
+      if (po && rowPo === po) return true;
+      return Boolean(!po && deliveryId && rowDelivery === deliveryId);
+    };
+
+    const entries = (Array.isArray(data.overstockEntries) ? data.overstockEntries : [])
+      .filter((row) => row?.id && !deadEntries.has(String(row.id)))
+      .filter((row) => clean(row?.action, 120).toLowerCase() !== 'donated')
+      .filter(sameRecord)
+      .map((row) => {
+        const box = containerMap.get(String(row.containerId || '')) || {};
+        return {
+          id: clean(row.id, 160),
+          po: clean(row.po, 120),
+          deliveryId: clean(row.deliveryId, 120),
+          category: clean(row.category, 120),
+          quantity: Math.max(0, Math.round(Number(row.quantity || 0) || 0)),
+          status: clean(row.status, 120),
+          action: clean(row.action, 120),
+          note: clean(row.note, 1000),
+          containerCode: clean(box.code || row.containerCode, 120),
+          location: clean(box.currentLocation || row.location, 120),
+          originalAssociate: clean(row.originalAssociate || row.associate, 120),
+          lastChangedBy: clean(row.lastChangedBy || row.originalAssociate || row.associate, 120),
+          sourceType: clean(row.sourceType, 80),
+          createdAt: overstockTime(row.createdAt),
+          updatedAt: overstockTime(row.lastChangedAt || row.updatedAt || row.createdAt),
+        };
+      })
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+
+    const donations = (Array.isArray(data.overstockDonations) ? data.overstockDonations : [])
+      .filter((row) => row?.id && !deadDonations.has(String(row.id)))
+      .filter(sameRecord)
+      .map((row) => ({
+        id: clean(row.id, 160),
+        po: clean(row.po, 120),
+        deliveryId: clean(row.deliveryId, 120),
+        category: clean(row.category, 120),
+        quantity: Math.max(0, Math.round(Number(row.quantity || 0) || 0)),
+        note: clean(row.note, 1000),
+        containerCode: clean(row.containerCode, 120),
+        location: clean(row.location, 120),
+        originalAssociate: clean(row.originalAssociate || row.associate, 120),
+        donatedBy: clean(row.donatedBy || row.lastChangedBy || row.originalAssociate || row.associate, 120),
+        donatedAt: overstockTime(row.donatedAt || row.updatedAt || row.createdAt),
+      }))
+      .sort((a, b) => b.donatedAt - a.donatedAt);
+
+    let events = [];
+    if (po) {
+      try {
+        const eventResult = await pool().query(`
+          SELECT event_type, source, actor, po, container_code, detail, occurred_at
+          FROM overstock_box_events
+          WHERE REGEXP_REPLACE(UPPER(COALESCE(po,'')), '^PO[-[:space:]]*', '') = $1
+          ORDER BY occurred_at DESC
+          LIMIT 100
+        `, [po]);
+        events = eventResult.rows.map((row) => ({
+          type: clean(row.event_type, 80),
+          source: clean(row.source, 80),
+          actor: clean(row.actor, 120),
+          po: clean(row.po, 120),
+          containerCode: clean(row.container_code, 120),
+          detail: row.detail && typeof row.detail === 'object' ? row.detail : {},
+          at: row.occurred_at,
+        }));
+      } catch {
+        events = [];
+      }
+    }
+
+    const boxes = [...new Set(entries.map((row) => row.containerCode).filter(Boolean))];
+    const locations = [...new Set(entries.map((row) => row.location).filter(Boolean))];
+    const activeUnits = entries.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+    const donatedUnits = donations.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+    const matched = Boolean(entries.length || donations.length || events.length);
+    const state = entries.length && donations.length
+      ? 'Active Overstock + Donation history'
+      : entries.length
+        ? 'In Overstock'
+        : donations.length
+          ? 'Donation Pool'
+          : events.length
+            ? 'Overstock history'
+            : 'No Overstock record';
+
+    return {
+      available: true,
+      matched,
+      entries,
+      donations,
+      events,
+      summary: { state, activeUnits, donatedUnits, boxes, locations },
+    };
+  } catch {
+    return empty;
+  }
+}
+
 async function handleGet(request) {
   if (!await authorize(request)) return json(401, { error: 'Warehouse Hub sign-in required.' });
   const url = new URL(request.url);
@@ -175,9 +323,12 @@ async function handleGet(request) {
       LIMIT 100
     `, [recordKey, selected.delivery_id || '', selected.po || '']);
 
+    const overstock = await overstockForRecord(selected);
+
     return json(200, {
       record: selected,
       relatedRecords: related.rows,
+      overstock,
     });
   }
 
