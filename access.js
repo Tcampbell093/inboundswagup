@@ -21,7 +21,7 @@
       'assemblyPage', 'queuePage', 'assemblyFlightTrackerPage',
       'inboundFlightTrackerPage', 'overstockLookupPage',
       'sordPage', 'calendarPage', 'productivityPage', 'policyPage',
-      'helpPage', 'importHubPage', 'historyPage'
+      'donationTrainingPage', 'helpPage', 'importHubPage', 'historyPage'
     ],
     l2: [
       'homePage',
@@ -29,7 +29,7 @@
       'returnsPage', 'cycleCountPage', 'inventoryPage',
       'assemblyPage', 'assemblyFlightTrackerPage',
       'inboundFlightTrackerPage',
-      'calendarPage', 'policyPage', 'helpPage'
+      'calendarPage', 'policyPage', 'donationTrainingPage', 'helpPage'
     ],
     l1: [
       'homePage',
@@ -37,7 +37,7 @@
       'returnsPage', 'cycleCountPage', 'inventoryPage',
       'assemblyPage', 'assemblyFlightTrackerPage',
       'inboundFlightTrackerPage',
-      'calendarPage', 'policyPage', 'helpPage'
+      'calendarPage', 'policyPage', 'donationTrainingPage', 'helpPage'
     ],
     external: [
       // External users land directly on a flight tracker — they don't
