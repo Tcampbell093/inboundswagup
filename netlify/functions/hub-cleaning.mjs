@@ -102,21 +102,29 @@ function legacyHash(pin) {
 async function verifyCurrentHubCredential(session) {
   const key = slug(session?.name);
   const pin = clean(session?.pin, 8);
+  const employeeId = Number(session?.employeeId) > 0 ? Number(session.employeeId) : null;
   if (!key || !/^\d{4,8}$/.test(pin)) return false;
 
   const modern = await getPool().query(
-    'SELECT pin_salt,pin_hash,pin_iterations,active FROM hub_associate_auth WHERE employee_key=$1 LIMIT 1',
-    [key],
-  );
-  if (modern.rows[0]) {
-    const row = modern.rows[0];
-    if (row.active === false) return false;
+    `SELECT pin_salt,pin_hash,pin_iterations,active
+     FROM hub_associate_auth
+     WHERE employee_key=$1 OR ($2::BIGINT IS NOT NULL AND employee_id=$2)
+     ORDER BY CASE WHEN employee_key=$1 THEN 0 ELSE 1 END, updated_at DESC`,
+    [key, employeeId],
+  ).catch(async (error) => {
+    if (error?.code !== '42703') throw error;
+    return getPool().query(
+      'SELECT pin_salt,pin_hash,pin_iterations,active FROM hub_associate_auth WHERE employee_key=$1 LIMIT 1',
+      [key],
+    );
+  });
+
+  for (const row of modern.rows) {
+    if (row.active === false) continue;
     try {
       const iterations = Number(row.pin_iterations || HUB_PIN_ITERATIONS);
-      return safeEqualHex(hashPin(pin, row.pin_salt, iterations), row.pin_hash);
-    } catch {
-      return false;
-    }
+      if (safeEqualHex(hashPin(pin, row.pin_salt, iterations), row.pin_hash)) return true;
+    } catch {}
   }
 
   const legacy = await getPool().query(
