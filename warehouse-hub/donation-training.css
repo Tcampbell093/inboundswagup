@@ -130,3 +130,9 @@ h1{margin:5px 0 9px;font-size:clamp(30px,4vw,48px);letter-spacing:-.04em}
 .result-line strong{color:var(--green)}.result-line.bad strong{color:var(--red)}
 @media(max-width:1050px){.trainer-shell{grid-template-columns:1fr}.coach-panel{position:static}.crm-body{grid-template-columns:1fr}.side-pane{grid-template-columns:1fr 1fr}.simulator{min-height:0}.rule-strip{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:720px){.topbar{padding:0 12px}.training-pill{display:none}.page{width:min(100% - 16px,1420px)}.intro-card{grid-template-columns:1fr}.mode-picker{grid-template-columns:1fr}.rule-strip{grid-template-columns:1fr 1fr}.side-pane{grid-template-columns:1fr}.crm-body{padding:0 5px 8px}.account-layout{padding:0 5px 8px}.info-grid{grid-template-columns:1fr}.crm-nav span:not(.crm-logo):not(:nth-child(2)){display:none}}
+
+.check-item.failed{border-color:#efb4aa;background:var(--red-soft)}
+.check-item.failed .num{background:var(--red);color:#fff}
+body.embedded .topbar{display:none}
+body.embedded .page{width:min(100% - 18px,1420px);margin:10px auto 28px}
+body.embedded .coach-panel{top:10px}

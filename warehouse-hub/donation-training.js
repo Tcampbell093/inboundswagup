@@ -1,5 +1,7 @@
 (() => {
   const TODAY = '2026-10-01';
+  const EMBEDDED = new URLSearchParams(window.location.search).get('embed') === '1';
+  document.body.classList.toggle('embedded', EMBEDDED);
 
   const REASONS = {
     qa_too_new: 'QA Approval was less than 10 days ago.',
@@ -270,32 +272,62 @@
     return stageInfo().stopReason;
   }
 
+  function qualificationResults(sc = current()) {
+    const bulkPair = bulkFirstShipmentAfterNewInventory(sc);
+    const bulkQty = (sc.bulk.stockRows || []).reduce((n, row) => n + Number(row.total || 0), 0);
+    return {
+      qa: daysBetween(sc.qaApproved) >= 10,
+      packbuilder: !sc.packBuilder.exists || sc.packBuilder.status === 'Complete',
+      packhistory: !sc.packBuilder.exists || (sc.packBuilder.status === 'Complete' && daysBetween(sc.packBuilder.firstShipment) >= 30),
+      bulkstock: bulkQty === 0,
+      bulkhistory: !!bulkPair.newInventory && !!bulkPair.shipment && daysBetween(bulkPair.shipment.date) >= 30,
+    };
+  }
+
   function coachMessage() {
     const sc = current();
-    const stage = stageInfo(sc);
+    const results = qualificationResults(sc);
     if (state.mode === 'test') return 'No hints in Practice Test. Navigate the case, inspect the evidence, and make your decision when ready.';
 
-    if (!state.reviewed.has('qa')) return 'Open the PO’s Related tab and find the QA Approved date in Purchase Order History. It must be at least 10 days before the training date.';
-    if (daysBetween(sc.qaApproved) < 10) return 'The QA Approved date is too recent. This case should stop here as Not Donations.';
+    if (!state.reviewed.has('qa')) {
+      return 'Open the PO’s Related tab and find the QA Approved date in Purchase Order History. Rule: at least 10 full days must have passed.';
+    }
+    if (!results.qa) {
+      return 'You found the QA Approved date. Compare it with the training date using the 10-day rule, then make your decision.';
+    }
 
-    if (!state.reviewed.has('packbuilder')) return 'Check the Pack Builder panel. A Pack Builder may be nonexistent, or—if it exists—its status must be Complete.';
-    if (sc.packBuilder.exists && sc.packBuilder.status !== 'Complete') return 'The Pack Builder exists but is not Complete. Stop here: Not Donations.';
+    if (!state.reviewed.has('packbuilder')) {
+      return 'Check the Pack Builder panel. Rule: no Pack Builder is acceptable; if one exists, its status must be Complete.';
+    }
+    if (!results.packbuilder) {
+      return 'You found the Pack Builder status. Apply the rule: it must be Complete, or the Pack Builder must not exist. Then make your decision.';
+    }
 
-    if (sc.packBuilder.exists && !state.reviewed.has('packhistory')) return 'Open the Pack Builder’s Product link, then Inventory/Stock. Find New Inventory and the first Shipping event after it. At least 30 days must have passed from that first shipment.';
-    if (sc.packBuilder.exists && daysBetween(sc.packBuilder.firstShipment) < 30) return 'The Pack’s first shipment after New Inventory is less than 30 days old. Stop here: Not Donations.';
+    if (sc.packBuilder.exists && !state.reviewed.has('packhistory')) {
+      return 'Open the Pack Builder’s Product link, then Inventory/Stock. Find New Inventory and the first Shipping event after it. Rule: at least 30 full days must have passed from that first shipment.';
+    }
+    if (!results.packhistory) {
+      return 'You found the Pack shipment history. Apply the 30-day rule to the first Shipping event after New Inventory, then make your decision.';
+    }
 
-    if (!state.reviewed.has('bulkstock')) return 'Return to the PO and open the Account Product in the top-left. In Inventory/Stock, ignore Stock Status and inspect only the purple Warehouse Storage Locations section.';
-    const qty = sc.bulk.stockRows.reduce((n,r)=>n+Number(r.total||0),0);
-    if (qty > 0) return 'The purple Warehouse Storage Locations section still has inventory. Stop here: Not Donations.';
+    if (!state.reviewed.has('bulkstock')) {
+      return 'Return to the PO and open the Account Product in the top-left. In Inventory/Stock, ignore Stock Status and inspect only the purple Warehouse Storage Locations section. Rule: that purple inventory must be zero.';
+    }
+    if (!results.bulkstock) {
+      return 'You found the purple Warehouse Storage Locations inventory. Apply the zero-inventory rule, then make your decision.';
+    }
 
-    if (!state.reviewed.has('bulkhistory')) return 'Now use the bulk item’s Inventory History. Find New Inventory, then the first Shipping event after it. At least 30 days must have passed from that shipment.';
-    const bulk = bulkFirstShipmentAfterNewInventory(sc);
-    if (!bulk.newInventory || !bulk.shipment) return 'There is no qualifying New Inventory → first Shipping history to prove the 30-day requirement. Stop here: Not Donations.';
-    if (daysBetween(bulk.shipment.date) < 30) return 'The bulk item’s first shipment after New Inventory is less than 30 days old. Stop here: Not Donations.';
-    return 'Every qualification has been met. Submit “Qualifies for Donations.”';
+    if (!state.reviewed.has('bulkhistory')) {
+      return 'Now use the bulk item’s Inventory History. Find New Inventory, then the first Shipping event after it. Rule: at least 30 full days must have passed from that first shipment.';
+    }
+    if (!results.bulkhistory) {
+      return 'You found the bulk Inventory History. Apply the 30-day rule to the first Shipping event after New Inventory, then make your decision.';
+    }
+    return 'You have inspected every required qualification. Use the rules above and submit your final decision.';
   }
 
   function renderChecklist() {
+    const sc = current();
     const items = [
       ['qa','QA Approved','At least 10 days ago'],
       ['packbuilder','Pack Builder','Complete or nonexistent'],
@@ -303,6 +335,7 @@
       ['bulkstock','Bulk inventory','Purple Warehouse Storage Locations = 0'],
       ['bulkhistory','Bulk Inventory History','30+ days from first shipment after New Inventory'],
     ];
+
     if (state.mode === 'test') {
       checklist.innerHTML = items.map((item, i) => `<div class="check-item">
         <span class="num">${i+1}</span>
@@ -310,13 +343,37 @@
       </div>`).join('');
       return;
     }
-    const stage = stageInfo();
+
+    const results = qualificationResults(sc);
+    const reviewed = {
+      qa: state.reviewed.has('qa'),
+      packbuilder: state.reviewed.has('packbuilder'),
+      packhistory: !sc.packBuilder.exists ? state.reviewed.has('packbuilder') : state.reviewed.has('packhistory'),
+      bulkstock: state.reviewed.has('bulkstock'),
+      bulkhistory: state.reviewed.has('bulkhistory'),
+    };
+
+    let firstFailedIndex = -1;
+    items.forEach((item, i) => {
+      if (firstFailedIndex < 0 && reviewed[item[0]] && !results[item[0]]) firstFailedIndex = i;
+    });
+
+    let firstPendingIndex = -1;
+    items.forEach((item, i) => {
+      if (firstPendingIndex < 0 && !reviewed[item[0]] && (firstFailedIndex < 0 || i <= firstFailedIndex)) firstPendingIndex = i;
+    });
+
     checklist.innerHTML = items.map((item, i) => {
-      const done = i < stage.done || state.reviewed.has(item[0]) && i < stage.done + 1;
-      const active = !done && ((stage.key === item[0]) || (stage.key === 'complete' && i === 4));
-      return `<div class="check-item${done ? ' done' : ''}${active ? ' active' : ''}">
-        <span class="num">${done ? '✓' : i+1}</span>
-        <div><b>${item[1]}</b><small>${item[2]}</small></div>
+      const key = item[0];
+      const blocked = firstFailedIndex >= 0 && i > firstFailedIndex;
+      const passed = !blocked && reviewed[key] && results[key];
+      const failed = !blocked && reviewed[key] && !results[key];
+      const active = !blocked && !reviewed[key] && i === firstPendingIndex;
+      const icon = passed ? '✓' : failed ? '!' : i + 1;
+      const extra = key === 'packhistory' && !sc.packBuilder.exists && passed ? ' · Not required' : '';
+      return `<div class="check-item${passed ? ' done' : ''}${failed ? ' failed' : ''}${active ? ' active' : ''}">
+        <span class="num">${icon}</span>
+        <div><b>${item[1]}</b><small>${item[2]}${extra}</small></div>
       </div>`;
     }).join('');
   }
