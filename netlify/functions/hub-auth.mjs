@@ -62,6 +62,8 @@ async function ensureSchema() {
     );
     CREATE INDEX IF NOT EXISTS hub_associate_auth_name_idx ON hub_associate_auth(employee_name);
     ALTER TABLE hub_associate_auth ADD COLUMN IF NOT EXISTS pin_iterations INTEGER NOT NULL DEFAULT 120000;
+    ALTER TABLE hub_associate_auth ADD COLUMN IF NOT EXISTS employee_id BIGINT;
+    CREATE INDEX IF NOT EXISTS hub_associate_auth_employee_id_idx ON hub_associate_auth(employee_id);
     CREATE TABLE IF NOT EXISTS hub_employee_pins (
       employee_key TEXT PRIMARY KEY,
       employee_name TEXT NOT NULL,
@@ -81,6 +83,21 @@ async function ensureSchema() {
     );
     CREATE INDEX IF NOT EXISTS hub_pin_reset_audit_recent_idx ON hub_pin_reset_audit(reset_at DESC);
   `);
+
+  // Backfill stable roster IDs from prior Admin reset history when possible.
+  await pool.query(`
+    UPDATE hub_associate_auth AS auth
+    SET employee_id = audit.employee_id
+    FROM (
+      SELECT DISTINCT ON (employee_key) employee_key, employee_id
+      FROM hub_pin_reset_audit
+      WHERE employee_id IS NOT NULL
+      ORDER BY employee_key, reset_at DESC
+    ) AS audit
+    WHERE auth.employee_key = audit.employee_key
+      AND auth.employee_id IS NULL
+  `).catch(() => {});
+
   schemaReady = true;
 }
 
@@ -274,11 +291,16 @@ async function loadRoster(force = false) {
 async function authMaps() {
   const pool = getPool();
   const [modern, legacy] = await Promise.all([
-    pool.query(`SELECT employee_key,active FROM hub_associate_auth`),
+    pool.query(`SELECT employee_key,employee_id,active FROM hub_associate_auth`),
     pool.query(`SELECT employee_key,active FROM hub_employee_pins`).catch(() => ({ rows: [] })),
   ]);
   return {
     modern: new Map(modern.rows.map((row) => [row.employee_key, row.active !== false])),
+    modernById: new Map(
+      modern.rows
+        .filter((row) => Number(row.employee_id) > 0)
+        .map((row) => [Number(row.employee_id), row.active !== false]),
+    ),
     legacy: new Map(legacy.rows.map((row) => [row.employee_key, row.active !== false])),
   };
 }
@@ -291,7 +313,10 @@ async function publicRoster(force = false) {
     pinSource: 'hub',
     employees: roster.people.map((person) => {
       const key = slug(person.name);
-      const hubConfigured = maps.modern.get(key) === true || maps.legacy.get(key) === true;
+      const hubConfigured =
+        maps.modernById.get(Number(person.id)) === true ||
+        maps.modern.get(key) === true ||
+        maps.legacy.get(key) === true;
       return {
         ...person,
         hubPinConfigured: hubConfigured,
@@ -312,12 +337,15 @@ async function findPerson(name, force = false) {
 
 async function saveModernPin(person, pin, queryClient = getPool()) {
   const pool = queryClient;
+  const key = slug(person.name);
+  const employeeId = Number(person.id) > 0 ? Number(person.id) : null;
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPin(pin, salt, HUB_PIN_ITERATIONS);
   await pool.query(`
-    INSERT INTO hub_associate_auth(employee_key,employee_name,department,pin_salt,pin_hash,pin_iterations,active,created_at,updated_at)
-    VALUES($1,$2,$3,$4,$5,$6,TRUE,NOW(),NOW())
+    INSERT INTO hub_associate_auth(employee_key,employee_id,employee_name,department,pin_salt,pin_hash,pin_iterations,active,created_at,updated_at)
+    VALUES($1,$2,$3,$4,$5,$6,$7,TRUE,NOW(),NOW())
     ON CONFLICT(employee_key) DO UPDATE SET
+      employee_id=EXCLUDED.employee_id,
       employee_name=EXCLUDED.employee_name,
       department=EXCLUDED.department,
       pin_salt=EXCLUDED.pin_salt,
@@ -325,26 +353,103 @@ async function saveModernPin(person, pin, queryClient = getPool()) {
       pin_iterations=EXCLUDED.pin_iterations,
       active=TRUE,
       updated_at=NOW()
-  `, [slug(person.name), person.name, person.department || '', salt, hash, HUB_PIN_ITERATIONS]);
+  `, [key, employeeId, person.name, person.department || '', salt, hash, HUB_PIN_ITERATIONS]);
+
+  if (employeeId) {
+    await pool.query(
+      `UPDATE hub_associate_auth
+       SET active=FALSE,updated_at=NOW()
+       WHERE employee_id=$1 AND employee_key<>$2 AND active=TRUE`,
+      [employeeId, key],
+    ).catch(() => {});
+  }
 }
 
 async function verifyHubFallback(person, pin) {
   const pool = getPool();
   const key = slug(person.name);
-  const modern = await pool.query(`SELECT pin_salt,pin_hash,pin_iterations,active FROM hub_associate_auth WHERE employee_key=$1 LIMIT 1`, [key]);
-  if (modern.rows[0]) {
-    const row = modern.rows[0];
-    if (row.active !== false) {
-      try {
-        const iterations = Number(row.pin_iterations || 120000);
-        if (safeEqualHex(hashPin(pin, row.pin_salt, iterations), row.pin_hash)) return true;
-      } catch {}
+  const employeeId = Number(person.id) > 0 ? Number(person.id) : null;
+
+  const modern = await pool.query(
+    `SELECT employee_key,employee_id,pin_salt,pin_hash,pin_iterations,active
+     FROM hub_associate_auth
+     WHERE employee_key=$1 OR ($2::BIGINT IS NOT NULL AND employee_id=$2)
+     ORDER BY CASE WHEN employee_key=$1 THEN 0 ELSE 1 END, updated_at DESC`,
+    [key, employeeId],
+  );
+
+  for (const row of modern.rows) {
+    if (row.active === false) continue;
+    try {
+      const iterations = Number(row.pin_iterations || 120000);
+      if (safeEqualHex(hashPin(pin, row.pin_salt, iterations), row.pin_hash)) {
+        if (row.employee_key !== key || Number(row.employee_id || 0) !== Number(employeeId || 0)) {
+          await saveModernPin(person, pin).catch(() => {});
+        }
+        return true;
+      }
+    } catch {}
+  }
+
+  // Before employee IDs were stored with credentials, Admin reset history still
+  // recorded the stable roster ID. Use those historical keys as safe aliases.
+  if (employeeId) {
+    const aliases = await pool.query(
+      `SELECT DISTINCT employee_key
+       FROM hub_pin_reset_audit
+       WHERE employee_id=$1 AND employee_key<>$2
+       ORDER BY employee_key`,
+      [employeeId, key],
+    ).catch(() => ({ rows: [] }));
+    const aliasKeys = aliases.rows.map((row) => clean(row.employee_key, 100)).filter(Boolean);
+    if (aliasKeys.length) {
+      const aliasRows = await pool.query(
+        `SELECT employee_key,pin_salt,pin_hash,pin_iterations,active
+         FROM hub_associate_auth
+         WHERE employee_key = ANY($1::TEXT[])
+         ORDER BY updated_at DESC`,
+        [aliasKeys],
+      ).catch(() => ({ rows: [] }));
+      for (const row of aliasRows.rows) {
+        if (row.active === false) continue;
+        try {
+          const iterations = Number(row.pin_iterations || 120000);
+          if (safeEqualHex(hashPin(pin, row.pin_salt, iterations), row.pin_hash)) {
+            await saveModernPin(person, pin).catch(() => {});
+            return true;
+          }
+        } catch {}
+      }
     }
   }
 
-  const legacy = await pool.query(`SELECT pin_hash,active FROM hub_employee_pins WHERE employee_key=$1 LIMIT 1`, [key]).catch(() => ({ rows: [] }));
-  const row = legacy.rows[0];
-  return !!(row && row.active !== false && safeEqualHex(legacyHash(pin), row.pin_hash));
+  const legacyKeys = [key];
+  if (employeeId) {
+    const aliases = await pool.query(
+      `SELECT DISTINCT employee_key FROM hub_pin_reset_audit WHERE employee_id=$1`,
+      [employeeId],
+    ).catch(() => ({ rows: [] }));
+    for (const row of aliases.rows) {
+      const alias = clean(row.employee_key, 100);
+      if (alias && !legacyKeys.includes(alias)) legacyKeys.push(alias);
+    }
+  }
+
+  const legacy = await pool.query(
+    `SELECT employee_key,pin_hash,active
+     FROM hub_employee_pins
+     WHERE employee_key = ANY($1::TEXT[])`,
+    [legacyKeys],
+  ).catch(() => ({ rows: [] }));
+
+  for (const row of legacy.rows) {
+    if (row.active === false) continue;
+    if (safeEqualHex(legacyHash(pin), row.pin_hash)) {
+      await saveModernPin(person, pin).catch(() => {});
+      return true;
+    }
+  }
+  return false;
 }
 
 function authorizedAdmin(session, roster) {
