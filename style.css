@@ -7617,3 +7617,14 @@ tr.priority-highvalue{background:rgba(59,130,246,.04)}
     border-radius:7px;
   }
 }
+
+/* Donation Qualification training module */
+.donation-training-module{padding:20px;display:flex;flex-direction:column;gap:14px;min-height:calc(100vh - 32px)}
+.donation-training-module__head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap}
+.donation-training-module__head h2{margin:3px 0 5px}
+.donation-training-module__head .subtitle{max-width:820px;margin:0}
+.donation-training-frame{width:100%;height:calc(100vh - 185px);min-height:760px;border:1px solid var(--blue2);border-radius:18px;background:#f4f7f5;box-shadow:0 12px 34px rgba(18,61,52,.08)}
+@media(max-width:760px){
+  .donation-training-module{padding:10px}
+  .donation-training-frame{height:calc(100vh - 150px);min-height:720px;border-radius:12px}
+}
