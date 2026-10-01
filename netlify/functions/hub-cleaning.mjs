@@ -5,8 +5,10 @@ const { Pool } = pg;
 const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
 const SESSION_COOKIE = 'hub_associate_session';
 const SESSION_VERSION = 2;
+const HUB_PIN_ITERATIONS = 100000;
 let poolInstance = null;
 let bingoSchemaReady = false;
+let signingKeyPromise = null;
 
 function env(name) {
   return globalThis.Netlify?.env?.get(name) || '';
@@ -72,7 +74,6 @@ function decryptSession(token) {
     const payload = JSON.parse(plain);
     if (
       payload?.v !== SESSION_VERSION ||
-      payload?.fairShiftVerified !== true ||
       !payload?.name ||
       !payload?.pin ||
       Number(payload.exp || 0) <= Date.now()
@@ -81,6 +82,112 @@ function decryptSession(token) {
   } catch {
     return null;
   }
+}
+
+function hashPin(pin, saltHex, iterations = HUB_PIN_ITERATIONS) {
+  return crypto.pbkdf2Sync(pin, Buffer.from(saltHex, 'hex'), iterations, 32, 'sha256').toString('hex');
+}
+
+function safeEqualHex(a, b) {
+  if (!a || !b) return false;
+  const aa = Buffer.from(String(a), 'hex');
+  const bb = Buffer.from(String(b), 'hex');
+  return aa.length === bb.length && aa.length > 0 && crypto.timingSafeEqual(aa, bb);
+}
+
+function legacyHash(pin) {
+  return crypto.createHash('sha256').update(`${env('HUB_PIN_SALT')}:${pin}`).digest('hex');
+}
+
+async function verifyCurrentHubCredential(session) {
+  const key = slug(session?.name);
+  const pin = clean(session?.pin, 8);
+  if (!key || !/^\d{4,8}$/.test(pin)) return false;
+
+  const modern = await getPool().query(
+    'SELECT pin_salt,pin_hash,pin_iterations,active FROM hub_associate_auth WHERE employee_key=$1 LIMIT 1',
+    [key],
+  );
+  if (modern.rows[0]) {
+    const row = modern.rows[0];
+    if (row.active === false) return false;
+    try {
+      const iterations = Number(row.pin_iterations || HUB_PIN_ITERATIONS);
+      return safeEqualHex(hashPin(pin, row.pin_salt, iterations), row.pin_hash);
+    } catch {
+      return false;
+    }
+  }
+
+  const legacy = await getPool().query(
+    'SELECT pin_hash,active FROM hub_employee_pins WHERE employee_key=$1 LIMIT 1',
+    [key],
+  ).catch(() => ({ rows: [] }));
+  const row = legacy.rows[0];
+  return !!(row && row.active !== false && safeEqualHex(legacyHash(pin), row.pin_hash));
+}
+
+async function signingKey() {
+  if (signingKeyPromise) return signingKeyPromise;
+  const pem = env('FAIRSHIFT_HUB_SIGNING_PRIVATE_KEY');
+  if (!pem) throw new Error('FairShift Hub signing key is not configured.');
+  const body = pem
+    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+    .replace(/-----END PRIVATE KEY-----/g, '')
+    .replace(/\s+/g, '');
+  const der = Buffer.from(body, 'base64');
+  signingKeyPromise = crypto.webcrypto.subtle.importKey(
+    'pkcs8',
+    der,
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['sign'],
+  );
+  return signingKeyPromise;
+}
+
+async function signedFairShiftHeaders(path, method, bodyText) {
+  const timestamp = String(Date.now());
+  const canonical = `${timestamp}\n${String(method || 'GET').toUpperCase()}\n${path}\n${bodyText || ''}`;
+  try {
+    const key = await signingKey();
+    const signature = await crypto.webcrypto.subtle.sign(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      key,
+      new TextEncoder().encode(canonical),
+    );
+    return {
+      'x-hub-ts': timestamp,
+      'x-hub-signature': Buffer.from(signature).toString('base64url'),
+    };
+  } catch {
+    const syncKey = env('FAIRSHIFT_HUB_PIN_SYNC_KEY');
+    return syncKey ? { 'x-hub-pin-key': syncKey } : {};
+  }
+}
+
+async function repairFairShiftPin(session) {
+  const employeeId = Number(session?.employeeId);
+  const employeeName = clean(session?.name, 100);
+  const pin = clean(session?.pin, 8);
+  if (!Number.isSafeInteger(employeeId) || employeeId <= 0 || !employeeName || !/^\d{4,8}$/.test(pin)) return false;
+
+  const path = '/api/checkin';
+  const bodyText = JSON.stringify({
+    action: 'adminResetPin',
+    employeeId,
+    employeeName,
+    pin,
+  });
+  const auth = await signedFairShiftHeaders(path, 'POST', bodyText);
+  if (!Object.keys(auth).length) return false;
+
+  const result = await forward(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...auth },
+    body: bodyText,
+  });
+  return result.status >= 200 && result.status < 300 && result.body?.ok !== false;
 }
 
 async function forward(path, options = {}) {
@@ -206,6 +313,14 @@ export default async (request) => {
     });
   }
 
+  const hubCredentialCurrent = await verifyCurrentHubCredential(session).catch(() => false);
+  if (!hubCredentialCurrent) {
+    return json(401, {
+      error: 'Your Warehouse Hub PIN changed after this sign-in. Sign in again with your current PIN.',
+      code: 'HUB_CREDENTIAL_STALE',
+    });
+  }
+
   const body = await request.json().catch(() => ({}));
   const action = clean(body.action, 12);
   const assignmentId = Number(body.assignmentId);
@@ -213,16 +328,37 @@ export default async (request) => {
   if (!['start', 'finish'].includes(action)) return json(400, { error: 'Invalid cleaning action.' });
   if (!assignmentId) return json(400, { error: 'A valid assignment ID is required.' });
 
-  const result = await forward('/api/checkin', {
+  const checkinBody = JSON.stringify({
+    action,
+    assignmentId,
+    employeeName: clean(session.name, 100),
+    pin: clean(session.pin, 8),
+  });
+
+  let result = await forward('/api/checkin', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      action,
-      assignmentId,
-      employeeName: clean(session.name, 100),
-      pin: clean(session.pin, 8),
-    }),
+    body: checkinBody,
   });
+
+  // A valid Hub credential can outlive a failed FairShift PIN sync. Repair the
+  // downstream PIN from the authoritative Hub credential, then retry once.
+  if (result.status === 401) {
+    const repaired = await repairFairShiftPin(session).catch(() => false);
+    if (repaired) {
+      result = await forward('/api/checkin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: checkinBody,
+      });
+    }
+    if (result.status === 401) {
+      return json(409, {
+        error: 'Your Warehouse Hub sign-in is valid, but Cleaning could not sync your PIN to FairShift. Ask an Admin to reset your Hub PIN once, then try again.',
+        code: 'FAIRSHIFT_PIN_OUT_OF_SYNC',
+      });
+    }
+  }
 
   if (
     result.status >= 200 &&
