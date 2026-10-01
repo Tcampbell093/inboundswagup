@@ -62,3 +62,39 @@
 .box-history-empty{color:var(--muted);font-size:12px;padding:16px;text-align:center;border:1px dashed #cbd8e4;border-radius:10px}
 .box-history-source{display:inline-block;background:#e9f2fb;color:#315c87;font-size:10px;font-weight:900;border-radius:999px;padding:2px 7px;margin-left:5px}
 @media(max-width:600px){.box-history-search{flex-wrap:wrap}.box-history-search input{flex-basis:100%}}
+
+/* Restored all-Overstock search + Donation Pool search */
+.overstock-search{margin:-4px 0 16px;background:#fff;border:1px solid var(--line);border-radius:13px;padding:13px 14px;box-shadow:var(--shadow)}
+.overstock-search-box{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:9px;border:1px solid #bfcfdd;border-radius:11px;background:#fff;padding:0 11px;transition:border-color .15s ease,box-shadow .15s ease}
+.overstock-search-box:focus-within{border-color:#4b88bb;box-shadow:0 0 0 3px rgba(64,132,188,.12)}
+.overstock-search-icon{font-size:22px;line-height:1;color:#52728d;font-weight:800}
+.overstock-search-box input{width:100%;border:0;outline:0;background:transparent;padding:12px 0;font:inherit;color:var(--navy2);font-size:14px}
+.overstock-search-box input::placeholder{color:#8093a4}
+.overstock-search-clear{border:0;background:#eef3f7;color:#49667e;border-radius:7px;width:28px;height:28px;font-size:18px;cursor:pointer}
+.overstock-search-help{margin:7px 3px 0;color:var(--muted);font-size:10.5px}
+.overstock-search-results{margin-top:12px;border-top:1px solid var(--line);padding-top:11px}
+.overstock-search-summary{font-size:11px;color:var(--muted);margin:0 2px 9px}
+.overstock-search-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:520px;overflow:auto;padding:1px}
+.overstock-search-result{border:1px solid var(--line);border-radius:10px;background:#fff;padding:11px 12px;text-align:left;color:var(--navy2);cursor:pointer;font:inherit;display:grid;gap:4px;line-height:1.35}
+.overstock-search-result:hover{border-color:#74a6cb;background:#f7fbfe}
+.overstock-search-result-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:2px}
+.overstock-search-result-head>b{font-size:13px}
+.overstock-search-result-head>span{background:#edf3f8;color:#557187;border-radius:999px;padding:3px 7px;font-size:9px;font-weight:900;white-space:nowrap}
+.overstock-search-result div:not(.overstock-search-result-head){font-size:10.5px;color:#5f7485}
+.overstock-search-result strong{color:#2e526e}
+
+.donation-dialog{width:min(760px,calc(100% - 24px))}
+.donation-search{margin:13px 18px 0;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;border:1px solid #c5d4e0;border-radius:10px;padding:0 10px;background:#fff}
+.donation-search:focus-within{border-color:#4b88bb;box-shadow:0 0 0 3px rgba(64,132,188,.1)}
+.donation-search>span{color:#5a778f;font-size:18px}
+.donation-search input{border:0;outline:0;width:100%;font:inherit;font-size:12px;color:var(--navy2);padding:10px 0;background:transparent}
+.donation-search button{border:0;background:#eef3f7;color:#49667e;border-radius:7px;width:26px;height:26px;cursor:pointer;font-size:17px}
+.donation-search-count{padding:7px 19px 0;color:var(--muted);font-size:10px}
+.donation-dialog .dialog-body{padding-top:11px}
+.donation-dialog .donation-list{max-height:min(64vh,690px);overflow:auto;padding-right:2px}
+
+@media(max-width:760px){
+  .overstock-search{margin-top:0}
+  .overstock-search-list{grid-template-columns:1fr;max-height:480px}
+  .overstock-search-help{font-size:10px;line-height:1.45}
+}
