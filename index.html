@@ -45,9 +45,9 @@
       var overrides = (data.overrides && typeof data.overrides === 'object') ? data.overrides : {};
 
       var ROLE_ACCESS_PRE = {
-        manager: ['homePage','attendancePage','workflowInboundPage','fulfillmentScanPage','returnsPage','cycleCountPage','inventoryPage','errorsPage','assemblyPage','queuePage','assemblyFlightTrackerPage','inboundFlightTrackerPage','overstockLookupPage','sordPage','calendarPage','productivityPage','policyPage','helpPage','importHubPage','historyPage'],
-        l2:      ['homePage','workflowInboundPage','fulfillmentScanPage','returnsPage','cycleCountPage','inventoryPage','assemblyPage','assemblyFlightTrackerPage','inboundFlightTrackerPage','calendarPage','policyPage','helpPage'],
-        l1:      ['homePage','workflowInboundPage','fulfillmentScanPage','returnsPage','cycleCountPage','inventoryPage','assemblyPage','assemblyFlightTrackerPage','inboundFlightTrackerPage','calendarPage','policyPage','helpPage'],
+        manager: ['homePage','attendancePage','workflowInboundPage','fulfillmentScanPage','returnsPage','cycleCountPage','inventoryPage','errorsPage','assemblyPage','queuePage','assemblyFlightTrackerPage','inboundFlightTrackerPage','overstockLookupPage','sordPage','calendarPage','productivityPage','policyPage','donationTrainingPage','helpPage','importHubPage','historyPage'],
+        l2:      ['homePage','workflowInboundPage','fulfillmentScanPage','returnsPage','cycleCountPage','inventoryPage','assemblyPage','assemblyFlightTrackerPage','inboundFlightTrackerPage','calendarPage','policyPage','donationTrainingPage','helpPage'],
+        l1:      ['homePage','workflowInboundPage','fulfillmentScanPage','returnsPage','cycleCountPage','inventoryPage','assemblyPage','assemblyFlightTrackerPage','inboundFlightTrackerPage','calendarPage','policyPage','donationTrainingPage','helpPage'],
         external:['assemblyFlightTrackerPage','inboundFlightTrackerPage','overstockLookupPage']
       };
       var allowed = ROLE_ACCESS_PRE[role] || ROLE_ACCESS_PRE.l1;
@@ -61,7 +61,7 @@
 
       // All pages that exist as nav buttons — anything NOT allowed (per role or
       // override) gets hidden via injected CSS.
-      var ALL_NAV_PAGES = ['homePage','importHubPage','attendancePage','workflowInboundPage','inboundFlightTrackerPage','overstockLookupPage','fulfillmentScanPage','returnsPage','cycleCountPage','inventoryPage','errorsPage','assemblyPage','queuePage','assemblyFlightTrackerPage','sordPage','calendarPage','productivityPage','policyPage','historyPage','helpPage','settingsPage'];
+      var ALL_NAV_PAGES = ['homePage','importHubPage','attendancePage','workflowInboundPage','inboundFlightTrackerPage','overstockLookupPage','fulfillmentScanPage','returnsPage','cycleCountPage','inventoryPage','errorsPage','assemblyPage','queuePage','assemblyFlightTrackerPage','sordPage','calendarPage','productivityPage','policyPage','historyPage','donationTrainingPage','helpPage','settingsPage'];
       var hideRules = ALL_NAV_PAGES
         .filter(function(p){ return !allowedPre(p); })
         .map(function(p){ return '.nav-btn[data-page="'+p+'"]'; })
@@ -79,7 +79,8 @@
         overview: ['homePage','importHubPage'],
         floor:    ['attendancePage','workflowInboundPage','inboundFlightTrackerPage','overstockLookupPage','fulfillmentScanPage','returnsPage','cycleCountPage','inventoryPage','errorsPage'],
         assembly: ['assemblyPage','queuePage','assemblyFlightTrackerPage'],
-        ops:      ['sordPage','calendarPage','productivityPage','policyPage','historyPage']
+        ops:      ['sordPage','calendarPage','productivityPage','policyPage','historyPage'],
+        training: ['donationTrainingPage']
       };
       var emptyGroups = Object.keys(GROUPS_TO_PAGES).filter(function(g){
         return !GROUPS_TO_PAGES[g].some(function(p){ return allowedPre(p); });
@@ -302,6 +303,21 @@
           <button class="nav-btn" data-page="historyPage" title="History Log">
             <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M10 17A7 7 0 1 0 3 10h1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M3 10 1.5 8M3 10l1.5-2M10 7v3l2 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span class="nav-label" data-i18n="nav.history">History Log</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Training group -->
+      <div class="nav-group" data-group="training">
+        <button class="nav-group-header" type="button" aria-expanded="true" aria-controls="navg-training">
+          <svg class="nav-group-icon" viewBox="0 0 20 20" fill="none"><path d="M3 6.5 10 3l7 3.5-7 3.5-7-3.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M6 9v4.2c0 1.3 1.8 2.3 4 2.3s4-1 4-2.3V9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span class="nav-group-label">Training</span>
+          <svg class="nav-group-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="nav-list" id="navg-training">
+          <button class="nav-btn" data-page="donationTrainingPage" title="Donation Qualification Practice">
+            <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><rect x="4" y="3" width="12" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M7 7h6M7 10h6M7 13h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="m12 13 1.2 1.2L16 11.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="nav-label">Donation Trainer</span>
           </button>
         </div>
       </div>
@@ -821,6 +837,26 @@
     <div id="settingsUserDrawer" hidden style="position:fixed;top:0;right:0;bottom:0;width:min(460px,100vw);background:var(--bg);border-left:1px solid var(--blue2);z-index:8000;overflow-y:auto;padding:28px 24px;box-shadow:-8px 0 32px rgba(0,0,0,.12);">
       <div id="settingsUserDrawerContent"></div>
     </div>
+
+    <!-- ── Training: Donation Qualification ───────────────────── -->
+    <section id="donationTrainingPage" class="page">
+      <div class="donation-training-module">
+        <div class="donation-training-module__head">
+          <div>
+            <div class="eyebrow">Associate Training</div>
+            <h2>Donation Qualification Practice</h2>
+            <p class="subtitle">Practice the QA, Pack Builder, inventory, and shipment-history checks used to decide whether a PO qualifies for Donations.</p>
+          </div>
+          <a class="btn secondary" href="/warehouse-hub/donation-training.html" target="_blank" rel="noopener">Open full screen ↗</a>
+        </div>
+        <iframe
+          class="donation-training-frame"
+          src="/warehouse-hub/donation-training.html?embed=1"
+          title="Donation Qualification Practice Simulator"
+          loading="lazy"
+        ></iframe>
+      </div>
+    </section>
 
     <section id="helpPage" class="page">
       <div class="hero">
