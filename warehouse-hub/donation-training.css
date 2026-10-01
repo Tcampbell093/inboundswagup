@@ -139,3 +139,66 @@ body.embedded .coach-panel{top:10px}
 
 .pack-product-preview{width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:8px 12px;background:#fff;overflow:hidden}
 .pack-product-preview img{display:block;width:100%;height:100%;object-fit:contain}
+
+/* Larger desktop presentation for warehouse Macs */
+@media (min-width:1000px){
+  .trainer-shell{grid-template-columns:340px minmax(0,1fr);gap:18px}
+  .coach-panel{padding:20px}
+  .coach-head h2{font-size:24px}
+  .score-pill{padding:7px 11px;font-size:12px}
+  .today-box{padding:12px 13px}
+  .today-box span{font-size:11px}
+  .today-box strong{font-size:12px}
+  .coach-card{padding:14px}
+  .coach-title{font-size:11px}
+  .coach-card p{font-size:14px;line-height:1.55}
+  .checklist{gap:9px}
+  .check-item{grid-template-columns:28px 1fr;gap:10px;padding:11px}
+  .check-item .num{width:28px;height:28px;font-size:11px}
+  .check-item b{font-size:12.5px}
+  .check-item small{font-size:10.5px;line-height:1.4}
+  .decision-btn,.primary-btn,.secondary-btn{padding:12px 14px;font-size:13px}
+  .coach-panel>.secondary-btn{font-size:12px}
+
+  .sim-browserbar{height:50px;padding:0 16px}
+  .sim-address{height:31px;font-size:11.5px}
+  .sim-badge{font-size:10px}
+  .crm-nav{height:50px;gap:22px;padding:0 16px;font-size:12px}
+  .crm-logo{font-size:20px}
+  .crm-title{padding:15px 18px}
+  .object-type{font-size:10.5px}
+  .crm-title h3{font-size:21px;margin:2px 0 3px}
+  .crm-title .product-title-row>div>div[style]{font-size:11px!important}
+  .crm-actions{gap:8px}
+  .crm-actions button{padding:8px 11px;font-size:11px}
+  .status-path{margin:12px 14px}
+  .status-path span{padding:9px 5px;font-size:10px}
+  .crm-body{grid-template-columns:minmax(0,1.7fr) 430px;gap:12px;padding:0 12px 14px}
+  .main-pane,.side-pane{gap:11px}
+  .hero-product{min-height:260px}
+  .hero-product .fake-product{width:185px;height:185px;font-size:14px}
+  .tabs{gap:32px;padding:0 16px}
+  .tab{padding:13px 3px 11px;font-size:12px}
+  .panel{padding:14px}
+  .panel-head{margin-bottom:10px}
+  .panel-head h4{font-size:13px}
+  .panel-head small{font-size:10px}
+  .info-grid{gap:10px 28px}
+  .field span{font-size:10px}
+  .field b{font-size:12px}
+  .history-table,.stock-table{font-size:10.5px}
+  .history-table th,.history-table td,.stock-table th,.stock-table td{padding:8px 7px}
+  .side-card h4{padding:12px;font-size:12px}
+  .side-card-content{padding:11px}
+  .pb-row{font-size:11px;gap:9px}
+  .status-chip{padding:5px 8px;font-size:9.5px}
+  .barcode{height:105px;margin:9px 32px}
+  .account-layout{padding:0 12px 14px}
+  .account-hero{height:270px}
+  .pack-product-preview{padding:10px 16px}
+  .inventory-section{margin-top:10px}
+  .inventory-title{gap:8px;font-size:12.5px;padding:11px}
+  .inventory-icon{width:22px;height:22px;font-size:10px}
+  .callout{margin:11px;padding:11px 12px;font-size:11.5px;line-height:1.5}
+  .training-note{padding:10px 12px;font-size:10.5px}
+}
