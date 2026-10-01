@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+<title id="title">Swag pack product preview</title>
+<desc id="desc">A clean mock product image showing a coordinated welcome pack with cards, notebook, pen, mailer boxes, filler box, tumbler, and backpack.</desc>
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#ffffff"/>
+    <stop offset="1" stop-color="#f5f8fb"/>
+  </linearGradient>
+  <linearGradient id="navy" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#123d6b"/>
+    <stop offset="1" stop-color="#082948"/>
+  </linearGradient>
+  <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#2e83e6"/>
+    <stop offset="1" stop-color="#155bbb"/>
+  </linearGradient>
+  <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+    <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#15334d" flood-opacity=".13"/>
+  </filter>
+</defs>
+
+<rect width="1200" height="520" rx="26" fill="url(#bg)"/>
+<circle cx="75" cy="90" r="120" fill="#eef3f7"/>
+<circle cx="1140" cy="470" r="130" fill="#e8f2fb"/>
+
+<g font-family="Arial, Helvetica, sans-serif">
+  <text x="42" y="54" font-size="20" font-weight="800" fill="#184f7f">WELCOME PACK</text>
+  <text x="42" y="78" font-size="12" font-weight="700" letter-spacing="2" fill="#7b8a97">PRODUCT PREVIEW</text>
+
+  <g transform="translate(1035 28)">
+    <rect width="125" height="72" rx="18" fill="#fff" stroke="#d7e0e6" stroke-width="2"/>
+    <text x="62.5" y="26" text-anchor="middle" font-size="10" font-weight="700" fill="#7a8790">PACK ITEM</text>
+    <text x="62.5" y="40" text-anchor="middle" font-size="10" font-weight="700" fill="#7a8790">QUANTITY</text>
+    <text x="62.5" y="63" text-anchor="middle" font-size="28" font-weight="800" fill="#2879d7">9</text>
+  </g>
+
+  <!-- welcome cards -->
+  <g transform="translate(205 92)" filter="url(#shadow)">
+    <rect width="140" height="78" rx="4" fill="url(#navy)"/>
+    <text x="70" y="31" text-anchor="middle" font-size="10" font-weight="700" fill="#8dc1ff">WELCOME</text>
+    <text x="70" y="51" text-anchor="middle" font-size="17" font-weight="800" fill="#fff">Hello!</text>
+    <rect x="146" width="155" height="78" rx="4" fill="#fff" stroke="#d8e1e7"/>
+    <rect x="163" y="18" width="72" height="7" rx="3.5" fill="#2d7bd2"/>
+    <rect x="163" y="33" width="112" height="6" rx="3" fill="#dce4ea"/>
+    <rect x="163" y="46" width="95" height="6" rx="3" fill="#dce4ea"/>
+  </g>
+
+  <!-- pen -->
+  <g transform="translate(760 108)" filter="url(#shadow)">
+    <rect x="12" y="12" width="180" height="13" rx="6.5" fill="#f9fafb" stroke="#9eabb5"/>
+    <rect x="34" y="12" width="58" height="13" fill="url(#navy)"/>
+    <polygon points="0,18 15,12 15,25" fill="#646f78"/>
+    <rect x="154" y="8" width="42" height="5" rx="2.5" fill="#102f53"/>
+    <rect x="190" y="10" width="17" height="17" rx="5" fill="#102f53"/>
+    <circle cx="117" cy="18.5" r="6" fill="#2c7fdc"/>
+  </g>
+
+  <!-- notebook -->
+  <g transform="translate(210 228)" filter="url(#shadow)">
+    <rect width="90" height="116" rx="5" fill="url(#navy)"/>
+    <rect x="80" y="0" width="5" height="116" fill="#071d34"/>
+    <line x1="11" y1="10" x2="11" y2="128" stroke="#0e2640" stroke-width="4"/>
+    <circle cx="45" cy="48" r="16" fill="#2b7fd9"/>
+    <text x="45" y="75" text-anchor="middle" font-size="10" font-weight="800" fill="#fff">SWAG</text>
+  </g>
+
+  <!-- branded mailer -->
+  <g transform="translate(445 202)" filter="url(#shadow)">
+    <polygon points="0,46 98,0 205,42 108,90" fill="#fff" stroke="#d5dde3"/>
+    <polygon points="0,46 108,90 108,150 0,106" fill="#f5f7f9" stroke="#d5dde3"/>
+    <polygon points="108,90 205,42 205,102 108,150" fill="#fff" stroke="#d5dde3"/>
+    <polygon points="82,82 111,68 134,78 105,92" fill="#2c7fd9"/>
+    <polygon points="103,93 132,79 155,89 126,103" fill="#5ba0ea"/>
+    <polygon points="124,104 153,90 176,100 147,114" fill="#2c7fd9"/>
+  </g>
+
+  <!-- plain mailer -->
+  <g transform="translate(705 220)" filter="url(#shadow)">
+    <polygon points="0,38 92,0 190,38 98,77" fill="#fff" stroke="#d5dde3"/>
+    <polygon points="0,38 98,77 98,132 0,93" fill="#f7f8fa" stroke="#d5dde3"/>
+    <polygon points="98,77 190,38 190,93 98,132" fill="#fff" stroke="#d5dde3"/>
+  </g>
+
+  <!-- filler box -->
+  <g transform="translate(210 382)" filter="url(#shadow)">
+    <rect x="0" y="18" width="105" height="70" rx="3" fill="#c98e55"/>
+    <polygon points="0,18 16,0 91,0 105,18" fill="#dca875"/>
+    <rect x="10" y="28" width="85" height="50" rx="2" fill="#1d65b5"/>
+    <path d="M14 33c16 16 22 1 34 16s25-5 42 12M18 48c10-10 25 13 39 0s19 7 31-2M16 64c17-11 24 10 39 0s20 8 35-3" fill="none" stroke="#5aa1e8" stroke-width="3"/>
+  </g>
+
+  <!-- tumbler -->
+  <g transform="translate(488 358)" filter="url(#shadow)">
+    <ellipse cx="48" cy="5" rx="37" ry="8" fill="#d8e0e4"/>
+    <path d="M11 5h74l-8 118c-.8 12-9 18-29 18s-28-6-29-18Z" fill="url(#navy)"/>
+    <ellipse cx="48" cy="124" rx="29" ry="7" fill="#c8d1d6"/>
+    <rect x="23" y="36" width="50" height="28" rx="7" fill="#fff" opacity=".12"/>
+    <text x="48" y="54" text-anchor="middle" font-size="12" font-weight="800" fill="#fff">SWAG</text>
+  </g>
+
+  <!-- backpack -->
+  <g transform="translate(775 338)" filter="url(#shadow)">
+    <path d="M54 9c0-12 10-20 22-20s22 8 22 20" fill="none" stroke="#26323a" stroke-width="9" stroke-linecap="round"/>
+    <path d="M25 32c0-17 14-30 31-30h40c17 0 31 13 31 30l8 112c1 16-11 29-27 29H44c-16 0-28-13-27-29Z" fill="#7c858c"/>
+    <path d="M34 35c9-8 21-12 42-12s33 4 42 12" fill="none" stroke="#aeb5ba" stroke-width="3"/>
+    <rect x="42" y="88" width="69" height="48" rx="8" fill="#6a737a" stroke="#4e565c"/>
+    <rect x="49" y="98" width="55" height="4" rx="2" fill="#39444b"/>
+    <circle cx="76" cy="59" r="16" fill="#286fc2"/>
+    <text x="76" y="64" text-anchor="middle" font-size="10" font-weight="900" fill="#fff">SWAG</text>
+  </g>
+
+  <text x="42" y="490" font-size="13" font-weight="800" letter-spacing="1.2" fill="#315d84">SWAG PACK</text>
+</g>
+</svg>
