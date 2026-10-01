@@ -218,13 +218,28 @@
     return d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric', timeZone:'UTC' });
   }
 
+  function parseEventDate(value) {
+    const text = String(value || '').trim();
+    const match = /^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{1,2}):(\d{2})\s*(AM|PM))?/i.exec(text);
+    if (!match) return new Date(dateOnly(text) + 'T12:00:00Z');
+    let hour = Number(match[4] || 12);
+    const minute = Number(match[5] || 0);
+    const meridiem = String(match[6] || '').toUpperCase();
+    if (meridiem === 'PM' && hour < 12) hour += 12;
+    if (meridiem === 'AM' && hour === 12) hour = 0;
+    return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), hour, minute));
+  }
+
   function bulkFirstShipmentAfterNewInventory(sc) {
     const rows = sc.bulk.events || [];
-    const newInv = [...rows].filter((r) => r.type === 'New Inventory').sort((a,b) => dateOnly(a.date).localeCompare(dateOnly(b.date)))[0];
+    const newInv = [...rows]
+      .filter((r) => r.type === 'New Inventory')
+      .sort((a,b) => parseEventDate(a.date) - parseEventDate(b.date))[0];
     if (!newInv) return { newInventory:null, shipment:null };
+    const newInventoryTime = parseEventDate(newInv.date);
     const shipment = [...rows]
-      .filter((r) => r.type === 'Shipping' && new Date(r.date) > new Date(newInv.date))
-      .sort((a,b) => new Date(a.date) - new Date(b.date))[0];
+      .filter((r) => r.type === 'Shipping' && parseEventDate(r.date) > newInventoryTime)
+      .sort((a,b) => parseEventDate(a.date) - parseEventDate(b.date))[0];
     return { newInventory:newInv, shipment:shipment || null };
   }
 
@@ -288,6 +303,13 @@
       ['bulkstock','Bulk inventory','Purple Warehouse Storage Locations = 0'],
       ['bulkhistory','Bulk Inventory History','30+ days from first shipment after New Inventory'],
     ];
+    if (state.mode === 'test') {
+      checklist.innerHTML = items.map((item, i) => `<div class="check-item">
+        <span class="num">${i+1}</span>
+        <div><b>${item[1]}</b><small>${item[2]}</small></div>
+      </div>`).join('');
+      return;
+    }
     const stage = stageInfo();
     checklist.innerHTML = items.map((item, i) => {
       const done = i < stage.done || state.reviewed.has(item[0]) && i < stage.done + 1;
