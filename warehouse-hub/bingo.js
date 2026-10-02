@@ -138,7 +138,7 @@
             <div class="bingo-kicker">How it works</div>
             <div class="bingo-rule"><span>1</span><p>Finish cleaning in FairShift → earn <strong>1 Bingo Coin</strong>.</p></div>
             <div class="bingo-rule"><span>2</span><p>Spend a coin for a random Bingo square. Everyone also gets <strong>1 free draw each week</strong>.</p></div>
-            <div class="bingo-rule"><span>3</span><p>Every draw marks one square on your <strong>${boardSize}×${boardSize}</strong> card. Drawn squares don't repeat.</p></div>
+            <div class="bingo-rule"><span>3</span><p>Each draw comes from a larger shared pool. If it matches your <strong>${boardSize}×${boardSize}</strong> card, one square is marked. Drawn items don't repeat.</p></div>
           </div>
           <div class="bingo-round-card">
             <div><strong>${Number(state.stats?.players || 0)}</strong><span>playing</span></div>
