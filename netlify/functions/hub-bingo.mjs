@@ -9,7 +9,14 @@ const DEFAULT_ROUND_ANCHOR = '2026-09-21';
 const ROUND_DAYS = 28;
 const DEFAULT_BOARD_SIZE = 5;
 const SUPPORTED_BOARD_SIZES = [3, 5];
-const SYMBOLS = ['⭐','🎵','☕','🚗','🌴','🌮','🍕','🎬','🍩','⚽','🎧','🌞','🍓','🎈','🥤','🎲','📦','🚚','🧤','🧹','🎯','🛠️','💡','🏆'];
+const BINGO_RULES_VERSION = 2;
+const DRAW_POOL_MULTIPLIER = { 3: 4, 5: 2 };
+const SYMBOLS = [
+  '⭐','🎵','☕','🚗','🌴','🌮','🍕','🎬','🍩','⚽','🎧','🌞','🍓','🎈','🥤','🎲',
+  '📦','🚚','🧤','🧹','🎯','🛠️','💡','🏆','🌟','🎁','🧢','👟','📱','💻','🧃','🍪',
+  '🥨','🍔','🌭','🍎','🍌','🧊','🎮','📚','✏️','🧩','🪴','🐶','🐱','🦊','🐼','🦁',
+  '🐯','🦋','🌈','🚀','✈️','🚲','🛴','🏀','🏈','⚾','🏐','🎳','🎸','🎹','📷','🕶️'
+];
 let poolInstance = null;
 let schemaReady = false;
 
@@ -75,13 +82,14 @@ function decryptSession(token) {
   }
 }
 
-function easternDate() {
+function easternDate(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/New_York',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).formatToParts(new Date());
+  }).formatToParts(date);
   const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${map.year}-${map.month}-${map.day}`;
 }
@@ -156,29 +164,45 @@ async function activePhotoIds(client) {
   return result.rows.map((row) => clean(row.id, 80)).filter(Boolean);
 }
 
-function makeCard(boardSize, photoIds = []) {
+function makeDrawPool(boardSize, photoIds = []) {
   const meta = boardMeta(boardSize);
-  let chosen = [];
-  const photos = [...new Set((Array.isArray(photoIds) ? photoIds : []).map((id) => clean(id, 80)).filter(Boolean))];
+  const multiplier = Number(DRAW_POOL_MULTIPLIER[meta.size] || 2);
+  const target = meta.playableCount * multiplier;
+  const photos = [...new Set(
+    (Array.isArray(photoIds) ? photoIds : []).map((id) => clean(id, 80)).filter(Boolean),
+  )].map((id) => `PHOTO|${id}|1`);
 
-  if (photos.length) {
-    let variant = 1;
-    while (chosen.length < meta.playableCount) {
-      for (const id of shuffle(photos)) {
-        chosen.push(`PHOTO|${id}|${variant}`);
-        if (chosen.length >= meta.playableCount) break;
-      }
-      variant += 1;
-    }
-  } else {
-    chosen = shuffle(SYMBOLS).slice(0, meta.playableCount);
+  const selectedPhotos = photos.length > target ? shuffle(photos).slice(0, target) : photos;
+  const symbolSlots = Math.max(0, target - selectedPhotos.length);
+  const selectedSymbols = shuffle(SYMBOLS).slice(0, symbolSlots);
+  const pool = shuffle([...selectedPhotos, ...selectedSymbols]);
+
+  // SYMBOLS is intentionally large enough for current supported board sizes.
+  // This fallback keeps future board-size changes from making every draw a hit.
+  if (pool.length < meta.playableCount) {
+    return shuffle([...new Set([...pool, ...SYMBOLS])]);
   }
+  return pool;
+}
 
-  return [
-    ...chosen.slice(0, meta.freeIndex),
-    'FREE',
-    ...chosen.slice(meta.freeIndex),
-  ];
+function makeGame(boardSize, photoIds = []) {
+  const meta = boardMeta(boardSize);
+  const pool = makeDrawPool(boardSize, photoIds);
+  const photoTokens = shuffle(pool.filter((token) => photoIdFromToken(token)));
+  const nonPhotoTokens = shuffle(pool.filter((token) => !photoIdFromToken(token)));
+  const chosen = photoTokens.slice(0, meta.playableCount);
+  if (chosen.length < meta.playableCount) {
+    chosen.push(...nonPhotoTokens.slice(0, meta.playableCount - chosen.length));
+  }
+  const cardSquares = shuffle(chosen);
+  return {
+    pool,
+    card: [
+      ...cardSquares.slice(0, meta.freeIndex),
+      'FREE',
+      ...cardSquares.slice(meta.freeIndex),
+    ],
+  };
 }
 
 function hasBingo(marked, boardSize) {
@@ -222,10 +246,13 @@ async function ensureSchema() {
       employee_name TEXT NOT NULL,
       employee_id BIGINT,
       card JSONB NOT NULL,
+      draw_pool JSONB NOT NULL DEFAULT '[]'::jsonb,
       marked JSONB NOT NULL DEFAULT '[12]'::jsonb,
       drawn JSONB NOT NULL DEFAULT '[]'::jsonb,
       weekly_free_key TEXT,
       won_at TIMESTAMPTZ,
+      voided_at TIMESTAMPTZ,
+      void_reason TEXT NOT NULL DEFAULT '',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (round_key, employee_key)
@@ -246,6 +273,7 @@ async function ensureSchema() {
       reset_number INTEGER NOT NULL DEFAULT 0,
       reset_at TIMESTAMPTZ,
       reset_by TEXT NOT NULL DEFAULT '',
+      rules_version INTEGER NOT NULL DEFAULT 1,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
@@ -266,7 +294,54 @@ async function ensureSchema() {
     INSERT INTO hub_bingo_settings(id,board_size,anchor_date,reset_number,reset_by,updated_at)
     VALUES(1,5,'2026-09-21',0,'',NOW())
     ON CONFLICT(id) DO NOTHING;
+
+    ALTER TABLE hub_bingo_players ADD COLUMN IF NOT EXISTS draw_pool JSONB NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE hub_bingo_players ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ;
+    ALTER TABLE hub_bingo_players ADD COLUMN IF NOT EXISTS void_reason TEXT NOT NULL DEFAULT '';
+    ALTER TABLE hub_bingo_settings ADD COLUMN IF NOT EXISTS rules_version INTEGER NOT NULL DEFAULT 1;
   `);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const settings = await client.query(
+      'SELECT rules_version FROM hub_bingo_settings WHERE id=1 FOR UPDATE'
+    );
+    if (Number(settings.rows[0]?.rules_version || 1) < BINGO_RULES_VERSION) {
+      const currentRound = await client.query(`
+        SELECT round_key
+        FROM hub_bingo_players
+        WHERE voided_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT 1
+      `);
+      const oldRoundKey = clean(currentRound.rows[0]?.round_key, 60);
+      if (oldRoundKey) {
+        await client.query(`
+          UPDATE hub_bingo_players
+          SET voided_at=NOW(),void_reason='Fair play rules reset',updated_at=NOW()
+          WHERE round_key=$1 AND voided_at IS NULL
+        `, [oldRoundKey]);
+      }
+      await client.query(`
+        UPDATE hub_bingo_settings
+        SET anchor_date=$1,
+            reset_number=reset_number+1,
+            reset_at=NOW(),
+            reset_by='Fair play rules update',
+            rules_version=$2,
+            updated_at=NOW()
+        WHERE id=1
+      `, [easternDate(), BINGO_RULES_VERSION]);
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+
   schemaReady = true;
 }
 
@@ -320,7 +395,7 @@ async function fetchCompletedCleaningForDate(dateText, employeeKey) {
   }
 }
 
-async function reconcileCleaningCoins(client, session, round) {
+async function reconcileCleaningCoins(client, session, round, settings) {
   const employeeKey = slug(session.name);
   if (!employeeKey) return 0;
 
@@ -330,12 +405,17 @@ async function reconcileCleaningCoins(client, session, round) {
   );
   const currentDate = easternDate();
   const roundStartDay = epochDay(round.start);
+  const resetDay = settings?.resetAt ? epochDay(easternDate(settings.resetAt)) : roundStartDay;
+  const earningStartDay = Math.max(roundStartDay, resetDay);
   const currentDay = epochDay(currentDate);
   const previousDate = prior.rows[0]?.last_synced_date
     ? String(prior.rows[0].last_synced_date).slice(0, 10)
     : '';
-  const previousDay = previousDate ? epochDay(previousDate) : roundStartDay;
-  const startDay = Math.max(roundStartDay, Math.min(currentDay, previousDay - (previousDate ? 1 : 0)));
+  const previousDay = previousDate ? epochDay(previousDate) : earningStartDay;
+  const startDay = Math.max(
+    earningStartDay,
+    Math.min(currentDay, previousDay - (previousDate ? 1 : 0)),
+  );
   const dates = [];
   for (let day = startDay; day <= currentDay; day += 1) dates.push(dateFromEpoch(day));
 
@@ -398,21 +478,29 @@ async function ensurePlayer(client, session, round, settings) {
   `, [employeeKey, clean(session.name, 100)]);
 
   let result = await client.query(`
-    SELECT round_key,employee_key,employee_name,employee_id,card,marked,drawn,weekly_free_key,won_at
+    SELECT round_key,employee_key,employee_name,employee_id,card,draw_pool,marked,drawn,weekly_free_key,won_at
     FROM hub_bingo_players
     WHERE round_key=$1 AND employee_key=$2
     LIMIT 1
   `, [round.key, employeeKey]);
 
   if (!result.rows[0]) {
-    const card = makeCard(meta.size, await activePhotoIds(client));
+    const game = makeGame(meta.size, await activePhotoIds(client));
     await client.query(`
-      INSERT INTO hub_bingo_players(round_key,employee_key,employee_name,employee_id,card,marked,drawn,created_at,updated_at)
-      VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'[]'::jsonb,NOW(),NOW())
+      INSERT INTO hub_bingo_players(round_key,employee_key,employee_name,employee_id,card,draw_pool,marked,drawn,created_at,updated_at)
+      VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::jsonb,'[]'::jsonb,NOW(),NOW())
       ON CONFLICT(round_key,employee_key) DO NOTHING
-    `, [round.key, employeeKey, clean(session.name, 100), session.employeeId || null, JSON.stringify(card), JSON.stringify([meta.freeIndex])]);
+    `, [
+      round.key,
+      employeeKey,
+      clean(session.name, 100),
+      session.employeeId || null,
+      JSON.stringify(game.card),
+      JSON.stringify(game.pool),
+      JSON.stringify([meta.freeIndex]),
+    ]);
     result = await client.query(`
-      SELECT round_key,employee_key,employee_name,employee_id,card,marked,drawn,weekly_free_key,won_at
+      SELECT round_key,employee_key,employee_name,employee_id,card,draw_pool,marked,drawn,weekly_free_key,won_at
       FROM hub_bingo_players
       WHERE round_key=$1 AND employee_key=$2
       LIMIT 1
@@ -420,22 +508,39 @@ async function ensurePlayer(client, session, round, settings) {
   }
 
   const current = result.rows[0];
-  if (current && (!Array.isArray(current.card) || current.card.length !== meta.total)) {
-    const card = makeCard(meta.size, await activePhotoIds(client));
-    const cardSymbols = new Set(card.filter((symbol) => symbol !== 'FREE'));
-    const drawn = (Array.isArray(current.drawn) ? current.drawn : []).filter((symbol) => cardSymbols.has(symbol));
+  if (
+    current &&
+    (
+      !Array.isArray(current.card) ||
+      current.card.length !== meta.total ||
+      !Array.isArray(current.draw_pool) ||
+      current.draw_pool.length < meta.playableCount
+    )
+  ) {
+    const game = makeGame(meta.size, await activePhotoIds(client));
+    const cardSymbols = new Set(game.card.filter((symbol) => symbol !== 'FREE'));
+    const poolSymbols = new Set(game.pool);
+    const drawn = (Array.isArray(current.drawn) ? current.drawn : [])
+      .filter((symbol) => poolSymbols.has(symbol));
     const marked = new Set([meta.freeIndex]);
     for (const symbol of drawn) {
-      const index = card.indexOf(symbol);
+      const index = game.card.indexOf(symbol);
       if (index >= 0) marked.add(index);
     }
     await client.query(`
       UPDATE hub_bingo_players
-      SET card=$3::jsonb,marked=$4::jsonb,drawn=$5::jsonb,updated_at=NOW()
+      SET card=$3::jsonb,draw_pool=$4::jsonb,marked=$5::jsonb,drawn=$6::jsonb,updated_at=NOW()
       WHERE round_key=$1 AND employee_key=$2
-    `, [round.key, employeeKey, JSON.stringify(card), JSON.stringify([...marked].sort((a,b)=>a-b)), JSON.stringify(drawn)]);
+    `, [
+      round.key,
+      employeeKey,
+      JSON.stringify(game.card),
+      JSON.stringify(game.pool),
+      JSON.stringify([...marked].sort((a,b)=>a-b)),
+      JSON.stringify(drawn),
+    ]);
     result = await client.query(`
-      SELECT round_key,employee_key,employee_name,employee_id,card,marked,drawn,weekly_free_key,won_at
+      SELECT round_key,employee_key,employee_name,employee_id,card,draw_pool,marked,drawn,weekly_free_key,won_at
       FROM hub_bingo_players
       WHERE round_key=$1 AND employee_key=$2
       LIMIT 1
@@ -516,7 +621,7 @@ async function drawSymbol(session) {
     await ensurePlayer(client, session, round, settings);
 
     const playerResult = await client.query(`
-      SELECT round_key,employee_key,employee_name,employee_id,card,marked,drawn,weekly_free_key,won_at
+      SELECT round_key,employee_key,employee_name,employee_id,card,draw_pool,marked,drawn,weekly_free_key,won_at
       FROM hub_bingo_players
       WHERE round_key=$1 AND employee_key=$2
       FOR UPDATE
@@ -536,12 +641,12 @@ async function drawSymbol(session) {
     }
 
     const card = Array.isArray(player.card) ? player.card : [];
+    const drawPool = Array.isArray(player.draw_pool) ? player.draw_pool : [];
     const drawn = Array.isArray(player.drawn) ? [...player.drawn] : [];
-    const availableSymbols = card.filter((symbol) => symbol && symbol !== 'FREE');
-    const remaining = availableSymbols.filter((symbol) => !drawn.includes(symbol));
+    const remaining = drawPool.filter((symbol) => symbol && !drawn.includes(symbol));
     if (!remaining.length) {
       await client.query('COMMIT');
-      return { status: 409, body: await statePayload(client, session, round, settings, { error: 'All symbols have already been drawn for this card.' }) };
+      return { status: 409, body: await statePayload(client, session, round, settings, { error: 'All symbols in this round’s draw pool have already been drawn.' }) };
     }
 
     const symbol = remaining[crypto.randomInt(remaining.length)];
@@ -599,7 +704,7 @@ export default async (request) => {
       try {
         const settings = await getSettings(client);
         const round = roundInfo(settings);
-        const reconciledCoins = await reconcileCleaningCoins(client, session, round);
+        const reconciledCoins = await reconcileCleaningCoins(client, session, round, settings);
         return json(200, await statePayload(client, session, round, settings, { reconciledCoins }));
       } finally {
         client.release();

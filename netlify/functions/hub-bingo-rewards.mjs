@@ -7,6 +7,7 @@ const SESSION_VERSION = 2;
 const DEFAULT_BOARD_SIZE = 5;
 const SUPPORTED_BOARD_SIZES = [3, 5];
 const DEFAULT_ROUND_ANCHOR = '2026-09-21';
+const BINGO_RULES_VERSION = 2;
 let poolInstance = null;
 let schemaReady = false;
 
@@ -112,6 +113,7 @@ async function ensureSchema() {
       reset_number INTEGER NOT NULL DEFAULT 0,
       reset_at TIMESTAMPTZ,
       reset_by TEXT NOT NULL DEFAULT '',
+      rules_version INTEGER NOT NULL DEFAULT 1,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
@@ -132,7 +134,53 @@ async function ensureSchema() {
     INSERT INTO hub_bingo_settings(id,board_size,anchor_date,reset_number,reset_by,updated_at)
     VALUES(1,5,'2026-09-21',0,'',NOW())
     ON CONFLICT(id) DO NOTHING;
+
+    ALTER TABLE hub_bingo_settings ADD COLUMN IF NOT EXISTS rules_version INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE IF EXISTS hub_bingo_players ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ;
+    ALTER TABLE IF EXISTS hub_bingo_players ADD COLUMN IF NOT EXISTS void_reason TEXT NOT NULL DEFAULT '';
   `);
+
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const settings = await client.query(
+      'SELECT rules_version FROM hub_bingo_settings WHERE id=1 FOR UPDATE'
+    );
+    if (Number(settings.rows[0]?.rules_version || 1) < BINGO_RULES_VERSION) {
+      const currentRound = await client.query(`
+        SELECT round_key
+        FROM hub_bingo_players
+        WHERE voided_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT 1
+      `).catch(() => ({ rows: [] }));
+      const oldRoundKey = clean(currentRound.rows[0]?.round_key, 60);
+      if (oldRoundKey) {
+        await client.query(`
+          UPDATE hub_bingo_players
+          SET voided_at=NOW(),void_reason='Fair play rules reset',updated_at=NOW()
+          WHERE round_key=$1 AND voided_at IS NULL
+        `, [oldRoundKey]);
+      }
+      await client.query(`
+        UPDATE hub_bingo_settings
+        SET anchor_date=$1,
+            reset_number=reset_number+1,
+            reset_at=NOW(),
+            reset_by='Fair play rules update',
+            rules_version=$2,
+            updated_at=NOW()
+        WHERE id=1
+      `, [easternDate(), BINGO_RULES_VERSION]);
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+
   schemaReady = true;
 }
 
@@ -175,22 +223,48 @@ async function setBoardSize(db, session, body) {
 
 async function resetBingoRound(db, session) {
   const today = easternDate();
-  const result = await db.query(`
-    UPDATE hub_bingo_settings
-    SET anchor_date=$1,
-        reset_number=reset_number+1,
-        reset_at=NOW(),
-        reset_by=$2,
-        updated_at=NOW()
-    WHERE id=1
-    RETURNING reset_number
-  `, [today, clean(session.name, 100)]);
-  const resetNumber = Number(result.rows[0]?.reset_number || 0);
+  const client = await db.connect();
+  let resetNumber = 0;
+  try {
+    await client.query('BEGIN');
+    const currentRound = await client.query(`
+      SELECT round_key
+      FROM hub_bingo_players
+      WHERE voided_at IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).catch(() => ({ rows: [] }));
+    const oldRoundKey = clean(currentRound.rows[0]?.round_key, 60);
+    if (oldRoundKey) {
+      await client.query(`
+        UPDATE hub_bingo_players
+        SET voided_at=NOW(),void_reason='Admin round reset',updated_at=NOW()
+        WHERE round_key=$1 AND voided_at IS NULL
+      `, [oldRoundKey]);
+    }
+    const result = await client.query(`
+      UPDATE hub_bingo_settings
+      SET anchor_date=$1,
+          reset_number=reset_number+1,
+          reset_at=NOW(),
+          reset_by=$2,
+          updated_at=NOW()
+      WHERE id=1
+      RETURNING reset_number
+    `, [today, clean(session.name, 100)]);
+    resetNumber = Number(result.rows[0]?.reset_number || 0);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
   return {
     status: 200,
     body: {
       ok: true,
-      message: 'Bingo reset complete. Everyone has a fresh card and a new round starting today. Existing Bingo Coins and reward history were kept.',
+      message: 'Bingo reset complete. Everyone has a fresh card and a new round starting today. Existing Bingo Coins and completed reward history were kept; unfinished wins from the reset round were archived.',
       resetNumber,
       settings: await bingoSettings(db),
     },
@@ -282,6 +356,7 @@ async function rewardLedger(db) {
     LEFT JOIN hub_bingo_rewards r
       ON r.round_key=p.round_key AND r.employee_key=p.employee_key
     WHERE p.won_at IS NOT NULL
+      AND (p.voided_at IS NULL OR r.rewarded_at IS NOT NULL)
     ORDER BY
       CASE WHEN r.rewarded_at IS NULL THEN 0 ELSE 1 END,
       p.won_at DESC,
