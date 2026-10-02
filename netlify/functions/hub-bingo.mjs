@@ -10,7 +10,7 @@ const ROUND_DAYS = 28;
 const DEFAULT_BOARD_SIZE = 5;
 const SUPPORTED_BOARD_SIZES = [3, 5];
 const BINGO_RULES_VERSION = 2;
-const DRAW_POOL_MULTIPLIER = 2;
+const DRAW_POOL_MULTIPLIER = { 3: 4, 5: 2 };
 const SYMBOLS = [
   '⭐','🎵','☕','🚗','🌴','🌮','🍕','🎬','🍩','⚽','🎧','🌞','🍓','🎈','🥤','🎲',
   '📦','🚚','🧤','🧹','🎯','🛠️','💡','🏆','🌟','🎁','🧢','👟','📱','💻','🧃','🍪',
@@ -166,7 +166,8 @@ async function activePhotoIds(client) {
 
 function makeDrawPool(boardSize, photoIds = []) {
   const meta = boardMeta(boardSize);
-  const target = meta.playableCount * DRAW_POOL_MULTIPLIER;
+  const multiplier = Number(DRAW_POOL_MULTIPLIER[meta.size] || 2);
+  const target = meta.playableCount * multiplier;
   const photos = [...new Set(
     (Array.isArray(photoIds) ? photoIds : []).map((id) => clean(id, 80)).filter(Boolean),
   )].map((id) => `PHOTO|${id}|1`);
