@@ -429,51 +429,57 @@
       const group=i===0||areaSide(fields[i-1])!==areaSide(area)
         ?`<tr class="group"><th colspan="${dates.length+1}">${esc(areaSide(area))}</th></tr>`
         :'';
-      const row=`<tr><th class="area">${esc(area)}</th>${dates.map(date=>`<td>${cell(date,area)}</td>`).join('')}</tr>`;
-      return group+row;
+      return group+`<tr class="area-row"><th class="area">${esc(area)}</th>${dates.map(date=>`<td>${cell(date,area)}</td>`).join('')}</tr>`;
     }).join('');
 
-    const win=window.open('','_blank','width=1180,height=820');
-    if(!win){
-      showMessage('Your browser blocked the print window. Allow pop-ups for the Hub and try again.',true);
-      return;
-    }
+    document.getElementById('cleaningPrintFrame')?.remove();
+    const frame=document.createElement('iframe');
+    frame.id='cleaningPrintFrame';
+    frame.setAttribute('aria-hidden','true');
+    frame.style.position='fixed';
+    frame.style.left='-10000px';
+    frame.style.top='0';
+    frame.style.width='1px';
+    frame.style.height='1px';
+    frame.style.border='0';
+    frame.style.opacity='0';
+    document.body.appendChild(frame);
 
-    win.document.open();
-    win.document.write(`<!doctype html>
+    const doc=frame.contentDocument;
+    doc.open();
+    doc.write(`<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
 <title>${esc(title)}</title>
 <style>
-  @page{size:letter landscape;margin:.28in}
+  @page{size:letter landscape;margin:.25in}
   *{box-sizing:border-box}
   html,body{margin:0;padding:0;background:#fff;color:#173f35;font-family:Arial,Helvetica,sans-serif}
-  body{padding:0}
-  .sheet{width:100%;max-width:100%;page-break-after:avoid;break-after:avoid-page}
-  .top{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin:0 0 12px}
-  h1{margin:0;font-size:22px;line-height:1.05;letter-spacing:-.02em}
-  .subtitle{margin:5px 0 0;color:#667a72;font-size:10px}
-  .badge{border:1px solid #bcd2c8;background:#edf7f2;border-radius:999px;padding:6px 10px;font-size:9px;font-weight:700;white-space:nowrap}
-  table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;border:1px solid #b7c8c0;border-radius:10px;overflow:hidden}
-  thead th{background:#f2f7f5;color:#294d43;text-align:center;font-size:10px;font-weight:800;padding:8px 6px;border-right:1px solid #c8d5cf;border-bottom:1px solid #b7c8c0}
-  thead th:first-child{text-align:left;width:118px}
+  body{width:10.5in;height:8in;overflow:hidden}
+  .sheet{width:10.5in;height:7.95in;display:flex;flex-direction:column}
+  .top{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin:0 0 .16in}
+  h1{margin:0;font-size:26px;line-height:1;letter-spacing:-.025em}
+  .subtitle{margin:7px 0 0;color:#60746c;font-size:11px}
+  .badge{border:1px solid #b6cec3;background:#eaf6f0;border-radius:999px;padding:7px 12px;font-size:10px;font-weight:800;white-space:nowrap}
+  table{width:100%;height:6.82in;border-collapse:separate;border-spacing:0;table-layout:fixed;border:1.5px solid #9fb7ad;border-radius:12px;overflow:hidden}
+  thead tr{height:.52in}
+  thead th{background:#eef6f2;color:#244b40;text-align:center;font-size:12px;font-weight:900;padding:7px;border-right:1px solid #b9cbc3;border-bottom:1.5px solid #9fb7ad;line-height:1.15}
+  thead th:first-child{text-align:left;width:1.35in;padding-left:12px}
   thead th:last-child{border-right:0}
-  tbody th,tbody td{padding:8px 7px;border-right:1px solid #d2ddd8;border-bottom:1px solid #d2ddd8;vertical-align:middle}
-  tbody tr:last-child th,tbody tr:last-child td{border-bottom:0}
+  tbody .group{height:.31in}
+  tbody .group th{background:#d9eee6;color:#204d40;text-align:left;text-transform:uppercase;letter-spacing:.10em;font-size:10px;font-weight:900;padding:6px 10px;border-bottom:1px solid #b9cbc3}
+  tbody .area-row{height:.97in}
+  tbody th,tbody td{padding:10px 11px;border-right:1px solid #cedbd5;border-bottom:1px solid #cedbd5;vertical-align:middle}
   tbody td:last-child,tbody th:last-child{border-right:0}
-  .group th{background:#dff1ea;color:#245144;text-align:left;text-transform:uppercase;letter-spacing:.09em;font-size:9px;font-weight:900;padding:6px 8px}
-  .area{background:#f8fbf9;text-align:left;font-size:10px;font-weight:800}
-  .cleaner{font-size:11px;font-weight:900;line-height:1.15}
-  .backup{margin-top:3px;font-size:8.5px;color:#687b74;line-height:1.15}
-  .suggested{margin-top:3px;font-size:7.5px;color:#8a6923;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
-  .open{font-size:9px;color:#98a6a1;font-style:italic}
-  .footer{display:flex;justify-content:space-between;gap:20px;margin-top:9px;color:#72847d;font-size:8px}
+  tbody tr:last-child th,tbody tr:last-child td{border-bottom:0}
+  .area{background:#f7faf8;text-align:left;font-size:12px;font-weight:900;line-height:1.15}
+  .cleaner{font-size:14px;font-weight:900;line-height:1.12;color:#153f34}
+  .backup{margin-top:6px;font-size:10.5px;color:#60736c;line-height:1.15}
+  .suggested{margin-top:5px;font-size:8px;color:#89681f;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+  .open{font-size:10.5px;color:#97a59f;font-style:italic}
+  .footer{margin-top:.12in;display:flex;justify-content:space-between;gap:20px;color:#71827b;font-size:8.5px}
   tr,td,th{page-break-inside:avoid;break-inside:avoid}
-  @media print{
-    html,body{width:100%;height:auto;overflow:visible}
-    .sheet{transform:none}
-  }
 </style>
 </head>
 <body>
@@ -491,13 +497,21 @@
   </table>
   <div class="footer"><span>Post in the warehouse for team reference.</span><span>Printed ${new Date().toLocaleString()}</span></div>
 </div>
-<script>
-  window.addEventListener('load',()=>setTimeout(()=>window.print(),120));
-  window.addEventListener('afterprint',()=>window.close());
-<\/script>
 </body>
 </html>`);
-    win.document.close();
+    doc.close();
+
+    const cleanup=()=>setTimeout(()=>frame.remove(),250);
+    frame.contentWindow.onafterprint=cleanup;
+    setTimeout(()=>{
+      try{
+        frame.contentWindow.focus();
+        frame.contentWindow.print();
+      }catch(error){
+        frame.remove();
+        showMessage('Could not open the print preview. Please try again.',true);
+      }
+    },180);
   }
 
   function renderWeek(){
