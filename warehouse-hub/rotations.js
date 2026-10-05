@@ -407,7 +407,16 @@
   }
   function printWeeklySchedule(){
     const dates=weekDays(),fields=areas();
-    const title=`Cleaning Schedule · ${dateText(week)} – ${dateText(addDays(week,4))}`;
+    const title=`Horario de Limpieza · ${dateText(week)} – ${dateText(addDays(week,4))}`;
+    const daySpanish={Mon:'Lunes',Tue:'Martes',Wed:'Miércoles',Thu:'Jueves',Fri:'Viernes'};
+    const areaPrintMeta={
+      'QA Receiving':{es:'Recepción QA',en:'QA Receiving',icon:'📦',accent:'#ff8a3d'},
+      'QA Prep':{es:'Preparación QA',en:'QA Prep',icon:'🧴',accent:'#4f96ff'},
+      'Assembly':{es:'Ensamblaje',en:'Assembly',icon:'🛠️',accent:'#9b52e8'},
+      'Fulfillment':{es:'Despacho',en:'Fulfillment',icon:'🚚',accent:'#2ca38f'},
+      'Inventory':{es:'Inventario',en:'Inventory',icon:'📋',accent:'#ef6b4e'},
+    };
+    const areaMeta=area=>areaPrintMeta[area]||{es:area,en:area,icon:'🧹',accent:'#2ca38f'};
 
     const cell=(date,area)=>{
       const r=duty(date,area);
@@ -415,21 +424,25 @@
       if(r){
         const primary=personName(r.actualEmployeeId||r.employeeId);
         const backup=r.alternateEmployeeId?personName(r.alternateEmployeeId):'—';
-        return `<div class="cleaner">${esc(primary)}</div><div class="backup">Backup: ${esc(backup)}</div>`;
+        return `<div class="cleaner">${esc(primary)}</div><div class="backup"><span>Respaldo / Backup:</span><strong>${esc(backup)}</strong></div>`;
       }
       if(d){
         const primary=personName(d.employeeId);
         const backup=d.alternateEmployeeId?personName(d.alternateEmployeeId):'—';
-        return `<div class="cleaner">${esc(primary)}</div><div class="backup">Backup: ${esc(backup)}</div><div class="suggested">Suggested</div>`;
+        return `<div class="cleaner">${esc(primary)}</div><div class="backup"><span>Respaldo / Backup:</span><strong>${esc(backup)}</strong></div><div class="suggested">Sugerido / Suggested</div>`;
       }
-      return '<div class="open">Open slot</div>';
+      return '<div class="open"><strong>Disponible</strong><span>Open spot</span></div>';
     };
 
-    const body=fields.map((area,i)=>{
-      const group=i===0||areaSide(fields[i-1])!==areaSide(area)
-        ?`<tr class="group"><th colspan="${dates.length+1}">${esc(areaSide(area))}</th></tr>`
-        :'';
-      return group+`<tr class="area-row"><th class="area">${esc(area)}</th>${dates.map(date=>`<td>${cell(date,area)}</td>`).join('')}</tr>`;
+    const body=fields.map(area=>{
+      const meta=areaMeta(area);
+      return `<tr class="area-row">
+        <th class="area" style="--accent:${meta.accent}">
+          <div class="area-icon">${meta.icon}</div>
+          <div class="area-copy"><strong>${esc(meta.es)}</strong><span>${esc(meta.en)}</span></div>
+        </th>
+        ${dates.map(date=>`<td>${cell(date,area)}</td>`).join('')}
+      </tr>`;
     }).join('');
 
     document.getElementById('cleaningPrintFrame')?.remove();
@@ -455,47 +468,66 @@
 <style>
   @page{size:letter landscape;margin:.25in}
   *{box-sizing:border-box}
-  html,body{margin:0;padding:0;background:#fff;color:#173f35;font-family:Arial,Helvetica,sans-serif}
+  html,body{margin:0;padding:0;background:#f2f8f5;color:#153f35;font-family:Arial,Helvetica,sans-serif}
   body{width:10.5in;height:8in;overflow:hidden}
-  .sheet{width:10.5in;height:7.95in;display:flex;flex-direction:column}
-  .top{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin:0 0 .16in}
-  h1{margin:0;font-size:26px;line-height:1;letter-spacing:-.025em}
-  .subtitle{margin:7px 0 0;color:#60746c;font-size:11px}
-  .badge{border:1px solid #b6cec3;background:#eaf6f0;border-radius:999px;padding:7px 12px;font-size:10px;font-weight:800;white-space:nowrap}
-  table{width:100%;height:6.82in;border-collapse:separate;border-spacing:0;table-layout:fixed;border:1.5px solid #9fb7ad;border-radius:12px;overflow:hidden}
-  thead tr{height:.52in}
-  thead th{background:#eef6f2;color:#244b40;text-align:center;font-size:12px;font-weight:900;padding:7px;border-right:1px solid #b9cbc3;border-bottom:1.5px solid #9fb7ad;line-height:1.15}
-  thead th:first-child{text-align:left;width:1.35in;padding-left:12px}
-  thead th:last-child{border-right:0}
-  tbody .group{height:.31in}
-  tbody .group th{background:#d9eee6;color:#204d40;text-align:left;text-transform:uppercase;letter-spacing:.10em;font-size:10px;font-weight:900;padding:6px 10px;border-bottom:1px solid #b9cbc3}
-  tbody .area-row{height:.97in}
-  tbody th,tbody td{padding:10px 11px;border-right:1px solid #cedbd5;border-bottom:1px solid #cedbd5;vertical-align:middle}
-  tbody td:last-child,tbody th:last-child{border-right:0}
-  tbody tr:last-child th,tbody tr:last-child td{border-bottom:0}
-  .area{background:#f7faf8;text-align:left;font-size:12px;font-weight:900;line-height:1.15}
-  .cleaner{font-size:14px;font-weight:900;line-height:1.12;color:#153f34}
-  .backup{margin-top:6px;font-size:10.5px;color:#60736c;line-height:1.15}
-  .suggested{margin-top:5px;font-size:8px;color:#89681f;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
-  .open{font-size:10.5px;color:#97a59f;font-style:italic}
-  .footer{margin-top:.12in;display:flex;justify-content:space-between;gap:20px;color:#71827b;font-size:8.5px}
+  .sheet{width:10.5in;height:7.95in;display:flex;flex-direction:column;background:#f2f8f5;padding:.22in .28in .14in}
+  .top{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin:0 0 .12in}
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand-icon{width:.56in;height:.56in;border-radius:16px;background:#31a494;display:flex;align-items:center;justify-content:center;font-size:25px}
+  h1{margin:0;font-size:28px;line-height:.95;letter-spacing:-.035em;font-weight:900}
+  .subtitle{margin:5px 0 0;color:#2fa596;font-size:16px;font-weight:800}
+  .week{padding-top:4px;text-align:right}
+  .week strong{display:block;font-size:15px;line-height:1.05}
+  .week span{display:block;margin-top:4px;color:#64857c;font-size:10px;font-weight:800}
+  table{width:100%;border-collapse:separate;border-spacing:7px 7px;table-layout:fixed;margin:0 -.07in}
+  thead tr{height:.48in}
+  thead th{border:0;background:#114e43;color:#fff;text-align:center;font-size:13px;font-weight:900;padding:7px 5px;border-radius:13px;line-height:1.05}
+  thead th:first-child{background:transparent;color:#153f35;text-align:left;width:1.55in;padding-left:2px;font-size:10px}
+  .day-en{display:block;margin-top:3px;color:#cfe4de;font-size:8.5px;font-weight:700}
+  tbody .area-row{height:.91in}
+  tbody th,tbody td{vertical-align:middle}
+  .area{position:relative;background:#fff;border:1px solid #e4ece8;border-left:6px solid var(--accent);border-radius:14px;padding:8px 8px 8px 10px;text-align:left}
+  .area>div{display:flex}
+  .area-icon{float:left;width:28px;font-size:17px;align-items:center;justify-content:center;padding-top:1px}
+  .area-copy{margin-left:30px;display:block!important}
+  .area-copy strong{display:block;font-size:11.5px;font-weight:900;line-height:1.02}
+  .area-copy span{display:block;margin-top:4px;color:#5e8378;font-size:8.7px;font-weight:700}
+  tbody td{background:#fbfdfc;border:1.3px solid #c9dfd7;border-radius:13px;padding:10px 9px}
+  .cleaner{font-size:15px;font-weight:900;line-height:1.08;color:#17463b}
+  .backup{margin-top:7px;line-height:1.1}
+  .backup span{display:block;color:#438173;font-size:8.5px;font-weight:800}
+  .backup strong{display:block;margin-top:3px;color:#4e7c72;font-size:9.5px;font-weight:900}
+  .suggested{margin-top:5px;font-size:7px;color:#89681f;font-weight:900;text-transform:uppercase;letter-spacing:.05em}
+  .open{height:100%;min-height:.61in;border:1.8px dashed #e9b82d;border-radius:12px;background:#fff9e3;color:#956900;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;font-style:normal}
+  .open strong{font-size:11px;line-height:1}.open span{margin-top:4px;font-size:9px;font-weight:800}
+  .footer{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:20px;color:#4f8177;font-size:9px;font-weight:800}
+  .thanks{font-size:18px;color:#2fa596;font-weight:900}
   tr,td,th{page-break-inside:avoid;break-inside:avoid}
 </style>
 </head>
 <body>
 <div class="sheet">
   <div class="top">
-    <div>
-      <h1>${esc(title)}</h1>
-      <div class="subtitle">Primary cleaner and backup by area · Warehouse Operations Hub</div>
+    <div class="brand">
+      <div class="brand-icon">🧹</div>
+      <div>
+        <h1>Horario de Limpieza</h1>
+        <div class="subtitle">Cleaning Schedule</div>
+      </div>
     </div>
-    <div class="badge">Weekly cleaning schedule</div>
+    <div class="week">
+      <strong>${esc(dateText(week))} – ${esc(dateText(addDays(week,4)))}</strong>
+      <span>Semana · Week</span>
+    </div>
   </div>
   <table>
-    <thead><tr><th>Area</th>${dates.map(d=>`<th>${esc(dayName(d))}<br>${esc(dateText(d))}</th>`).join('')}</tr></thead>
+    <thead><tr><th>Área / Area</th>${dates.map(d=>`<th>${esc(daySpanish[dayName(d)]||dayName(d))}<span class="day-en">${esc(dayName(d))} · ${esc(dateText(d))}</span></th>`).join('')}</tr></thead>
     <tbody>${body}</tbody>
   </table>
-  <div class="footer"><span>Post in the warehouse for team reference.</span><span>Printed ${new Date().toLocaleString()}</span></div>
+  <div class="footer">
+    <span>¿No puedes venir? Avisa a tu respaldo y a tu líder · Can't make it? Tell your backup and your lead.</span>
+    <span class="thanks">¡Gracias, equipo! 💚</span>
+  </div>
 </div>
 </body>
 </html>`);
