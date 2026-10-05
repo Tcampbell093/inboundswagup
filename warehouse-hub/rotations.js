@@ -87,6 +87,21 @@
     .rotations-history{display:grid;gap:7px;max-height:400px;overflow:auto}
     .rotations-history-row{display:flex;justify-content:space-between;gap:8px;background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:11px}
     .rotations-history-row small{display:block;color:var(--muted);margin-top:3px}
+    @media print{
+      @page{size:landscape;margin:.35in}
+      body *{visibility:hidden!important}
+      #hubRotationsDialog,#hubRotationsDialog *{visibility:visible!important}
+      #hubRotationsDialog{position:absolute!important;inset:0!important;width:100%!important;max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;border:0!important;box-shadow:none!important;background:#fff!important}
+      #hubRotationsDialog::backdrop{display:none!important}
+      .rotations-header,.rotations-tabs,#rotationsMessage,.rotations-toolbar,.rotations-note,.rotations-absence,.rotations-cell button{display:none!important}
+      .rotations-body{padding:0!important;overflow:visible!important;max-height:none!important}
+      .rotations-week-wrap{overflow:visible!important}
+      .rotations-print-title{display:block!important;font-size:20px;font-weight:900;margin:0 0 14px;color:#173f35}
+      .rotations-week-table{min-width:0!important;border-collapse:collapse!important;border-spacing:0!important;width:100%!important;table-layout:fixed!important}
+      .rotations-week-table th,.rotations-week-table td{border:1px solid #aebdb7!important;border-radius:0!important;padding:7px!important;background:#fff!important;color:#173f35!important}
+      .rotations-group-row th{background:#e7f3ee!important}
+      .rotations-cell small{color:#556760!important}
+    }
     @media(max-width:730px){
       .top-actions{flex-wrap:wrap;justify-content:flex-end}.topbar{height:auto;min-height:74px;padding:8px 0}
       .rotations-body{padding:12px;max-height:calc(100dvh - 200px)}
@@ -396,10 +411,12 @@
     const rows=dates.map(date=>({date,items:fields.map(area=>({area,record:duty(date,area),
       suggestion:draft.find(x=>x.assignmentDate===date&&x.department===area)}))}));
     $('rotationsContent').innerHTML=`
+      <div class="rotations-print-title" style="display:none">Cleaning Schedule · ${esc(dateText(week))} – ${esc(dateText(addDays(week,4)))}</div>
       <div class="rotations-toolbar">
         <button type="button" id="rotationsPrev">← Previous</button>
         <b>${esc(dateText(week))} – ${esc(dateText(addDays(week,4)))}</b>
         <button type="button" id="rotationsNext">Next →</button>
+        <button type="button" id="rotationsPrint">🖨 Print schedule</button>
         ${isAdmin()?`<button class="action" type="button" id="rotationsSuggest">✦ Generate suggestions</button>
         <button type="button" id="rotationsPublish" ${!draft.length?'disabled':''}>Publish ${draft.length} suggested</button>`:''}
       </div>
@@ -428,6 +445,7 @@
     `;
     $('rotationsPrev').onclick=()=>{week=addDays(week,-7);draft=[];render();};
     $('rotationsNext').onclick=()=>{week=addDays(week,7);draft=[];render();};
+    $('rotationsPrint').onclick=()=>window.print();
     if($('rotationsSuggest'))$('rotationsSuggest').onclick=()=>{
       draft=buildSuggestions();render();if(!draft.length)showMessage('No open slots to suggest for this week.');
     };
@@ -475,9 +493,78 @@
     $('slotSave').onclick=async()=>{
       const primary=Number($('slotPrimary').value),alternate=Number($('slotAlternate').value)||null;
       if(!primary)return showMessage('Select the cleaner first.',true);
-      if(!confirm(`Assign ${personName(primary)} to ${areaName} on ${date}?`))return;
-      await send({action:'setCleaningSchedule',employeeId:primary,alternateEmployeeId:alternate,assignmentDate:date,department:areaName},
-        'Cleaning assignment saved.');
+
+      const conflict=data.assignments.find(a=>a.date===date&&a.status!=='missed'
+        &&Number(a.id)!==Number(r?.id||0)&&Number(a.alternateEmployeeId||0)===primary);
+      let replacement=null;
+      if(conflict){
+        const used=new Set();
+        for(const row of data.assignments.filter(a=>a.date===date&&a.status!=='missed')){
+          if(Number(row.id)===Number(r?.id||0))continue;
+          if(Number(row.id)===Number(conflict.id)){
+            used.add(Number(row.actualEmployeeId||row.employeeId));
+            continue;
+          }
+          [row.employeeId,row.alternateEmployeeId,row.actualEmployeeId].filter(Boolean).forEach(id=>used.add(Number(id)));
+        }
+        used.add(primary);
+        const history=new Map(fairness().map(p=>[p.id,p]));
+        const weekLoad=id=>data.assignments.filter(a=>a.date>=week&&a.date<=addDays(week,4)&&a.status!=='missed'
+          &&[a.employeeId,a.alternateEmployeeId,a.actualEmployeeId].filter(Boolean).map(Number).includes(Number(id))
+          &&Number(a.id)!==Number(r?.id||0)).length;
+        const adjacent=id=>data.assignments.some(a=>a.status!=='missed'&&(a.date===addDays(date,-1)||a.date===addDays(date,1))
+          &&[a.employeeId,a.alternateEmployeeId,a.actualEmployeeId].filter(Boolean).map(Number).includes(Number(id)));
+        const eligible=associates().filter(p=>available(p.id,date)&&!used.has(Number(p.id)));
+        const spaced=eligible.filter(p=>!adjacent(p.id));
+        const choices=(spaced.length?spaced:eligible).sort((a,b)=>{
+          const ha=history.get(a.id),hb=history.get(b.id);
+          return weekLoad(a.id)-weekLoad(b.id)
+            ||(ha?.balance||0)-(hb?.balance||0)
+            ||(ha?.byArea?.[conflict.area]||0)-(hb?.byArea?.[conflict.area]||0)
+            ||dayGap(hb?.lastArea?.[conflict.area],date)-dayGap(ha?.lastArea?.[conflict.area],date)
+            ||a.name.localeCompare(b.name);
+        });
+        replacement=choices[0]||null;
+        if(!replacement)return showMessage(`${personName(primary)} is already the backup for ${conflict.area}, and there is no eligible replacement backup available that day.`,true);
+      }
+
+      const autoNote=conflict&&replacement
+        ?` ${personName(primary)} is currently the backup for ${conflict.area}; that backup will automatically move to ${replacement.name}.`
+        :'';
+      if(!confirm(`Assign ${personName(primary)} to ${areaName} on ${date}?${autoNote}`))return;
+
+      if(!conflict){
+        await send({action:'setCleaningSchedule',employeeId:primary,alternateEmployeeId:alternate,assignmentDate:date,department:areaName},
+          'Cleaning assignment saved.');
+        return;
+      }
+
+      if(busy)return;
+      busy=true;
+      let backupMoved=false;
+      try{
+        await fetchJSON(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+          action:'setCleaningSchedule',employeeId:Number(conflict.employeeId),alternateEmployeeId:Number(replacement.id),
+          assignmentDate:conflict.date,department:conflict.area
+        })});
+        backupMoved=true;
+        await fetchJSON(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+          action:'setCleaningSchedule',employeeId:primary,alternateEmployeeId:alternate,assignmentDate:date,department:areaName
+        })});
+        await load(true);
+        showMessage(`Cleaning assignment saved. ${conflict.area} backup automatically changed to ${replacement.name}.`);
+        document.dispatchEvent(new CustomEvent('hub-cleaning-refresh'));
+      }catch(error){
+        if(backupMoved){
+          try{
+            await fetchJSON(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+              action:'setCleaningSchedule',employeeId:Number(conflict.employeeId),alternateEmployeeId:primary,
+              assignmentDate:conflict.date,department:conflict.area
+            })});
+          }catch{}
+        }
+        showMessage(error.message||'Could not update cleaning.',true);
+      }finally{busy=false;}
     };
     $('slotCancel').onclick=()=>host.remove();
   }
