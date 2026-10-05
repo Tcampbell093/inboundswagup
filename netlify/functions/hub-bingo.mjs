@@ -563,7 +563,7 @@ async function statePayload(client, session, round, settings, extra = {}) {
   const marked = Array.isArray(player.marked) ? player.marked.map(Number) : [meta.freeIndex];
   const drawn = Array.isArray(player.drawn) ? player.drawn : [];
   const card = Array.isArray(player.card) ? player.card : [];
-  const photoIds = [...new Set(card.map(photoIdFromToken).filter(Boolean))];
+  const photoIds = [...new Set([...card, ...drawn].map(photoIdFromToken).filter(Boolean))];
   const photos = {};
   if (photoIds.length) {
     const photoResult = await client.query(`
