@@ -405,6 +405,101 @@
     }catch(e){showMessage(e.message,true);button.disabled=false;}
     finally{busy=false;}
   }
+  function printWeeklySchedule(){
+    const dates=weekDays(),fields=areas();
+    const title=`Cleaning Schedule · ${dateText(week)} – ${dateText(addDays(week,4))}`;
+
+    const cell=(date,area)=>{
+      const r=duty(date,area);
+      const d=draft.find(x=>x.assignmentDate===date&&x.department===area);
+      if(r){
+        const primary=personName(r.actualEmployeeId||r.employeeId);
+        const backup=r.alternateEmployeeId?personName(r.alternateEmployeeId):'—';
+        return `<div class="cleaner">${esc(primary)}</div><div class="backup">Backup: ${esc(backup)}</div>`;
+      }
+      if(d){
+        const primary=personName(d.employeeId);
+        const backup=d.alternateEmployeeId?personName(d.alternateEmployeeId):'—';
+        return `<div class="cleaner">${esc(primary)}</div><div class="backup">Backup: ${esc(backup)}</div><div class="suggested">Suggested</div>`;
+      }
+      return '<div class="open">Open slot</div>';
+    };
+
+    const body=fields.map((area,i)=>{
+      const group=i===0||areaSide(fields[i-1])!==areaSide(area)
+        ?`<tr class="group"><th colspan="${dates.length+1}">${esc(areaSide(area))}</th></tr>`
+        :'';
+      const row=`<tr><th class="area">${esc(area)}</th>${dates.map(date=>`<td>${cell(date,area)}</td>`).join('')}</tr>`;
+      return group+row;
+    }).join('');
+
+    const win=window.open('','_blank','width=1180,height=820');
+    if(!win){
+      showMessage('Your browser blocked the print window. Allow pop-ups for the Hub and try again.',true);
+      return;
+    }
+
+    win.document.open();
+    win.document.write(`<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>${esc(title)}</title>
+<style>
+  @page{size:letter landscape;margin:.28in}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#fff;color:#173f35;font-family:Arial,Helvetica,sans-serif}
+  body{padding:0}
+  .sheet{width:100%;max-width:100%;page-break-after:avoid;break-after:avoid-page}
+  .top{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin:0 0 12px}
+  h1{margin:0;font-size:22px;line-height:1.05;letter-spacing:-.02em}
+  .subtitle{margin:5px 0 0;color:#667a72;font-size:10px}
+  .badge{border:1px solid #bcd2c8;background:#edf7f2;border-radius:999px;padding:6px 10px;font-size:9px;font-weight:700;white-space:nowrap}
+  table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;border:1px solid #b7c8c0;border-radius:10px;overflow:hidden}
+  thead th{background:#f2f7f5;color:#294d43;text-align:center;font-size:10px;font-weight:800;padding:8px 6px;border-right:1px solid #c8d5cf;border-bottom:1px solid #b7c8c0}
+  thead th:first-child{text-align:left;width:118px}
+  thead th:last-child{border-right:0}
+  tbody th,tbody td{padding:8px 7px;border-right:1px solid #d2ddd8;border-bottom:1px solid #d2ddd8;vertical-align:middle}
+  tbody tr:last-child th,tbody tr:last-child td{border-bottom:0}
+  tbody td:last-child,tbody th:last-child{border-right:0}
+  .group th{background:#dff1ea;color:#245144;text-align:left;text-transform:uppercase;letter-spacing:.09em;font-size:9px;font-weight:900;padding:6px 8px}
+  .area{background:#f8fbf9;text-align:left;font-size:10px;font-weight:800}
+  .cleaner{font-size:11px;font-weight:900;line-height:1.15}
+  .backup{margin-top:3px;font-size:8.5px;color:#687b74;line-height:1.15}
+  .suggested{margin-top:3px;font-size:7.5px;color:#8a6923;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+  .open{font-size:9px;color:#98a6a1;font-style:italic}
+  .footer{display:flex;justify-content:space-between;gap:20px;margin-top:9px;color:#72847d;font-size:8px}
+  tr,td,th{page-break-inside:avoid;break-inside:avoid}
+  @media print{
+    html,body{width:100%;height:auto;overflow:visible}
+    .sheet{transform:none}
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <div class="top">
+    <div>
+      <h1>${esc(title)}</h1>
+      <div class="subtitle">Primary cleaner and backup by area · Warehouse Operations Hub</div>
+    </div>
+    <div class="badge">Weekly cleaning schedule</div>
+  </div>
+  <table>
+    <thead><tr><th>Area</th>${dates.map(d=>`<th>${esc(dayName(d))}<br>${esc(dateText(d))}</th>`).join('')}</tr></thead>
+    <tbody>${body}</tbody>
+  </table>
+  <div class="footer"><span>Post in the warehouse for team reference.</span><span>Printed ${new Date().toLocaleString()}</span></div>
+</div>
+<script>
+  window.addEventListener('load',()=>setTimeout(()=>window.print(),120));
+  window.addEventListener('afterprint',()=>window.close());
+<\/script>
+</body>
+</html>`);
+    win.document.close();
+  }
+
   function renderWeek(){
     const dates=weekDays(),now=today(),fields=areas(),existing=data.assignments.filter(a=>dates.includes(a.date));
     const published=existing.filter(a=>a.status!=='missed').length;
@@ -445,7 +540,7 @@
     `;
     $('rotationsPrev').onclick=()=>{week=addDays(week,-7);draft=[];render();};
     $('rotationsNext').onclick=()=>{week=addDays(week,7);draft=[];render();};
-    $('rotationsPrint').onclick=()=>window.print();
+    $('rotationsPrint').onclick=printWeeklySchedule;
     if($('rotationsSuggest'))$('rotationsSuggest').onclick=()=>{
       draft=buildSuggestions();render();if(!draft.length)showMessage('No open slots to suggest for this week.');
     };
