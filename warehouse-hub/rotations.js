@@ -222,14 +222,40 @@
   function buildSuggestions(){
     if(!data)return[];
     const current=today(),pool=associates(),fields=areas(),score=new Map(fairness().map(p=>[p.id,{
-      minutes:p.balance,worked:p.minutes,week:0,last:p.last,side:{...p.bySide},area:{...p.byArea},lastArea:{...p.lastArea}
+      minutes:p.balance,worked:p.minutes,week:0,last:p.last,side:{...p.bySide},area:{...p.byArea},lastArea:{...p.lastArea},commitmentDates:new Set()
     }]));
     const planned=[];
+    const addCommitment=(id,date,{worked=false,area=null}={})=>{
+      const target=score.get(Number(id));
+      if(!target||!date)return;
+      target.week++;
+      target.commitmentDates.add(date);
+      if(worked&&area){
+        target.minutes+=15;
+        target.side[areaSide(area)]+=1;
+        target.area[area]=(target.area[area]||0)+1;
+        if(!target.last||target.last<date)target.last=date;
+        if(!target.lastArea[area]||target.lastArea[area]<date)target.lastArea[area]=date;
+      }
+    };
+    const adjacentCommitment=(id,date)=>{
+      const dates=score.get(Number(id))?.commitmentDates;
+      return !!dates&&(dates.has(addDays(date,-1))||dates.has(addDays(date,1)));
+    };
+
+    // Count every existing primary and backup commitment this week. Completed
+    // work is already included in fairness(), so only unfinished primary work
+    // adds projected minutes here. Backups count toward weekly load and spacing,
+    // but do not receive worked minutes unless they actually complete the duty.
     for(const row of data.assignments.filter(a=>a.date>=week&&a.date<=addDays(week,4))){
-      if(row.status==='completed'||row.status==='missed')continue;
-      const target=score.get(row.actualEmployeeId||row.employeeId);
-      if(target){target.minutes+=15;target.week++;target.side[areaSide(row.area)]+=1;target.area[row.area]=(target.area[row.area]||0)+1;target.last=row.date;target.lastArea[row.area]=row.date;}
+      if(row.status==='missed')continue;
+      const primaryId=row.actualEmployeeId||row.employeeId;
+      addCommitment(primaryId,row.date,{worked:row.status!=='completed',area:row.area});
+      if(row.alternateEmployeeId&&Number(row.alternateEmployeeId)!==Number(primaryId)){
+        addCommitment(row.alternateEmployeeId,row.date);
+      }
     }
+
     for(const date of weekDays()){
       if(date<current)continue;
       const occupied=new Set(data.assignments.filter(a=>a.date===date&&a.status!=='missed')
@@ -238,8 +264,15 @@
         if(duty(date,area))continue;
         const eligible=pool.filter(p=>available(p.id,date)&&!occupied.has(p.id));
         if(!eligible.length)continue;
-        const preferred=eligible.filter(p=>(score.get(p.id)?.week||0)<2);
-        const choices=(preferred.length?preferred:eligible).sort((a,b)=>{
+
+        // First avoid anyone already committed on the previous or next day.
+        // Only relax that rule if staffing leaves no other eligible choice.
+        const spaced=eligible.filter(p=>!adjacentCommitment(p.id,date));
+        const spacingPool=spaced.length?spaced:eligible;
+
+        // Primary + backup commitments both count toward the weekly load cap.
+        const preferred=spacingPool.filter(p=>(score.get(p.id)?.week||0)<2);
+        const choices=(preferred.length?preferred:spacingPool).sort((a,b)=>{
           const sa=score.get(a.id),sb=score.get(b.id);
           return (sa?.minutes||0)-(sb?.minutes||0)
             ||(sa?.side[areaSide(area)]||0)-(sb?.side[areaSide(area)]||0)
@@ -249,16 +282,26 @@
             ||dayGap(sb?.last,date)-dayGap(sa?.last,date)
             ||a.name.localeCompare(b.name);
         });
-        const primary=choices[0];occupied.add(primary.id);
-        const t=score.get(primary.id);
-        if(t){t.minutes+=15;t.week++;t.side[areaSide(area)]+=1;t.area[area]=(t.area[area]||0)+1;t.last=date;t.lastArea[area]=date;}
+        const primary=choices[0];
+        occupied.add(primary.id);
+        addCommitment(primary.id,date,{worked:true,area});
         planned.push({assignmentDate:date,department:area,employeeId:primary.id,alternateEmployeeId:null});
       }
+
       for(const plannedRow of planned.filter(r=>r.assignmentDate===date)){
-        const alternates=pool.filter(p=>available(p.id,date)&&!occupied.has(p.id));
-        alternates.sort((a,b)=>(score.get(a.id)?.week||0)-(score.get(b.id)?.week||0)
-          ||(score.get(a.id)?.minutes||0)-(score.get(b.id)?.minutes||0)||a.name.localeCompare(b.name));
-        if(alternates[0]){plannedRow.alternateEmployeeId=alternates[0].id;occupied.add(alternates[0].id);}
+        const eligibleAlternates=pool.filter(p=>available(p.id,date)&&!occupied.has(p.id));
+        const spacedAlternates=eligibleAlternates.filter(p=>!adjacentCommitment(p.id,date));
+        const spacingPool=spacedAlternates.length?spacedAlternates:eligibleAlternates;
+        const preferred=spacingPool.filter(p=>(score.get(p.id)?.week||0)<2);
+        const alternates=(preferred.length?preferred:spacingPool).sort((a,b)=>
+          (score.get(a.id)?.week||0)-(score.get(b.id)?.week||0)
+          ||(score.get(a.id)?.minutes||0)-(score.get(b.id)?.minutes||0)
+          ||a.name.localeCompare(b.name));
+        if(alternates[0]){
+          plannedRow.alternateEmployeeId=alternates[0].id;
+          occupied.add(alternates[0].id);
+          addCommitment(alternates[0].id,date);
+        }
       }
     }
     return planned;
@@ -360,7 +403,7 @@
         ${isAdmin()?`<button class="action" type="button" id="rotationsSuggest">✦ Generate suggestions</button>
         <button type="button" id="rotationsPublish" ${!draft.length?'disabled':''}>Publish ${draft.length} suggested</button>`:''}
       </div>
-      <p class="rotations-note">Everyone in the active Associate pool can rotate through every cleaning area, regardless of home department. Suggestions balance the last 90 days of completed minutes, leave protection, area variety and this week's assignments. Existing assignments and completed work are preserved.</p>
+      <p class="rotations-note">Everyone in the active Associate pool can rotate through every cleaning area, regardless of home department. Suggestions avoid back-to-back cleaning days when staffing allows, then balance the last 90 days of completed minutes, leave protection, area variety and this week's primary/backup commitments. Existing assignments and completed work are preserved.</p>
       ${isAdmin()&&draft.length?`<p class="rotations-note warning">Review the proposed people and backups below, then publish. Changing a selection updates the draft only until you publish.</p>`:''}
       <div class="rotations-week-wrap"><table class="rotations-week-table"><thead><tr><th style="width:90px">Area</th>${dates.map(d=>`<th>${esc(dayName(d))}<br>${esc(dateText(d))}</th>`).join('')}</tr></thead>
       <tbody>${fields.map((area,i)=>`${i===0||areaSide(fields[i-1])!==areaSide(area)
