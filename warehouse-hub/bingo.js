@@ -79,6 +79,39 @@
       </div>`;
   }
 
+  function drawnHtml(drawn, card) {
+    const items = (Array.isArray(drawn) ? drawn : []).slice().reverse();
+    if (!items.length) {
+      return `
+        <div class="bingo-drawn">
+          <div class="bingo-kicker">Already drawn</div>
+          <p class="bingo-drawn-empty">Nothing drawn yet this round.</p>
+        </div>`;
+    }
+    const onCard = new Set(Array.isArray(card) ? card : []);
+    const hits = items.filter((token) => onCard.has(token)).length;
+    return `
+      <div class="bingo-drawn">
+        <div class="bingo-drawn-head">
+          <div class="bingo-kicker">Already drawn</div>
+          <span>${items.length} drawn · ${hits} on your card</span>
+        </div>
+        <div class="bingo-drawn-list">
+          ${items.map((token) => {
+            const meta = tokenMeta(token);
+            const hit = onCard.has(token);
+            const visual = meta.kind === 'photo'
+              ? `<img class="bingo-photo" src="${esc(meta.url)}" alt="" loading="lazy" />`
+              : `<span class="bingo-drawn-symbol">${esc(meta.symbol)}</span>`;
+            return `
+              <div class="bingo-drawn-item${hit ? ' hit' : ''}" title="${esc(meta.label)}${hit ? ' · on your card' : ' · not on your card'}" aria-label="${esc(meta.label)}${hit ? ', on your card' : ', not on your card'}">
+                ${visual}
+              </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }
+
   function drawMessage(result) {
     if (!result) return message;
     const label = result.symbol === 'FREE' ? 'FREE' : tokenMeta(result.symbol).label;
@@ -131,6 +164,8 @@
 
           ${activeMessage ? `<div class="bingo-result${state.drawResult?.bingo ? ' win' : ''}" role="status">${esc(activeMessage)}</div>` : ''}
           ${(!p.bingo && !drawReady) ? `<div class="bingo-hint">Finish a FairShift cleaning duty to earn your next Bingo Coin.</div>` : ''}
+
+          ${drawnHtml(p.drawn, p.card)}
         </section>
 
         <aside class="bingo-side">
