@@ -86,6 +86,10 @@
     return `<button class="checkin" type="button" data-checkin="${escapeHtml(r.id)}" data-date="${escapeHtml(r.date)}" data-name="${escapeHtml(r.employeeName)}" data-status="${escapeHtml(r.status)}">${label}</button>`;
   }
 
+  function personLabel(r) {
+    return feed.namesHidden ? '<span class="names-hidden">Sign in to see</span>' : escapeHtml(r.employeeName);
+  }
+
   function renderToday() {
     const t = today();
     const rows = feed.cleaning.filter((r) => r.date === t);
@@ -96,8 +100,8 @@
       return `<section class="cleaning-side" aria-label="${side} cleaning">
         <h4 class="cleaning-side-title">${side}<span>${assignments.length} assigned</span></h4>
         <div class="cleaning-side-rows">${assignments.length
-          ? assignments.map((r) => `<div class="cleaning-row"><div class="area">${escapeHtml(r.area)}</div><div class="person">${escapeHtml(r.employeeName)}</div><span class="status ${escapeHtml(r.status)}">${escapeHtml(statusLabel(r.status))}</span>${actionForCleaning(r)}</div>`).join('')
-          : `<div class="cleaning-side-empty">${feed.cleaningSource === 'fairshift' ? 'No cleaning assignments for ${side} today.' : 'Cleaning schedule temporarily unavailable.'}</div>`}
+          ? assignments.map((r) => `<div class="cleaning-row"><div class="area">${escapeHtml(r.area)}</div><div class="person">${personLabel(r)}</div><span class="status ${escapeHtml(r.status)}">${escapeHtml(statusLabel(r.status))}</span>${actionForCleaning(r)}</div>`).join('')
+          : `<div class="cleaning-side-empty">${feed.cleaningSource === 'fairshift' ? `No cleaning assignments for ${side} today.` : 'Cleaning schedule temporarily unavailable.'}</div>`}
         </div></section>`;
     };
     box.innerHTML = ['Inbound','Outbound'].map(renderSide).join('');
@@ -129,7 +133,7 @@
       const ann = activeAnnouncements(date).filter((a) => a.startDate === date || a.pinned);
       const pol = policiesForDate(date);
       const events = [];
-      clean.forEach((r, i) => events.push(`<div class="week-event"><div class="event-label">${i === 0 || r.side !== clean[i-1]?.side ? escapeHtml(r.side || 'Inbound') + ' cleaning' : ''}</div><div class="event-title">${escapeHtml(r.area)}</div><div class="event-meta">${escapeHtml(r.employeeName)} • ${escapeHtml(statusLabel(r.status))}</div></div>`));
+      clean.forEach((r, i) => events.push(`<div class="week-event"><div class="event-label">${i === 0 || r.side !== clean[i-1]?.side ? escapeHtml(r.side || 'Inbound') + ' cleaning' : ''}</div><div class="event-title">${escapeHtml(r.area)}</div><div class="event-meta">${personLabel(r)} • ${escapeHtml(statusLabel(r.status))}</div></div>`));
       ann.slice(0, 3).forEach((a) => events.push(`<div class="week-event"><div class="event-label">Announcement</div><div class="event-title">${escapeHtml(a.title)}</div><div class="event-meta">${escapeHtml(a.department || 'All teams')}</div></div>`));
       pol.forEach((p) => events.push(`<div class="week-event"><div class="event-label">Policy</div><div class="event-title">${escapeHtml(p.title)}</div><div class="event-meta">${p.readRequired ? 'Read required' : 'Effective'}</div></div>`));
       if (!events.length) events.push('<div class="event-meta">Nothing published.</div>');
@@ -140,6 +144,7 @@
   function render() { renderToday(); renderWeek(); }
 
   document.addEventListener('hub-cleaning-refresh', () => loadFeed());
+  document.addEventListener('hub-associate-session', () => loadFeed());
   async function loadFeed() {
     try {
       const r = await fetch(API, { cache: 'no-store' });
@@ -253,7 +258,7 @@
     checkinTarget = { assignmentId: data.checkin, date: data.date, employeeName: data.name, status: data.status };
     $('checkinName').value = data.name || '';
     $('checkinPin').value = '';
-    $('checkinAssignment').textContent = `${data.name} • ${data.status === 'scheduled' ? 'Start' : 'Finish'} today’s cleaning assignment`;
+    $('checkinAssignment').textContent = `${data.name || 'Cleaning'} • ${data.status === 'scheduled' ? 'Start' : 'Finish'} today’s cleaning assignment`;
     $('checkinSubmit').textContent = data.status === 'scheduled' ? 'Start cleaning' : 'Finish cleaning';
     $('checkinMessage').style.display = 'none';
     $('checkinDialog').showModal();

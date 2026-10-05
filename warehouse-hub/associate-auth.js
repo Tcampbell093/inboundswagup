@@ -563,14 +563,18 @@
   async function api(path = '', options = {}) {
     const response = await fetch(`${API}${path}`, { cache: 'no-store', ...options });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.error || 'Hub sign-in is unavailable.');
+    if (!response.ok) {
+      const error = new Error(body.error || 'Hub sign-in is unavailable.');
+      error.needsSetup = body.needsSetup === true;
+      throw error;
+    }
     return body;
   }
 
   async function loadRoster(force = false) {
     const data = await api(`?action=roster${force ? '&refresh=1' : ''}`);
     roster = Array.isArray(data.employees) ? data.employees : [];
-    nameEl.innerHTML = `<option value="">Choose your name…</option>${roster.map((person) => `<option value="${esc(person.name)}">${esc(person.name)}${person.department ? ' · ' + esc(person.department) : ''}${person.role ? ' · ' + esc(displayRole(person.role)) : ''}</option>`).join('')}`;
+    nameEl.innerHTML = `<option value="">Choose your name…</option>${roster.map((person) => `<option value="${esc(person.name)}">${esc(person.name)}</option>`).join('')}`;
     if (data.selfServiceConnected === false) {
       note.textContent = 'Create and manage associate PINs in Warehouse Hub. Cleaning will use the same PIN after its sync connection is available.';
     }
@@ -596,20 +600,27 @@
       return;
     }
     pinWrap.style.display = 'block';
-    const configured = selected.hubPinConfigured === true;
-    if (configured) {
+    setPinMode(false);
+    setTimeout(() => pinEl.focus(), 30);
+  });
+
+  // PIN status isn't in the public roster, so the form starts in sign-in mode
+  // and switches to setup when the server says this person has no PIN yet.
+  let setupMode = false;
+  function setPinMode(setup) {
+    setupMode = setup;
+    if (!setup) {
       document.getElementById('associatePinLabel').firstChild.nodeValue = 'PIN';
       confirmWrap.style.display = 'none';
       submit.textContent = 'Sign in for this shift';
-      note.textContent = 'Enter your existing PIN once. You should not need to enter it again for cleaning during this Hub session.';
+      note.textContent = 'Enter your PIN once. You should not need to enter it again for cleaning during this Hub session. First time here? Enter the PIN you want to use.';
     } else {
       document.getElementById('associatePinLabel').firstChild.nodeValue = 'Create a PIN';
       confirmWrap.style.display = 'block';
       submit.textContent = 'Create PIN & sign in';
       note.textContent = 'Create a private 4–8 digit Warehouse Hub PIN. This PIN is managed from the Hub and is used for Hub sign-in.';
     }
-    setTimeout(() => pinEl.focus(), 30);
-  });
+  }
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -618,8 +629,7 @@
     if (!selected) return setError('Choose your name first.');
     const pin = pinEl.value.trim();
     if (!/^\d{4,8}$/.test(pin)) return setError('Enter a 4–8 digit PIN.');
-    const configured = selected.hubPinConfigured === true;
-    const action = configured ? 'login' : 'setup';
+    const action = setupMode ? 'setup' : 'login';
     if (action === 'setup' && pin !== confirmEl.value.trim()) return setError('The two PINs do not match.');
     submit.disabled = true;
     submit.textContent = action === 'setup' ? 'Saving PIN…' : 'Signing in…';
@@ -636,8 +646,15 @@
       setTimeout(() => dialog.close(), data.warning ? 1800 : 650);
       document.dispatchEvent(new CustomEvent('hub-associate-session', { detail: session }));
     } catch (err) {
-      setError(err.message || 'Could not sign in.');
       submit.disabled = false;
+      if (err.needsSetup) {
+        setPinMode(true);
+        setSuccess('Welcome! You don’t have a PIN yet. Enter the same PIN again to create it.');
+        confirmEl.value = '';
+        setTimeout(() => confirmEl.focus(), 30);
+        return;
+      }
+      setError(err.message || 'Could not sign in.');
       submit.textContent = action === 'setup' ? 'Create PIN & sign in' : 'Sign in for this shift';
     }
   });

@@ -42,6 +42,7 @@
 .bingo-result{margin-top:13px;padding:11px 13px;border-radius:12px;background:var(--blue-soft);color:var(--blue);font-size:13px;font-weight:850}
 .bingo-result.win{background:var(--orange-soft);color:#a74921;border:1px solid #f3c3aa}
 .bingo-hint{margin-top:12px;font-size:12px;color:var(--muted);font-weight:750}
+.names-hidden{color:var(--muted);font-style:italic}
 .bingo-drawn{margin-top:16px;padding-top:15px;border-top:1px solid var(--line)}
 .bingo-drawn-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
 .bingo-drawn-head span{font-size:11px;color:var(--muted);font-weight:800}
