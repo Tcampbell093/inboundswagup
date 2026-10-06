@@ -576,6 +576,7 @@
           <small>${esc(r.status.replace(/_/g,' '))}${r.alternateEmployeeId?' · Backup: '+esc(personName(r.alternateEmployeeId)):''}</small>
           ${r.status==='completed'?'<small class="done">✓ 15 min credited</small>':''}
           ${isLead()&&(isAdmin()||date===now)&&!locked?`<button data-edit-slot="${esc(date)}|${esc(area)}">Edit / reassign</button>`:''}
+          ${isAdmin()&&date<=now&&r.status!=='completed'?`<button data-mark-done="${r.id}">✓ Mark as done</button>`:''}
         </div></td>`;
         if(d)return`<td><div class="rotations-cell">
           <select aria-label="Cleaner for ${esc(area)} on ${date}" data-draft-primary="${esc(date)}|${esc(area)}">${optionList(date,d.employeeId,[],false)}</select>
@@ -618,6 +619,30 @@
     document.querySelectorAll('[data-edit-slot]').forEach(b=>b.onclick=()=>{
       const [date,area]=b.dataset.editSlot.split('|');renderSlotEditor(date,area);
     });
+    document.querySelectorAll('[data-mark-done]').forEach(b=>b.onclick=()=>renderMarkDone(Number(b.dataset.markDone)));
+  }
+  // Admin: record a duty as done after the fact, crediting whoever actually cleaned.
+  function renderMarkDone(id){
+    const r=data.assignments.find(a=>a.id===id);
+    if(!r)return;
+    $('rotationsMarkDone')?.remove();
+    const assigned=Number(r.actualEmployeeId||r.employeeId);
+    const people=data.employees.filter(e=>e.active).sort((a,b)=>a.name.localeCompare(b.name));
+    const host=document.createElement('div');host.className='rotations-absence';host.id='rotationsMarkDone';
+    host.innerHTML=`<b>Mark as done · ${esc(dayName(r.date))} · ${esc(r.area)}</b>
+      <label class="rotations-note">Who cleaned <select id="markDonePerson">${people.map(p=>`<option value="${p.id}"${p.id===assigned?' selected':''}>${esc(p.name)}</option>`).join('')}</select></label>
+      <button type="button" id="markDoneSave">Record as done</button>
+      <button type="button" id="markDoneCancel">Cancel</button>
+      <p class="rotations-note">They get the 15 minutes, fairness credit and one Bingo Coin, as if they had tapped Finish.</p>`;
+    $('rotationsContent').prepend(host);
+    $('markDoneCancel').onclick=()=>host.remove();
+    $('markDoneSave').onclick=async()=>{
+      const employeeId=Number($('markDonePerson').value);
+      if(!confirm(`Record ${personName(employeeId)} as having cleaned ${r.area} on ${r.date}?`))return;
+      const ok=await send({action:'markDone',assignmentId:id,employeeId},
+        `Recorded as done. ${personName(employeeId)} gets 15 minutes and one Bingo Coin.`,CHECKIN);
+      if(ok){host.remove();document.dispatchEvent(new CustomEvent('hub-bingo-refresh'));}
+    };
   }
   function renderSlotEditor(date,area){
     const r=duty(date,area),areaName=area,old=r?.employeeId||0;

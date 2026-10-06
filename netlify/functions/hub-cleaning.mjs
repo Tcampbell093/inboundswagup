@@ -360,6 +360,45 @@ async function reopenCompleted(session, assignment) {
   return json(200, { ok: true, assignment: updated });
 }
 
+// Admin-only: record a duty as done after the fact (e.g. the person cleaned but
+// couldn't tap Finish). Credits whoever actually did it with the 15 minutes,
+// fairness history and the Bingo Coin, exactly like Finish would.
+async function markDone(session, assignment, doneById) {
+  if (clean(session.role, 40).toLowerCase() !== 'manager') {
+    return json(403, { error: 'Only an Admin can mark a cleaning duty as done.' });
+  }
+  if (String(assignment.assignmentDate || '').slice(0, 10) > easternToday()) {
+    return json(409, { error: 'Future duties can’t be marked as done yet.' });
+  }
+  if (assignment.dutyStatus === 'completed') return json(409, { error: 'This cleaning duty is already completed.' });
+  const db = getPool();
+  const people = await schedule.employees(db);
+  const doneBy = people.find((person) => person.id === (Number(doneById) || Number(assignment.activeEmployeeId)) && person.active);
+  if (!doneBy) return json(400, { error: 'Choose an active team member who did the cleaning.' });
+  const assignmentId = Number(assignment.id);
+  await hubCleaning.ensureSchema(db);
+  const saved = await db.query(`
+    INSERT INTO hub_cleaning_checkins(assignment_id,assignment_date,area,employee_key,employee_name,status,started_at,finished_at,updated_at)
+    VALUES($1,$2,$3,$4,$5,'completed',$6,NOW(),NOW())
+    ON CONFLICT(assignment_id) DO UPDATE SET
+      status='completed',employee_key=EXCLUDED.employee_key,employee_name=EXCLUDED.employee_name,
+      finished_at=NOW(),updated_at=NOW()
+    WHERE hub_cleaning_checkins.status<>'completed'
+    RETURNING assignment_id
+  `, [assignmentId, assignment.assignmentDate, clean(assignment.area, 100), slug(doneBy.name), clean(doneBy.name, 100),
+    Date.parse(assignment.startTime) ? assignment.startTime : null]);
+  if (!saved.rowCount) return json(409, { error: 'This cleaning duty is already completed.' });
+  await audit(db, assignmentId, 'mark_done', { employee_name: doneBy.name, status: assignment.dutyStatus }, session.name);
+  const award = await awardBingoCoin(doneBy.name, assignmentId);
+  const updated = (await loadAssignment(assignmentId)).assignment || assignment;
+  return json(200, {
+    ok: true,
+    assignment: updated,
+    doneBy: doneBy.name,
+    ...(award ? { bingoCoinAwarded: award.awarded, bingoCoins: award.coins } : {}),
+  });
+}
+
 async function handle(request) {
   if (request.method === 'GET') {
     const url = new URL(request.url);
@@ -396,7 +435,7 @@ async function handle(request) {
   const action = clean(body.action, 12);
   const assignmentId = Number(body.assignmentId);
 
-  if (!['start', 'finish', 'undo', 'reopen'].includes(action)) return json(400, { error: 'Invalid cleaning action.' });
+  if (!['start', 'finish', 'undo', 'reopen', 'markDone'].includes(action)) return json(400, { error: 'Invalid cleaning action.' });
   if (!Number.isSafeInteger(assignmentId) || assignmentId <= 0) return json(400, { error: 'A valid assignment ID is required.' });
 
   const { result, assignment } = await loadAssignment(assignmentId);
@@ -407,6 +446,7 @@ async function handle(request) {
   const assignedName = clean(assignment.activeEmployeeName || assignment.scheduledEmployeeName, 100);
   if (action === 'undo') return undoStart(session, assignment, assignedName);
   if (action === 'reopen') return reopenCompleted(session, assignment);
+  if (action === 'markDone') return markDone(session, assignment, body.employeeId);
   if (slug(assignedName) !== slug(session.name)) {
     return json(403, { error: `This cleaning duty is assigned to ${assignedName || 'someone else'}.` });
   }
