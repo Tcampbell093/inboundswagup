@@ -312,6 +312,23 @@ function boxEvent(events, box, type, source, actor, detail = {}) {
   });
 }
 
+// History for a PO-level change, kept even when the item isn't in a box
+// (boxEvent skips those, so deleting a loose item used to leave no record).
+function poEvent(events, box, type, source, actor, detail = {}) {
+  if (box?.id) return boxEvent(events, box, type, source, actor, detail);
+  events.push({
+    id: crypto.randomUUID(),
+    container_id: '',
+    container_code: '',
+    event_type: str(type, 80),
+    source: str(source, 80),
+    actor: str(actor, 120),
+    po: str(detail.po, 120),
+    detail,
+    occurred_at: new Date().toISOString(),
+  });
+}
+
 async function persistBoxEvents(client, events) {
   if (!events.length) return;
   await client.query(`
@@ -1110,10 +1127,10 @@ async function mutate(action, body, actor = '', adminOrLead = false) {
           const previous = containers.find(box => String(box.id) === String(existing.containerId));
           boxEvent(boxEvents, previous, 'po-moved-out', source, actor,
             { po: saved.po, to: saved.containerCode, quantity: existing.quantity });
-          boxEvent(boxEvents, container, 'po-moved-in', source, actor,
+          poEvent(boxEvents, container, 'po-moved-in', source, actor,
             { po: saved.po, from: previous?.code || existing.containerCode, quantity: saved.quantity });
         } else {
-          boxEvent(boxEvents, container, existing ? 'po-updated' : 'po-added', source, actor,
+          poEvent(boxEvents, container, existing ? 'po-updated' : 'po-added', source, actor,
             { po: saved.po, quantity: saved.quantity, previousQuantity: existing?.quantity ?? null });
         }
       }
@@ -1124,7 +1141,7 @@ async function mutate(action, body, actor = '', adminOrLead = false) {
         const savedIndex = entries.findIndex(e => String(e.id) === String(saved.id));
         if (savedIndex >= 0) entries[savedIndex] = finalSaved;
         addActivity({ type:'donation', entry:saved, summary:`sent PO ${saved.po} → Donation Pool` });
-        if (!transientIntakeContainer) boxEvent(boxEvents, container, 'po-donated', source, actor,
+        if (!transientIntakeContainer) poEvent(boxEvents, container, 'po-donated', source, actor,
           { po: saved.po, quantity: saved.quantity });
       } else if (!existing) {
         addActivity({ type:'added', entry:saved, summary:`added PO ${saved.po} → ${saved.containerCode || 'Overstock'}` });
@@ -1188,8 +1205,17 @@ async function mutate(action, body, actor = '', adminOrLead = false) {
       const existing = entries.find(e => String(e.id) === id) || null;
       if (existing) {
         addActivity({ type:'deleted', entry:existing, summary:`deleted PO ${existing.po}` });
-        boxEvent(boxEvents, containers.find(box => String(box.id) === String(existing.containerId)),
-          'po-deleted', 'Overstock', actor, { po: existing.po, quantity: existing.quantity });
+        const box = containers.find(c => String(c.id) === String(existing.containerId));
+        poEvent(boxEvents, box, 'po-deleted', 'Overstock', actor, {
+          po: existing.po,
+          deliveryId: existing.deliveryId,
+          quantity: existing.quantity,
+          category: existing.category,
+          action: existing.action,
+          location: box?.currentLocation || existing.location,
+          notes: existing.note,
+          addedBy: existing.originalAssociate || existing.associate,
+        });
       }
       entries = entries.filter(e => String(e.id) !== id);
       entryTombs = normalizeTombs([...entryTombs, { id, ts: now }]);

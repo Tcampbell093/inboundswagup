@@ -149,11 +149,12 @@ function formatTs(v){
   catch{return pretty(v)}
 }
 function eventName(v){
+  if(text(v)==='po-deleted')return 'Deleted from Overstock';
   return text(v).replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase())||'Overstock update';
 }
 function eventDetailHtml(detail){
   if(!detail||typeof detail!=='object')return'';
-  const labels={po:'PO',deliveryId:'Delivery ID',from:'From',to:'To',location:'Location',prepBy:'Prep By',quantity:'Quantity',previousQuantity:'Previous Qty',reason:'Reason',notes:'Notes',summary:'Details'};
+  const labels={po:'PO',deliveryId:'Delivery ID',category:'Item',action:'Action',from:'From',to:'To',location:'Location',prepBy:'Prep By',addedBy:'Added by',quantity:'Quantity',previousQuantity:'Previous Qty',reason:'Reason',notes:'Notes',summary:'Details'};
   const bits=Object.entries(detail).filter(([k,v])=>labels[k]&&text(v)).map(([k,v])=>`<span><b>${esc(labels[k])}</b> ${esc(v)}</span>`);
   return bits.length?`<div class="overstock-event-detail">${bits.join('')}</div>`:'';
 }
