@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import pg from 'pg';
+import hubCleaning from './_hub_cleaning.js';
 
 const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
 const SESSION_COOKIE = 'hub_associate_session';
@@ -116,6 +117,22 @@ function sanitize(payload,action){
     if(date<today&&action!=='setAvailabilityRange')throw new Error('Past schedules cannot be changed through Hub.');
   return out;
 }
+// Start/finish now live in the Hub; a Hub check-in overrides FairShift's status
+// for fairness history, the planner, and the "can this be changed?" checks.
+async function withHubCheckins(data){
+  const list=Array.isArray(data?.assignments)?data.assignments:[];
+  const checkins=await hubCleaning.checkinsByIdSafe(pool(),list.filter(x=>x.type==='cleaning').map(x=>x.id));
+  if(!checkins.size)return data;
+  const idByName=new Map((Array.isArray(data.employees)?data.employees:[]).map(e=>[str(e.name,100).toLowerCase(),Number(e.id)]));
+  return{...data,assignments:list.map(x=>{
+    const c=x.type==='cleaning'&&checkins.get(Number(x.id));
+    if(!c)return x;
+    const doneBy=idByName.get(str(c.employee_name,100).toLowerCase());
+    return{...x,dutyStatus:c.status,actualEmployeeId:x.actualEmployeeId||doneBy||x.employeeId,
+      startTime:c.started_at?new Date(c.started_at).toISOString():x.startTime,
+      endTime:c.finished_at?new Date(c.finished_at).toISOString():null};
+  })};
+}
 export default async(request)=>{
   const session=sessionFrom(request);
   if(!session)return json(401,{error:'Sign in to Warehouse Hub to use Cleaning & Rotations.'});
@@ -125,7 +142,7 @@ export default async(request)=>{
     if(!dateOK(date))return json(400,{error:'Invalid date.'});
     const result=await remote('/api/dashboard?date='+encodeURIComponent(date));
     if(!result.ok)return json(result.status,{error:str(result.data?.error||'Cleaning data is unavailable.',300)});
-    const source=result.data||{};
+    const source=await withHubCheckins(result.data||{});
     let sides;try{sides=await loadSides();}catch(error){return json(503,{error:str(error.message,240)});}
     const departmentSides=new Map((Array.isArray(source.departments)?source.departments:[]).map(d=>[str(d.name,100),sides.get(Number(d.id))||defaultSide(d.name)]));
     return json(200,{
@@ -185,7 +202,7 @@ export default async(request)=>{
     || action==='setCleaningSchedule'||action==='acceptCleaningSuggestions'||action==='clearCleaningScheduleDays'){
     const state=await remote('/api/dashboard?date='+easternToday());
     if(!state.ok)return json(503,{error:'Could not verify current assignment state.'});
-    const all=(state.data.assignments||[]).filter(x=>x.type==='cleaning');
+    const all=((await withHubCheckins(state.data)).assignments||[]).filter(x=>x.type==='cleaning');
     if(action==='markCleaningAbsent'||action==='useCleaningAlternate'){
       const duty=all.find(x=>Number(x.id)===payload.assignmentId);
       if(!duty||duty.dutyStatus==='completed')return json(409,{error:'This cleaning assignment is complete or no longer exists.'});
