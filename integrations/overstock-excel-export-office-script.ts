@@ -81,6 +81,35 @@ function worksheetRows(workbook: ExcelScript.Workbook, sheetName: string): Recor
   );
 }
 
+// Finds Delivery IDs that appear more than once on a sheet and returns
+// a readable list like "312530-P1 (rows 754, 755)". Empty list = no duplicates.
+function findDuplicateDeliveryIds(workbook: ExcelScript.Workbook, sheetName: string): string[] {
+  const sheet: ExcelScript.Worksheet | undefined = workbook.getWorksheet(sheetName);
+  if (!sheet) return [];
+  const used: ExcelScript.Range | undefined = sheet.getUsedRange(true);
+  if (!used) return [];
+  const firstRow: number = used.getRowIndex() + 1;
+  const texts: string[][] = used.getTexts();
+  const headerIndex: number = texts.findIndex((row: string[]): boolean =>
+    row.some((cell: string): boolean => oneLine(cell) === 'PO # (Orden)')
+  );
+  if (headerIndex < 0) return [];
+  const headers: string[] = texts[headerIndex].map((cell: string): string => oneLine(cell));
+  let idCol: number = headers.indexOf('Delivery ID (auto)');
+  if (idCol < 0) idCol = headers.indexOf('Delivery ID');
+  if (idCol < 0) return [];
+  const seen: Record<string, number[]> = {};
+  for (let i = headerIndex + 1; i < texts.length; i++) {
+    const id: string = String(texts[i][idCol] ?? '').trim();
+    if (!id) continue;
+    if (!seen[id]) seen[id] = [];
+    seen[id].push(firstRow + i);
+  }
+  return Object.keys(seen)
+    .filter((id: string): boolean => seen[id].length > 1)
+    .map((id: string): string => `${id} (rows ${seen[id].join(', ')})`);
+}
+
 interface OverstockChange {
   deliveryId: string;
   po: string;
@@ -191,6 +220,16 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
 
   if (IMPORT_KEY === 'PASTE_YOUR_NEW_NETLIFY_KEY_HERE') {
     throw new Error('Paste your new Netlify import key into IMPORT_KEY before running this script.');
+  }
+
+  // Stop before changing anything if Daily Log has duplicate Delivery IDs.
+  const dailyLogDuplicates: string[] = findDuplicateDeliveryIds(workbook, 'Daily Log');
+  if (dailyLogDuplicates.length) {
+    throw new Error(
+      'Sync stopped: Daily Log has the same Delivery ID on more than one row. ' +
+      'Fix the Delivery / Part # on these rows, then run again: ' +
+      dailyLogDuplicates.join('; ')
+    );
   }
 
   const table = workbook.getTable('DailyLog');
