@@ -7,6 +7,14 @@
 [[plugins]]
   package = "@netlify/plugin-functions-install-core"
 
+# These ES-module functions send desktop alerts; ship web-push alongside them
+# (the bundler otherwise leaves it out and the function fails to load).
+[functions."hub-cleaning"]
+  external_node_modules = ["web-push"]
+
+[functions."hub-bingo"]
+  external_node_modules = ["web-push"]
+
 [functions."temp-admin-check"]
   schedule = "0 8 * * *"
 
