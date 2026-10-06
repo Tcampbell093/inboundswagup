@@ -81,6 +81,21 @@ function worksheetRows(workbook: ExcelScript.Workbook, sheetName: string): Recor
   );
 }
 
+// Same shape as worksheetRows, built from rows already in memory (used for
+// Daily Log so it isn't read again right after the sync writes to it).
+function tableRecords(headers: string[], texts: string[][]): Record<string, string>[] {
+  const names: string[] = headers.map((header: string): string => oneLine(header));
+  return texts.map((row: string[]): Record<string, string> => {
+    const record: Record<string, string> = {};
+    names.forEach((header: string, column: number): void => {
+      if (header) record[header] = String(row[column] ?? '').trim();
+    });
+    return record;
+  }).filter((record: Record<string, string>): boolean =>
+    Boolean(record['PO # (Orden)'] || record['Delivery ID (auto)'] || record['Delivery ID'])
+  );
+}
+
 // Finds Delivery IDs that appear more than once on a sheet and returns
 // a readable list like "312530-P1 (rows 754, 755)". Empty list = no duplicates.
 function findDuplicateDeliveryIds(workbook: ExcelScript.Workbook, sheetName: string): string[] {
@@ -360,7 +375,9 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
   };
   for (const sheet of sheets) {
     if (!workbook.getWorksheet(sheet.name)) continue; // optional sheets may not exist in older files
-    const rows: Record<string, string>[] = worksheetRows(workbook, sheet.name);
+    const rows: Record<string, string>[] = sheet.name === 'Daily Log'
+      ? tableRecords(headers, textRows)
+      : worksheetRows(workbook, sheet.name);
     for (let start = 0; start < rows.length; start += 100) {
       const batch: PoHistorySyncResult = await postHistory(
         { action: 'syncWorkbookHistory', [sheet.field]: rows.slice(start, start + 100) },
