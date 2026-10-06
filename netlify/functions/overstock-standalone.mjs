@@ -833,10 +833,13 @@ async function sendExcelEvent(event) {
 // is a formula. The cursor lives here so the workbook needs no extra sheet.
 // ---------------------------------------------------------------------------
 // First pull: Overstock changes since the workbook last added items (Sep 23).
+// (Cursor table renamed from overstock_excel_pull_state on 2026-10-06 to
+// restart from Sep 23: the first script version confirmed a pull before its
+// Daily Log writes had been applied, and those writes failed.)
 const EXCEL_PULL_FIRST_SINCE = Date.parse('2026-09-23T00:00:00-04:00');
 
 async function ensureExcelPullSchema(db) {
-  await db.query(`CREATE TABLE IF NOT EXISTS overstock_excel_pull_state (
+  await db.query(`CREATE TABLE IF NOT EXISTS overstock_excel_pull_cursor (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     cursor_ms BIGINT NOT NULL,
     acked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -854,7 +857,7 @@ const pullKey = (row) => {
 
 async function excelPullChanges(db) {
   await ensureExcelPullSchema(db);
-  const saved = await db.query('SELECT cursor_ms FROM overstock_excel_pull_state WHERE id=1');
+  const saved = await db.query('SELECT cursor_ms FROM overstock_excel_pull_cursor WHERE id=1');
   const since = saved.rows[0] ? Number(saved.rows[0].cursor_ms) : EXCEL_PULL_FIRST_SINCE;
   const cursor = Date.now();
   const state = await db.query(`SELECT data_json FROM workflow_sync_state WHERE state_key='default' LIMIT 1`);
@@ -905,8 +908,8 @@ async function ackExcelPull(db, cursor) {
   const value = Math.floor(Number(cursor));
   if (!Number.isFinite(value) || value <= 0 || value > Date.now() + 60000) throw new Error('Invalid pull cursor.');
   await ensureExcelPullSchema(db);
-  await db.query(`INSERT INTO overstock_excel_pull_state(id,cursor_ms,acked_at) VALUES(1,$1,NOW())
-    ON CONFLICT(id) DO UPDATE SET cursor_ms=GREATEST(overstock_excel_pull_state.cursor_ms,EXCLUDED.cursor_ms),acked_at=NOW()`, [value]);
+  await db.query(`INSERT INTO overstock_excel_pull_cursor(id,cursor_ms,acked_at) VALUES(1,$1,NOW())
+    ON CONFLICT(id) DO UPDATE SET cursor_ms=GREATEST(overstock_excel_pull_cursor.cursor_ms,EXCLUDED.cursor_ms),acked_at=NOW()`, [value]);
 }
 
 function excelKeyOk(request) {
