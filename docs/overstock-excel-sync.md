@@ -88,3 +88,15 @@ PO History is only as fresh as the last time someone clicked the button. Office 
 3. Replace the whole script with `integrations/overstock-excel-export-office-script.ts` from this repo.
 4. Paste your saved `IMPORT_KEY` line back over the placeholder line, then **Save**.
 5. Click the **Sync locations to Houston** button once. The finishing message now also reports put-away, case and watch-list rows, and how many old rows were hidden.
+
+## Overstock → workbook (same button, runs first)
+
+Before pushing workbook locations to Houston, the script downloads Overstock items changed since its last successful run (`GET /api/overstock-control?excelPull=1`, import key required) and updates matching **Daily Log** rows:
+
+- **Overstock Loc (Ubicacion)** and **Overstock Cont. (Contenedor)**: set to the item's current box and location. Skipped for donated items, and when a delivery's items are split across several boxes (reported in the message instead).
+- **Disposition (Donado/Ret/Req)**: set to `Donated / Donado` when Overstock donated it, or back to `Required / Requerido` when the sheet says Donated but Overstock has it in stock. Blank, Required and Retained are otherwise left alone.
+- **Never written:** Overstock Qty (a formula: Prep Qty − Fulfillment − Assembly) and Overstock Note.
+
+Rows are matched by Delivery ID. An Overstock item without a Delivery ID is matched by PO only when that PO has exactly one Daily Log row. Items with no Daily Log row (e.g. archived months) are listed in the message, not written.
+
+After writing, the script confirms (`ackExcelPull`) so the next click only brings newer changes. The first run brings changes made since **2026-09-23**, when the workbook last added items to Overstock. Running this step first means a newer Overstock change isn't overwritten by an older sheet value in the push step that follows.

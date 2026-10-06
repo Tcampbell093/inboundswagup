@@ -1,4 +1,4 @@
-// New Daily Rec workbook -> Houston Overstock location sync helper.
+// New Daily Rec workbook <-> Houston Overstock sync (both directions) + PO History copy.
 // Add this script in Excel for the web: Automate > New Script, then add a button.
 // Replace IMPORT_KEY below with the private value configured in Netlify.
 
@@ -81,6 +81,109 @@ function worksheetRows(workbook: ExcelScript.Workbook, sheetName: string): Recor
   );
 }
 
+interface OverstockChange {
+  deliveryId: string;
+  po: string;
+  disposition: string;
+  containerCode: string;
+  location: string;
+  splitAcrossBoxes: boolean;
+}
+
+interface OverstockPull {
+  error?: string;
+  cursor?: number;
+  changes?: OverstockChange[];
+}
+
+interface PullResult {
+  updatedRows: number;
+  updatedCells: number;
+  notInDailyLog: string[];
+  splitAcrossBoxes: string[];
+}
+
+const DISPOSITION_TEXT: Record<string, string> = {
+  Required: 'Required / Requerido',
+  Donated: 'Donated / Donado',
+};
+
+const sameText = (a: string, b: string): boolean =>
+  String(a ?? '').replace(/\s+/g, '').toUpperCase() === String(b ?? '').replace(/\s+/g, '').toUpperCase();
+
+// Overstock -> workbook. Writes only Overstock Loc, Overstock Cont. and
+// Disposition on Daily Log rows for Overstock items changed since the last
+// pull. Never touches Overstock Qty (a formula) or notes.
+async function pullFromOverstock(
+  endpoint: string, key: string, body: ExcelScript.Range, headers: string[],
+): Promise<PullResult> {
+  const result: PullResult = { updatedRows: 0, updatedCells: 0, notInDailyLog: [], splitAcrossBoxes: [] };
+  let response: Response;
+  try {
+    response = await fetch(`${endpoint}?excelPull=1`, { headers: { 'x-overstock-import-key': key } });
+  } catch (error) {
+    throw new Error(`Could not download Overstock changes: ${String(error)}.`);
+  }
+  const text: string = await response.text();
+  let pull: OverstockPull = {};
+  try { pull = text ? JSON.parse(text) as OverstockPull : {}; } catch { /* reported below */ }
+  if (!response.ok) throw new Error(pull.error || `Overstock returned HTTP ${response.status} when downloading changes.`);
+
+  const col = (name: string): number => headers.indexOf(name);
+  const poCol = col('PO # (Orden)'), deliveryCol = col('Delivery ID (auto)');
+  const locCol = col('Overstock Loc (Ubicacion)'), boxCol = col('Overstock Cont. (Contenedor)'), dispCol = col('Disposition (Donado/Ret/Req)');
+  if (poCol < 0 || deliveryCol < 0 || locCol < 0 || boxCol < 0) throw new Error('DailyLog is missing a PO, Delivery ID, Overstock Loc or Overstock Cont. column.');
+
+  const texts: string[][] = body.getTexts();
+  const byDelivery = new Map<string, number>();
+  const byPo = new Map<string, number[]>();
+  texts.forEach((row: string[], index: number): void => {
+    const delivery: string = String(row[deliveryCol] ?? '').trim().toUpperCase();
+    const po: string = String(row[poCol] ?? '').trim().replace(/^PO[-\s#]*/i, '');
+    if (delivery) byDelivery.set(delivery, index);
+    if (po) byPo.set(po, [...(byPo.get(po) ?? []), index]);
+  });
+
+  for (const change of pull.changes ?? []) {
+    const label: string = change.deliveryId || `PO ${change.po}`;
+    let index: number | undefined = change.deliveryId ? byDelivery.get(change.deliveryId.toUpperCase()) : undefined;
+    if (index === undefined && !change.deliveryId) {
+      const rows: number[] = byPo.get(change.po) ?? [];
+      if (rows.length === 1) index = rows[0]; // a PO-only item can only be placed when the PO has one row
+    }
+    if (index === undefined) { result.notInDailyLog.push(label); continue; }
+    if (change.splitAcrossBoxes) result.splitAcrossBoxes.push(label);
+
+    const row: string[] = texts[index];
+    let changed = 0;
+    const write = (column: number, value: string): void => {
+      if (column < 0 || !value || sameText(row[column], value)) return;
+      body.getCell(index as number, column).setValue(value);
+      changed += 1;
+    };
+    if (change.disposition !== 'Donated') {
+      write(locCol, change.location);
+      write(boxCol, change.containerCode);
+    }
+    // Disposition is only written when it matters: Overstock donated it, or the
+    // sheet says Donated but Overstock has it back in stock. Blank, Required and
+    // Retained all mean "kept", so they are left alone otherwise.
+    const current: string = String(row[dispCol] ?? '').trim().toLowerCase();
+    if (change.disposition === 'Donated' && !current.startsWith('donat')) write(dispCol, DISPOSITION_TEXT.Donated);
+    if (change.disposition === 'Required' && current.startsWith('donat')) write(dispCol, DISPOSITION_TEXT.Required);
+    if (changed) { result.updatedRows += 1; result.updatedCells += changed; }
+  }
+
+  // Remember how far we got so the next click only brings newer changes.
+  const ack: Response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-overstock-import-key': key },
+    body: JSON.stringify({ action: 'ackExcelPull', cursor: pull.cursor }),
+  });
+  if (!ack.ok) throw new Error(`Overstock changes were written, but saving the sync position failed (HTTP ${ack.status}). The next sync will re-check them.`);
+  return result;
+}
+
 async function main(workbook: ExcelScript.Workbook): Promise<string> {
   const HOUSTON_ENDPOINT = 'https://inboundswagup.netlify.app/api/overstock-control';
   const PO_HISTORY_ENDPOINT = 'https://inboundswagup.netlify.app/api/po-history';
@@ -95,6 +198,12 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
 
   const headers = table.getHeaderRowRange().getTexts()[0].map(value => String(value ?? '').trim());
   const body = table.getRangeBetweenHeaderAndTotal();
+
+  // 1. Overstock -> workbook first, so newer Overstock changes aren't
+  //    overwritten by older sheet values in step 2.
+  const pulled: PullResult = await pullFromOverstock(HOUSTON_ENDPOINT, IMPORT_KEY, body, headers);
+
+  // 2. Workbook -> Overstock (reads the sheet again, including step 1's edits).
   const textRows = body.getTexts();
   const indexOf = (name: string) => headers.indexOf(name);
   const associateColumns: number[] = headers
@@ -207,6 +316,9 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
 
   return [
     'Houston sync complete.',
+    `From Overstock: ${pulled.updatedRows} Daily Log row(s) updated (${pulled.updatedCells} cell(s): location, box or disposition).`,
+    pulled.notInDailyLog.length ? `${pulled.notInDailyLog.length} changed Overstock item(s) have no Daily Log row: ${pulled.notInDailyLog.slice(0, 8).join(', ')}.` : '',
+    pulled.splitAcrossBoxes.length ? `${pulled.splitAcrossBoxes.length} split across several boxes, so location/box left as is: ${pulled.splitAcrossBoxes.slice(0, 8).join(', ')}.` : '',
     `${result.updatedEntries ?? 0} item(s) updated`,
     `${result.createdEntries ?? 0} new item(s) added`,
     `${result.updatedContainers ?? 0} container(s) moved`,
@@ -222,5 +334,5 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
     `${historyResult.archivePa ?? 0} put-away history row(s) copied`,
     `${historyResult.putAway ?? 0} put-away row(s), ${historyResult.cases ?? 0} case(s) and ${historyResult.watch ?? 0} watch-list row(s) copied`,
     `${finished.hidden ?? 0} row(s) no longer in the workbook hidden from PO History`,
-  ].join(' ');
+  ].filter(Boolean).join(' ');
 }
