@@ -91,6 +91,25 @@ function normalizePo(value) {
   return str(value, 120).replace(/^PO[-\s]*/i, '').trim().toUpperCase();
 }
 
+// Workbook box-code typos: "0SC-157" (zero), "OSC--208", "osc 205", "OSC205"
+// all mean the same box as "OSC-157" etc.
+function normalizeBoxCode(value) {
+  let code = str(value, 120).toUpperCase().replace(/\s+/g, '-');
+  code = code.replace(/^0SC(?=[-\d])/, 'OSC').replace(/-{2,}/g, '-').replace(/-+$/, '');
+  return code.replace(/^OSC(?=\d)/, 'OSC-');
+}
+
+// Workbook location typos: "car", "CAR-", "E6", "e - 6" -> "CAR", "E-6".
+function normalizeLocation(value) {
+  const loc = str(value, 120).toUpperCase().replace(/\s+/g, '').replace(/-+$/, '');
+  const shelf = /^E-?(\d{1,2})$/.exec(loc);
+  return shelf ? `E-${Number(shelf[1])}` : loc;
+}
+
+// New boxes are only created from codes shaped like a real box ("OSC-205",
+// "STICKERS-005"), so a stray "f" in the box column isn't turned into a box.
+const BOX_CODE_SHAPE = /^[A-Z]{2,}-\d{1,4}$/;
+
 function normalizeOperationalDate(value) {
   const raw = str(value, 40);
   let match = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
@@ -436,14 +455,57 @@ async function importExcelLocations(rawRows, rawAssociates) {
       }
     }
 
+    // Only real Overstock locations (plus CAR, the cart/staging area) are
+    // accepted, so a typo like "caro" or "F" is reported instead of saved.
+    const knownLocations = new Set([
+      ...(Array.isArray(masters.overstockLocations) && masters.overstockLocations.length
+        ? masters.overstockLocations : Array.from({ length: 24 }, (_, i) => `E-${i + 1}`)),
+      'CAR',
+    ].map(normalizeLocation));
+
+    // A box's location is shared, but the workbook stores one per row. When
+    // rows that point at the same box disagree, moving it would just follow
+    // whichever row came last, so those boxes are left where they are.
+    // Exact code first, so the real "OSC-157" wins over a typo box "0SC-157".
+    const findBox = (code) => containers.find(c => str(c?.code, 120).toUpperCase() === code)
+      || containers.find(c => normalizeBoxCode(c?.code) === code);
+    const boxCodesForRow = (raw) => {
+      const code = normalizeBoxCode(raw?.containerCode);
+      if (code) return [code];
+      const deliveryId = str(raw?.deliveryId, 120).toUpperCase();
+      const po = normalizePo(raw?.po);
+      const matched = deliveryId ? entries.filter(entry => str(entry?.deliveryId, 120).toUpperCase() === deliveryId) : [];
+      const items = matched.length ? matched : (po ? entries.filter(entry => normalizePo(entry?.po) === po) : []);
+      return [...new Set(items.map(entry => {
+        const box = containers.find(c => String(c.id) === String(entry?.containerId || ''));
+        return box ? normalizeBoxCode(box.code) : '';
+      }).filter(Boolean))];
+    };
+    const boxVotes = new Map();
+    for (const raw of rows) {
+      const loc = normalizeLocation(raw?.location);
+      if (isUnknownAssociate(str(raw?.associate, 120)) || !loc || !knownLocations.has(loc)) continue;
+      for (const code of boxCodesForRow(raw)) {
+        if (!boxVotes.has(code)) boxVotes.set(code, new Map());
+        boxVotes.get(code).set(loc, (boxVotes.get(code).get(loc) || 0) + 1);
+      }
+    }
+    const conflictedBoxes = new Set();
+    for (const [code, votes] of boxVotes) {
+      if (votes.size < 2) continue;
+      conflictedBoxes.add(code);
+      result.unresolved.push(`${code}: workbook rows disagree on its location (${[...votes].map(([loc, n]) => `${loc} x${n}`).join(', ')}); box not moved. Make those rows match.`);
+    }
+    result.boxLocationConflicts = conflictedBoxes.size;
+
     for (const raw of rows) {
       const po = normalizePo(raw?.po);
       const deliveryId = str(raw?.deliveryId, 120).toUpperCase();
       const associate = str(raw?.associate, 120);
       const category = str(raw?.category, 120);
       const operationalDate = normalizeOperationalDate(raw?.operationalDate);
-      const location = str(raw?.location, 120).toUpperCase();
-      const containerCode = str(raw?.containerCode, 120).toUpperCase();
+      let location = normalizeLocation(raw?.location);
+      const containerCode = normalizeBoxCode(raw?.containerCode);
       const key = deliveryId || po || '(blank row)';
 
       // Overstock should only receive workbook rows that have actually been
@@ -459,6 +521,21 @@ async function importExcelLocations(rawRows, rawAssociates) {
       if (!location) {
         result.skipped.push(`${key}: no Overstock location.`);
         continue;
+      }
+      if (!knownLocations.has(location)) {
+        result.unresolved.push(`${key}: "${str(raw?.location, 60)}" isn't an Overstock location; nothing moved.`);
+        continue;
+      }
+      // Rows for a disputed box keep the box where it is (items still get
+      // their category, date, prep and box assignment).
+      const disputed = boxCodesForRow(raw).filter(code => conflictedBoxes.has(code));
+      if (disputed.length) {
+        const box = findBox(disputed[0]);
+        if (!box) {
+          result.unresolved.push(`${key}: box ${disputed[0]} has conflicting locations in the workbook; not created.`);
+          continue;
+        }
+        location = normalizeLocation(box.currentLocation) || location;
       }
 
       let matches = deliveryId ? entries.filter(entry => str(entry?.deliveryId, 120).toUpperCase() === deliveryId) : [];
@@ -489,8 +566,12 @@ async function importExcelLocations(rawRows, rawAssociates) {
         }
 
         let targetContainer = containerCode
-          ? containers.find(container => str(container?.code, 120).toUpperCase() === containerCode)
+          ? findBox(containerCode)
           : null;
+        if (!targetContainer && !BOX_CODE_SHAPE.test(containerCode)) {
+          result.unresolved.push(`${key}: "${str(raw?.containerCode, 60)}" doesn't look like a box code; no box was created.`);
+          continue;
+        }
         if (!targetContainer) {
           targetContainer = cleanContainer({
             code: containerCode,
@@ -554,7 +635,7 @@ async function importExcelLocations(rawRows, rawAssociates) {
       }
       const matchingBoxIds = new Set(matches.map(entry => str(entry?.containerId, 160)));
       const currentBox = containers.find(container => String(container?.id) === [...matchingBoxIds][0]);
-      if (containerCode && (matchingBoxIds.size > 1 || (!deliveryId && matches.length > 1 && str(currentBox?.code, 120).toUpperCase() !== containerCode))) {
+      if (containerCode && (matchingBoxIds.size > 1 || (!deliveryId && matches.length > 1 && normalizeBoxCode(currentBox?.code) !== containerCode))) {
         result.unresolved.push(`${key}: multiple boxes match; select the item to move in Overstock Control.`);
         continue;
       }
@@ -592,7 +673,11 @@ async function importExcelLocations(rawRows, rawAssociates) {
       }
 
       if (containerCode) {
-        let target = containers.find(container => str(container?.code, 120).toUpperCase() === containerCode);
+        let target = findBox(containerCode);
+        if (!target && !BOX_CODE_SHAPE.test(containerCode)) {
+          result.unresolved.push(`${key}: "${str(raw?.containerCode, 60)}" doesn't look like a box code; item not moved.`);
+          continue;
+        }
         if (!target) {
           if (num(raw?.quantity, 0) <= 0) {
             result.unresolved.push(`${key}: cannot create a new box for a zero-quantity PO.`);
@@ -634,7 +719,7 @@ async function importExcelLocations(rawRows, rawAssociates) {
           const entry = entries[i];
           const isMatch = matchIds.has(String(entry.id));
           if (!isMatch && String(entry.containerId) !== targetId) continue;
-          const corrected = isMatch && (String(entry.containerId) !== targetId || str(entry.containerCode, 120).toUpperCase() !== containerCode);
+          const corrected = isMatch && (String(entry.containerId) !== targetId || normalizeBoxCode(entry.containerCode) !== containerCode);
           if (!corrected && str(entry.location, 120).toUpperCase() === location) continue;
           entries[i] = excelEntryUpdate(entry, associate, {
             ...(isMatch ? { containerId: targetId, containerCode } : {}),
@@ -653,7 +738,7 @@ async function importExcelLocations(rawRows, rawAssociates) {
       }
 
       const explicitContainer = containerCode
-        ? containers.find(container => str(container?.code, 120).toUpperCase() === containerCode)
+        ? findBox(containerCode)
         : null;
       const containerIds = new Set(matches.map(entry => str(entry?.containerId, 160)).filter(Boolean));
       if (explicitContainer?.id) containerIds.add(String(explicitContainer.id));
@@ -735,13 +820,13 @@ async function importExcelLocations(rawRows, rawAssociates) {
     // searchable and reopenable if a valid workbook entry references them.
     const referencedCodes = new Set(
       rows.filter(raw => str(raw?.associate, 120) && str(raw?.location, 120))
-        .map(raw => str(raw?.containerCode, 120).toUpperCase()).filter(Boolean)
+        .map(raw => normalizeBoxCode(raw?.containerCode)).filter(Boolean)
     );
     for (let i = 0; i < containers.length; i += 1) {
       const box = containers[i];
       if (!isExcelCreatedBox(box) || box.retainEmpty === true
         || str(box.status, 80).toLowerCase() === 'closed') continue;
-      if (referencedCodes.has(str(box.code, 120).toUpperCase())) continue;
+      if (referencedCodes.has(normalizeBoxCode(box.code))) continue;
       if (entries.some(entry => String(entry.containerId || '') === String(box.id))) continue;
       containers[i] = {
         ...box,
@@ -775,6 +860,80 @@ async function importExcelLocations(rawRows, rawAssociates) {
     );
     await client.query('COMMIT');
     return result;
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// One-time cleanup for boxes created from workbook typos ("0SC-157",
+// "OSC--208"). Each typo box is merged into its real box (items move, typo box
+// is closed) or, if there's no real box, renamed. dryRun only returns the plan.
+async function mergeTypoBoxes(dryRun = true) {
+  const db = pool();
+  await ensureBoxAuditSchema(db);
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const state = await client.query(`SELECT data_json, masters_json FROM workflow_sync_state WHERE state_key='default' LIMIT 1 FOR UPDATE`);
+    if (!state.rows.length) throw new Error('Houston workflow state is unavailable.');
+    const data = { ...(state.rows[0].data_json || {}) };
+    const filtered = filterDeleted(data);
+    const entries = filtered.entries.slice();
+    const containers = filtered.containers.slice();
+    const now = Date.now();
+    const boxEvents = [];
+    const plan = [];
+
+    for (let i = 0; i < containers.length; i += 1) {
+      const typo = containers[i];
+      const code = str(typo?.code, 120).toUpperCase();
+      const fixed = normalizeBoxCode(code);
+      // Only box-code typos ("0SC-157", "OSC--208"), not other names.
+      if (!fixed || fixed === code || !BOX_CODE_SHAPE.test(fixed)) continue;
+      const items = entries.filter(entry => String(entry?.containerId || '') === String(typo.id));
+      const real = containers.find(c => String(c.id) !== String(typo.id) && str(c?.code, 120).toUpperCase() === fixed);
+      // If both boxes hold a place and the typo box has items, merging would
+      // move those items to the real box's location: someone has to decide.
+      const conflict = Boolean(real) && items.length > 0
+        && normalizeLocation(typo.currentLocation) !== normalizeLocation(real.currentLocation);
+      plan.push({
+        from: code, to: fixed, action: conflict ? 'needs-decision' : real ? 'merge' : 'rename', items: items.length,
+        pos: items.map(entry => str(entry?.po, 40)).slice(0, 30),
+        fromLocation: str(typo.currentLocation, 60), toLocation: str(real?.currentLocation, 60),
+        locationsDiffer: Boolean(real) && normalizeLocation(typo.currentLocation) !== normalizeLocation(real.currentLocation),
+        fromStatus: str(typo.status, 30), toStatus: str(real?.status, 30),
+      });
+      if (dryRun || conflict) continue;
+      if (!real) {
+        containers[i] = { ...typo, code: fixed, updatedAt: now };
+        for (let j = 0; j < entries.length; j += 1) {
+          if (String(entries[j]?.containerId || '') === String(typo.id)) entries[j] = { ...entries[j], containerCode: fixed, updatedAt: now };
+        }
+        boxEvent(boxEvents, containers[i], 'renamed', 'Typo cleanup', 'Typo cleanup', { from: code, to: fixed });
+        continue;
+      }
+      // Items join the real box and take its location.
+      for (let j = 0; j < entries.length; j += 1) {
+        if (String(entries[j]?.containerId || '') !== String(typo.id)) continue;
+        entries[j] = { ...entries[j], containerId: real.id, containerCode: real.code, location: real.currentLocation, updatedAt: now };
+        boxEvent(boxEvents, typo, 'po-moved-out', 'Typo cleanup', 'Typo cleanup', { po: entries[j].po, to: real.code });
+        boxEvent(boxEvents, real, 'po-moved-in', 'Typo cleanup', 'Typo cleanup', { po: entries[j].po, from: code });
+      }
+      containers[i] = { ...typo, status: 'Closed', notes: `Merged into ${real.code} (typo cleanup).`, updatedAt: now };
+      boxEvent(boxEvents, containers[i], 'merged', 'Typo cleanup', 'Typo cleanup', { to: real.code, quantity: items.length });
+    }
+
+    if (!dryRun && plan.length) {
+      data.overstockEntries = entries;
+      data.overstockContainers = containers;
+      await persistBoxEvents(client, boxEvents);
+      await client.query(`UPDATE workflow_sync_state SET data_json=$1::jsonb, updated_at=NOW() WHERE state_key='default'`, [JSON.stringify(data)]);
+    }
+    await client.query(dryRun ? 'ROLLBACK' : 'COMMIT');
+    return { dryRun, plan };
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch {}
     throw error;
@@ -1452,6 +1611,11 @@ export default async (request) => {
       if (!expected || !safeEqual(supplied, expected)) return json(401, { error: 'Excel sync authorization failed.' });
       const importResult = await importExcelLocations(body.rows, body.associates);
       return json(200, { ok: true, import: importResult, snapshot: await readSnapshot(pool()) });
+    }
+
+    if (action === 'mergeTypoBoxes') {
+      if (!excelKeyOk(request)) return json(401, { error: 'Excel sync authorization failed.' });
+      return json(200, await mergeTypoBoxes(body.dryRun !== false));
     }
 
     if (action === 'ackExcelPull') {
