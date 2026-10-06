@@ -163,7 +163,7 @@
           </div>
 
           ${activeMessage ? `<div class="bingo-result${state.drawResult?.bingo ? ' win' : ''}" role="status">${esc(activeMessage)}</div>` : ''}
-          ${(!p.bingo && !drawReady) ? `<div class="bingo-hint">Finish a FairShift cleaning duty to earn your next Bingo Coin.</div>` : ''}
+          ${(!p.bingo && !drawReady) ? `<div class="bingo-hint">Finish a cleaning duty to earn your next Bingo Coin.</div>` : ''}
 
           ${drawnHtml(p.drawn, p.card)}
         </section>
@@ -171,7 +171,7 @@
         <aside class="bingo-side">
           <div class="bingo-info-card">
             <div class="bingo-kicker">How it works</div>
-            <div class="bingo-rule"><span>1</span><p>Finish cleaning in FairShift → earn <strong>1 Bingo Coin</strong>.</p></div>
+            <div class="bingo-rule"><span>1</span><p>Finish a cleaning duty → earn <strong>1 Bingo Coin</strong>.</p></div>
             <div class="bingo-rule"><span>2</span><p>Spend a coin for a random Bingo square. Everyone also gets <strong>1 free draw each week</strong>.</p></div>
             <div class="bingo-rule"><span>3</span><p>Each draw comes from a larger shared pool. If it matches your <strong>${boardSize}×${boardSize}</strong> card, one square is marked. Drawn items don't repeat.</p></div>
           </div>
@@ -205,7 +205,7 @@
       state.drawResult = null;
       const recovered = Number(body.reconciledCoins || 0);
       message = recovered > 0
-        ? `🪙 ${recovered} Bingo Coin${recovered === 1 ? '' : 's'} added from completed FairShift cleaning.`
+        ? `🪙 ${recovered} Bingo Coin${recovered === 1 ? '' : 's'} added from completed cleaning.`
         : '';
       render();
     } catch (error) {

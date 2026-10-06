@@ -2,8 +2,8 @@ const { Pool } = require('pg');
 const crypto = require('crypto');
 const hubCleaning = require('./_hub_cleaning');
 const hubPush = require('./_hub_push');
+const schedule = require('./_hub_schedule');
 
-const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : undefined,
@@ -107,15 +107,9 @@ function fairShiftStatus(value) {
 }
 
 async function fetchFairShiftCleaning() {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(`${FAIRSHIFT_BASE}/api/dashboard?date=${todayEastern()}`, {
-      headers: { Accept: 'application/json' },
-      signal: controller.signal,
-    });
-    if (!response.ok) throw new Error(`FairShift returned ${response.status}`);
-    const data = await response.json();
+    // The schedule lives in the Hub now; the function keeps its name and shape.
+    const data = await schedule.dashboard(pool, { date: todayEastern(), days: 14 });
     const employeeMap = new Map((Array.isArray(data.employees) ? data.employees : []).map(e => [Number(e.id), e.name]));
     const cleaning = (Array.isArray(data.assignments) ? data.assignments : [])
       .filter(a => a && a.type === 'cleaning')
@@ -147,9 +141,7 @@ async function fetchFairShiftCleaning() {
       });
     return { ok: true, cleaning, departments: Array.isArray(data.departments)?data.departments:[], error: null };
   } catch (error) {
-    return { ok: false, cleaning: [], error: text(error?.message || 'FairShift unavailable', 200) };
-  } finally {
-    clearTimeout(timeout);
+    return { ok: false, cleaning: [], error: text(error?.message || 'Cleaning schedule unavailable', 200) };
   }
 }
 

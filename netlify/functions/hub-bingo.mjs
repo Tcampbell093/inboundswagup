@@ -2,9 +2,9 @@ import pg from 'pg';
 import crypto from 'node:crypto';
 import hubCleaning from './_hub_cleaning.js';
 import hubPush from './_hub_push.js';
+import schedule from './_hub_schedule.js';
 
 const { Pool } = pg;
-const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
 const SESSION_COOKIE = 'hub_associate_session';
 const SESSION_VERSION = 2;
 const DEFAULT_ROUND_ANCHOR = '2026-09-21';
@@ -365,36 +365,18 @@ async function getSettings(db) {
   };
 }
 
+// Cleaning this person completed on a date, from the Hub schedule (duties
+// finished in the Hub itself are added separately from hub_cleaning_checkins).
 async function fetchCompletedCleaningForDate(dateText, employeeKey) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
-  try {
-    const response = await fetch(`${FAIRSHIFT_BASE}/api/dashboard?date=${encodeURIComponent(dateText)}`, {
-      headers: { Accept: 'application/json' },
-      signal: controller.signal,
-    });
-    if (!response.ok) throw new Error(`FairShift returned ${response.status}`);
-    const data = await response.json();
-    const employees = new Map(
-      (Array.isArray(data.employees) ? data.employees : [])
-        .map((person) => [Number(person?.id), clean(person?.name, 100)]),
-    );
-    const ids = [];
-    for (const assignment of Array.isArray(data.assignments) ? data.assignments : []) {
-      if (!assignment || assignment.type !== 'cleaning' || assignment.dutyStatus !== 'completed') continue;
-      const assignmentId = Number(assignment.id);
-      if (!assignmentId) continue;
-      const scheduledName = clean(assignment.employeeName || employees.get(Number(assignment.employeeId)) || '', 100);
-      const actualName = assignment.actualEmployeeId
-        ? clean(employees.get(Number(assignment.actualEmployeeId)) || '', 100)
-        : '';
-      const completedBy = actualName || scheduledName;
-      if (slug(completedBy) === employeeKey) ids.push(assignmentId);
-    }
-    return ids;
-  } finally {
-    clearTimeout(timeout);
-  }
+  const db = getPool();
+  await schedule.ensureImported(db);
+  const r = await db.query(`
+    SELECT a.id, e.name
+    FROM hub_sched_assignments a
+    JOIN hub_sched_employees e ON e.id = COALESCE(a.actual_employee_id, a.employee_id)
+    WHERE a.type='cleaning' AND a.duty_status='completed' AND a.assignment_date=$1
+  `, [dateText]);
+  return r.rows.filter((row) => slug(row.name) === employeeKey).map((row) => Number(row.id));
 }
 
 async function reconcileCleaningCoins(client, session, round, settings) {
