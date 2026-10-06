@@ -61,3 +61,30 @@ The endpoint prefers `Delivery ID (auto)`. If no Delivery ID match exists, it up
 The response reports updated entries, updated containers, skipped blank rows, and workbook rows that could not be matched. The flow should retain failed or unresolved responses for manager review.
 
 Each successful workbook sync also refreshes Houston's associate master list from the names found across the DailyLog `By/Por` columns. Names are deduplicated without regard to capitalization and then used by the standalone Stock Intake associate picker.
+
+## PO History copy (same button)
+
+After the Houston location sync, the same script copies every sheet that mentions POs into **PO History** (`/po-history/`):
+
+| Workbook sheet | Shown in PO History as |
+|---|---|
+| Daily Log | Daily Log (current) |
+| Put-Away | Put-Away (current) |
+| Cases | Cases (current) |
+| Watch List | Watch List (current) |
+| Archive | Archive (closed months) |
+| Archive PA | Put-Away archive |
+
+Headers that wrap onto two lines (e.g. `PO #` / `(Orden)` on Cases and Watch List) are read as one line. The SF Report sheet is intentionally not copied.
+
+Each run uses one sync ID. When every sheet has arrived, the script sends a final `finishSync`; PO History then **hides** rows of those sheets that were not in this run (for example Daily Log rows after Close Month moves them to Archive). Hidden rows are kept in the database, and they come back automatically if they reappear in a later sync. If a run fails partway, nothing is hidden.
+
+PO History is only as fresh as the last time someone clicked the button. Office Scripts that call external websites can't be run from Power Automate, so this can't be put on a schedule without a different integration.
+
+### Updating the script in the workbook
+
+1. In Excel for the web, open **Automate → All scripts** and open the existing sync script.
+2. Copy the line `const IMPORT_KEY = '…';` somewhere safe (it holds your private key).
+3. Replace the whole script with `integrations/overstock-excel-export-office-script.ts` from this repo.
+4. Paste your saved `IMPORT_KEY` line back over the placeholder line, then **Save**.
+5. Click the **Sync locations to Houston** button once. The finishing message now also reports put-away, case and watch-list rows, and how many old rows were hidden.

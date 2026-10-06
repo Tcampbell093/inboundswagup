@@ -73,6 +73,26 @@ function card(r,i){
   </button>`;
 }
 
+const SHEET_LABEL={'Daily Log':'Daily Log','Put-Away':'Put-Away','Cases':'Cases','Watch List':'Watch List','Archive':'Archive (closed months)','Archive PA':'Put-Away archive'};
+// One line saying everywhere a searched PO appears, with a button to see it all.
+function poSummaryHtml(sum){
+  if(!sum)return'';
+  const bits=Object.entries(sum.sheets||{}).map(([sheet,n])=>`<span class="where-chip">${esc(SHEET_LABEL[sheet]||sheet)} · ${n}</span>`);
+  if(sum.overstockMatched)bits.push(`<span class="where-chip overstock">Overstock · ${esc(sum.overstock?.state||'history')}</span>`);
+  return `<div class="po-summary"><div><p class="eyebrow">Everywhere PO ${esc(sum.po)} appears</p><div class="where-chips">${bits.join('')||'<span class="where-chip">Not found</span>'}</div></div>
+    <button type="button" class="po-open" data-po="${esc(sum.po)}">Open everything for PO ${esc(sum.po)} →</button></div>`;
+}
+// POs that match the search but only exist in Overstock (never logged in the workbook).
+function overstockOnlyHtml(list){
+  if(!Array.isArray(list)||!list.length)return'';
+  return `<div class="overstock-only"><p class="eyebrow">Only in Overstock</p>${list.map(o=>`<button type="button" class="record overstock-only-row" data-po="${esc(o.po)}">
+    <div class="record-main"><strong>PO ${esc(o.po)}</strong><div class="meta">Not in the workbook</div></div>
+    <div><b>${Number(o.activeUnits||0).toLocaleString()} units</b><div class="meta">In Overstock</div></div>
+    <div><b>${Number(o.donatedUnits||0).toLocaleString()} units</b><div class="meta">Donated</div></div>
+    <div><b>${esc((o.locations||[]).join(', ')||'—')}</b><div class="meta">Where</div></div>
+    <div><span class="pill overstock">overstock</span></div></button>`).join('')}</div>`;
+}
+
 async function load(){
   $('#message').textContent='';
   $('#records').innerHTML='<p>Loading records…</p>';
@@ -94,7 +114,8 @@ async function load(){
     lastRecords=data.records||[];
     total=data.total||0;
     $('#count').textContent=total.toLocaleString();
-    $('#records').innerHTML=lastRecords.length?lastRecords.map(card).join(''):'<p>No matching records yet. Run the updated Excel sync to copy workbook history here.</p>';
+    const extras=poSummaryHtml(data.poSummary)+overstockOnlyHtml(data.overstockOnly);
+    $('#records').innerHTML=extras+(lastRecords.length?lastRecords.map(card).join(''):(extras?'':'<p>No matching records yet. Run the updated Excel sync to copy workbook history here.</p>'));
     $('#page').textContent=`Page ${page} of ${Math.max(1,Math.ceil(total/40))}`;
     $('#prev').disabled=page<=1;
     $('#next').disabled=page*40>=total;
@@ -286,7 +307,68 @@ async function details(r){
   }
 }
 
-document.addEventListener('click',e=>{const c=e.target.closest('.record');if(c)details(lastRecords[Number(c.dataset.i)]);});
+// Columns shown for each sheet in the PO view: [label, ...header names to combine].
+const SHEET_COLUMNS={
+  'Daily Log':[['Delivery','Delivery ID (auto)'],['Docked','Dock Date (Fecha)','Dock By (Muelle-Por)','Dock Qty (Cant.)'],['QA received','Rec Date (Recibo)','Rec By (Por)','Rec Qty (Recib.)'],['Prepped','Prep Date (Prep)','Prep By (Por)','Prep Qty (Cant.)'],['Overstock','Overstock Qty','Overstock Loc (Ubicacion)','Disposition (Donado/Ret/Req)'],['Put away','Put-Away Loc','Done Date (Term.)','Done By (Por)'],['Status','Status (Estado)']],
+  'Put-Away':[['Date','Date (Fecha)'],['Delivery','Delivery ID'],['Location','Location / Ubicacion (QE4-A1)'],['Boxes','Boxes (Cajas)'],['Qty','Qty (Cant.)'],['Notes','Notes / Notas']],
+  'Cases':[['Case','Case ID (auto)'],['Opened','Date Opened (Fecha)','Opened By (Por)'],['Delivery','Delivery ID (auto)'],['Issue','Issue Type (Tipo)','Qty Affected (Cant.)'],['Action / waiting on','Action Requested (Accion)','Waiting On (Esperando)'],['Status','Status (Estado)','Open? (auto)'],['Resolution','Resolution / Outcome (Resultado)','Date Resolved (Fecha)'],['Notes','Notes / Notas']],
+  'Watch List':[['Reason','Priority Reason / Motivo'],['Type','Type (Tipo)','DTC Qty (Enviado al Cliente)'],['Flagged','Date Added (Fecha)','Flagged By (Por)'],['Notes','Notes / Notas'],['Done?','Done? (auto)']],
+  'Archive':[['Month','Month'],['Delivery','Delivery ID (auto)'],['Docked','Dock Date (Fecha)','Dock By (Muelle-Por)','Dock Qty (Cant.)'],['QA received','Rec Date (Recibo)','Rec By (Por)','Rec Qty (Recib.)'],['Prepped','Prep Date (Prep)','Prep By (Por)','Prep Qty (Cant.)'],['Put away','Put-Away Loc','Done Date (Term.)','Done By (Por)'],['Status','Status (Estado)']],
+  'Archive PA':[['Month','Month'],['Date','Date (Fecha)'],['Delivery','Delivery ID'],['Location','Location / Ubicacion (QE4-A1)'],['Boxes','Boxes (Cajas)'],['Qty','Qty (Cant.)'],['Notes','Notes / Notas']],
+};
+function sheetTableHtml(sheet,records){
+  const cols=SHEET_COLUMNS[sheet]||[['Fields']];
+  // Label bare numbers so "505" reads as "505 units" and "11" as "11 affected".
+  const unit=(name,v)=>!/^\d[\d,.]*$/.test(v)?v:/Affected/.test(name)?`${v} affected`:/Qty|Cant\.|Boxes|Cajas/.test(name)?`${v} ${/Boxes|Cajas/.test(name)?'boxes':'units'}`:v;
+  const cell=(row,names)=>names.map(n=>unit(n,text(row[n]))).filter(Boolean).join(' · ');
+  const body=records.map(r=>{const row=r.row_json||{};return `<tr>${cols.map(([label,...names])=>`<td data-label="${esc(label)}">${esc(cell(row,names)||'—')}</td>`).join('')}</tr>`;}).join('');
+  return `<section class="detail-section"><div class="section-head"><div><p class="eyebrow">Workbook</p><h3>${esc(SHEET_LABEL[sheet]||sheet)}</h3></div><span class="source-count">${records.length} row${records.length===1?'':'s'}</span></div>
+    <div class="sheet-table-wrap"><table class="sheet-table"><thead><tr>${cols.map(([label])=>`<th>${esc(label)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div></section>`;
+}
+// Everything about one PO: every workbook sheet that mentions it plus Overstock.
+async function openPo(po){
+  $('#detailState').textContent='Everywhere this PO appears';
+  $('#detailTitle').textContent=`PO ${po}`;
+  $('#detailSubtitle').textContent='';
+  $('#detailBody').innerHTML='<div class="detail-loading">Collecting every mention of this PO…</div>';
+  if(!$('#details').open)$('#details').showModal();
+  try{
+    const res=await fetch('/api/po-history?'+new URLSearchParams({po}),{cache:'no-store',credentials:'same-origin'});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(data.error||'Unable to load this PO.');
+    const sheets=Array.isArray(data.sheets)?data.sheets:[];
+    const rows=sheets.flatMap(s=>s.records);
+    const flow=sheets.filter(s=>['Daily Log','Archive'].includes(s.sheet)).flatMap(s=>s.records);
+    const overstock=data.overstock||{},ref=data.reference;
+    const workers=uniqueWorkers(rows);
+    overstockWorkers(overstock).forEach(name=>{if(!workers.some(x=>x.toLowerCase()===name.toLowerCase()))workers.push(name)});
+    const chips=sheets.map(s=>`<span class="where-chip">${esc(SHEET_LABEL[s.sheet]||s.sheet)} · ${s.records.length}</span>`);
+    if(overstock.matched)chips.push(`<span class="where-chip overstock">Overstock · ${esc(overstock.summary?.state||'history')}</span>`);
+    const category=overviewValue(rows,['Category / Categoria']);
+    $('#detailSubtitle').textContent=[ref?.client_name,ref?.account_product||category].filter(Boolean).join(' · ');
+    $('#detailBody').innerHTML=`
+      <section class="detail-hero"><div class="where-chips">${chips.join('')||'<span class="where-chip">No workbook or Overstock records for this PO</span>'}</div>
+        ${ref?`<div class="overview-grid">${overviewCard('Client',ref.client_name)}${overviewCard('Product',ref.account_product)}${overviewCard('Account owner',ref.account_owner)}${overviewCard('PSA',ref.psa)}</div>`:''}
+      </section>
+      ${flow.length?`<section class="detail-section"><div class="section-head"><div><p class="eyebrow">Workflow</p><h3>PO Journey</h3></div><span class="source-count">${flow.length} deliver${flow.length===1?'y':'ies'}</span></div><div class="timeline">${timelineHtml(detailStages(flow))}</div></section>`:''}
+      ${sheets.map(s=>sheetTableHtml(s.sheet,s.records)).join('')}
+      ${overstockSectionHtml(overstock)}
+      <section class="detail-section"><div class="section-head"><div><p class="eyebrow">People</p><h3>Who Worked This PO</h3></div></div>
+        <div class="worker-list">${workers.length?workers.map(name=>`<span class="worker-chip">${esc(name)}</span>`).join(''):'<span class="empty-inline">No associate names recorded for this PO.</span>'}</div></section>
+      ${rows.length?`<details class="raw-details"><summary>All workbook fields</summary>${rawFieldsHtml(rows)}</details>`:''}`;
+  }catch(error){
+    $('#detailBody').innerHTML=`<div class="detail-error">${esc(error?.message||'Unable to load this PO.')}</div>`;
+  }
+}
+
+document.addEventListener('click',e=>{
+  const open=e.target.closest('[data-po]');
+  if(open){openPo(open.dataset.po);return;}
+  const c=e.target.closest('.record');
+  if(!c)return;
+  const r=lastRecords[Number(c.dataset.i)];
+  if(r?.po)openPo(r.po);else details(r);
+});
 document.addEventListener('hub-associate-session',e=>{if(e.detail?.signedIn){page=1;load();}});
 let timer;
 $('#search').addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>{page=1;load()},250)});

@@ -93,3 +93,18 @@ dialog#details{width:min(980px,calc(100% - 28px));max-height:min(88vh,920px);ove
   .overstock-record-grid{grid-template-columns:1fr}
   .overstock-event-head{display:grid;gap:1px}
 }
+
+.po-summary{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;background:#fff;border:2px solid var(--ink);border-radius:16px;padding:16px 18px;margin-bottom:14px}
+.po-summary .eyebrow{margin-bottom:8px}
+.po-open{background:var(--ink);color:#fff;border:0;border-radius:12px;padding:11px 15px;font-weight:800;cursor:pointer}
+.where-chips{display:flex;flex-wrap:wrap;gap:7px}
+.where-chip{display:inline-block;background:var(--green-soft);color:var(--green);border:1px solid #b9dccf;border-radius:999px;padding:5px 10px;font-size:.8rem;font-weight:800}
+.where-chip.overstock{background:#fff1e9;color:var(--orange);border-color:#f2c4aa}
+.overstock-only{margin-bottom:14px}
+.pill.overstock{background:#fff1e9;color:var(--orange)}
+.sheet-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
+.sheet-table{width:100%;border-collapse:collapse;font-size:.82rem}
+.sheet-table th{text-align:left;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+.sheet-table td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+.sheet-table tr:last-child td{border-bottom:0}
+@media(max-width:700px){.sheet-table thead{display:none}.sheet-table tr{display:block;border-bottom:1px solid var(--line);padding:6px 0}.sheet-table td{display:flex;gap:10px;border:0;padding:4px 10px}.sheet-table td::before{content:attr(data-label);min-width:96px;color:var(--muted);font-weight:700}}

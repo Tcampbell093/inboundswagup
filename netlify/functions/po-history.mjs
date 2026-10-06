@@ -40,6 +40,10 @@ async function ensureSchema() {
     CREATE INDEX IF NOT EXISTS po_history_delivery_idx ON po_history_records(delivery_id);
     CREATE INDEX IF NOT EXISTS po_history_state_idx ON po_history_records(lifecycle_state);
     CREATE INDEX IF NOT EXISTS po_history_activity_idx ON po_history_records(activity_date);
+    -- Set when a full workbook sync no longer contains the row (e.g. Daily Log
+    -- rows after the month is archived). Kept for safety, hidden from search.
+    ALTER TABLE po_history_records ADD COLUMN IF NOT EXISTS removed_at TIMESTAMPTZ;
+    ALTER TABLE po_history_records ADD COLUMN IF NOT EXISTS last_sync_id TEXT;
     CREATE TABLE IF NOT EXISTS po_history_sync_runs (
       id BIGSERIAL PRIMARY KEY,
       source TEXT NOT NULL,
@@ -93,40 +97,73 @@ async function authorize(request) {
   return Boolean(hubSession(request));
 }
 
-function normalized(row, sourceSheet, lifecycleState) {
-  const po = value(row, ['PO # (Orden)', 'PO #', 'PO']);
+// Workbook sheets PO History accepts: request field -> [sheet name, lifecycle].
+const SHEETS = {
+  currentRows: ['Daily Log', 'current'],
+  archiveRows: ['Archive', 'archived'],
+  archivePaRows: ['Archive PA', 'archived'],
+  putAwayRows: ['Put-Away', 'current'],
+  caseRows: ['Cases', 'current'],
+  watchRows: ['Watch List', 'current'],
+};
+
+// Some sheets wrap headers onto two lines ("PO #\n(Orden)"); store them on one.
+function normalizeHeaders(row) {
+  const out = {};
+  for (const [key, cell] of Object.entries(row && typeof row === 'object' ? row : {})) {
+    const name = String(key).replace(/\s+/g, ' ').trim();
+    if (name) out[name] = cell;
+  }
+  return out;
+}
+
+function normalized(rawRow, sourceSheet, lifecycleState) {
+  const row = normalizeHeaders(rawRow);
+  const po = normalizePo(value(row, ['PO # (Orden)', 'PO #', 'PO']));
+  const caseId = value(row, ['Case ID (auto)', 'Case ID']);
   const deliveryId = value(row, ['Delivery ID (auto)', 'Delivery ID', 'Delivery / Part #']);
-  const signature = deliveryId
+  let signature;
+  if (sourceSheet === 'Cases' && caseId) signature = `${sourceSheet}|case|${caseId}`;
+  else if (sourceSheet === 'Watch List') signature = `${sourceSheet}|po|${po}`;
+  else if (sourceSheet === 'Put-Away') signature = `${sourceSheet}|${po}|${deliveryId}|${value(row, ['Date (Fecha)'])}|${value(row, ['Location / Ubicacion (QE4-A1)'])}|${value(row, ['Notes / Notas'])}`;
+  else signature = deliveryId
     ? `${sourceSheet}|delivery|${deliveryId}`
     : `${sourceSheet}|po|${po}|${value(row, ['Delivery / Part #'])}|${value(row, ['Dock Date (Fecha)', 'Date (Fecha)', 'Closed On'])}|${value(row, ['Overstock Loc (Ubicacion)', 'Location / Ubicacion (QE4-A1)'])}`;
   return {
     key: crypto.createHash('sha256').update(signature).digest('hex'), sourceSheet, lifecycleState, po, deliveryId,
-    category: value(row, ['Category / Categoria', 'Category']),
-    status: value(row, ['Status (Estado)', 'Status']),
+    category: value(row, ['Category / Categoria', 'Category', 'Issue Type (Tipo)', 'Priority Reason / Motivo']),
+    status: value(row, ['Status (Estado)', 'Status', 'Open? (auto)', 'Done? (auto)']),
     location: value(row, ['Overstock Loc (Ubicacion)', 'Location / Ubicacion (QE4-A1)', 'Put-Away Loc']),
-    associate: value(row, ['Done By (Por)', 'Prep By (Por)', 'Rec By (Por)', 'Dock By (Muelle-Por)']),
-    activityDate: value(row, ['Done Date (Term.)', 'Prep Date (Prep)', 'Rec Date (Recibo)', 'Dock Date (Fecha)', 'Date (Fecha)', 'Closed On']),
+    associate: value(row, ['Done By (Por)', 'Prep By (Por)', 'Rec By (Por)', 'Dock By (Muelle-Por)', 'Opened By (Por)', 'Flagged By (Por)']),
+    activityDate: value(row, ['Done Date (Term.)', 'Prep Date (Prep)', 'Rec Date (Recibo)', 'Dock Date (Fecha)', 'Date Resolved (Fecha)', 'Date Opened (Fecha)', 'Date Added (Fecha)', 'Date (Fecha)', 'Closed On']),
     row,
   };
 }
 
-async function syncRows(client, rows, sourceSheet, lifecycleState) {
-  const prepared = rows.map((row) => normalized(row, sourceSheet, lifecycleState)).filter((r) => r.po || r.deliveryId);
+async function syncRows(client, rows, sourceSheet, lifecycleState, syncId) {
+  // Two identical rows in one request would make the upsert fail outright,
+  // so keep the last one for each key.
+  const byKey = new Map();
+  for (const row of rows) {
+    const r = normalized(row, sourceSheet, lifecycleState);
+    if (r.po || r.deliveryId) byKey.set(r.key, r);
+  }
+  const prepared = [...byKey.values()];
   for (let start = 0; start < prepared.length; start += 100) {
     const chunk = prepared.slice(start, start + 100);
     const params = [];
     const values = chunk.map((r, rowIndex) => {
-      const offset = rowIndex * 11;
-      params.push(r.key,r.sourceSheet,r.lifecycleState,r.po,r.deliveryId,r.category,r.status,r.location,r.associate,r.activityDate,JSON.stringify(r.row));
-      return `(${Array.from({ length: 11 }, (_, i) => `$${offset + i + 1}${i === 10 ? '::jsonb' : ''}`).join(',')})`;
+      const offset = rowIndex * 12;
+      params.push(r.key,r.sourceSheet,r.lifecycleState,r.po,r.deliveryId,r.category,r.status,r.location,r.associate,r.activityDate,JSON.stringify(r.row),syncId || null);
+      return `(${Array.from({ length: 12 }, (_, i) => `$${offset + i + 1}${i === 10 ? '::jsonb' : ''}`).join(',')})`;
     });
     await client.query(`INSERT INTO po_history_records
-      (record_key,source_sheet,lifecycle_state,po,delivery_id,category,status,location,associate_name,activity_date,row_json)
+      (record_key,source_sheet,lifecycle_state,po,delivery_id,category,status,location,associate_name,activity_date,row_json,last_sync_id)
       VALUES ${values.join(',')}
       ON CONFLICT(record_key) DO UPDATE SET lifecycle_state=EXCLUDED.lifecycle_state, po=EXCLUDED.po,
       delivery_id=EXCLUDED.delivery_id, category=EXCLUDED.category, status=EXCLUDED.status,
       location=EXCLUDED.location, associate_name=EXCLUDED.associate_name, activity_date=EXCLUDED.activity_date,
-      row_json=EXCLUDED.row_json, last_seen_at=NOW()`, params);
+      row_json=EXCLUDED.row_json, last_seen_at=NOW(), last_sync_id=EXCLUDED.last_sync_id, removed_at=NULL`, params);
   }
   return prepared.length;
 }
@@ -136,18 +173,38 @@ async function handleSync(request) {
   const supplied = request.headers.get('x-overstock-import-key') || '';
   if (!expected || supplied.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))) return json(401, { error: 'Invalid import key.' });
   const body = await request.json().catch(() => ({}));
-  const currentRows = Array.isArray(body.currentRows) ? body.currentRows : [];
-  const archiveRows = Array.isArray(body.archiveRows) ? body.archiveRows : [];
-  const archivePaRows = Array.isArray(body.archivePaRows) ? body.archivePaRows : [];
+  const syncId = clean(body.syncId, 80);
+
+  // Sent once after every sheet arrived: rows of those sheets that weren't in
+  // this sync are no longer in the workbook. Hidden, not deleted.
+  if (body.action === 'finishSync') {
+    const sheets = (Array.isArray(body.sheets) ? body.sheets : []).map((name) => clean(name, 40))
+      .filter((name) => Object.values(SHEETS).some(([sheet]) => sheet === name));
+    if (!syncId || !sheets.length) return json(400, { error: 'finishSync needs a syncId and sheet names.' });
+    const seen = await pool().query('SELECT COUNT(*)::int AS n FROM po_history_records WHERE last_sync_id=$1', [syncId]);
+    if (!seen.rows[0].n) return json(409, { error: 'No rows arrived for this sync; nothing was hidden.' });
+    const hidden = await pool().query(`UPDATE po_history_records SET removed_at=NOW()
+      WHERE source_sheet = ANY($1::text[]) AND removed_at IS NULL AND last_sync_id IS DISTINCT FROM $2`, [sheets, syncId]);
+    await pool().query('INSERT INTO po_history_sync_runs(source,current_count,archive_count,archive_pa_count) VALUES($1,0,0,0)',
+      [`${clean(body.source || 'Excel workbook', 150)} (complete)`]);
+    return json(200, { ok: true, hidden: hidden.rowCount });
+  }
+
   const client = await pool().connect();
   try {
     await client.query('BEGIN');
-    const current = await syncRows(client, currentRows, 'Daily Log', 'current');
-    const archive = await syncRows(client, archiveRows, 'Archive', 'archived');
-    const archivePa = await syncRows(client, archivePaRows, 'Archive PA', 'archived');
-    await client.query('INSERT INTO po_history_sync_runs(source,current_count,archive_count,archive_pa_count) VALUES($1,$2,$3,$4)', [clean(body.source || 'Excel workbook', 200), current, archive, archivePa]);
+    const counts = {};
+    for (const [field, [sheet, lifecycle]] of Object.entries(SHEETS)) {
+      counts[field] = await syncRows(client, Array.isArray(body[field]) ? body[field] : [], sheet, lifecycle, syncId);
+    }
+    const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+    await client.query('INSERT INTO po_history_sync_runs(source,current_count,archive_count,archive_pa_count) VALUES($1,$2,$3,$4)',
+      [clean(body.source || 'Excel workbook', 200), counts.currentRows, counts.archiveRows, counts.archivePaRows]);
     await client.query('COMMIT');
-    return json(200, { current, archive, archivePa, total: current + archive + archivePa });
+    return json(200, {
+      current: counts.currentRows, archive: counts.archiveRows, archivePa: counts.archivePaRows,
+      putAway: counts.putAwayRows, cases: counts.caseRows, watch: counts.watchRows, total,
+    });
   } catch (error) {
     await client.query('ROLLBACK');
     return json(500, { error: error.message });
@@ -169,6 +226,49 @@ function overstockTime(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+async function overstockState() {
+  const stateResult = await pool().query("SELECT data_json FROM workflow_sync_state WHERE state_key='default' LIMIT 1");
+  return stateResult.rows[0]?.data_json || null;
+}
+
+// POs mentioned in Overstock (active items or donations) that contain the
+// search text, with units and where they are, for POs the workbook lacks.
+async function overstockPoMatches(q, exclude) {
+  const needle = normalizePo(q);
+  if (!needle) return [];
+  try {
+    const data = await overstockState();
+    if (!data) return [];
+    const deadEntries = tombstoneIds(data.__deletedOverstockEntryIds);
+    const deadDonations = tombstoneIds(data.__deletedOverstockDonationIds);
+    const containers = new Map((Array.isArray(data.overstockContainers) ? data.overstockContainers : []).filter((c) => c?.id).map((c) => [String(c.id), c]));
+    const byPo = new Map();
+    const add = (row, kind) => {
+      const po = normalizePo(row?.po);
+      if (!po || !po.includes(needle) || exclude.has(po)) return;
+      const item = byPo.get(po) || { po, activeUnits: 0, donatedUnits: 0, locations: new Set() };
+      const qty = Math.max(0, Math.round(Number(row.quantity || 0) || 0));
+      if (kind === 'donation') item.donatedUnits += qty;
+      else {
+        item.activeUnits += qty;
+        const box = containers.get(String(row.containerId || '')) || {};
+        const where = [box.code || row.containerCode, box.currentLocation || row.location].filter(Boolean).join(' · ');
+        if (where) item.locations.add(where);
+      }
+      byPo.set(po, item);
+    };
+    (Array.isArray(data.overstockEntries) ? data.overstockEntries : [])
+      .filter((row) => row?.id && !deadEntries.has(String(row.id)) && clean(row?.action, 120).toLowerCase() !== 'donated')
+      .forEach((row) => add(row, 'entry'));
+    (Array.isArray(data.overstockDonations) ? data.overstockDonations : [])
+      .filter((row) => row?.id && !deadDonations.has(String(row.id)))
+      .forEach((row) => add(row, 'donation'));
+    return [...byPo.values()].slice(0, 25).map((item) => ({ ...item, locations: [...item.locations] }));
+  } catch {
+    return [];
+  }
+}
+
 async function overstockForRecord(selected) {
   const po = normalizePo(selected?.po);
   const deliveryId = clean(selected?.delivery_id, 120).toUpperCase();
@@ -188,12 +288,8 @@ async function overstockForRecord(selected) {
   };
 
   try {
-    const stateResult = await pool().query(
-      "SELECT data_json FROM workflow_sync_state WHERE state_key='default' LIMIT 1"
-    );
-    if (!stateResult.rows.length) return empty;
-
-    const data = stateResult.rows[0].data_json || {};
+    const data = await overstockState();
+    if (!data) return empty;
     const deadEntries = tombstoneIds(data.__deletedOverstockEntryIds);
     const deadDonations = tombstoneIds(data.__deletedOverstockDonationIds);
     const containers = Array.isArray(data.overstockContainers) ? data.overstockContainers : [];
@@ -302,9 +398,42 @@ async function overstockForRecord(selected) {
   }
 }
 
+async function overstockReference(po) {
+  if (!po) return null;
+  try {
+    const r = await pool().query(`SELECT po_name,client_name,account_product,account_owner,psa,cost
+      FROM overstock_cost_ref WHERE REGEXP_REPLACE(UPPER(COALESCE(po_key,po_name,'')), '^PO[-[:space:]]*', '') = $1 LIMIT 1`, [po]);
+    return r.rows[0] || null;
+  } catch {
+    return null; // table only exists once Overstock holds have been used
+  }
+}
+
+const SHEET_ORDER = ['Daily Log', 'Put-Away', 'Cases', 'Watch List', 'Archive', 'Archive PA'];
+
+// Everything known about one PO: every workbook row (grouped by sheet) plus Overstock.
+async function poOverview(po) {
+  const records = await pool().query(`SELECT * FROM po_history_records
+    WHERE po=$1 AND removed_at IS NULL
+    ORDER BY activity_date ASC NULLS LAST, first_seen_at ASC LIMIT 300`, [po]);
+  const bySheet = {};
+  for (const row of records.rows) (bySheet[row.source_sheet] ||= []).push(row);
+  const sheets = SHEET_ORDER.filter((name) => bySheet[name]).map((name) => ({ sheet: name, records: bySheet[name] }));
+  const [overstock, reference] = await Promise.all([overstockForRecord({ po }), overstockReference(po)]);
+  return { po, sheets, recordCount: records.rows.length, overstock, reference };
+}
+
+// "PO-313269", "PO 313269", "#313269" all mean 313269.
+function poQuery(q) {
+  const match = /^\s*(?:P\.?O\.?)?[\s#:-]*(\d{4,})\s*$/i.exec(q);
+  return match ? match[1] : '';
+}
+
 async function handleGet(request) {
   if (!await authorize(request)) return json(401, { error: 'Warehouse Hub sign-in required.' });
   const url = new URL(request.url);
+  const poParam = normalizePo(url.searchParams.get('po'));
+  if (poParam) return json(200, await poOverview(poParam));
   const recordKey = clean(url.searchParams.get('recordKey'), 128);
   if (recordKey) {
     const selectedResult = await pool().query('SELECT * FROM po_history_records WHERE record_key=$1 LIMIT 1', [recordKey]);
@@ -314,8 +443,8 @@ async function handleGet(request) {
     const related = await pool().query(`
       SELECT * FROM po_history_records
       WHERE record_key=$1
-         OR (COALESCE($2,'')<>'' AND delivery_id=$2)
-         OR (COALESCE($3,'')<>'' AND po=$3)
+         OR (removed_at IS NULL AND COALESCE($2,'')<>'' AND delivery_id=$2)
+         OR (removed_at IS NULL AND COALESCE($3,'')<>'' AND po=$3)
       ORDER BY
         CASE WHEN record_key=$1 THEN 0 ELSE 1 END,
         activity_date ASC NULLS LAST,
@@ -332,12 +461,14 @@ async function handleGet(request) {
     });
   }
 
-  const q = clean(url.searchParams.get('q'), 200);
+  const rawQ = clean(url.searchParams.get('q'), 200);
+  const exactPo = poQuery(rawQ);
+  const q = exactPo || rawQ;
   const scope = ['current','archived'].includes(url.searchParams.get('scope')) ? url.searchParams.get('scope') : 'all';
   const sort = url.searchParams.get('sort') || 'newest';
   const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
   const pageSize = Math.min(100, Math.max(10, Number(url.searchParams.get('pageSize')) || 40));
-  const where = []; const params = [];
+  const where = ['removed_at IS NULL']; const params = [];
   if (scope !== 'all') { params.push(scope); where.push(`lifecycle_state=$${params.length}`); }
   if (q) { params.push(`%${q}%`); where.push(`(po ILIKE $${params.length} OR delivery_id ILIKE $${params.length} OR category ILIKE $${params.length} OR status ILIKE $${params.length} OR location ILIKE $${params.length} OR associate_name ILIKE $${params.length} OR row_json::text ILIKE $${params.length})`); }
   const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -346,8 +477,24 @@ async function handleGet(request) {
   params.push(pageSize, (page - 1) * pageSize);
   const records = await pool().query(`SELECT * FROM po_history_records ${clause} ORDER BY ${order} LIMIT $${params.length-1} OFFSET $${params.length}`, params);
   const sync = await pool().query('SELECT * FROM po_history_sync_runs ORDER BY synced_at DESC LIMIT 1');
-  const stored = await pool().query('SELECT COUNT(*)::int AS count FROM po_history_records');
-  return json(200, { records: records.rows, total: count.rows[0].count, totalStored: stored.rows[0].count, page, pageSize, lastSync: sync.rows[0] || null });
+  const stored = await pool().query('SELECT COUNT(*)::int AS count FROM po_history_records WHERE removed_at IS NULL');
+
+  // For a PO-looking search: a one-line summary of everywhere it appears, and
+  // any matching POs that only exist in Overstock.
+  let poSummary = null;
+  let overstockOnly = [];
+  if (/^\d{4,}$/.test(q) && page === 1) {
+    if (exactPo || /^\d{5,}$/.test(q)) {
+      const sheetCounts = await pool().query(`SELECT source_sheet, COUNT(*)::int AS n FROM po_history_records
+        WHERE po=$1 AND removed_at IS NULL GROUP BY source_sheet`, [q]);
+      const overstock = await overstockForRecord({ po: q });
+      const sheets = Object.fromEntries(sheetCounts.rows.map((row) => [row.source_sheet, row.n]));
+      if (sheetCounts.rows.length || overstock.matched) poSummary = { po: q, sheets, overstock: overstock.summary, overstockMatched: overstock.matched };
+    }
+    const inWorkbook = await pool().query(`SELECT DISTINCT po FROM po_history_records WHERE removed_at IS NULL AND po LIKE $1 LIMIT 500`, [`%${q}%`]);
+    overstockOnly = await overstockPoMatches(q, new Set(inWorkbook.rows.map((row) => row.po)));
+  }
+  return json(200, { records: records.rows, total: count.rows[0].count, totalStored: stored.rows[0].count, page, pageSize, lastSync: sync.rows[0] || null, poSummary, overstockOnly });
 }
 
 export default async (request) => {
