@@ -25,6 +25,12 @@
     .hub-push-controls{display:flex;gap:9px;flex-wrap:wrap}.hub-push-controls button{cursor:pointer;border-radius:10px;padding:11px 13px;border:1px solid var(--line);font-size:12px;font-weight:850;background:var(--paper);color:var(--ink)}
     .hub-push-controls button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
     .hub-push-controls button:disabled{opacity:.45;cursor:default}
+    .hub-push-prefs{border:1px solid var(--line);border-radius:12px;background:var(--paper);margin:16px 0 0;padding:10px 14px 12px}
+    .hub-push-prefs[hidden]{display:none}
+    .hub-push-prefs legend{font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:0 4px}
+    .hub-push-prefs label{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:700;padding:6px 0;cursor:pointer}
+    .hub-push-prefs input{width:16px;height:16px;accent-color:var(--ink)}
+    .hub-push-prefs-note{font-size:11px!important;margin:8px 0 0!important}
     @media(max-width:680px){.hub-push-btn:not([hidden]){display:inline-flex!important;padding:8px 9px;font-size:11px}}
   `;
   document.head.appendChild(style);
@@ -33,18 +39,48 @@
   dialog.innerHTML=`
     <div class="hub-push-head"><h3>🔔 Desktop notifications</h3><button type="button" id="hubPushClose" aria-label="Close">×</button></div>
     <div class="hub-push-body">
-      <p>Receive new Warehouse Inventory requests and low/out-of-stock alerts on this computer, including when the Hub tab is closed. Admin sign-in is required to enable notifications.</p>
+      <p>Get Warehouse Hub alerts on this computer, even when the Hub tab is closed. Admin sign-in is required to enable notifications.</p>
       <div class="hub-push-state" id="hubPushState" role="status">Checking this computer…</div>
       <div class="hub-push-controls">
         <button type="button" class="primary" id="hubPushToggle" disabled>Enable notifications</button>
         <button type="button" id="hubPushTest" disabled>Send test</button>
       </div>
+      <fieldset class="hub-push-prefs" id="hubPushPrefs" hidden>
+        <legend>Alert me when…</legend>
+        <div id="hubPushPrefList"></div>
+        <p class="hub-push-prefs-note" id="hubPushPrefNote">Your choices apply to every computer where you’ve enabled alerts. You won’t be alerted about things you do yourself.</p>
+      </fieldset>
       <p style="margin-top:14px;font-size:11px">Permissions are per browser and computer. Disable notifications before signing out of a shared workstation. Delivery also depends on your browser and operating-system notification settings.</p>
     </div>
   `;
   document.body.appendChild(dialog);
   const stateEl=dialog.querySelector('#hubPushState'),toggle=dialog.querySelector('#hubPushToggle'),
-    test=dialog.querySelector('#hubPushTest');
+    test=dialog.querySelector('#hubPushTest'),prefs=dialog.querySelector('#hubPushPrefs'),
+    prefList=dialog.querySelector('#hubPushPrefList'),prefNote=dialog.querySelector('#hubPushPrefNote');
+  const prefNoteText=prefNote.textContent;
+  const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function renderPrefs(categories,chosen){
+    if(!Array.isArray(categories)||!categories.length){prefs.hidden=true;return;}
+    const on=new Set(chosen||[]);
+    prefList.innerHTML=categories.map(c=>`<label><input type="checkbox" value="${esc(c.key)}"${on.has(c.key)?' checked':''}> ${esc(c.label)}</label>`).join('');
+    prefNote.textContent=prefNoteText;
+    prefs.hidden=false;
+  }
+  // Saves immediately on each change; reverts the box if the save fails.
+  prefList.addEventListener('change',async event=>{
+    const box=event.target.closest('input[type=checkbox]');
+    if(!box)return;
+    const categories=[...prefList.querySelectorAll('input:checked')].map(input=>input.value);
+    prefList.querySelectorAll('input').forEach(input=>{input.disabled=true;});
+    try{
+      await request({action:'preferences',categories});
+      prefNote.textContent='Saved.';
+      setTimeout(()=>{if(prefNote.textContent==='Saved.')prefNote.textContent=prefNoteText;},1800);
+    }catch(error){
+      box.checked=!box.checked;
+      prefNote.textContent=error.message||'Could not save your alert choices.';
+    }finally{prefList.querySelectorAll('input').forEach(input=>{input.disabled=false;});}
+  });
   let current=null,publicKey='',busy=false;
   function show(text,error=false){stateEl.textContent=text;stateEl.classList.toggle('error',error);}
   function syncButton(){
@@ -96,9 +132,12 @@
     if(Notification.permission==='denied'){
       const subscription=await browserSub().catch(()=>null);
       let subscribed=false;
-      if(subscription){
-        const r=await fetch(API+'?action=status&endpoint='+encodeURIComponent(subscription.endpoint),{credentials:'same-origin',cache:'no-store'});
-        if(r.ok)subscribed=!!(await r.json()).subscribed;
+      const query=subscription?'&endpoint='+encodeURIComponent(subscription.endpoint):'';
+      const r=await fetch(API+'?action=status'+query,{credentials:'same-origin',cache:'no-store'}).catch(()=>null);
+      if(r?.ok){
+        const data=await r.json();
+        subscribed=!!(subscription&&data.subscribed);
+        renderPrefs(data.categories,data.preferences);
       }
       updateState(subscribed);
       if(!subscribed)toggle.disabled=true;
@@ -114,6 +153,7 @@
       const data=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(data.error||'Notification settings are unavailable.');
       publicKey=data.publicKey||'';
+      renderPrefs(data.categories,data.preferences);
       const enabled=!!(subscription&&data.subscribed&&Notification.permission==='granted');
       updateState(enabled);
       show(enabled?'Enabled on this computer. Inventory alerts can arrive while the Hub tab is closed.':
@@ -172,6 +212,8 @@
   dialog.addEventListener('close',()=>{current=null;});
   document.addEventListener('hub-associate-session',syncButton);
   window.HubPush={disableForSignout:()=>admin()?disable(true):Promise.resolve(true),refresh};
+  // Pick up notification-handler changes on computers that already enabled alerts.
+  if(supported())registered().then(reg=>reg?.update()).catch(()=>{});
   // Associate auth checks the cookie asynchronously when a tab opens.
   window.HubAssociate?.refresh?.().then(syncButton).catch(syncButton);
   syncButton();

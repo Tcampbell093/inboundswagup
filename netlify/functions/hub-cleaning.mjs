@@ -1,6 +1,7 @@
 import pg from 'pg';
 import crypto from 'node:crypto';
 import hubCleaning from './_hub_cleaning.js';
+import hubPush from './_hub_push.js';
 
 const { Pool } = pg;
 const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
@@ -430,11 +431,12 @@ async function handle(request) {
   const db = getPool();
   await hubCleaning.ensureSchema(db);
 
+  let changed = null;
   if (action === 'start') {
     if (status === 'completed') return json(409, { error: 'This cleaning duty is already completed.' });
     if (status === 'missed') return json(409, { error: 'This cleaning duty was closed as missed.' });
     if (status !== 'in_progress') {
-      await db.query(`
+      changed = await db.query(`
         INSERT INTO hub_cleaning_checkins(assignment_id,assignment_date,area,employee_key,employee_name,status,started_at,updated_at)
         VALUES($1,$2,$3,$4,$5,'in_progress',NOW(),NOW())
         ON CONFLICT(assignment_id) DO NOTHING
@@ -447,7 +449,7 @@ async function handle(request) {
     }
     if (status === 'in_progress') {
       // Covers duties started in the Hub and ones started in FairShift before the switch.
-      await db.query(`
+      changed = await db.query(`
         INSERT INTO hub_cleaning_checkins(assignment_id,assignment_date,area,employee_key,employee_name,status,started_at,finished_at,updated_at)
         VALUES($1,$2,$3,$4,$5,'completed',$6,NOW(),NOW())
         ON CONFLICT(assignment_id) DO UPDATE SET
@@ -455,6 +457,19 @@ async function handle(request) {
         WHERE hub_cleaning_checkins.status='in_progress'
       `, [assignmentId, assignment.assignmentDate, clean(assignment.area, 100), employeeKey, employeeName, Date.parse(assignment.startTime) ? assignment.startTime : null]);
     }
+  }
+
+  if (changed?.rowCount) {
+    const area = clean(assignment.area, 100) || 'Cleaning';
+    await hubPush.sendAdmins(getPool(), {
+      category: action === 'start' ? 'cleaning_start' : 'cleaning_finish',
+      eventKey: `cleaning-${action}:${assignmentId}:${Date.now()}`,
+      title: action === 'start' ? `🧹 ${employeeName} started cleaning` : `✅ ${employeeName} finished cleaning`,
+      body: `${area} · ${assignment.assignmentDate}`,
+      url: '/warehouse-hub/',
+      tag: `cleaning-${assignmentId}`,
+      excludeName: employeeName,
+    });
   }
 
   const updated = (await loadAssignment(assignmentId)).assignment || assignment;

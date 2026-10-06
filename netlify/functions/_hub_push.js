@@ -7,6 +7,26 @@ const COOKIE = 'hub_associate_session';
 const SESSION_VERSION = 2;
 let schemaReady = false;
 
+// Alert types an Admin can turn on or off. Admins who never saved a choice get
+// the defaults, which keep the original inventory alerts on.
+const CATEGORIES = {
+  inventory_requests: { label: 'New inventory requests', defaultOn: true },
+  inventory_stock: { label: 'Low / out-of-stock items', defaultOn: true },
+  bingo_win: { label: 'Someone wins Bingo', defaultOn: false },
+  cleaning_start: { label: 'Someone starts a cleaning duty', defaultOn: false },
+  cleaning_finish: { label: 'Someone finishes a cleaning duty', defaultOn: false },
+  announcement: { label: 'New announcement posted', defaultOn: false },
+  policy: { label: 'New policy posted', defaultOn: false },
+};
+const defaultCategories = () => Object.keys(CATEGORIES).filter((key) => CATEGORIES[key].defaultOn);
+// Notification clicks may only open these parts of the site.
+const ALLOWED_PATHS = ['/inventory-control/', '/warehouse-hub/'];
+function safeUrl(value) {
+  const url = String(value || '');
+  return url.startsWith('/') && !url.startsWith('//') && ALLOWED_PATHS.some((path) => url.startsWith(path))
+    ? url.slice(0, 300) : '/inventory-control/';
+}
+
 function clean(value,max=160){return String(value==null?'':value).trim().slice(0,max);}
 function slug(value){return clean(value,100).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,80);}
 function cookieMap(event){
@@ -47,6 +67,12 @@ async function ensureSchema(pool){
     CREATE TABLE IF NOT EXISTS hub_admin_push_events(
       event_key TEXT PRIMARY KEY,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS hub_admin_push_preferences(
+      employee_key TEXT PRIMARY KEY,
+      employee_name TEXT NOT NULL,
+      categories JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
   schemaReady=true;
@@ -101,6 +127,26 @@ async function status(pool,admin,endpoint){
     [endpoint,admin.employeeKey,admin.employeeId]);
   return !!r.rows.length;
 }
+async function preferences(pool,admin){
+  await ensureSchema(pool);
+  const r=await pool.query('SELECT categories FROM hub_admin_push_preferences WHERE employee_key=$1',[admin.employeeKey]);
+  const saved=r.rows[0]?.categories;
+  return Array.isArray(saved)?saved.filter(key=>CATEGORIES[key]):defaultCategories();
+}
+async function setPreferences(pool,admin,list){
+  if(!Array.isArray(list))throw new Error('Choose which alerts to receive.');
+  const chosen=[...new Set(list.map(String))].filter(key=>CATEGORIES[key]);
+  await ensureSchema(pool);
+  await pool.query(`
+    INSERT INTO hub_admin_push_preferences(employee_key,employee_name,categories,updated_at)
+    VALUES($1,$2,$3::jsonb,NOW())
+    ON CONFLICT(employee_key) DO UPDATE SET employee_name=EXCLUDED.employee_name,categories=EXCLUDED.categories,updated_at=NOW()
+  `,[admin.employeeKey,admin.name,JSON.stringify(chosen)]);
+  return chosen;
+}
+function categoryList(){
+  return Object.entries(CATEGORIES).map(([key,c])=>({key,label:c.label,defaultOn:c.defaultOn}));
+}
 async function deliver(pool,row,message){
   try{
     configure();
@@ -116,19 +162,25 @@ async function deliver(pool,row,message){
     return false;
   }
 }
-async function sendAdmins(pool,{eventKey,title,body,url='/inventory-control/',tag}){
+// Sends to every enabled Admin device whose owner wants this category, except
+// the person who caused the event (excludeName), so you aren't alerted about yourself.
+async function sendAdmins(pool,{category,eventKey,title,body,url='/inventory-control/',tag,excludeName=''}){
   if(!configured())return {sent:0,reason:'push-not-configured'};
   try{
+    if(!CATEGORIES[category])throw new Error('Unknown notification category.');
     await ensureSchema(pool);
-    const r=await pool.query(`SELECT endpoint,subscription FROM hub_admin_push_subscriptions
-      WHERE enabled=TRUE ORDER BY updated_at DESC LIMIT 80`);
+    const r=await pool.query(`SELECT s.endpoint,s.subscription FROM hub_admin_push_subscriptions s
+      LEFT JOIN hub_admin_push_preferences p ON p.employee_key=s.employee_key
+      WHERE s.enabled=TRUE AND s.employee_key<>$2
+        AND CASE WHEN p.categories IS NULL THEN $3::boolean ELSE p.categories ? $1 END
+      ORDER BY s.updated_at DESC LIMIT 80`,[category,slug(excludeName),CATEGORIES[category].defaultOn]);
     if(!r.rows.length)return {sent:0,reason:'no-subscribers'};
     if(!eventKey||eventKey.length>180)throw new Error('Missing notification event key.');
     const lock=await pool.query(`INSERT INTO hub_admin_push_events(event_key) VALUES($1)
       ON CONFLICT(event_key) DO NOTHING RETURNING event_key`,[eventKey]);
     if(!lock.rows.length)return {sent:0,reason:'already-dispatched'};
     const payload={title:clean(title,120),body:clean(body,240),
-      url:url==='/inventory-control/?view=requests'?url:'/inventory-control/',tag:clean(tag||eventKey,160)};
+      url:safeUrl(url),tag:clean(tag||eventKey,160)};
     let sent=0;
     // Limit simultaneous push requests to avoid exhaustively opening connections.
     for(let i=0;i<r.rows.length;i+=8){
@@ -142,4 +194,4 @@ async function sendAdmins(pool,{eventKey,title,body,url='/inventory-control/',ta
   }
 }
 module.exports={adminSession,ensureSchema,vapidPublic,configured,validSubscription,
-  subscribe,disable,status,deliver,sendAdmins,endpointValid};
+  subscribe,disable,status,deliver,sendAdmins,endpointValid,preferences,setPreferences,categoryList};

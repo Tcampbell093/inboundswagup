@@ -1,6 +1,7 @@
 import pg from 'pg';
 import crypto from 'node:crypto';
 import hubCleaning from './_hub_cleaning.js';
+import hubPush from './_hub_push.js';
 
 const { Pool } = pg;
 const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
@@ -693,6 +694,17 @@ async function drawSymbol(session) {
     ]);
 
     await client.query('COMMIT');
+    if (bingo && !player.won_at) {
+      await hubPush.sendAdmins(pool, {
+        category: 'bingo_win',
+        eventKey: `bingo-win:${round.key}:${employeeKey}`,
+        title: `🎉 ${clean(session.name, 100)} won Warehouse Bingo!`,
+        body: 'They completed a line. Open Bingo Admin to record their reward.',
+        url: '/warehouse-hub/',
+        tag: `bingo-win-${employeeKey}`,
+        excludeName: session.name,
+      });
+    }
     return {
       status: 200,
       body: await statePayload(client, session, round, settings, {

@@ -23,7 +23,8 @@ exports.handler=async function(event){
     if(event.httpMethod==='GET'&&event.queryStringParameters?.action==='status'){
       const endpoint=event.queryStringParameters?.endpoint||'';
       const subscribed=await push.status(pool,admin,endpoint);
-      return json(200,{ok:true,subscribed,publicKey:push.vapidPublic()});
+      return json(200,{ok:true,subscribed,publicKey:push.vapidPublic(),
+        categories:push.categoryList(),preferences:await push.preferences(pool,admin)});
     }
     if(event.httpMethod!=='POST')return json(405,{error:'Method not allowed.'});
     if(!sameOrigin(event))return json(403,{error:'Cross-origin requests are not allowed.'});
@@ -34,6 +35,10 @@ exports.handler=async function(event){
     if(body.action==='subscribe'){
       await push.subscribe(pool,admin,body.subscription);
       return json(200,{ok:true,subscribed:true});
+    }
+    if(body.action==='preferences'){
+      const preferences=await push.setPreferences(pool,admin,body.categories);
+      return json(200,{ok:true,preferences});
     }
     if(body.action==='unsubscribe'){
       await push.disable(pool,admin,body.endpoint||'');
