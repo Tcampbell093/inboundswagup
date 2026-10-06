@@ -279,6 +279,36 @@ export default async (request) => {
   }
 };
 
+// Undo a start (e.g. tapped by mistake): the duty goes back to scheduled. The
+// assigned person can undo today's start; Admins and Team Leads can undo any.
+async function undoStart(session, assignment, assignedName) {
+  const role = clean(session.role, 40).toLowerCase();
+  const isLead = role === 'manager' || role === 'team lead';
+  const isMine = slug(assignedName) === slug(session.name);
+  if (!isLead && !isMine) {
+    return json(403, { error: `Only ${assignedName || 'the assigned person'} or a Team Lead can undo this start.` });
+  }
+  if (!isLead && String(assignment.assignmentDate || '').slice(0, 10) !== easternToday()) {
+    return json(409, { error: 'Only today’s start can be undone. Ask a Team Lead for older duties.' });
+  }
+  if (assignment.dutyStatus !== 'in_progress') {
+    return json(409, { error: assignment.dutyStatus === 'completed'
+      ? 'This cleaning duty is already completed, so its start can’t be undone.'
+      : 'This cleaning duty hasn’t been started.' });
+  }
+  const db = getPool();
+  await hubCleaning.ensureSchema(db);
+  const removed = await db.query(
+    `DELETE FROM hub_cleaning_checkins WHERE assignment_id=$1 AND status='in_progress'`,
+    [Number(assignment.id)],
+  );
+  if (!removed.rowCount) {
+    return json(409, { error: 'This duty was started in FairShift, so it can’t be undone from the Hub.' });
+  }
+  const updated = (await loadAssignment(Number(assignment.id))).assignment || assignment;
+  return json(200, { ok: true, assignment: updated });
+}
+
 async function handle(request) {
   if (request.method === 'GET') {
     const url = new URL(request.url);
@@ -315,7 +345,7 @@ async function handle(request) {
   const action = clean(body.action, 12);
   const assignmentId = Number(body.assignmentId);
 
-  if (!['start', 'finish'].includes(action)) return json(400, { error: 'Invalid cleaning action.' });
+  if (!['start', 'finish', 'undo'].includes(action)) return json(400, { error: 'Invalid cleaning action.' });
   if (!Number.isSafeInteger(assignmentId) || assignmentId <= 0) return json(400, { error: 'A valid assignment ID is required.' });
 
   const { result, assignment } = await loadAssignment(assignmentId);
@@ -328,6 +358,7 @@ async function handle(request) {
   }
 
   const assignedName = clean(assignment.activeEmployeeName || assignment.scheduledEmployeeName, 100);
+  if (action === 'undo') return undoStart(session, assignment, assignedName);
   if (slug(assignedName) !== slug(session.name)) {
     return json(403, { error: `This cleaning duty is assigned to ${assignedName || 'someone else'}.` });
   }

@@ -191,7 +191,32 @@
     }
   }
 
+  async function undoStart(button) {
+    const row = button.closest('.cleaning-row');
+    const assignmentId = Number(button.dataset.undoStart);
+    if (!row || !assignmentId) return;
+    if (!confirm('Undo this start? The duty goes back to Scheduled.')) return;
+    button.disabled = true;
+    try {
+      const { response, body } = await fetchJsonWithTimeout(PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'undo', assignmentId }),
+      }, 13000);
+      if (!response.ok) throw new Error(body.error || 'Could not undo the start.');
+      document.dispatchEvent(new CustomEvent('hub-cleaning-refresh'));
+    } catch (error) {
+      button.disabled = false;
+      setNote(row, error?.name === 'AbortError' ? 'The update wasn’t confirmed. Please try again.' : (error?.message || 'Could not undo the start.'), 'bad');
+    }
+  }
+
   cleaningList.addEventListener('click', (event) => {
+    const undo = event.target.closest('[data-undo-start]');
+    if (undo && cleaningList.contains(undo)) {
+      undoStart(undo);
+      return;
+    }
     const link = event.target.closest('a.checkin');
     if (!link || !cleaningList.contains(link)) return;
     const href = link.getAttribute('href') || '';
