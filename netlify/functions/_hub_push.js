@@ -2,7 +2,13 @@
 // Shared Admin-only Web Push storage and delivery. Never expose VAPID secrets
 // to the client, and never permit a manager access key to subscribe a device.
 const crypto = require('node:crypto');
-const webpush = require('web-push');
+// Loaded on first send, not at import: if the library is missing from a
+// function's bundle, alerts fail quietly instead of crashing that function.
+let webpushLib = null;
+function webpush() {
+  if (!webpushLib) webpushLib = require('web-push');
+  return webpushLib;
+}
 const COOKIE = 'hub_associate_session';
 const SESSION_VERSION = 2;
 let schemaReady = false;
@@ -82,7 +88,7 @@ function configured(){return !!(vapidPublic()&&process.env.HUB_VAPID_PRIVATE_KEY
 function configure(){
   if(!configured())throw new Error('Desktop push delivery is not configured.');
   const email=clean(process.env.HUB_VAPID_CONTACT||process.env.ADMIN_EMAIL||'warehouse@example.com',180);
-  webpush.setVapidDetails('mailto:'+email,vapidPublic(),process.env.HUB_VAPID_PRIVATE_KEY);
+  webpush().setVapidDetails('mailto:'+email,vapidPublic(),process.env.HUB_VAPID_PRIVATE_KEY);
 }
 function endpointValid(value){
   try{
@@ -150,7 +156,7 @@ function categoryList(){
 async function deliver(pool,row,message){
   try{
     configure();
-    await webpush.sendNotification(row.subscription,JSON.stringify(message),{
+    await webpush().sendNotification(row.subscription,JSON.stringify(message),{
       TTL:3600,urgency:'high',timeout:5500
     });
     return true;
