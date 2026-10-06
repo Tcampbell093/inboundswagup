@@ -305,24 +305,21 @@ async function authMaps() {
   };
 }
 
+function hasHubPin(person, maps) {
+  const key = slug(person.name);
+  return maps.modernById.get(Number(person.id)) === true ||
+    maps.modern.get(key) === true ||
+    maps.legacy.get(key) === true;
+}
+
+// The roster is readable without signing in (it feeds the sign-in name list),
+// so it only carries names. IDs, departments, roles and PIN status stay private.
 async function publicRoster(force = false) {
   const roster = await loadRoster(force);
-  const maps = await authMaps();
   return {
     selfServiceConnected: roster.selfService,
     pinSource: 'hub',
-    employees: roster.people.map((person) => {
-      const key = slug(person.name);
-      const hubConfigured =
-        maps.modernById.get(Number(person.id)) === true ||
-        maps.modern.get(key) === true ||
-        maps.legacy.get(key) === true;
-      return {
-        ...person,
-        hubPinConfigured: hubConfigured,
-        fairShiftPinConfigured: person.pinConfigured === true,
-      };
-    }),
+    employees: roster.people.map((person) => ({ name: person.name })),
   };
 }
 
@@ -700,6 +697,9 @@ export default async (request) => {
       // FairShift verification is now best-effort and cannot reject a valid
       // Hub PIN. This prevents stale FairShift credentials from locking an
       // associate out after an Admin reset.
+      if (!hasHubPin(person, await authMaps())) {
+        return json(409, { needsSetup: true, error: 'No Warehouse Hub PIN yet. Confirm a new PIN to create one.' });
+      }
       const verified = await verifyHubFallback(person, pin);
       if (!verified) return json(403, { error: 'Name or PIN is incorrect.' });
 

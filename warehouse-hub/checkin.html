@@ -35,13 +35,13 @@
     const done=a.dutyStatus==='completed', missed=a.dutyStatus==='missed', action=a.dutyStatus==='in_progress'?'finish':'start';
     if(done) return '<div class="complete">Completed ✓ &nbsp; 15 minutes credited.</div>';
     if(missed) return '<div class="alert error">This duty is closed as missed. No credit was added.</div>';
-    if(!session.signedIn) return `<div class="alert error">Sign in to the Warehouse Hub as ${esc(a.activeEmployeeName)} to start this duty.</div><a class="action" style="display:block;text-align:center;text-decoration:none" href="/warehouse-hub/">Sign in on the Hub</a>`;
+    if(!session.signedIn) return `<div class="alert error">Sign in to the Warehouse Hub to start this duty.</div><a class="action" style="display:block;text-align:center;text-decoration:none" href="/warehouse-hub/">Sign in on the Hub</a>`;
     if(normalize(session.name)!==normalize(a.activeEmployeeName)) return `<div class="alert error">You’re signed in as ${esc(session.name)}. This duty is assigned to ${esc(a.activeEmployeeName)}.</div>`;
     return `<div class="complete">Signed in as ${esc(session.name)}.</div><button class="action" id="submit" type="button">${action==='start'?'Start cleaning':'Finish cleaning · +15 min'}</button>`;
   }
   function render(a,message='',isError=false){
     card.innerHTML=`<div class="head"><div><div class="label">Today’s assignment</div><h2>${esc(a.area)}</h2></div><span class="status ${esc(a.dutyStatus)}">${esc(statusLabel(a.dutyStatus))}</span></div>
-      <div class="details"><div class="detail"><small>Cleaner</small><strong>${esc(a.activeEmployeeName)}</strong></div><div class="detail"><small>Scheduled</small><strong>${esc(a.scheduledEmployeeName)}</strong></div><div class="detail"><small>Date</small><strong>${esc(a.assignmentDate)}</strong></div></div>
+      <div class="details"><div class="detail"><small>Cleaner</small><strong>${esc(a.activeEmployeeName||'Sign in to see')}</strong></div><div class="detail"><small>Scheduled</small><strong>${esc(a.scheduledEmployeeName||'Sign in to see')}</strong></div><div class="detail"><small>Date</small><strong>${esc(a.assignmentDate)}</strong></div></div>
       ${message?`<div class="alert ${isError?'error':'success'}">${esc(message)}</div>`:''}
       ${actionHtml(a)}
       <div class="note">Start and finish are recorded in the Warehouse Hub and count toward fairness tracking and Bingo Coins.</div>`;

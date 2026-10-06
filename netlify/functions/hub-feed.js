@@ -252,6 +252,21 @@ async function cleaningAction(body) {
   return normalizeLocalCleaning(updated.rows[0]);
 }
 
+// Signed-out visitors still see cleaning areas and status, but not who is assigned.
+function hideCleaningNames(feed) {
+  return {
+    ...feed,
+    namesHidden: true,
+    cleaning: feed.cleaning.map((r) => ({
+      ...r,
+      employeeName: '',
+      scheduledEmployeeName: r.scheduledEmployeeName === undefined ? undefined : '',
+      completedBy: r.completedBy ? '' : r.completedBy,
+      task: r.covered ? 'Covering for a teammate' : r.task,
+    })),
+  };
+}
+
 exports.handler = async function handler(event) {
   if (!process.env.DATABASE_URL) return json(500, { error: 'DATABASE_URL is not configured' });
   try {
@@ -259,7 +274,8 @@ exports.handler = async function handler(event) {
     if (event.httpMethod === 'GET') {
       const admin = String(event.queryStringParameters?.admin || '') === '1';
       if (admin && !managerAuthorized(event)) return json(401, { error: 'Admin access denied.' });
-      return json(200, await readFeed(admin));
+      const feed = await readFeed(admin);
+      return json(200, admin || hubSession(event) ? feed : hideCleaningNames(feed));
     }
     if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed' });
     const body = JSON.parse(event.body || '{}');
