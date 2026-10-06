@@ -286,6 +286,10 @@ async function handle(request) {
     if (!assignmentId) return json(400, { error: 'A valid assignment ID is required.' });
     const { result, assignment } = await loadAssignment(assignmentId);
     if (!assignment) return json(result.status, result.body);
+    // Signed-out visitors can see the duty but not who is assigned.
+    if (!decryptSession(cookieMap(request)[SESSION_COOKIE])) {
+      return json(200, { ...result.body, assignment: { ...assignment, activeEmployeeName: '', scheduledEmployeeName: '', namesHidden: true } });
+    }
     return json(200, { ...result.body, assignment });
   }
 
