@@ -549,7 +549,7 @@ async function resetEmployeePin(request, body) {
     scope = 'Warehouse Hub + FairShift';
     await db.query('UPDATE hub_pin_reset_audit SET scope=$2 WHERE id=$1', [auditId, scope]).catch(() => {});
   } else if (person.fairShiftSelfService !== false) {
-    warning = 'Hub PIN reset succeeded. FairShift cleaning still has a separate older PIN, but it can no longer block Warehouse Hub sign-in.';
+    // Cleaning check-ins no longer use the FairShift PIN, so a failed sync needs no warning.
   }
 
   rosterCache.expiresAt = 0;
@@ -691,9 +691,7 @@ export default async (request) => {
       return json(200, {
         ok: true,
         ...session.public,
-        warning: fairShiftVerified || person.fairShiftSelfService === false
-          ? ''
-          : 'Warehouse Hub PIN created successfully. Cleaning PIN sync did not complete, but the Hub PIN is active and can be reset from Admin Hub tools.',
+        warning: '',
       }, { 'Set-Cookie': sessionCookie(session.payload) });
     }
 
@@ -717,9 +715,7 @@ export default async (request) => {
       return json(200, {
         ok: true,
         ...session.public,
-        warning: fairShiftVerified || person.fairShiftSelfService === false
-          ? ''
-          : 'You are signed in to Warehouse Hub. Cleaning check-in is still linked to the older FairShift PIN until that migration is completed.',
+        warning: '',
       }, { 'Set-Cookie': sessionCookie(session.payload) });
     }
 

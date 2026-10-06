@@ -578,7 +578,7 @@
         $('pinResetResult').textContent='';
         $('pinResetSubmit').disabled=false;
         $('pinResetSubmit').textContent='Confirm PIN reset';
-        $('pinResetScope').textContent='If this employee uses FairShift cleaning, the reset must be accepted by FairShift too. If it cannot be verified, no Hub reset is saved.';
+        $('pinResetScope').textContent='The new PIN works right away for Hub sign-in and cleaning check-ins.';
         $('pinResetDialog').showModal();
         $('pinResetNew').focus();
       };

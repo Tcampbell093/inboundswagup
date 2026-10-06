@@ -389,9 +389,6 @@
     if(busy)return;
     const row=data.assignments.find(a=>a.id===id);
     if(!row)return;
-    if(!session().fairShiftVerified){
-      showMessage('Your cleaning sign-in needs to be refreshed before starting or finishing this duty. Sign out and back into Hub.',true);return;
-    }
     button.disabled=true;busy=true;
     try{
       const out=await fetchJSON(CHECKIN,{method:'POST',headers:{'Content-Type':'application/json'},

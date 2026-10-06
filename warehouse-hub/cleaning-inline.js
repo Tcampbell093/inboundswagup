@@ -82,8 +82,8 @@
     setNote(
       row,
       bingoCoinAwarded
-        ? 'Cleaning completed. 15 FairShift minutes + 1 Bingo Coin earned.'
-        : 'Cleaning completed. 15 FairShift minutes credited.',
+        ? 'Cleaning completed. 15 minutes + 1 Bingo Coin earned.'
+        : 'Cleaning completed. 15 minutes credited.',
       'good',
     );
   }
@@ -172,7 +172,7 @@
     } catch (error) {
       const timedOut = error?.name === 'AbortError';
       if (timedOut) {
-        setNote(row, 'FairShift is taking longer than expected. Checking whether the update went through…');
+        setNote(row, 'This is taking longer than expected. Checking whether the update went through…');
         const reconciled = await reconcileAssignment(assignmentId, row, link, statusEl, action);
         if (reconciled) return;
       }
@@ -184,7 +184,7 @@
       setNote(
         row,
         timedOut
-          ? 'FairShift did not confirm the update. Please try again — the button is safe to use again.'
+          ? 'The update wasn’t confirmed. Please try again — the button is safe to use again.'
           : (error?.message || 'Cleaning check-in failed.'),
         'bad',
       );

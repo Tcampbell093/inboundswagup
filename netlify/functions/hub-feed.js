@@ -1,5 +1,6 @@
 const { Pool } = require('pg');
 const crypto = require('crypto');
+const hubCleaning = require('./_hub_cleaning');
 
 const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
 const pool = new Pool({
@@ -151,6 +152,20 @@ async function fetchFairShiftCleaning() {
   }
 }
 
+// Start/finish now live in the Hub; a Hub check-in overrides FairShift's status.
+function withHubCheckin(row, checkin) {
+  if (!checkin) return row;
+  const completed = checkin.status === 'completed';
+  return {
+    ...row,
+    status: checkin.status,
+    startedAt: checkin.started_at || row.startedAt,
+    finishedAt: completed ? checkin.finished_at : null,
+    completedBy: completed ? row.employeeName : null,
+    creditMinutes: completed ? 15 : 0,
+  };
+}
+
 async function readFeed(includeAdmin = false) {
   const [a, p, c, fs, sideRows] = await Promise.all([
     pool.query(`SELECT id,title,message,start_date,end_date,department,pinned,updated_at FROM hub_announcements ORDER BY pinned DESC,start_date DESC,updated_at DESC`),
@@ -167,7 +182,8 @@ async function readFeed(includeAdmin = false) {
   const sideFor=name=>areaSides.get(text(name,100).toLowerCase())
     ||savedByName.get(text(name,100).toLowerCase())||defaultCleaningSide(name);
   const manualCleaning = c.rows.map(x=>({...normalizeLocalCleaning(x),side:sideFor(x.area)}));
-  const activeCleaning=fs.ok?fs.cleaning.map(x=>({...x,side:sideFor(x.area)})):manualCleaning;
+  const checkins=fs.ok?await hubCleaning.checkinsByIdSafe(pool,fs.cleaning.map(x=>x.fairshiftId)):new Map();
+  const activeCleaning=fs.ok?fs.cleaning.map(x=>({...withHubCheckin(x,checkins.get(x.fairshiftId)),side:sideFor(x.area)})):manualCleaning;
   const knownAreas=departments.filter(d=>d.active!==false&&d.cleaningActive===true)
     .map(d=>({name:text(d.name,100),side:sideFor(d.name)}));
   const cleaningAreas=knownAreas.length?knownAreas:

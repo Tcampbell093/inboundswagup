@@ -1,5 +1,6 @@
 import pg from 'pg';
 import crypto from 'node:crypto';
+import hubCleaning from './_hub_cleaning.js';
 
 const { Pool } = pg;
 const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
@@ -8,7 +9,6 @@ const SESSION_VERSION = 2;
 const HUB_PIN_ITERATIONS = 100000;
 let poolInstance = null;
 let bingoSchemaReady = false;
-let signingKeyPromise = null;
 
 function env(name) {
   return globalThis.Netlify?.env?.get(name) || '';
@@ -135,69 +135,6 @@ async function verifyCurrentHubCredential(session) {
   return !!(row && row.active !== false && safeEqualHex(legacyHash(pin), row.pin_hash));
 }
 
-async function signingKey() {
-  if (signingKeyPromise) return signingKeyPromise;
-  const pem = env('FAIRSHIFT_HUB_SIGNING_PRIVATE_KEY');
-  if (!pem) throw new Error('FairShift Hub signing key is not configured.');
-  const body = pem
-    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
-    .replace(/-----END PRIVATE KEY-----/g, '')
-    .replace(/\s+/g, '');
-  const der = Buffer.from(body, 'base64');
-  signingKeyPromise = crypto.webcrypto.subtle.importKey(
-    'pkcs8',
-    der,
-    { name: 'ECDSA', namedCurve: 'P-256' },
-    false,
-    ['sign'],
-  );
-  return signingKeyPromise;
-}
-
-async function signedFairShiftHeaders(path, method, bodyText) {
-  const timestamp = String(Date.now());
-  const canonical = `${timestamp}\n${String(method || 'GET').toUpperCase()}\n${path}\n${bodyText || ''}`;
-  try {
-    const key = await signingKey();
-    const signature = await crypto.webcrypto.subtle.sign(
-      { name: 'ECDSA', hash: 'SHA-256' },
-      key,
-      new TextEncoder().encode(canonical),
-    );
-    return {
-      'x-hub-ts': timestamp,
-      'x-hub-signature': Buffer.from(signature).toString('base64url'),
-    };
-  } catch {
-    const syncKey = env('FAIRSHIFT_HUB_PIN_SYNC_KEY');
-    return syncKey ? { 'x-hub-pin-key': syncKey } : {};
-  }
-}
-
-async function repairFairShiftPin(session) {
-  const employeeId = Number(session?.employeeId);
-  const employeeName = clean(session?.name, 100);
-  const pin = clean(session?.pin, 8);
-  if (!Number.isSafeInteger(employeeId) || employeeId <= 0 || !employeeName || !/^\d{4,8}$/.test(pin)) return false;
-
-  const path = '/api/checkin';
-  const bodyText = JSON.stringify({
-    action: 'adminResetPin',
-    employeeId,
-    employeeName,
-    pin,
-  });
-  const auth = await signedFairShiftHeaders(path, 'POST', bodyText);
-  if (!Object.keys(auth).length) return false;
-
-  const result = await forward(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...auth },
-    body: bodyText,
-  });
-  return result.status >= 200 && result.status < 300 && result.body?.ok !== false;
-}
-
 async function forward(path, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
@@ -302,13 +239,54 @@ async function awardBingoCoin(employeeName, assignmentId) {
   }
 }
 
+function easternToday() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date());
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${map.year}-${map.month}-${map.day}`;
+}
+
+function isoOrNull(value) {
+  return value ? new Date(value).toISOString() : null;
+}
+
+// FairShift still owns the schedule; the Hub owns start/finish. A Hub check-in
+// always wins over FairShift's status for the same assignment.
+function withHubStatus(assignment, checkin) {
+  if (!assignment || !checkin) return assignment;
+  return {
+    ...assignment,
+    dutyStatus: checkin.status,
+    startTime: isoOrNull(checkin.started_at) || assignment.startTime || null,
+    endTime: isoOrNull(checkin.finished_at) || assignment.endTime || null,
+    checkinSource: 'hub',
+  };
+}
+
+async function loadAssignment(assignmentId) {
+  const result = await forward(`/api/checkin?assignmentId=${encodeURIComponent(assignmentId)}`);
+  if (result.status < 200 || result.status >= 300 || !result.body?.assignment) return { result, assignment: null };
+  const checkins = await hubCleaning.checkinsByIdSafe(getPool(), [assignmentId]);
+  return { result, assignment: withHubStatus(result.body.assignment, checkins.get(assignmentId)) };
+}
+
 export default async (request) => {
+  try {
+    return await handle(request);
+  } catch (error) {
+    return json(503, { error: 'Cleaning check-in is temporarily unavailable. Please try again.' });
+  }
+};
+
+async function handle(request) {
   if (request.method === 'GET') {
     const url = new URL(request.url);
     const assignmentId = Number(url.searchParams.get('assignmentId'));
     if (!assignmentId) return json(400, { error: 'A valid assignment ID is required.' });
-    const result = await forward(`/api/checkin?assignmentId=${encodeURIComponent(assignmentId)}`);
-    return json(result.status, result.body);
+    const { result, assignment } = await loadAssignment(assignmentId);
+    if (!assignment) return json(result.status, result.body);
+    return json(200, { ...result.body, assignment });
   }
 
   if (request.method !== 'POST') return json(405, { error: 'Method not allowed.' });
@@ -334,55 +312,66 @@ export default async (request) => {
   const assignmentId = Number(body.assignmentId);
 
   if (!['start', 'finish'].includes(action)) return json(400, { error: 'Invalid cleaning action.' });
-  if (!assignmentId) return json(400, { error: 'A valid assignment ID is required.' });
+  if (!Number.isSafeInteger(assignmentId) || assignmentId <= 0) return json(400, { error: 'A valid assignment ID is required.' });
 
-  const checkinBody = JSON.stringify({
-    action,
-    assignmentId,
-    employeeName: clean(session.name, 100),
-    pin: clean(session.pin, 8),
-  });
+  const { result, assignment } = await loadAssignment(assignmentId);
+  if (!assignment) {
+    return json(result.status === 404 ? 404 : 502, {
+      error: result.status === 404
+        ? 'This cleaning assignment no longer exists.'
+        : 'Could not load the cleaning schedule. Please try again.',
+    });
+  }
 
-  let result = await forward('/api/checkin', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: checkinBody,
-  });
+  const assignedName = clean(assignment.activeEmployeeName || assignment.scheduledEmployeeName, 100);
+  if (slug(assignedName) !== slug(session.name)) {
+    return json(403, { error: `This cleaning duty is assigned to ${assignedName || 'someone else'}.` });
+  }
+  if (String(assignment.assignmentDate || '').slice(0, 10) !== easternToday()) {
+    return json(409, { error: 'Only today’s cleaning can be started or finished.' });
+  }
 
-  // A valid Hub credential can outlive a failed FairShift PIN sync. Repair the
-  // downstream PIN from the authoritative Hub credential, then retry once.
-  if (result.status === 401) {
-    const repaired = await repairFairShiftPin(session).catch(() => false);
-    if (repaired) {
-      result = await forward('/api/checkin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: checkinBody,
-      });
+  const status = clean(assignment.dutyStatus, 40);
+  const employeeKey = slug(session.name);
+  const employeeName = clean(session.name, 100);
+  const db = getPool();
+  await hubCleaning.ensureSchema(db);
+
+  if (action === 'start') {
+    if (status === 'completed') return json(409, { error: 'This cleaning duty is already completed.' });
+    if (status === 'missed') return json(409, { error: 'This cleaning duty was closed as missed.' });
+    if (status !== 'in_progress') {
+      await db.query(`
+        INSERT INTO hub_cleaning_checkins(assignment_id,assignment_date,area,employee_key,employee_name,status,started_at,updated_at)
+        VALUES($1,$2,$3,$4,$5,'in_progress',NOW(),NOW())
+        ON CONFLICT(assignment_id) DO NOTHING
+      `, [assignmentId, assignment.assignmentDate, clean(assignment.area, 100), employeeKey, employeeName]);
     }
-    if (result.status === 401) {
-      return json(409, {
-        error: 'Your Warehouse Hub sign-in is valid, but Cleaning could not sync your PIN to FairShift. Ask an Admin to reset your Hub PIN once, then try again.',
-        code: 'FAIRSHIFT_PIN_OUT_OF_SYNC',
-      });
+  } else {
+    if (status === 'missed') return json(409, { error: 'This cleaning duty was closed as missed.' });
+    if (status !== 'in_progress' && status !== 'completed') {
+      return json(409, { error: 'Start this cleaning duty before finishing it.' });
+    }
+    if (status === 'in_progress') {
+      // Covers duties started in the Hub and ones started in FairShift before the switch.
+      await db.query(`
+        INSERT INTO hub_cleaning_checkins(assignment_id,assignment_date,area,employee_key,employee_name,status,started_at,finished_at,updated_at)
+        VALUES($1,$2,$3,$4,$5,'completed',$6,NOW(),NOW())
+        ON CONFLICT(assignment_id) DO UPDATE SET
+          status='completed',finished_at=NOW(),updated_at=NOW()
+        WHERE hub_cleaning_checkins.status='in_progress'
+      `, [assignmentId, assignment.assignmentDate, clean(assignment.area, 100), employeeKey, employeeName, Date.parse(assignment.startTime) ? assignment.startTime : null]);
     }
   }
 
-  if (
-    result.status >= 200 &&
-    result.status < 300 &&
-    action === 'finish' &&
-    result.body?.ok !== false
-  ) {
+  const updated = (await loadAssignment(assignmentId)).assignment || assignment;
+  const response = { ok: true, assignment: updated };
+  if (action === 'finish' && updated.dutyStatus === 'completed') {
     const award = await awardBingoCoin(session.name, assignmentId);
     if (award) {
-      result.body = {
-        ...result.body,
-        bingoCoinAwarded: award.awarded,
-        bingoCoins: award.coins,
-      };
+      response.bingoCoinAwarded = award.awarded;
+      response.bingoCoins = award.coins;
     }
   }
-
-  return json(result.status, result.body);
-};
+  return json(200, response);
+}

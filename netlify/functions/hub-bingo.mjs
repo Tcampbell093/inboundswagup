@@ -1,5 +1,6 @@
 import pg from 'pg';
 import crypto from 'node:crypto';
+import hubCleaning from './_hub_cleaning.js';
 
 const { Pool } = pg;
 const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
@@ -430,6 +431,18 @@ async function reconcileCleaningCoins(client, session, round, settings) {
       continue;
     }
     for (const id of result.value) assignmentIds.add(Number(id));
+  }
+
+  // Cleaning finished in the Hub never shows as completed in FairShift.
+  try {
+    await hubCleaning.ensureSchema(client);
+    const hubDone = await client.query(`
+      SELECT assignment_id FROM hub_cleaning_checkins
+      WHERE employee_key=$1 AND status='completed' AND assignment_date >= $2::date
+    `, [employeeKey, dateFromEpoch(earningStartDay)]);
+    for (const row of hubDone.rows) assignmentIds.add(Number(row.assignment_id));
+  } catch {
+    allSucceeded = false;
   }
 
   let awarded = 0;
