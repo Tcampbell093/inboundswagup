@@ -154,7 +154,8 @@ function withHubCheckin(row, checkin) {
     status: checkin.status,
     startedAt: checkin.started_at || row.startedAt,
     finishedAt: completed ? checkin.finished_at : null,
-    completedBy: completed ? row.employeeName : null,
+    employeeName: completed && checkin.employee_name ? checkin.employee_name : row.employeeName,
+    completedBy: completed ? (checkin.employee_name || row.employeeName) : null,
     creditMinutes: completed ? 15 : 0,
   };
 }

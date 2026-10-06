@@ -111,7 +111,7 @@ async function withHubCheckins(data){
     const c=x.type==='cleaning'&&checkins.get(Number(x.id));
     if(!c)return x;
     const doneBy=idByName.get(str(c.employee_name,100).toLowerCase());
-    return{...x,dutyStatus:c.status,actualEmployeeId:x.actualEmployeeId||doneBy||x.employeeId,
+    return{...x,dutyStatus:c.status,actualEmployeeId:doneBy||x.actualEmployeeId||x.employeeId,
       startTime:c.started_at?new Date(c.started_at).toISOString():x.startTime,
       endTime:c.finished_at?new Date(c.finished_at).toISOString():null};
   })};
