@@ -672,6 +672,12 @@
 
   btn.addEventListener('click', () => openDialog());
 
+  // signin-reminder.js noticed the sign-in ran out: show the page as signed out.
+  document.addEventListener('hub-session-expired', async () => {
+    await loadSession();
+    if (!session.signedIn) document.dispatchEvent(new CustomEvent('hub-associate-session', { detail: session }));
+  });
+
   bingoSizeButtons.forEach((button) => {
     button.addEventListener('click', async () => {
       if (bingoControlSaving) return;
