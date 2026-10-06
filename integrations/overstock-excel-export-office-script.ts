@@ -131,6 +131,7 @@ interface PullResult {
   notInDailyLog: string[];
   splitAcrossBoxes: string[];
   failedWrites: string[];
+  texts: string[][];
 }
 
 const DISPOSITION_TEXT: Record<string, string> = {
@@ -147,7 +148,7 @@ const sameText = (a: string, b: string): boolean =>
 async function pullFromOverstock(
   endpoint: string, key: string, body: ExcelScript.Range, headers: string[],
 ): Promise<PullResult> {
-  const result: PullResult = { updatedRows: 0, updatedCells: 0, notInDailyLog: [], splitAcrossBoxes: [], failedWrites: [] };
+  const result: PullResult = { updatedRows: 0, updatedCells: 0, notInDailyLog: [], splitAcrossBoxes: [], failedWrites: [], texts: [] };
   let response: Response;
   try {
     response = await fetch(`${endpoint}?excelPull=1`, { headers: { 'x-overstock-import-key': key } });
@@ -165,6 +166,7 @@ async function pullFromOverstock(
   if (poCol < 0 || deliveryCol < 0 || locCol < 0 || boxCol < 0) throw new Error('DailyLog is missing a PO, Delivery ID, Overstock Loc or Overstock Cont. column.');
 
   const texts: string[][] = body.getTexts();
+  result.texts = texts; // kept up to date below, so step 2 doesn't re-read the sheet
   const byDelivery = new Map<string, number>();
   const byPo = new Map<string, number[]>();
   texts.forEach((row: string[], index: number): void => {
@@ -195,6 +197,7 @@ async function pullFromOverstock(
       try {
         cell.setValue(value);
         cell.getText();
+        row[column] = value;
         changed += 1;
       } catch (error) {
         result.failedWrites.push(`${label} ${headers[column]} -> "${value}": ${String(error)}`);
@@ -256,8 +259,10 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
   //    overwritten by older sheet values in step 2.
   const pulled: PullResult = await pullFromOverstock(HOUSTON_ENDPOINT, IMPORT_KEY, body, headers);
 
-  // 2. Workbook -> Overstock (reads the sheet again, including step 1's edits).
-  const textRows = body.getTexts();
+  // 2. Workbook -> Overstock. Uses step 1's copy of the sheet (with its edits
+  //    applied) instead of reading the whole table again: right after the
+  //    writes Excel is recalculating, and a full re-read can time out.
+  const textRows: string[][] = pulled.texts;
   const indexOf = (name: string) => headers.indexOf(name);
   const associateColumns: number[] = headers
     .map((name: string, index: number): number => /\bBy\b|\(Por\)/i.test(name) ? index : -1)
