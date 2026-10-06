@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import pg from 'pg';
+import schedule from './_hub_schedule.js';
 
-const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
 const SESSION_COOKIE = 'hub_associate_session';
 const SESSION_VERSION = 2;
 const ALLOWED_ACTIONS = new Set([
@@ -83,61 +83,12 @@ function todayEastern() {
   return `${map.year}-${map.month}-${map.day}`;
 }
 
-let signingKeyPromise = null;
-async function signingKey() {
-  if (signingKeyPromise) return signingKeyPromise;
-  const pem = env('FAIRSHIFT_HUB_SIGNING_PRIVATE_KEY');
-  if (!pem) throw new Error('FairShift Hub signing key is not configured.');
-  const body = pem.replace(/-----BEGIN PRIVATE KEY-----/g, '').replace(/-----END PRIVATE KEY-----/g, '').replace(/\s+/g, '');
-  const der = Buffer.from(body, 'base64');
-  signingKeyPromise = crypto.webcrypto.subtle.importKey(
-    'pkcs8',
-    der,
-    { name: 'ECDSA', namedCurve: 'P-256' },
-    false,
-    ['sign'],
-  );
-  return signingKeyPromise;
-}
-
-async function signedHeaders(path, method, bodyText) {
-  const timestamp = String(Date.now());
-  const canonical = `${timestamp}\n${method.toUpperCase()}\n${path}\n${bodyText}`;
-  const key = await signingKey();
-  const signature = await crypto.webcrypto.subtle.sign(
-    { name: 'ECDSA', hash: 'SHA-256' },
-    key,
-    new TextEncoder().encode(canonical),
-  );
-  return {
-    'x-hub-ts': timestamp,
-    'x-hub-signature': Buffer.from(signature).toString('base64url'),
-  };
-}
-
-async function fairShift(path, options = {}) {
-  const method = String(options.method || 'GET').toUpperCase();
-  const bodyText = typeof options.body === 'string' ? options.body : '';
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
-  try {
-    const auth = await signedHeaders(path, method, bodyText);
-    const response = await fetch(`${FAIRSHIFT_BASE}${path}`, {
-      ...options,
-      signal: controller.signal,
-      headers: { Accept: 'application/json', ...auth, ...(options.headers || {}) },
-    });
-    const body = await response.json().catch(() => ({}));
-    return { ok: response.ok, status: response.status, body };
-  } catch (error) {
-    return {
-      ok: false,
-      status: 502,
-      body: { error: error?.name === 'AbortError' ? 'FairShift took too long to respond.' : 'FairShift is temporarily unavailable.' },
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
+let poolInstance = null;
+function getPool() {
+  const connectionString = env('DATABASE_URL') || process.env.DATABASE_URL;
+  if (!connectionString) throw new Error('DATABASE_URL is not configured.');
+  if (!poolInstance) poolInstance = new pg.Pool({ connectionString, ssl: { rejectUnauthorized: false } });
+  return poolInstance;
 }
 
 function cleanEmployee(employee) {
@@ -163,13 +114,16 @@ export default async (request) => {
   if (!managerAuthorized(request)) return json(401, { error: 'Admin access denied.' });
 
   if (request.method === 'GET') {
-    const path = `/api/dashboard?date=${encodeURIComponent(todayEastern())}`;
-    const result = await fairShift(path);
-    if (!result.ok) return json(result.status, { error: clean(result.body?.error || 'Could not load FairShift team data.', 300) });
-    return json(200, {
-      employees: (Array.isArray(result.body?.employees) ? result.body.employees : []).map(cleanEmployee),
-      departments: (Array.isArray(result.body?.departments) ? result.body.departments : []).map(cleanDepartment),
-    });
+    try {
+      const db = getPool();
+      await schedule.ensureImported(db);
+      return json(200, {
+        employees: (await schedule.employees(db)).map(cleanEmployee),
+        departments: (await schedule.departments(db)).map(cleanDepartment),
+      });
+    } catch (error) {
+      return json(error?.status || 503, { error: clean(error?.status ? error.message : 'Could not load the team list.', 300) });
+    }
   }
 
   if (request.method !== 'POST') return json(405, { error: 'Method not allowed.' });
@@ -185,38 +139,27 @@ export default async (request) => {
     payload.role = role;
   }
 
-  const bodyText = JSON.stringify(payload);
-  const result = await fairShift('/api/dashboard', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: bodyText,
-  });
-
-  if (!result.ok) {
-    const raw = clean(result.body?.error || 'FairShift rejected the change.', 300);
-    const bridgeMissing = result.status === 403 && /read-only|editor/i.test(raw);
-    return json(result.status, {
-      error: bridgeMissing
-        ? 'FairShift still needs the Warehouse Hub admin bridge update before roster changes can be saved here.'
-        : raw,
-      bridgeMissing,
-    });
+  let result;
+  try {
+    result = await schedule.applyTeamAction(getPool(), payload);
+  } catch (error) {
+    if (error instanceof schedule.ScheduleError) return json(error.status, { error: clean(error.message, 300) });
+    console.warn('hub-team-admin update failed:', error?.message);
+    return json(503, { error: 'Could not save the change. Please try again.' });
   }
 
   // An employee who is no longer an Admin must not keep receiving background
   // inventory notifications on previously enrolled desktops.
   if(action==='updateEmployee'&&(payload.role!=='Manager'||payload.active===false)){
     const employeeId=Number(payload.id);
-    const connectionString=env('DATABASE_URL')||process.env.DATABASE_URL;
-    if(Number.isSafeInteger(employeeId)&&employeeId>0&&connectionString){
-      const db=new pg.Pool({connectionString,ssl:{rejectUnauthorized:false}});
+    if(Number.isSafeInteger(employeeId)&&employeeId>0){
       try{
-        await db.query('UPDATE hub_admin_push_subscriptions SET enabled=FALSE,updated_at=NOW() WHERE employee_id=$1',[employeeId]);
+        await getPool().query('UPDATE hub_admin_push_subscriptions SET enabled=FALSE,updated_at=NOW() WHERE employee_id=$1',[employeeId]);
       }catch(error){
         // The push table may not exist yet if nobody has enabled notifications.
         if(error.code!=='42P01')console.warn('Could not revoke former Admin push subscriptions:',error.message);
-      }finally{await db.end().catch(()=>{});}
+      }
     }
   }
-  return json(result.status || 200, result.body || { ok: true });
+  return json(200, result);
 };

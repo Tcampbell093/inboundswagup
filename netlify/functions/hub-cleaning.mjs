@@ -2,9 +2,9 @@ import pg from 'pg';
 import crypto from 'node:crypto';
 import hubCleaning from './_hub_cleaning.js';
 import hubPush from './_hub_push.js';
+import schedule from './_hub_schedule.js';
 
 const { Pool } = pg;
-const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
 const SESSION_COOKIE = 'hub_associate_session';
 const SESSION_VERSION = 2;
 const HUB_PIN_ITERATIONS = 100000;
@@ -136,40 +136,6 @@ async function verifyCurrentHubCredential(session) {
   return !!(row && row.active !== false && safeEqualHex(legacyHash(pin), row.pin_hash));
 }
 
-async function forward(path, options = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
-  try {
-    const response = await fetch(`${FAIRSHIFT_BASE}${path}`, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        Accept: 'application/json',
-        ...(options.headers || {}),
-      },
-    });
-    const text = await response.text();
-    let body = {};
-    try {
-      body = text ? JSON.parse(text) : {};
-    } catch {
-      body = { error: 'FairShift returned an unreadable response.' };
-    }
-    return { status: response.status, body };
-  } catch (error) {
-    return {
-      status: 502,
-      body: {
-        error: error?.name === 'AbortError'
-          ? 'FairShift took too long to respond.'
-          : 'FairShift check-in is temporarily unavailable.',
-      },
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 async function ensureBingoSchema() {
   if (bingoSchemaReady) return;
   await getPool().query(`
@@ -266,10 +232,15 @@ function withHubStatus(assignment, checkin) {
 }
 
 async function loadAssignment(assignmentId) {
-  const result = await forward(`/api/checkin?assignmentId=${encodeURIComponent(assignmentId)}`);
-  if (result.status < 200 || result.status >= 300 || !result.body?.assignment) return { result, assignment: null };
+  let found;
+  try {
+    found = await schedule.checkinAssignment(getPool(), assignmentId);
+  } catch {
+    return { result: { status: 503, body: { error: 'The cleaning schedule is temporarily unavailable.' } }, assignment: null };
+  }
+  if (!found) return { result: { status: 404, body: { error: 'This cleaning assignment no longer exists.' } }, assignment: null };
   const checkins = await hubCleaning.checkinsByIdSafe(getPool(), [assignmentId]);
-  return { result, assignment: withHubStatus(result.body.assignment, checkins.get(assignmentId)) };
+  return { result: { status: 200, body: { assignment: found } }, assignment: withHubStatus(found, checkins.get(assignmentId)) };
 }
 
 export default async (request) => {
@@ -279,6 +250,28 @@ export default async (request) => {
     return json(503, { error: 'Cleaning check-in is temporarily unavailable. Please try again.' });
   }
 };
+
+// Duties started or finished before the Hub took over live on the schedule
+// row itself (copied from FairShift). Put one back to scheduled, keeping a
+// backup who had taken it over. Returns the old row for the audit log.
+async function resetScheduleRow(db, assignmentId, fromStatus) {
+  const r = await db.query(`
+    UPDATE hub_sched_assignments a SET
+      duty_status = CASE WHEN a.actual_employee_id IS NOT NULL AND a.actual_employee_id<>a.employee_id
+        THEN 'alternate_assigned' ELSE 'scheduled' END,
+      actual_employee_id = CASE WHEN a.actual_employee_id IS NOT NULL AND a.actual_employee_id<>a.employee_id
+        THEN a.actual_employee_id ELSE NULL END,
+      start_time = NULL, end_time = NULL
+    FROM hub_sched_assignments old
+    LEFT JOIN hub_sched_employees e ON e.id = COALESCE(old.actual_employee_id, old.employee_id)
+    WHERE a.id = old.id AND a.id = $1 AND a.type = 'cleaning' AND old.duty_status = $2
+    RETURNING e.name AS employee_name, old.duty_status AS status, old.start_time AS started_at, old.end_time AS finished_at
+  `, [assignmentId, fromStatus]);
+  const row = r.rows[0];
+  if (!row) return null;
+  const asTime = (value) => (value && !Number.isNaN(Date.parse(value)) ? value : null);
+  return { ...row, started_at: asTime(row.started_at), finished_at: asTime(row.finished_at) };
+}
 
 // Undo a start (e.g. tapped by mistake): the duty goes back to scheduled. The
 // assigned person can undo today's start; Admins and Team Leads can undo any.
@@ -304,10 +297,9 @@ async function undoStart(session, assignment, assignedName) {
      RETURNING employee_name,status,started_at,finished_at`,
     [Number(assignment.id)],
   );
-  if (!removed.rowCount) {
-    return json(409, { error: 'This duty was started in FairShift, so it can’t be undone from the Hub.' });
-  }
-  await audit(db, assignment.id, 'undo_start', removed.rows[0], session.name);
+  const previous = removed.rows[0] || await resetScheduleRow(db, Number(assignment.id), 'in_progress');
+  if (!previous) return json(409, { error: 'This cleaning duty hasn’t been started.' });
+  await audit(db, assignment.id, 'undo_start', previous, session.name);
   const updated = (await loadAssignment(Number(assignment.id))).assignment || assignment;
   return json(200, { ok: true, assignment: updated });
 }
@@ -341,9 +333,10 @@ async function reopenCompleted(session, assignment) {
        RETURNING employee_name,status,started_at,finished_at`,
       [assignmentId],
     );
-    if (!removed.rowCount) {
+    const previous = removed.rows[0] || await resetScheduleRow(client, assignmentId, 'completed');
+    if (!previous) {
       await client.query('ROLLBACK');
-      return json(409, { error: 'This duty was completed in FairShift, so it can’t be reopened from the Hub.' });
+      return json(409, { error: 'Only completed duties can be reopened.' });
     }
     const coin = await client.query(
       `DELETE FROM hub_bingo_coin_events WHERE source_key=$1 RETURNING employee_key`,
@@ -356,7 +349,7 @@ async function reopenCompleted(session, assignment) {
       );
     }
     await client.query('COMMIT');
-    await audit(getPool(), assignmentId, 'reopen', removed.rows[0], session.name);
+    await audit(getPool(), assignmentId, 'reopen', previous, session.name);
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     throw error;
@@ -408,11 +401,7 @@ async function handle(request) {
 
   const { result, assignment } = await loadAssignment(assignmentId);
   if (!assignment) {
-    return json(result.status === 404 ? 404 : 502, {
-      error: result.status === 404
-        ? 'This cleaning assignment no longer exists.'
-        : 'Could not load the cleaning schedule. Please try again.',
-    });
+    return json(result.status, result.body);
   }
 
   const assignedName = clean(assignment.activeEmployeeName || assignment.scheduledEmployeeName, 100);

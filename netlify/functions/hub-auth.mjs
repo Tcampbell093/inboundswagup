@@ -1,4 +1,5 @@
 import pg from 'pg';
+import schedule from './_hub_schedule.js';
 import crypto from 'node:crypto';
 
 const { Pool } = pg;
@@ -224,67 +225,27 @@ async function fairShiftRequest(path, options = {}) {
   }
 }
 
+// The team list now lives in the Hub (_hub_schedule.js). FairShift PIN sync is
+// off for everyone (fairShiftSelfService:false), so PINs are Hub-only.
 async function loadRoster(force = false) {
   if (!force && rosterCache.expiresAt > Date.now()) return rosterCache;
-
-  let modernPeople = [];
-  let selfService = false;
-
-  try {
-    const modern = await fairShiftRequest('/api/checkin?roster=1');
-    if (modern.ok && Array.isArray(modern.body?.employees)) {
-      modernPeople = modern.body.employees.map((employee) => ({
-        id: Number(employee.id),
-        name: clean(employee.name, 100),
-        department: clean(employee.homeDepartment, 100),
-        role: clean(employee.role, 60),
-        pinConfigured: !!employee.pinConfigured,
-        fairShiftSelfService: true,
-      })).filter((employee) => employee.id && employee.name);
-      selfService = true;
-    }
-  } catch {}
-
-  let dashboardPeople = [];
-  try {
-    const dashboard = await fairShiftRequest(`/api/dashboard?date=${encodeURIComponent(todayEastern())}`);
-    if (dashboard.ok) {
-      dashboardPeople = (Array.isArray(dashboard.body?.employees) ? dashboard.body.employees : [])
-        .filter((employee) => employee && employee.active !== false)
-        .map((employee) => ({
-          id: Number(employee.id),
-          name: clean(employee.name, 100),
-          department: clean(employee.homeDepartment, 100),
-          role: clean(employee.role, 60),
-          pinConfigured: null,
-          fairShiftSelfService: false,
-        }))
-        .filter((employee) => employee.id && employee.name);
-    }
-  } catch {}
-
-  if (!modernPeople.length && !dashboardPeople.length) {
-    throw new Error('FairShift employee list is unavailable.');
-  }
-
-  // The protected FairShift roster intentionally omits Team Leads because they
-  // are not part of cleaning rotation self-service. Merge the public active
-  // team roster so Team Leads can still use Warehouse Hub features. People
-  // present in the protected roster keep FairShift PIN/cleaning integration;
-  // dashboard-only people use a Hub-only PIN.
-  const merged = new Map();
-  for (const person of dashboardPeople) merged.set(slug(person.name), person);
-  for (const person of modernPeople) merged.set(slug(person.name), person);
-
-  const people = [...merged.values()].sort((a, b) => {
-    const roleA = String(a.role || '').toLowerCase();
-    const roleB = String(b.role || '').toLowerCase();
-    const leadA = roleA.includes('lead') ? 0 : 1;
-    const leadB = roleB.includes('lead') ? 0 : 1;
-    return leadA - leadB || a.name.localeCompare(b.name);
-  });
-
-  rosterCache = { expiresAt: Date.now() + 30000, people, selfService };
+  const people = (await schedule.roster(getPool()))
+    .map((employee) => ({
+      id: Number(employee.id),
+      name: clean(employee.name, 100),
+      department: clean(employee.homeDepartment, 100),
+      role: clean(employee.role, 60),
+      pinConfigured: null,
+      fairShiftSelfService: false,
+    }))
+    .filter((employee) => employee.id && employee.name)
+    .sort((a, b) => {
+      const leadA = String(a.role || '').toLowerCase().includes('lead') ? 0 : 1;
+      const leadB = String(b.role || '').toLowerCase().includes('lead') ? 0 : 1;
+      return leadA - leadB || a.name.localeCompare(b.name);
+    });
+  if (!people.length) throw new Error('The team list is unavailable.');
+  rosterCache = { expiresAt: Date.now() + 30000, people, selfService: false };
   return rosterCache;
 }
 

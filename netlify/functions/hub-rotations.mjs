@@ -1,12 +1,11 @@
 import crypto from 'node:crypto';
 import pg from 'pg';
 import hubCleaning from './_hub_cleaning.js';
+import schedule from './_hub_schedule.js';
 
-const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
 const SESSION_COOKIE = 'hub_associate_session';
 const SESSION_VERSION = 2;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-let signingKeyPromise;
 let poolInstance=null;
 let areaSchemaReady=false;
 const {Pool}=pg;
@@ -44,31 +43,15 @@ function roleOf(session) {
   const role=str(session?.role,40).toLowerCase();
   return role==='manager'?'admin':role==='team lead'?'lead':'associate';
 }
-async function signingKey(){
-  if(signingKeyPromise)return signingKeyPromise;
-  const pem=env('FAIRSHIFT_HUB_SIGNING_PRIVATE_KEY');
-  if(!pem)throw new Error('Hub signing key is not configured.');
-  const der=Buffer.from(pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s+/g,''),'base64');
-  signingKeyPromise=crypto.webcrypto.subtle.importKey('pkcs8',der,{name:'ECDSA',namedCurve:'P-256'},false,['sign']);
-  return signingKeyPromise;
-}
-async function signedHeaders(path,method,bodyText){
-  const ts=String(Date.now()),canonical=`${ts}\n${method}\n${path}\n${bodyText}`;
-  const signature=await crypto.webcrypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},await signingKey(),new TextEncoder().encode(canonical));
-  return{'x-hub-ts':ts,'x-hub-signature':Buffer.from(signature).toString('base64url')};
-}
-async function remote(path,options={}){
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10500);
+// The schedule now lives in the Hub (_hub_schedule.js). Same {ok,status,data}
+// shape the FairShift calls returned, so the checks below didn't change.
+async function remote(path){
   try{
-    const method=options.method||'GET',body=options.body||'';
-    const headers=method==='POST'?await signedHeaders(path,method,body):{};
-    const response=await fetch(FAIRSHIFT_BASE+path,{method,body:method==='POST'?body:undefined,signal:controller.signal,
-      headers:{Accept:'application/json',...headers,...(method==='POST'?{'Content-Type':'application/json'}:{})}});
-    const data=await response.json().catch(()=>({}));
-    return{ok:response.ok,status:response.status,data};
+    const date=new URL(path,'https://hub.local').searchParams.get('date')||undefined;
+    return{ok:true,status:200,data:await schedule.dashboard(pool(),{date})};
   }catch(error){
-    return{ok:false,status:502,data:{error:error?.name==='AbortError'?'Cleaning scheduler timed out.':'Cleaning scheduler is temporarily unavailable.'}};
-  }finally{clearTimeout(timer);}
+    return{ok:false,status:error?.status||503,data:{error:error?.status?error.message:'Cleaning schedule is temporarily unavailable.'}};
+  }
 }
 function dateOK(s){
   return DATE.test(s)&&!Number.isNaN(Date.parse(s+'T12:00:00Z'))&&new Date(s+'T12:00:00Z').toISOString().slice(0,10)===s;
@@ -146,7 +129,7 @@ export default async(request)=>{
     let sides;try{sides=await loadSides();}catch(error){return json(503,{error:str(error.message,240)});}
     const departmentSides=new Map((Array.isArray(source.departments)?source.departments:[]).map(d=>[str(d.name,100),sides.get(Number(d.id))||defaultSide(d.name)]));
     return json(200,{
-      source:'FairShift (transition)',role,viewer:session.name,date,
+      source:'Warehouse Hub',role,viewer:session.name,date,
       employees:(Array.isArray(source.employees)?source.employees:[]).map(x=>({
         id:Number(x.id),name:str(x.name,100),role:str(x.role,40),active:x.active!==false,
         homeDepartment:str(x.homeDepartment,100)
@@ -230,9 +213,11 @@ export default async(request)=>{
       }
     }
   }
-  const res=await remote('/api/dashboard',{method:'POST',body:JSON.stringify(payload)});
-  return json(res.status,res.ok?{ok:true,...res.data}:{
-    error:str(res.data?.error||'Could not update cleaning in FairShift.',300),
-    bridgeMissing:res.status===403
-  });
+  try{
+    return json(200,await schedule.applyScheduleAction(pool(),payload,session.name));
+  }catch(error){
+    if(error instanceof schedule.ScheduleError)return json(error.status,{error:str(error.message,300)});
+    console.warn('hub-rotations update failed:',error?.message);
+    return json(503,{error:'Could not update the cleaning schedule. Please try again.'});
+  }
 };

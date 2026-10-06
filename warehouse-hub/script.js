@@ -421,7 +421,7 @@
     section.id = 'teamManagerSection';
     section.innerHTML = `
       <h4>Team & departments</h4>
-      <p class="policy-meta team-manager-note">Manage the warehouse roster here instead of opening FairShift. Admin is the Hub-wide designation for elevated access: Admins automatically get the Hub admin tools and full Warehouse Inventory management access after signing in with their Hub PIN.</p>
+      <p class="policy-meta team-manager-note">Manage the warehouse roster here. Admin is the Hub-wide designation for elevated access: Admins automatically get the Hub admin tools and full Warehouse Inventory management access after signing in with their Hub PIN.</p>
       <form id="teamAddForm" class="team-add-grid">
         <div class="field team-add-name"><label>Name</label><input name="name" required maxlength="100" placeholder="Team member name" /></div>
         <div class="field"><label>Home department</label><select name="homeDepartment" id="teamAddDepartment"></select></div>
