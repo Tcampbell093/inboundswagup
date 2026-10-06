@@ -824,6 +824,97 @@ async function sendExcelEvent(event) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Overstock -> workbook (pulled by the workbook's sync button)
+//
+// The workbook script asks for Overstock items changed since its last
+// successful pull and writes their location, box and disposition into the
+// Daily Log. Quantity and notes are never sent: the workbook's Overstock Qty
+// is a formula. The cursor lives here so the workbook needs no extra sheet.
+// ---------------------------------------------------------------------------
+// First pull: Overstock changes since the workbook last added items (Sep 23).
+const EXCEL_PULL_FIRST_SINCE = Date.parse('2026-09-23T00:00:00-04:00');
+
+async function ensureExcelPullSchema(db) {
+  await db.query(`CREATE TABLE IF NOT EXISTS overstock_excel_pull_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    cursor_ms BIGINT NOT NULL,
+    acked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+}
+
+// Newest of the item's own timestamps. Moving a box only bumps its items'
+// updatedAt (not lastChangedAt), so taking the first one present missed moves.
+const changedAt = (row) => Math.max(...['lastChangedAt', 'lastEditedAt', 'updatedAt', 'createdAt', 'donatedAt']
+  .map((key) => Number(row?.[key]) || 0));
+const pullKey = (row) => {
+  const deliveryId = str(row?.deliveryId, 120).toUpperCase();
+  return deliveryId ? `D:${deliveryId}` : `P:${normalizePo(row?.po)}`;
+};
+
+async function excelPullChanges(db) {
+  await ensureExcelPullSchema(db);
+  const saved = await db.query('SELECT cursor_ms FROM overstock_excel_pull_state WHERE id=1');
+  const since = saved.rows[0] ? Number(saved.rows[0].cursor_ms) : EXCEL_PULL_FIRST_SINCE;
+  const cursor = Date.now();
+  const state = await db.query(`SELECT data_json FROM workflow_sync_state WHERE state_key='default' LIMIT 1`);
+  const filtered = filterDeleted(state.rows[0]?.data_json || {});
+  const boxes = new Map(filtered.containers.map((box) => [String(box.id), box]));
+  const isDonated = (entry) => str(entry?.action, 60).toLowerCase() === 'donated' || str(entry?.status, 60) === 'Donation';
+
+  // An item counts as changed if it, or the box it sits in, changed.
+  const boxChangedAt = (entry) => changedAt(boxes.get(String(entry?.containerId || '')));
+  const changedKeys = new Set();
+  for (const entry of filtered.entries) {
+    if (Math.max(changedAt(entry), boxChangedAt(entry)) > since) changedKeys.add(pullKey(entry));
+  }
+  for (const donation of filtered.donations) if (changedAt(donation) > since) changedKeys.add(pullKey(donation));
+  changedKeys.delete('P:');
+
+  const changes = [];
+  for (const key of changedKeys) {
+    const all = filtered.entries.filter((entry) => pullKey(entry) === key);
+    const active = all.filter((entry) => !isDonated(entry));
+    const donated = all.filter(isDonated);
+    const donations = filtered.donations.filter((donation) => pullKey(donation) === key);
+    const places = active.map((entry) => {
+      const box = boxes.get(String(entry.containerId || '')) || {};
+      return { containerCode: str(box.code || entry.containerCode, 120), location: str(box.currentLocation || entry.location, 120) };
+    });
+    const codes = [...new Set(places.map((p) => p.containerCode).filter(Boolean))];
+    const locations = [...new Set(places.map((p) => p.location).filter(Boolean))];
+    const latest = [...all].sort((a, b) => changedAt(b) - changedAt(a))[0] || donations[0] || {};
+    changes.push({
+      deliveryId: key.startsWith('D:') ? key.slice(2) : '',
+      po: normalizePo(latest.po || (key.startsWith('P:') ? key.slice(2) : '')),
+      disposition: active.length ? 'Required' : (donated.length || donations.length) ? 'Donated' : '',
+      // Only one place can be written into the row's single box/location cells.
+      containerCode: codes.length === 1 ? codes[0] : '',
+      location: locations.length === 1 ? locations[0] : '',
+      splitAcrossBoxes: codes.length > 1 || locations.length > 1,
+      activeQuantity: active.reduce((sum, entry) => sum + (Number(entry.quantity) || 0), 0),
+      changedBy: str(latest.lastChangedBy || latest.lastEditedBy || latest.originalAssociate || latest.associate || latest.donatedBy, 120),
+      changedAt: changedAt(latest) || null,
+    });
+  }
+  changes.sort((a, b) => (a.changedAt || 0) - (b.changedAt || 0));
+  return { since, cursor, firstPull: !saved.rows[0], changes };
+}
+
+async function ackExcelPull(db, cursor) {
+  const value = Math.floor(Number(cursor));
+  if (!Number.isFinite(value) || value <= 0 || value > Date.now() + 60000) throw new Error('Invalid pull cursor.');
+  await ensureExcelPullSchema(db);
+  await db.query(`INSERT INTO overstock_excel_pull_state(id,cursor_ms,acked_at) VALUES(1,$1,NOW())
+    ON CONFLICT(id) DO UPDATE SET cursor_ms=GREATEST(overstock_excel_pull_state.cursor_ms,EXCLUDED.cursor_ms),acked_at=NOW()`, [value]);
+}
+
+function excelKeyOk(request) {
+  const expected = env('OVERSTOCK_EXCEL_IMPORT_SECRET');
+  const supplied = request.headers.get('x-overstock-import-key') || '';
+  return Boolean(expected) && safeEqual(supplied, expected);
+}
+
 async function readBoxHistory(db, search) {
   await ensureBoxAuditSchema(db);
   const term = str(search, 160);
@@ -1336,6 +1427,10 @@ export default async (request) => {
     }
     if (request.method === 'GET') {
       const requestUrl = new URL(request.url);
+      if (requestUrl.searchParams.get('excelPull') === '1') {
+        if (!excelKeyOk(request)) return json(401, { error: 'Excel sync authorization failed.' });
+        return json(200, await excelPullChanges(pool()));
+      }
       if (requestUrl.searchParams.has('boxHistory')) {
         if (!hubActor(request)) return json(401, { error: 'Sign in to the Work Hub to view box history.' });
         return json(200, await readBoxHistory(pool(), requestUrl.searchParams.get('boxHistory')));
@@ -1354,6 +1449,12 @@ export default async (request) => {
       if (!expected || !safeEqual(supplied, expected)) return json(401, { error: 'Excel sync authorization failed.' });
       const importResult = await importExcelLocations(body.rows, body.associates);
       return json(200, { ok: true, import: importResult, snapshot: await readSnapshot(pool()) });
+    }
+
+    if (action === 'ackExcelPull') {
+      if (!excelKeyOk(request)) return json(401, { error: 'Excel sync authorization failed.' });
+      await ackExcelPull(pool(), body.cursor);
+      return json(200, { ok: true });
     }
 
     if (action === 'testExcelSync') {
