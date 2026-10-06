@@ -130,6 +130,7 @@ interface PullResult {
   updatedCells: number;
   notInDailyLog: string[];
   splitAcrossBoxes: string[];
+  failedWrites: string[];
 }
 
 const DISPOSITION_TEXT: Record<string, string> = {
@@ -146,7 +147,7 @@ const sameText = (a: string, b: string): boolean =>
 async function pullFromOverstock(
   endpoint: string, key: string, body: ExcelScript.Range, headers: string[],
 ): Promise<PullResult> {
-  const result: PullResult = { updatedRows: 0, updatedCells: 0, notInDailyLog: [], splitAcrossBoxes: [] };
+  const result: PullResult = { updatedRows: 0, updatedCells: 0, notInDailyLog: [], splitAcrossBoxes: [], failedWrites: [] };
   let response: Response;
   try {
     response = await fetch(`${endpoint}?excelPull=1`, { headers: { 'x-overstock-import-key': key } });
@@ -185,10 +186,19 @@ async function pullFromOverstock(
 
     const row: string[] = texts[index];
     let changed = 0;
+    // Excel queues writes and only applies them at the next read, so read the
+    // cell back straight away: a cell that refuses the value is reported here
+    // instead of failing the whole script later.
     const write = (column: number, value: string): void => {
       if (column < 0 || !value || sameText(row[column], value)) return;
-      body.getCell(index as number, column).setValue(value);
-      changed += 1;
+      const cell: ExcelScript.Range = body.getCell(index as number, column);
+      try {
+        cell.setValue(value);
+        cell.getText();
+        changed += 1;
+      } catch (error) {
+        result.failedWrites.push(`${label} ${headers[column]} -> "${value}": ${String(error)}`);
+      }
     };
     if (change.disposition !== 'Donated') {
       write(locCol, change.location);
@@ -202,6 +212,10 @@ async function pullFromOverstock(
     if (change.disposition === 'Required' && current.startsWith('donat')) write(dispCol, DISPOSITION_TEXT.Required);
     if (changed) { result.updatedRows += 1; result.updatedCells += changed; }
   }
+
+  // Only confirm when every cell took its value; otherwise the next click
+  // brings the same changes again (safe: only differing cells are written).
+  if (result.failedWrites.length) return result;
 
   // Remember how far we got so the next click only brings newer changes.
   const ack: Response = await fetch(endpoint, {
@@ -358,6 +372,7 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
     `From Overstock: ${pulled.updatedRows} Daily Log row(s) updated (${pulled.updatedCells} cell(s): location, box or disposition).`,
     pulled.notInDailyLog.length ? `${pulled.notInDailyLog.length} changed Overstock item(s) have no Daily Log row: ${pulled.notInDailyLog.slice(0, 8).join(', ')}.` : '',
     pulled.splitAcrossBoxes.length ? `${pulled.splitAcrossBoxes.length} split across several boxes, so location/box left as is: ${pulled.splitAcrossBoxes.slice(0, 8).join(', ')}.` : '',
+    pulled.failedWrites.length ? `${pulled.failedWrites.length} Daily Log cell(s) could not be updated, so these changes will be retried next time: ${pulled.failedWrites.slice(0, 5).join(' | ')}.` : '',
     `${result.updatedEntries ?? 0} item(s) updated`,
     `${result.createdEntries ?? 0} new item(s) added`,
     `${result.updatedContainers ?? 0} container(s) moved`,
