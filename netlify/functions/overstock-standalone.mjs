@@ -843,7 +843,10 @@ async function ensureExcelPullSchema(db) {
   )`);
 }
 
-const changedAt = (row) => Number(row?.lastChangedAt || row?.updatedAt || row?.createdAt || 0) || 0;
+// Newest of the item's own timestamps. Moving a box only bumps its items'
+// updatedAt (not lastChangedAt), so taking the first one present missed moves.
+const changedAt = (row) => Math.max(...['lastChangedAt', 'lastEditedAt', 'updatedAt', 'createdAt', 'donatedAt']
+  .map((key) => Number(row?.[key]) || 0));
 const pullKey = (row) => {
   const deliveryId = str(row?.deliveryId, 120).toUpperCase();
   return deliveryId ? `D:${deliveryId}` : `P:${normalizePo(row?.po)}`;
@@ -859,11 +862,13 @@ async function excelPullChanges(db) {
   const boxes = new Map(filtered.containers.map((box) => [String(box.id), box]));
   const isDonated = (entry) => str(entry?.action, 60).toLowerCase() === 'donated' || str(entry?.status, 60) === 'Donation';
 
+  // An item counts as changed if it, or the box it sits in, changed.
+  const boxChangedAt = (entry) => changedAt(boxes.get(String(entry?.containerId || '')));
   const changedKeys = new Set();
-  for (const entry of filtered.entries) if (changedAt(entry) > since) changedKeys.add(pullKey(entry));
-  for (const donation of filtered.donations) {
-    if (Number(donation?.donatedAt || donation?.updatedAt || donation?.createdAt || 0) > since) changedKeys.add(pullKey(donation));
+  for (const entry of filtered.entries) {
+    if (Math.max(changedAt(entry), boxChangedAt(entry)) > since) changedKeys.add(pullKey(entry));
   }
+  for (const donation of filtered.donations) if (changedAt(donation) > since) changedKeys.add(pullKey(donation));
   changedKeys.delete('P:');
 
   const changes = [];
