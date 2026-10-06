@@ -373,5 +373,5 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
     `${historyResult.archivePa ?? 0} put-away history row(s) copied`,
     `${historyResult.putAway ?? 0} put-away row(s), ${historyResult.cases ?? 0} case(s) and ${historyResult.watch ?? 0} watch-list row(s) copied`,
     `${finished.hidden ?? 0} row(s) no longer in the workbook hidden from PO History`,
-  ].filter(Boolean).join(' ');
+  ].filter((line: string): boolean => line.length > 0).join(' ');
 }
