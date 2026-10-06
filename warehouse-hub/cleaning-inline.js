@@ -191,30 +191,37 @@
     }
   }
 
-  async function undoStart(button) {
+  const CORRECTIONS = {
+    undo: { attr: 'undoStart', confirm: 'Undo this start? The duty goes back to Scheduled.', fail: 'Could not undo the start.' },
+    reopen: { attr: 'reopen', confirm: 'Reopen this completed duty? It goes back to Scheduled and the Bingo Coin from finishing is taken back.', fail: 'Could not reopen this duty.' },
+  };
+
+  async function correctDuty(button, action) {
+    const { attr, confirm: question, fail } = CORRECTIONS[action];
     const row = button.closest('.cleaning-row');
-    const assignmentId = Number(button.dataset.undoStart);
+    const assignmentId = Number(button.dataset[attr]);
     if (!row || !assignmentId) return;
-    if (!confirm('Undo this start? The duty goes back to Scheduled.')) return;
+    if (!confirm(question)) return;
     button.disabled = true;
     try {
       const { response, body } = await fetchJsonWithTimeout(PROXY, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'undo', assignmentId }),
+        body: JSON.stringify({ action, assignmentId }),
       }, 13000);
-      if (!response.ok) throw new Error(body.error || 'Could not undo the start.');
+      if (!response.ok) throw new Error(body.error || fail);
       document.dispatchEvent(new CustomEvent('hub-cleaning-refresh'));
+      if (action === 'reopen') document.dispatchEvent(new CustomEvent('hub-bingo-refresh'));
     } catch (error) {
       button.disabled = false;
-      setNote(row, error?.name === 'AbortError' ? 'The update wasn’t confirmed. Please try again.' : (error?.message || 'Could not undo the start.'), 'bad');
+      setNote(row, error?.name === 'AbortError' ? 'The update wasn’t confirmed. Please try again.' : (error?.message || fail), 'bad');
     }
   }
 
   cleaningList.addEventListener('click', (event) => {
-    const undo = event.target.closest('[data-undo-start]');
-    if (undo && cleaningList.contains(undo)) {
-      undoStart(undo);
+    const correction = event.target.closest('[data-undo-start],[data-reopen]');
+    if (correction && cleaningList.contains(correction)) {
+      correctDuty(correction, correction.dataset.reopen ? 'reopen' : 'undo');
       return;
     }
     const link = event.target.closest('a.checkin');

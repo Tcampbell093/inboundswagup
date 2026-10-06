@@ -76,7 +76,11 @@
   bingoDot.addEventListener('click', () => setView('bingo'));
 
   function actionForCleaning(r) {
-    if (r.status === 'completed') return `<span class="checkin">${Number(r.creditMinutes || 15)} min ✓</span>`;
+    if (r.status === 'completed') {
+      const done = `<span class="checkin">${Number(r.creditMinutes || 15)} min ✓</span>`;
+      if (r.source !== 'fairshift' || !isHubAdmin()) return done;
+      return `<span class="checkin-actions">${done}<button class="checkin-undo" type="button" data-reopen="${escapeHtml(r.fairshiftId)}">Reopen</button></span>`;
+    }
     if (!['scheduled', 'in_progress'].includes(r.status)) return '';
     const label = r.status === 'scheduled' ? 'Start' : 'Finish';
     if (r.source === 'fairshift') {
@@ -86,6 +90,11 @@
       return `<span class="checkin-actions">${link}<button class="checkin-undo" type="button" data-undo-start="${escapeHtml(r.fairshiftId)}">Undo start</button></span>`;
     }
     return `<button class="checkin" type="button" data-checkin="${escapeHtml(r.id)}" data-date="${escapeHtml(r.date)}" data-name="${escapeHtml(r.employeeName)}" data-status="${escapeHtml(r.status)}">${label}</button>`;
+  }
+
+  function isHubAdmin() {
+    const s = window.HubAssociate?.getSession?.() || {};
+    return !!s.signedIn && String(s.role || '').toLowerCase() === 'manager';
   }
 
   // Mirrors the server rule: the assigned person (today) or a Manager/Team Lead.
