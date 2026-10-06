@@ -38,6 +38,10 @@ interface PoHistorySyncResult {
   current?: number;
   archive?: number;
   archivePa?: number;
+  putAway?: number;
+  cases?: number;
+  watch?: number;
+  hidden?: number;
   total?: number;
 }
 
@@ -45,6 +49,14 @@ interface WorkbookHistoryPayload {
   currentRows: Record<string, string>[];
   archiveRows: Record<string, string>[];
   archivePaRows: Record<string, string>[];
+  putAwayRows: Record<string, string>[];
+  caseRows: Record<string, string>[];
+  watchRows: Record<string, string>[];
+}
+
+// Headers such as "PO #\n(Orden)" wrap onto two lines in some sheets.
+function oneLine(value: string): string {
+  return String(value ?? '').replace(/\s+/g, ' ').trim();
 }
 
 function worksheetRows(workbook: ExcelScript.Workbook, sheetName: string): Record<string, string>[] {
@@ -54,10 +66,10 @@ function worksheetRows(workbook: ExcelScript.Workbook, sheetName: string): Recor
   if (!used) return [];
   const texts: string[][] = used.getTexts();
   const headerIndex: number = texts.findIndex((row: string[]): boolean =>
-    row.some((cell: string): boolean => String(cell ?? '').trim() === 'PO # (Orden)')
+    row.some((cell: string): boolean => oneLine(cell) === 'PO # (Orden)')
   );
   if (headerIndex < 0) return [];
-  const headers: string[] = texts[headerIndex].map((cell: string): string => String(cell ?? '').trim());
+  const headers: string[] = texts[headerIndex].map((cell: string): string => oneLine(cell));
   return texts.slice(headerIndex + 1).map((row: string[]): Record<string, string> => {
     const record: Record<string, string> = {};
     headers.forEach((header: string, column: number): void => {
@@ -143,44 +155,55 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
     if (!response.ok) throw new Error(result.error || `Houston returned HTTP ${response.status}.`);
   }
 
-  const history: WorkbookHistoryPayload = {
-    currentRows: worksheetRows(workbook, 'Daily Log'),
-    archiveRows: worksheetRows(workbook, 'Archive'),
-    archivePaRows: worksheetRows(workbook, 'Archive PA'),
-  };
-  const historyResult: PoHistorySyncResult = { current: 0, archive: 0, archivePa: 0 };
-  const sheets: { name: string; field: keyof WorkbookHistoryPayload; count: keyof PoHistorySyncResult; rows: Record<string, string>[] }[] = [
-    { name: 'Daily Log', field: 'currentRows', count: 'current', rows: history.currentRows },
-    { name: 'Archive', field: 'archiveRows', count: 'archive', rows: history.archiveRows },
-    { name: 'Archive PA', field: 'archivePaRows', count: 'archivePa', rows: history.archivePaRows },
+  // PO History copy: every sheet that mentions POs. One syncId for the whole
+  // run; once every sheet has arrived, PO History hides rows that are no
+  // longer in the workbook (e.g. Daily Log rows after the month is archived).
+  const syncId: string = `sync-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+  const historyResult: PoHistorySyncResult = { current: 0, archive: 0, archivePa: 0, putAway: 0, cases: 0, watch: 0 };
+  type HistoryCount = 'current' | 'archive' | 'archivePa' | 'putAway' | 'cases' | 'watch';
+  const sheets: { name: string; field: keyof WorkbookHistoryPayload; count: HistoryCount }[] = [
+    { name: 'Daily Log', field: 'currentRows', count: 'current' },
+    { name: 'Archive', field: 'archiveRows', count: 'archive' },
+    { name: 'Archive PA', field: 'archivePaRows', count: 'archivePa' },
+    { name: 'Put-Away', field: 'putAwayRows', count: 'putAway' },
+    { name: 'Cases', field: 'caseRows', count: 'cases' },
+    { name: 'Watch List', field: 'watchRows', count: 'watch' },
   ];
-  for (const sheet of sheets) {
-    for (let start = 0; start < sheet.rows.length; start += 100) {
-      const payload: WorkbookHistoryPayload = { currentRows: [], archiveRows: [], archivePaRows: [] };
-      payload[sheet.field] = sheet.rows.slice(start, start + 100);
-      let historyResponse: Response;
-      try {
-        historyResponse = await fetch(PO_HISTORY_ENDPOINT, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-overstock-import-key': IMPORT_KEY },
-          body: JSON.stringify({ action: 'syncWorkbookHistory', source: 'New Daily Rec', ...payload }),
-        });
-      } catch (error) {
-        throw new Error(`PO History could not send ${sheet.name} rows ${start + 1}-${Math.min(start + 100, sheet.rows.length)}: ${String(error)}.`);
-      }
-      const historyText: string = await historyResponse.text();
-      let batch: PoHistorySyncResult = {};
-      try {
-        batch = historyText ? JSON.parse(historyText) as PoHistorySyncResult : {};
-      } catch {
-        if (!historyResponse.ok) throw new Error(`PO History returned HTTP ${historyResponse.status}: ${historyText}`);
-      }
-      if (!historyResponse.ok) throw new Error(batch.error || `PO History returned HTTP ${historyResponse.status} for ${sheet.name} rows ${start + 1}-${Math.min(start + 100, sheet.rows.length)}.`);
-      if (sheet.count === 'current') historyResult.current = (historyResult.current ?? 0) + (batch.current ?? 0);
-      if (sheet.count === 'archive') historyResult.archive = (historyResult.archive ?? 0) + (batch.archive ?? 0);
-      if (sheet.count === 'archivePa') historyResult.archivePa = (historyResult.archivePa ?? 0) + (batch.archivePa ?? 0);
+  const sentSheets: string[] = [];
+  const postHistory = async (body: object, label: string): Promise<PoHistorySyncResult> => {
+    let historyResponse: Response;
+    try {
+      historyResponse = await fetch(PO_HISTORY_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-overstock-import-key': IMPORT_KEY },
+        body: JSON.stringify({ source: 'New Daily Rec', syncId, ...body }),
+      });
+    } catch (error) {
+      throw new Error(`PO History could not send ${label}: ${String(error)}.`);
     }
+    const historyText: string = await historyResponse.text();
+    let parsed: PoHistorySyncResult = {};
+    try {
+      parsed = historyText ? JSON.parse(historyText) as PoHistorySyncResult : {};
+    } catch {
+      if (!historyResponse.ok) throw new Error(`PO History returned HTTP ${historyResponse.status}: ${historyText}`);
+    }
+    if (!historyResponse.ok) throw new Error(parsed.error || `PO History returned HTTP ${historyResponse.status} for ${label}.`);
+    return parsed;
+  };
+  for (const sheet of sheets) {
+    if (!workbook.getWorksheet(sheet.name)) continue; // optional sheets may not exist in older files
+    const rows: Record<string, string>[] = worksheetRows(workbook, sheet.name);
+    for (let start = 0; start < rows.length; start += 100) {
+      const batch: PoHistorySyncResult = await postHistory(
+        { action: 'syncWorkbookHistory', [sheet.field]: rows.slice(start, start + 100) },
+        `${sheet.name} rows ${start + 1}-${Math.min(start + 100, rows.length)}`,
+      );
+      historyResult[sheet.count] = Number(historyResult[sheet.count] ?? 0) + Number(batch[sheet.count] ?? 0);
+    }
+    sentSheets.push(sheet.name);
   }
+  const finished: PoHistorySyncResult = await postHistory({ action: 'finishSync', sheets: sentSheets }, 'the finishing step');
 
   return [
     'Houston sync complete.',
@@ -197,5 +220,7 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
     `${historyResult.current ?? 0} current PO row(s) copied`,
     `${historyResult.archive ?? 0} archived PO row(s) copied`,
     `${historyResult.archivePa ?? 0} put-away history row(s) copied`,
+    `${historyResult.putAway ?? 0} put-away row(s), ${historyResult.cases ?? 0} case(s) and ${historyResult.watch ?? 0} watch-list row(s) copied`,
+    `${finished.hidden ?? 0} row(s) no longer in the workbook hidden from PO History`,
   ].join(' ');
 }
