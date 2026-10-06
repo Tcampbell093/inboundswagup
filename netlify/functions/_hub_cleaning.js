@@ -20,6 +20,19 @@ async function ensureSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS hub_cleaning_checkins_date_idx ON hub_cleaning_checkins(assignment_date);
     CREATE INDEX IF NOT EXISTS hub_cleaning_checkins_employee_idx ON hub_cleaning_checkins(employee_key, assignment_date);
+
+    -- Who undid a start or reopened a completed duty, and what it was before.
+    CREATE TABLE IF NOT EXISTS hub_cleaning_checkin_audit (
+      id BIGSERIAL PRIMARY KEY,
+      assignment_id BIGINT NOT NULL,
+      action TEXT NOT NULL,
+      employee_name TEXT NOT NULL DEFAULT '',
+      previous_status TEXT NOT NULL DEFAULT '',
+      started_at TIMESTAMPTZ,
+      finished_at TIMESTAMPTZ,
+      done_by TEXT NOT NULL,
+      done_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
   schemaReady = true;
 }

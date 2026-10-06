@@ -76,14 +76,33 @@
   bingoDot.addEventListener('click', () => setView('bingo'));
 
   function actionForCleaning(r) {
-    if (r.status === 'completed') return `<span class="checkin">${Number(r.creditMinutes || 15)} min ✓</span>`;
+    if (r.status === 'completed') {
+      const done = `<span class="checkin">${Number(r.creditMinutes || 15)} min ✓</span>`;
+      if (r.source !== 'fairshift' || !isHubAdmin()) return done;
+      return `<span class="checkin-actions">${done}<button class="checkin-undo" type="button" data-reopen="${escapeHtml(r.fairshiftId)}">Reopen</button></span>`;
+    }
     if (!['scheduled', 'in_progress'].includes(r.status)) return '';
     const label = r.status === 'scheduled' ? 'Start' : 'Finish';
     if (r.source === 'fairshift') {
       const href = r.checkinUrl || `${FAIRSHIFT}/checkin?assignment=${encodeURIComponent(r.fairshiftId || '')}`;
-      return `<a class="checkin" href="${escapeHtml(href)}">${label}</a>`;
+      const link = `<a class="checkin" href="${escapeHtml(href)}">${label}</a>`;
+      if (r.status !== 'in_progress' || !canUndoStart(r)) return link;
+      return `<span class="checkin-actions">${link}<button class="checkin-undo" type="button" data-undo-start="${escapeHtml(r.fairshiftId)}">Undo start</button></span>`;
     }
     return `<button class="checkin" type="button" data-checkin="${escapeHtml(r.id)}" data-date="${escapeHtml(r.date)}" data-name="${escapeHtml(r.employeeName)}" data-status="${escapeHtml(r.status)}">${label}</button>`;
+  }
+
+  function isHubAdmin() {
+    const s = window.HubAssociate?.getSession?.() || {};
+    return !!s.signedIn && String(s.role || '').toLowerCase() === 'manager';
+  }
+
+  // Mirrors the server rule: the assigned person (today) or a Manager/Team Lead.
+  function canUndoStart(r) {
+    const s = window.HubAssociate?.getSession?.() || {};
+    if (!s.signedIn) return false;
+    if (['manager', 'team lead'].includes(String(s.role || '').toLowerCase())) return true;
+    return r.date === today() && normalizeName(s.name) === normalizeName(r.employeeName);
   }
 
   function personLabel(r) {
@@ -144,6 +163,7 @@
   function render() { renderToday(); renderWeek(); }
 
   document.addEventListener('hub-cleaning-refresh', () => loadFeed());
+  document.addEventListener('hub-associate-ready', () => { if (feed) render(); });
   document.addEventListener('hub-associate-session', () => loadFeed());
   async function loadFeed() {
     try {

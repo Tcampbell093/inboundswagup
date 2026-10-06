@@ -738,6 +738,7 @@
   };
 
   Promise.allSettled([loadRoster(), loadSession()]).then(() => {
+    document.dispatchEvent(new CustomEvent('hub-associate-ready', { detail: { ...session } }));
     if (!session.signedIn && !sessionStorage.getItem('hubAssociatePromptDismissed') && roster.length) {
       setTimeout(() => openDialog(), 450);
     }

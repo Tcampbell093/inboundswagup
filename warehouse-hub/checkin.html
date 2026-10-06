@@ -37,7 +37,7 @@
     if(missed) return '<div class="alert error">This duty is closed as missed. No credit was added.</div>';
     if(!session.signedIn) return `<div class="alert error">Sign in to the Warehouse Hub to start this duty.</div><a class="action" style="display:block;text-align:center;text-decoration:none" href="/warehouse-hub/">Sign in on the Hub</a>`;
     if(normalize(session.name)!==normalize(a.activeEmployeeName)) return `<div class="alert error">You’re signed in as ${esc(session.name)}. This duty is assigned to ${esc(a.activeEmployeeName)}.</div>`;
-    return `<div class="complete">Signed in as ${esc(session.name)}.</div><button class="action" id="submit" type="button">${action==='start'?'Start cleaning':'Finish cleaning · +15 min'}</button>`;
+    return `<div class="complete">Signed in as ${esc(session.name)}.</div><button class="action" id="submit" type="button">${action==='start'?'Start cleaning':'Finish cleaning · +15 min'}</button>${action==='finish'?'<button class="action" id="undo" type="button" style="background:#fff;color:var(--ink);border:1px solid var(--line)">Undo start</button>':''}`;
   }
   function render(a,message='',isError=false){
     card.innerHTML=`<div class="head"><div><div class="label">Today’s assignment</div><h2>${esc(a.area)}</h2></div><span class="status ${esc(a.dutyStatus)}">${esc(statusLabel(a.dutyStatus))}</span></div>
@@ -46,14 +46,15 @@
       ${actionHtml(a)}
       <div class="note">Start and finish are recorded in the Warehouse Hub and count toward fairness tracking and Bingo Coins.</div>`;
     document.getElementById('submit')?.addEventListener('click',()=>submit(a));
+    document.getElementById('undo')?.addEventListener('click',()=>{ if(confirm('Undo this start? The duty goes back to Scheduled.')) submit(a,'undo'); });
   }
-  async function submit(a){
-    const btn=document.getElementById('submit'); const action=a.dutyStatus==='in_progress'?'finish':'start';
+  async function submit(a,forced){
+    const action=forced||(a.dutyStatus==='in_progress'?'finish':'start'); const btn=document.getElementById(action==='undo'?'undo':'submit');
     btn.disabled=true; btn.textContent='Saving…';
     try{
       const r=await fetch(API,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,assignmentId})});
       const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||'Check-in failed.');
-      render(j.assignment||await getAssignment(),action==='start'?'Cleaning started. Finish here when the area is done.':(j.bingoCoinAwarded?'Cleaning completed. 15 minutes + 1 Bingo Coin earned.':'Cleaning completed. 15 minutes credited.'));
+      render(j.assignment||await getAssignment(),action==='undo'?'Start undone. The duty is back to Scheduled.':action==='start'?'Cleaning started. Finish here when the area is done.':(j.bingoCoinAwarded?'Cleaning completed. 15 minutes + 1 Bingo Coin earned.':'Cleaning completed. 15 minutes credited.'));
     }catch(err){ try{render(await getAssignment(),err.message||'Check-in failed.',true);}catch{card.innerHTML=`<div class="alert error">${esc(err.message||'Check-in failed.')}</div>`;} }
   }
   Promise.all([

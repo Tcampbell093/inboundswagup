@@ -279,6 +279,93 @@ export default async (request) => {
   }
 };
 
+// Undo a start (e.g. tapped by mistake): the duty goes back to scheduled. The
+// assigned person can undo today's start; Admins and Team Leads can undo any.
+async function undoStart(session, assignment, assignedName) {
+  const role = clean(session.role, 40).toLowerCase();
+  const isLead = role === 'manager' || role === 'team lead';
+  const isMine = slug(assignedName) === slug(session.name);
+  if (!isLead && !isMine) {
+    return json(403, { error: `Only ${assignedName || 'the assigned person'} or a Team Lead can undo this start.` });
+  }
+  if (!isLead && String(assignment.assignmentDate || '').slice(0, 10) !== easternToday()) {
+    return json(409, { error: 'Only today’s start can be undone. Ask a Team Lead for older duties.' });
+  }
+  if (assignment.dutyStatus !== 'in_progress') {
+    return json(409, { error: assignment.dutyStatus === 'completed'
+      ? 'This cleaning duty is already completed, so its start can’t be undone.'
+      : 'This cleaning duty hasn’t been started.' });
+  }
+  const db = getPool();
+  await hubCleaning.ensureSchema(db);
+  const removed = await db.query(
+    `DELETE FROM hub_cleaning_checkins WHERE assignment_id=$1 AND status='in_progress'
+     RETURNING employee_name,status,started_at,finished_at`,
+    [Number(assignment.id)],
+  );
+  if (!removed.rowCount) {
+    return json(409, { error: 'This duty was started in FairShift, so it can’t be undone from the Hub.' });
+  }
+  await audit(db, assignment.id, 'undo_start', removed.rows[0], session.name);
+  const updated = (await loadAssignment(Number(assignment.id))).assignment || assignment;
+  return json(200, { ok: true, assignment: updated });
+}
+
+async function audit(db, assignmentId, action, row, doneBy) {
+  await db.query(`
+    INSERT INTO hub_cleaning_checkin_audit(assignment_id,action,employee_name,previous_status,started_at,finished_at,done_by)
+    VALUES($1,$2,$3,$4,$5,$6,$7)
+  `, [Number(assignmentId), action, clean(row?.employee_name, 100), clean(row?.status, 40),
+    row?.started_at || null, row?.finished_at || null, clean(doneBy, 100)]).catch(() => {});
+}
+
+// Admin-only: put a completed duty back to Scheduled so it can be started again.
+// The Bingo Coin from finishing is taken back (never below zero, in case it was
+// already spent); finishing again earns it again.
+async function reopenCompleted(session, assignment) {
+  if (clean(session.role, 40).toLowerCase() !== 'manager') {
+    return json(403, { error: 'Only an Admin can reopen a completed cleaning duty.' });
+  }
+  if (assignment.dutyStatus !== 'completed') {
+    return json(409, { error: 'Only completed duties can be reopened.' });
+  }
+  const assignmentId = Number(assignment.id);
+  const client = await getPool().connect();
+  try {
+    await hubCleaning.ensureSchema(client);
+    await ensureBingoSchema();
+    await client.query('BEGIN');
+    const removed = await client.query(
+      `DELETE FROM hub_cleaning_checkins WHERE assignment_id=$1 AND status='completed'
+       RETURNING employee_name,status,started_at,finished_at`,
+      [assignmentId],
+    );
+    if (!removed.rowCount) {
+      await client.query('ROLLBACK');
+      return json(409, { error: 'This duty was completed in FairShift, so it can’t be reopened from the Hub.' });
+    }
+    const coin = await client.query(
+      `DELETE FROM hub_bingo_coin_events WHERE source_key=$1 RETURNING employee_key`,
+      [`fairshift:${assignmentId}:finish`],
+    );
+    if (coin.rowCount) {
+      await client.query(
+        `UPDATE hub_bingo_wallet SET coins=GREATEST(coins-1,0),updated_at=NOW() WHERE employee_key=$1`,
+        [coin.rows[0].employee_key],
+      );
+    }
+    await client.query('COMMIT');
+    await audit(getPool(), assignmentId, 'reopen', removed.rows[0], session.name);
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+  const updated = (await loadAssignment(assignmentId)).assignment || assignment;
+  return json(200, { ok: true, assignment: updated });
+}
+
 async function handle(request) {
   if (request.method === 'GET') {
     const url = new URL(request.url);
@@ -315,7 +402,7 @@ async function handle(request) {
   const action = clean(body.action, 12);
   const assignmentId = Number(body.assignmentId);
 
-  if (!['start', 'finish'].includes(action)) return json(400, { error: 'Invalid cleaning action.' });
+  if (!['start', 'finish', 'undo', 'reopen'].includes(action)) return json(400, { error: 'Invalid cleaning action.' });
   if (!Number.isSafeInteger(assignmentId) || assignmentId <= 0) return json(400, { error: 'A valid assignment ID is required.' });
 
   const { result, assignment } = await loadAssignment(assignmentId);
@@ -328,6 +415,8 @@ async function handle(request) {
   }
 
   const assignedName = clean(assignment.activeEmployeeName || assignment.scheduledEmployeeName, 100);
+  if (action === 'undo') return undoStart(session, assignment, assignedName);
+  if (action === 'reopen') return reopenCompleted(session, assignment);
   if (slug(assignedName) !== slug(session.name)) {
     return json(403, { error: `This cleaning duty is assigned to ${assignedName || 'someone else'}.` });
   }

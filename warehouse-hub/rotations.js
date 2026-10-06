@@ -355,6 +355,8 @@
         const isMine=record&&[record.actualEmployeeId||record.employeeId].includes(Number(session().employeeId));
         const canCheck=isMine&&['scheduled','alternate_assigned','in_progress'].includes(record.status);
         const canChange=isLead()&&record&&!['completed','in_progress'].includes(record.status);
+        const canUndo=record?.status==='in_progress'&&(isMine||isLead());
+        const canReopen=record?.status==='completed'&&isAdmin();
         return `<div class="rotations-day">
           <div class="rotations-row">
             <div><div class="rotations-area">${esc(area)}</div>
@@ -363,7 +365,8 @@
               <small>${record?.alternateEmployeeId?'Backup: '+esc(personName(record.alternateEmployeeId)):'No alternate selected'}</small></div>
             <div><span class="rotations-badge ${status==='completed'?'done':status==='missed'?'warn':''}">${esc(status.replace(/_/g,' '))}</span></div>
           </div>
-          ${canCheck?`<div class="rotations-toolbar"><button class="action" type="button" data-clean-check="${record.id}" data-next="${record.status==='in_progress'?'finish':'start'}">${record.status==='in_progress'?'✓ Finish cleaning':'▶ Start cleaning'}</button></div>`:''}
+          ${canCheck||canUndo?`<div class="rotations-toolbar">${canCheck?`<button class="action" type="button" data-clean-check="${record.id}" data-next="${record.status==='in_progress'?'finish':'start'}">${record.status==='in_progress'?'✓ Finish cleaning':'▶ Start cleaning'}</button>`:''}${canUndo?`<button type="button" data-clean-check="${record.id}" data-next="undo">↺ Undo start</button>`:''}</div>`:''}
+          ${canReopen?`<div class="rotations-toolbar"><button type="button" data-clean-check="${record.id}" data-next="reopen">↺ Reopen (Admin)</button></div>`:''}
           ${canChange?`<div class="rotations-toolbar">
             <button type="button" data-today-reassign="${record.id}">Change assignment</button>
             <button type="button" class="danger" data-today-absent="${record.id}">${record.alternateEmployeeId?'Absent → use backup':'Mark absent'}</button>
@@ -389,6 +392,8 @@
     if(busy)return;
     const row=data.assignments.find(a=>a.id===id);
     if(!row)return;
+    if(action==='undo'&&!confirm('Undo this start? The duty goes back to Scheduled.'))return;
+    if(action==='reopen'&&!confirm('Reopen this completed duty? It goes back to Scheduled and the Bingo Coin from finishing is taken back.'))return;
     button.disabled=true;busy=true;
     try{
       const out=await fetchJSON(CHECKIN,{method:'POST',headers:{'Content-Type':'application/json'},
@@ -396,6 +401,8 @@
       await load(true);
       showMessage(action==='finish'?
         `Cleaning completed. 15 minutes credited.${out.bingoCoinAwarded?' One Bingo coin added.':''}`
+        :action==='undo'?'Start undone. The duty is back to Scheduled.'
+        :action==='reopen'?'Duty reopened. It is back to Scheduled and can be started again.'
         :'Cleaning started. Finish when your area is done.');
       document.dispatchEvent(new CustomEvent('hub-bingo-refresh'));
       document.dispatchEvent(new CustomEvent('hub-cleaning-refresh'));
