@@ -1,6 +1,7 @@
 const { Pool } = require('pg');
 const crypto = require('crypto');
 const hubCleaning = require('./_hub_cleaning');
+const hubPush = require('./_hub_push');
 
 const FAIRSHIFT_BASE = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
 const pool = new Pool({
@@ -210,15 +211,15 @@ async function upsertAnnouncement(body) {
   const title = text(body.title, 120), message = text(body.message, 1200), startDate = validDate(body.startDate), endDate = validDate(body.endDate);
   if (!title || !message || !startDate) throw new Error('Title, message, and start date are required.');
   const id = text(body.id, 80) || crypto.randomUUID();
-  await pool.query(`INSERT INTO hub_announcements(id,title,message,start_date,end_date,department,pinned,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,NOW()) ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,message=EXCLUDED.message,start_date=EXCLUDED.start_date,end_date=EXCLUDED.end_date,department=EXCLUDED.department,pinned=EXCLUDED.pinned,updated_at=NOW()`, [id, title, message, startDate, endDate || null, text(body.department, 80) || 'All teams', !!body.pinned]);
-  return { id };
+  const saved = await pool.query(`INSERT INTO hub_announcements(id,title,message,start_date,end_date,department,pinned,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,NOW()) ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,message=EXCLUDED.message,start_date=EXCLUDED.start_date,end_date=EXCLUDED.end_date,department=EXCLUDED.department,pinned=EXCLUDED.pinned,updated_at=NOW() RETURNING (xmax = 0) AS inserted`, [id, title, message, startDate, endDate || null, text(body.department, 80) || 'All teams', !!body.pinned]);
+  return { id, created: saved.rows[0]?.inserted === true, title, detail: message };
 }
 async function upsertPolicy(body) {
   const title = text(body.title, 140), summary = text(body.summary, 1600), effectiveDate = validDate(body.effectiveDate);
   if (!title || !summary || !effectiveDate) throw new Error('Title, summary, and effective date are required.');
   const id = text(body.id, 80) || crypto.randomUUID();
-  await pool.query(`INSERT INTO hub_policies(id,title,summary,effective_date,read_required,updated_at) VALUES($1,$2,$3,$4,$5,NOW()) ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,summary=EXCLUDED.summary,effective_date=EXCLUDED.effective_date,read_required=EXCLUDED.read_required,updated_at=NOW()`, [id, title, summary, effectiveDate, !!body.readRequired]);
-  return { id };
+  const saved = await pool.query(`INSERT INTO hub_policies(id,title,summary,effective_date,read_required,updated_at) VALUES($1,$2,$3,$4,$5,NOW()) ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,summary=EXCLUDED.summary,effective_date=EXCLUDED.effective_date,read_required=EXCLUDED.read_required,updated_at=NOW() RETURNING (xmax = 0) AS inserted`, [id, title, summary, effectiveDate, !!body.readRequired]);
+  return { id, created: saved.rows[0]?.inserted === true, title, detail: summary };
 }
 async function deleteRecord(body) {
   const kind = text(body.kind, 30), id = text(body.id, 80);
@@ -284,6 +285,19 @@ exports.handler = async function handler(event) {
     let result = null;
     if (body.action === 'upsertAnnouncement') result = await upsertAnnouncement(body);
     else if (body.action === 'upsertPolicy') result = await upsertPolicy(body);
+    if (result?.created) {
+      const isPolicy = body.action === 'upsertPolicy';
+      await hubPush.sendAdmins(pool, {
+        category: isPolicy ? 'policy' : 'announcement',
+        eventKey: `${isPolicy ? 'policy' : 'announcement'}-created:${result.id}`,
+        title: `${isPolicy ? '📋 New policy' : '📣 New announcement'}: ${result.title}`,
+        body: `${result.detail}${hubSession(event)?.name ? ` · Posted by ${hubSession(event).name}` : ''}`,
+        url: '/warehouse-hub/',
+        tag: `${isPolicy ? 'policy' : 'announcement'}-${result.id}`,
+        excludeName: hubSession(event)?.name || '',
+      });
+    }
+    if (result) result = { id: result.id };
     else if (body.action === 'deleteAnnouncement') { body.kind = 'announcement'; await deleteRecord(body); }
     else if (body.action === 'deletePolicy') { body.kind = 'policy'; await deleteRecord(body); }
     else return json(400, { error: 'Unsupported action.' });

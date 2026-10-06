@@ -365,6 +365,7 @@ async function notifyStockTransition(previous,next){
   if(after<=before)return;
   const item=rowToItem(next);
   await sendAdminPush(pool,{
+    category:'inventory_stock',
     eventKey:'inventory-stock:'+item.id+':'+after+':'+new Date(next.updated_at).getTime(),
     title:'Warehouse Inventory · '+(after===2?'Out of stock':'Low stock'),
     body:item.itemName+' · '+(item.department||'Warehouse')+' · '+(item.quantity??'?')+' '+(item.unitType||'units')+' remaining',
@@ -1042,6 +1043,7 @@ exports.handler = async function handler(event) {
       const created = reqToObj(r.rows[0]);
       // Keep the existing in-app badge; send Web Push only to opted-in Admin devices.
       await sendAdminPush(pool,{
+        category:'inventory_requests',
         eventKey:'inventory-request:'+created.id+':created',
         title:(created.urgency==='Urgent'||created.urgency==='High'?'⚠️ ':'')+'New inventory request',
         body:created.itemName+' · '+(created.department||'Warehouse')+
