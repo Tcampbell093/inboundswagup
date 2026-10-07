@@ -112,3 +112,13 @@
 .edit-banner{background:#fff4ec;border:1px solid #f3c3aa;color:#a94a22;border-radius:10px;padding:9px 11px;font-size:12px;font-weight:800;margin-bottom:10px}
 .edit-banner .linkbtn{border:0;background:none;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit}
 form.editing{outline:2px solid #f3c3aa;outline-offset:6px;border-radius:12px}
+
+/* Policy card: compact rows that open the full policy */
+.policy-open{width:100%;border:0;border-top:1px solid var(--line);background:none;text-align:left;font:inherit;color:inherit;cursor:pointer;grid-template-columns:1fr auto;padding:13px 0}
+.policy-open:first-child{border-top:0;padding-top:0}
+.policy-open .policy-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.policy-open:hover .policy-title{text-decoration:underline;text-underline-offset:3px}
+.policy-chevron{font-size:22px;color:#9aa39e;line-height:1}
+.bank-item.focused{border-color:#f3c3aa;box-shadow:0 0 0 3px rgba(243,110,45,.12)}
+#todayAnnouncements .clamp{-webkit-line-clamp:3;line-clamp:3}
+#todayAnnouncements .clamp.expanded{-webkit-line-clamp:unset;line-clamp:unset}

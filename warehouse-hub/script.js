@@ -38,7 +38,7 @@
   }
   function activeAnnouncements(date) { return feed.announcements.filter((a) => a.startDate <= date && (!a.endDate || a.endDate >= date)); }
   function policiesForDate(date) { return feed.policies.filter((p) => p.effectiveDate === date); }
-  function currentPolicies() { const t = today(); return feed.policies.filter((p) => p.effectiveDate <= t).slice(0, 4); }
+  function currentPolicies() { const t = today(); return feed.policies.filter((p) => p.effectiveDate <= t).slice(0, 3); }
 
   function setView(view) {
     const isToday = view === 'today';
@@ -140,11 +140,13 @@
     const pol = currentPolicies();
     $('policyCount').textContent = `${pol.length} current`;
     $('todayPolicies').innerHTML = pol.length
-      ? pol.map((p) => `<div class="policy-row"><div><div class="policy-title">${escapeHtml(p.title)}</div><div class="policy-meta">Effective ${escapeHtml(fmtDay(p.effectiveDate))}${p.readRequired ? ' • <b class="ack-inline">Read required</b>' : ''}</div><div class="policy-summary clamp">${escapeHtml(p.summary)}</div></div></div>`).join('')
+      // Titles only, so the card stays the same size however long a policy
+      // is; tapping one opens its full text in the Policy bank.
+      ? pol.map((p) => `<button type="button" class="policy-row policy-open" data-policy-id="${escapeHtml(p.id)}"><div><div class="policy-title">${escapeHtml(p.title)}</div><div class="policy-meta">Effective ${escapeHtml(fmtDay(p.effectiveDate))}${p.readRequired ? ' • <b class="ack-inline">Read required</b>' : ''}</div></div><span class="policy-chevron" aria-hidden="true">›</span></button>`).join('')
       : '<div class="empty">No policy updates have been published.</div>';
     $('policyBankNote').textContent = feed.policies.length ? `${feed.policies.length} polic${feed.policies.length === 1 ? 'y' : 'ies'} on file` : '';
     clampLongText($('todayAnnouncements'));
-    clampLongText($('todayPolicies'));
+    $('todayPolicies').querySelectorAll('[data-policy-id]').forEach((b) => b.addEventListener('click', () => openPolicyBank(b.dataset.policyId)));
     if ($('policyBank')?.open) renderPolicyBank();
   }
 
@@ -175,17 +177,23 @@
     const rows = all.filter((p) => !q || `${p.title} ${p.summary}`.toLowerCase().includes(q));
     $('policyBankCount').textContent = q ? `${rows.length} of ${all.length} policies` : `${all.length} polic${all.length === 1 ? 'y' : 'ies'}`;
     $('policyBankList').innerHTML = rows.length
-      ? rows.map((p) => `<article class="bank-item"><div class="bank-head"><h4>${escapeHtml(p.title)}</h4>${p.effectiveDate > t ? '<span class="smallpill">Upcoming</span>' : ''}${p.readRequired ? '<span class="ack">Read required</span>' : ''}</div><div class="policy-meta">Effective ${escapeHtml(fmtDay(p.effectiveDate))}</div><div class="policy-summary clamp">${escapeHtml(p.summary)}</div></article>`).join('')
+      ? rows.map((p) => `<article class="bank-item" data-bank-id="${escapeHtml(p.id)}"><div class="bank-head"><h4>${escapeHtml(p.title)}</h4>${p.effectiveDate > t ? '<span class="smallpill">Upcoming</span>' : ''}${p.readRequired ? '<span class="ack">Read required</span>' : ''}</div><div class="policy-meta">Effective ${escapeHtml(fmtDay(p.effectiveDate))}</div><div class="policy-summary clamp">${escapeHtml(p.summary)}</div></article>`).join('')
       : `<div class="empty">${all.length ? 'No policies match this search.' : 'No policies have been published.'}</div>`;
     clampLongText($('policyBankList'));
   }
-  function openPolicyBank() {
+  function openPolicyBank(focusId = '') {
     $('policyBankSearch').value = '';
     if (!$('policyBank').open) $('policyBank').showModal();
     renderPolicyBank(); // after opening, so long text can be measured
+    const item = focusId && [...$('policyBankList').querySelectorAll('[data-bank-id]')].find((el) => el.dataset.bankId === focusId);
+    if (!item) return;
+    item.classList.add('focused');
+    const text = item.querySelector('.clamp');
+    if (text && !text.classList.contains('expanded')) item.querySelector('.read-more')?.click();
+    item.scrollIntoView({ block: 'start' });
   }
-  $('policyBankBtn')?.addEventListener('click', openPolicyBank);
-  $('policyBankSearch')?.addEventListener('input', renderPolicyBank);
+  $('policyBankBtn')?.addEventListener('click', () => openPolicyBank());
+  $('policyBankSearch')?.addEventListener('input', () => renderPolicyBank());
 
   // Announcements and policies an admin marked "pop up" open in a window the
   // first time this browser opens the Hub each day, so nobody misses them.
