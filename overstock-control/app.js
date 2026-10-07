@@ -9,9 +9,13 @@
   const norm=v=>String(v??'').trim().toLowerCase();
   const cmp=(a,b)=>String(a||'').localeCompare(String(b||''),undefined,{numeric:true,sensitivity:'base'});
   const time=x=>Number(x?.updatedAt||x?.createdAt||0);
-  const fmt=v=>{try{return v?new Date(v).toLocaleString([],{month:'short',day:'numeric',year:'numeric'}):'—'}catch{return'—'}};
+  // One formatter each, reused: toLocaleString with options builds a new one
+  // per call, which made formatting thousands of dates slow. Same output.
+  const dateFormat=new Intl.DateTimeFormat([],{month:'short',day:'numeric',year:'numeric'});
+  const dateTimeFormat=new Intl.DateTimeFormat([],{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+  const fmt=v=>{try{return v?dateFormat.format(new Date(v)):'—'}catch{return'—'}};
   const ago=v=>{const ms=Date.now()-Number(v||0),sec=Math.max(0,Math.floor(ms/1000));if(sec<10)return'now';if(sec<60)return`${sec}s`;const min=Math.floor(sec/60);if(min<60)return`${min}m`;const hr=Math.floor(min/60);if(hr<24)return`${hr}h`;return`${Math.floor(hr/24)}d`};
-  const fullFmt=v=>{try{return v?new Date(v).toLocaleString([],{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'—'}catch{return'—'}};
+  const fullFmt=v=>{try{return v?dateTimeFormat.format(new Date(v)):'—'}catch{return'—'}};
   const container=id=>data.containers.find(c=>String(c.id)===String(id));
   const items=id=>data.entries.filter(e=>String(e.containerId)===String(id));
   const units=id=>items(id).reduce((n,e)=>n+Number(e.quantity||0),0);
@@ -199,15 +203,77 @@
     if(prefill)setTimeout(()=>input?.select(),30);
   }
 
-  function globalResultScore(q,values){
-    const fields=values.filter(v=>v!==null&&v!==undefined).map(v=>String(v));
-    const nq=norm(q);
+  // Search index, rebuilt only when the data changes (the page swaps in new
+  // arrays whenever it reloads or saves). Typing then just compares prepared
+  // lowercase text instead of re-looking-up boxes and re-formatting ~10k dates
+  // on every keystroke. Labels are built only for the results shown.
+  let searchIndex=null,searchIndexFor=[];
+  function globalSearchIndex(){
+    const sources=[data.entries,data.donations,data.containers,data.activities];
+    if(searchIndex&&sources.every((list,i)=>list===searchIndexFor[i]))return searchIndex;
+    const list=v=>Array.isArray(v)?v:[];
+    const boxes=new Map(list(data.containers).map(c=>[String(c.id),c]));
+    const byBox=new Map();
+    list(data.entries).forEach(e=>{const k=String(e.containerId||'');if(!byBox.has(k))byBox.set(k,[]);byBox.get(k).push(e)});
+    const index=[];
+    const add=(rec,fields)=>{rec.fields=fields.filter(v=>v!==null&&v!==undefined&&v!=='').map(norm);index.push(rec)};
+
+    list(data.entries).filter(e=>norm(e.action)!=='donated').forEach(e=>{
+      const c=boxes.get(String(e.containerId));
+      const loc=c?.currentLocation||e.location||'No location';
+      const code=c?.code||e.containerCode||'No box';
+      const original=e.originalAssociate||e.associate||'Unknown';
+      const changed=norm(e.sourceType)==='excel-location-sync'?'Excel Sync':(e.lastChangedBy||original);
+      const when=e.lastChangedAt||e.updatedAt||e.createdAt;
+      add({kind:'entry',id:e.id,sort:time(e),title:`PO ${e.po||'—'}`,build:()=>({badge:'Current inventory',
+        what:`${e.category||'Uncategorized'} · ${Number(e.quantity||0).toLocaleString()} units · ${e.action||'Required'}`,
+        where:`${loc} · ${code}`,who:`Originally ${original} · Last changed by ${changed}`,when:fullFmt(when)})},
+      [e.po,e.deliveryId,e.category,e.quantity,e.action,e.status,e.note,loc,code,original,changed,fmt(when),fullFmt(when)]);
+    });
+
+    list(data.donations).forEach(d=>{
+      const original=d.originalAssociate||d.associate||'Unknown';
+      const donor=d.donatedBy||d.lastChangedBy||original;
+      const when=d.donatedAt||d.updatedAt||d.createdAt;
+      add({kind:'donation',id:d.id,po:d.po||'',sort:Number(when||0),title:`PO ${d.po||'—'}`,build:()=>({badge:'Donation Pool',
+        what:`${d.category||'Uncategorized'} · ${Number(d.quantity||0).toLocaleString()} units · Donated`,
+        where:`Donation Pool · from ${d.containerCode||'Unknown box'}${d.location?` at ${d.location}`:''}`,
+        who:`Originally ${original} · Donated by ${donor}`,when:fullFmt(when)})},
+      [d.po,d.deliveryId,d.category,d.quantity,d.containerCode,d.location,d.note,original,donor,fmt(when),fullFmt(when),'donation','donated']);
+    });
+
+    list(data.containers).forEach(c=>{
+      const its=byBox.get(String(c.id))||[],poText=its.map(e=>e.po).filter(Boolean).join(' ');
+      const unitCount=its.reduce((n,e)=>n+Number(e.quantity||0),0);
+      const actor=c.createdBy||'Not recorded',when=c.updatedAt||c.createdAt;
+      add({kind:'box',id:c.id,sort:time(c),title:c.code||'Unnamed box',build:()=>({badge:'Container',
+        what:`${c.status||'Open'} · ${its.length} PO${its.length===1?'':'s'} · ${unitCount.toLocaleString()} units`,
+        where:c.currentLocation||'On cart / no assigned location',
+        who:`Created by ${actor}${c.createdSource?` via ${c.createdSource}`:''}`,when:fullFmt(when)})},
+      [c.code,c.currentLocation,c.status,c.notes,c.createdSource,c.createdBy,poText,fmt(when),fullFmt(when)]);
+    });
+
+    list(data.activities).forEach(a=>{
+      const c=boxes.get(String(a.containerId));
+      const loc=a.location||c?.currentLocation||'Location not recorded';
+      const code=a.containerCode||c?.code||'';
+      add({kind:'activity',id:a.id,entryId:a.entryId||'',containerId:a.containerId||'',activityType:a.type||'',po:a.po||'',
+        sort:Number(a.createdAt||0),title:a.summary||'Overstock activity',build:()=>({badge:'Recent activity',
+        what:a.po?`PO ${a.po}`:(code||'Overstock update'),where:`${loc}${code?` · ${code}`:''}`,
+        who:a.actor||'Unknown',when:fullFmt(a.createdAt)})},
+      [a.actor,a.summary,a.po,a.containerCode,a.location,loc,code,fmt(a.createdAt),fullFmt(a.createdAt),a.type]);
+    });
+
+    searchIndex=index;searchIndexFor=sources;
+    return index;
+  }
+
+  function globalResultScore(nq,fields){
     let score=0;
-    for(const value of fields){
-      const n=norm(value);
-      if(n===nq)score=Math.max(score,100);
-      else if(n.startsWith(nq))score=Math.max(score,70);
-      else if(n.includes(nq))score=Math.max(score,40);
+    for(const n of fields){
+      if(n===nq)return 100;
+      if(score<70&&n.startsWith(nq))score=70;
+      else if(score<40&&n.includes(nq))score=40;
     }
     return score;
   }
@@ -219,67 +285,14 @@
     if(clear)clear.hidden=!q;
     if(!q){results.hidden=true;results.innerHTML='';return}
 
-    const rows=[];
-    (Array.isArray(data.entries)?data.entries:[]).filter(e=>norm(e.action)!=='donated').forEach(e=>{
-      const c=container(e.containerId);
-      const loc=c?.currentLocation||e.location||'No location';
-      const code=c?.code||e.containerCode||'No box';
-      const original=e.originalAssociate||e.associate||'Unknown';
-      const changed=norm(e.sourceType)==='excel-location-sync'?'Excel Sync':(e.lastChangedBy||original);
-      const when=e.lastChangedAt||e.updatedAt||e.createdAt;
-      const fields=[e.po,e.deliveryId,e.category,e.quantity,e.action,e.status,e.note,loc,code,original,changed,fmt(when),fullFmt(when)];
-      const score=globalResultScore(q,fields);
-      if(score)rows.push({kind:'entry',id:e.id,sort:time(e),score,
-        title:`PO ${e.po||'—'}`,badge:'Current inventory',
-        what:`${e.category||'Uncategorized'} · ${Number(e.quantity||0).toLocaleString()} units · ${e.action||'Required'}`,
-        where:`${loc} · ${code}`,
-        who:`Originally ${original} · Last changed by ${changed}`,
-        when:fullFmt(when)});
-    });
-
-    (Array.isArray(data.donations)?data.donations:[]).forEach(d=>{
-      const original=d.originalAssociate||d.associate||'Unknown';
-      const donor=d.donatedBy||d.lastChangedBy||original;
-      const when=d.donatedAt||d.updatedAt||d.createdAt;
-      const fields=[d.po,d.deliveryId,d.category,d.quantity,d.containerCode,d.location,d.note,original,donor,fmt(when),fullFmt(when),'donation','donated'];
-      const score=globalResultScore(q,fields);
-      if(score)rows.push({kind:'donation',id:d.id,po:d.po||'',sort:Number(when||0),score,
-        title:`PO ${d.po||'—'}`,badge:'Donation Pool',
-        what:`${d.category||'Uncategorized'} · ${Number(d.quantity||0).toLocaleString()} units · Donated`,
-        where:`Donation Pool · from ${d.containerCode||'Unknown box'}${d.location?` at ${d.location}`:''}`,
-        who:`Originally ${original} · Donated by ${donor}`,
-        when:fullFmt(when)});
-    });
-
-    (Array.isArray(data.containers)?data.containers:[]).forEach(c=>{
-      const its=items(c.id),poText=its.map(e=>e.po).filter(Boolean).join(' ');
-      const actor=c.createdBy||'Not recorded',when=c.updatedAt||c.createdAt;
-      const fields=[c.code,c.currentLocation,c.status,c.notes,c.createdSource,c.createdBy,poText,fmt(when),fullFmt(when)];
-      const score=globalResultScore(q,fields);
-      if(score)rows.push({kind:'box',id:c.id,sort:time(c),score,
-        title:c.code||'Unnamed box',badge:'Container',
-        what:`${c.status||'Open'} · ${its.length} PO${its.length===1?'':'s'} · ${units(c.id).toLocaleString()} units`,
-        where:c.currentLocation||'On cart / no assigned location',
-        who:`Created by ${actor}${c.createdSource?` via ${c.createdSource}`:''}`,
-        when:fullFmt(when)});
-    });
-
-    (Array.isArray(data.activities)?data.activities:[]).forEach(a=>{
-      const c=container(a.containerId);
-      const loc=a.location||c?.currentLocation||'Location not recorded';
-      const code=a.containerCode||c?.code||'';
-      const fields=[a.actor,a.summary,a.po,a.containerCode,a.location,loc,code,fmt(a.createdAt),fullFmt(a.createdAt),a.type];
-      const score=globalResultScore(q,fields);
-      if(score)rows.push({kind:'activity',id:a.id,entryId:a.entryId||'',containerId:a.containerId||'',activityType:a.type||'',po:a.po||'',sort:Number(a.createdAt||0),score,
-        title:a.summary||'Overstock activity',badge:'Recent activity',
-        what:a.po?`PO ${a.po}`:(code||'Overstock update'),
-        where:`${loc}${code?` · ${code}`:''}`,
-        who:a.actor||'Unknown',
-        when:fullFmt(a.createdAt)});
-    });
-
-    rows.sort((a,b)=>b.score-a.score||b.sort-a.sort||cmp(a.title,b.title));
-    const visible=rows.slice(0,40);
+    const matches=[];
+    for(const rec of globalSearchIndex()){
+      const score=globalResultScore(q,rec.fields);
+      if(score)matches.push({rec,score});
+    }
+    matches.sort((a,b)=>b.score-a.score||b.rec.sort-a.rec.sort||cmp(a.rec.title,b.rec.title));
+    const rows=matches;
+    const visible=rows.slice(0,40).map(m=>({...m.rec,...m.rec.build(),score:m.score}));
     results.hidden=false;
     results.innerHTML=`
       <div class="overstock-search-summary"><b>${rows.length}</b> match${rows.length===1?'':'es'} for “${esc(input.value.trim())}”${rows.length>visible.length?` · showing first ${visible.length}`:''}</div>
@@ -308,7 +321,10 @@
     });
   }
 
-  function render(){lists();syncPill();renderDonationPoolButton();const stats=renderStats();renderCart(stats);renderLocations(stats);renderBoxes(stats);renderLog();renderActivityFeed();renderGlobalSearch()}
+  function render(){lists();syncPill();renderDonationPoolButton();const stats=renderStats();renderCart(stats);renderLocations(stats);renderBoxes(stats);renderLog();renderActivityFeed();renderGlobalSearch()
+    // Prepare the search text in the background so the first keystroke is fast.
+    (window.requestIdleCallback||(f=>setTimeout(f,300)))(()=>globalSearchIndex());
+  }
   async function openBoxHistory(reference=''){
     await loadHubSession();
     if(!requireHubUser())return;
@@ -507,7 +523,9 @@
   };
   $('siSwitchContainer').onclick=()=>{intake.container=null;$('siItemStep').hidden=true;$('siContainerStep').hidden=false;$('siContainerCode').value='';$('siExistingContainer').hidden=true};$('stockIntakeBtn').onclick=()=>openIntake();$('stockIntakeCancel').onclick=()=>{if(!intake.items.length||confirm('Cancel? Saved items will remain in Houston.'))closeIntake()};$('stockIntakeComplete').onclick=()=>{toast(`Stock Intake complete · ${intake.items.length} item(s) added.`);closeIntake()};
   $('activityFeedHide').onclick=()=>setActivityHidden(true);$('activityFeedShow').onclick=()=>setActivityHidden(false);$('refreshBtn').onclick=()=>load(true);$('donationPoolBtn').onclick=()=>openDonationPool();
-  $('globalSearchInput').oninput=renderGlobalSearch;
+  // Wait for a short pause in typing before searching.
+  let globalSearchTimer=0;
+  $('globalSearchInput').oninput=()=>{clearTimeout(globalSearchTimer);globalSearchTimer=setTimeout(renderGlobalSearch,150)};
   $('globalSearchClear').onclick=()=>{$('globalSearchInput').value='';renderGlobalSearch();$('globalSearchInput').focus()};
   $('donationSearch').oninput=renderDonationPool;
   $('donationSearchClear').onclick=()=>{$('donationSearch').value='';renderDonationPool();$('donationSearch').focus()};
