@@ -85,7 +85,7 @@
     }).join('');
     return `<div class="lb-card"><h3>UPH</h3><p class="lb-date">Yesterday = ${esc(d.lastWorkdayLabel)} · Month = ${esc(d.monthName)}</p>
       <table class="lb-table"><thead><tr><th></th><th class="lb-num">Yesterday</th><th class="lb-num">Month avg</th><th class="lb-num">Today's minimum</th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="lb-note">Month avg is total units ÷ total hours, like the daily report. Today's minimum is what each team needs to average today and every workday left this month (Mon–Fri) to finish ${esc(d.monthName)} at its goal. Orange means the team is behind and has to beat its goal to catch up.</p></div>`;
+      <p class="lb-note">Month avg is the average of the daily UPHs entered this month. Today's minimum is what each team needs to average today and every workday left this month (Mon–Fri) to finish ${esc(d.monthName)} at its goal. Orange means the team is behind and has to beat its goal to catch up.</p></div>`;
   }
 
   function leadTools(d) {
@@ -94,14 +94,13 @@
     if (panel === 'board') {
       const day = uphDay || d.lastWorkday;
       const past = (dept) => (d.history || []).find((h) => h.date === day && h.department === dept) || {};
-      form = `<div class="lb-card lb-form"><h3>Morning board · ${esc(d.dateLabel)}</h3><p class="lb-date">This morning's POs and units, plus UPH and hours for a workday. Everyone sees it as soon as you save.</p>
-        <p class="lb-date">UPH and hours for <input type="date" data-lb-day value="${esc(day)}" max="${esc(d.lastWorkday)}" style="text-align:left"> ${day === d.lastWorkday ? '(last workday)' : '(correcting a past day)'}</p>
-        <table class="lb-table"><thead><tr><th></th><th class="lb-num">POs</th><th class="lb-num">Units</th><th class="lb-num">UPH</th><th class="lb-num">Hours</th><th class="lb-num">Goal</th></tr></thead><tbody>
+      form = `<div class="lb-card lb-form"><h3>Morning board · ${esc(d.dateLabel)}</h3><p class="lb-date">This morning's POs and units, plus UPH for a workday. Everyone sees it as soon as you save.</p>
+        <p class="lb-date">UPH for <input type="date" data-lb-day value="${esc(day)}" max="${esc(d.lastWorkday)}" style="text-align:left"> ${day === d.lastWorkday ? '(last workday)' : '(correcting a past day)'}</p>
+        <table class="lb-table"><thead><tr><th></th><th class="lb-num">POs</th><th class="lb-num">Units</th><th class="lb-num">UPH</th><th class="lb-num">Goal</th></tr></thead><tbody>
         ${d.board.map((r) => { const u = d.uph.find((x) => x.department === r.department) || {}; const h = past(r.department); return `<tr data-dept="${esc(r.department)}"><td><b>${esc(r.department)}</b></td>
           <td class="lb-num"><input inputmode="numeric" name="pos" value="${r.pos ?? ''}" style="width:64px" aria-label="${esc(r.department)} POs"></td>
           <td class="lb-num"><input inputmode="numeric" name="units" value="${r.units ?? ''}" style="width:82px" aria-label="${esc(r.department)} units"></td>
           <td class="lb-num"><input inputmode="decimal" name="uph" value="${h.uph ?? ''}" style="width:72px" aria-label="${esc(r.department)} UPH"></td>
-          <td class="lb-num"><input inputmode="decimal" name="hours" value="${h.hours ?? ''}" style="width:64px" aria-label="${esc(r.department)} hours"></td>
           <td class="lb-num"><input inputmode="numeric" name="goal" value="${u.goal ?? ''}" style="width:58px" aria-label="${esc(r.department)} goal"></td></tr>`; }).join('')}
         </tbody></table>
         <div class="lb-actions" style="margin-top:12px"><button type="button" data-lb-save="board">Save board</button><button type="button" class="ghost" data-lb-close>Cancel</button></div></div>`;
@@ -150,7 +149,7 @@
     host.querySelectorAll('[data-lb-close]').forEach((b) => { b.onclick = () => { panel = ''; render(); }; });
     host.querySelectorAll('[data-lb-save]').forEach((b) => { b.onclick = () => save(b.dataset.lbSave, b); });
     host.querySelector('[data-lb-day]')?.addEventListener('change', (e) => {
-      // Keep typed POs/units; reload UPH/hours for the chosen day.
+      // Keep typed POs/units; reload UPH for the chosen day.
       const typed = [...host.querySelectorAll('tr[data-dept]')].map((tr) => [tr.dataset.dept, tr.querySelector('[name=pos]').value, tr.querySelector('[name=units]').value]);
       uphDay = e.target.value;
       render();
@@ -163,7 +162,7 @@
       ? { action: 'saveBoard', uphDate: uphDay || state.lastWorkday, board: [...host.querySelectorAll('tr[data-dept]')].map((tr) => ({
         department: tr.dataset.dept,
         pos: tr.querySelector('[name=pos]').value, units: tr.querySelector('[name=units]').value,
-        uph: tr.querySelector('[name=uph]').value, hours: tr.querySelector('[name=hours]').value, goal: tr.querySelector('[name=goal]').value,
+        uph: tr.querySelector('[name=uph]').value, goal: tr.querySelector('[name=goal]').value,
       })) }
       : { action: 'saveAssignments', assignments: [...host.querySelectorAll('tr[data-id]')].map((tr) => ({ id: Number(tr.dataset.id), department: tr.querySelector('select').value })) };
     button.disabled = true;

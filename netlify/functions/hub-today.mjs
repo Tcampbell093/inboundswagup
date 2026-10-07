@@ -74,7 +74,7 @@ async function ensureSchema(db) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (work_date, department)
     );
-    -- Hours let the month's UPH be total units / total hours, like the report.
+    -- Hours are kept if entered but no longer used in the month average.
     ALTER TABLE hub_labor_uph ADD COLUMN IF NOT EXISTS hours NUMERIC;
     CREATE TABLE IF NOT EXISTS hub_labor_goals (
       department TEXT PRIMARY KEY,
@@ -117,29 +117,18 @@ function workdaysInMonth(text) {
 }
 const label = (text, opts) => asDate(text).toLocaleDateString('en-US', { timeZone: 'UTC', ...opts });
 
-// Month UPH = total units / total hours (units = UPH x hours), matching the
-// report. Days entered without hours fall back to a plain average.
+// Month UPH = plain average of the daily UPHs entered this month.
 function monthUph(entries) {
   if (!entries.length) return null;
-  if (entries.every((e) => e.hours > 0)) {
-    const hours = entries.reduce((sum, e) => sum + e.hours, 0);
-    return entries.reduce((sum, e) => sum + e.uph * e.hours, 0) / hours;
-  }
   return entries.reduce((sum, e) => sum + e.uph, 0) / entries.length;
 }
 
-// UPH needed today and every remaining workday for the month to finish at
-// goal. Only entered days count as done, so a missed entry doesn't drag the
-// target. With hours, remaining days are assumed to run the month's average
-// hours: need = goal + (goal x hours so far - units so far) / (avg hours x days left).
+// UPH needed today and every remaining workday for the month's average to
+// finish at goal: (goal x workdays in month - UPH already entered) / days left.
+// Only entered days count as done, so a missed entry doesn't drag the target.
 function minimumToday(goal, entries, total) {
   const left = total - entries.length;
   if (!goal || left <= 0) return null;
-  if (entries.length && entries.every((e) => e.hours > 0)) {
-    const hours = entries.reduce((sum, e) => sum + e.hours, 0);
-    const units = entries.reduce((sum, e) => sum + e.uph * e.hours, 0);
-    return Math.max(0, Math.ceil(goal + (goal * hours - units) / ((hours / entries.length) * left)));
-  }
   const banked = entries.reduce((sum, e) => sum + e.uph, 0);
   return Math.max(0, Math.ceil((goal * total - banked) / left));
 }
