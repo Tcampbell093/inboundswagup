@@ -91,6 +91,25 @@ function normalizePo(value) {
   return str(value, 120).replace(/^PO[-\s]*/i, '').trim().toUpperCase();
 }
 
+// Workbook box-code typos: "0SC-157" (zero), "OSC--208", "osc 205", "OSC205"
+// all mean the same box as "OSC-157" etc.
+function normalizeBoxCode(value) {
+  let code = str(value, 120).toUpperCase().replace(/\s+/g, '-');
+  code = code.replace(/^0SC(?=[-\d])/, 'OSC').replace(/-{2,}/g, '-').replace(/-+$/, '');
+  return code.replace(/^OSC(?=\d)/, 'OSC-');
+}
+
+// Workbook location typos: "car", "CAR-", "E6", "e - 6" -> "CAR", "E-6".
+function normalizeLocation(value) {
+  const loc = str(value, 120).toUpperCase().replace(/\s+/g, '').replace(/-+$/, '');
+  const shelf = /^E-?(\d{1,2})$/.exec(loc);
+  return shelf ? `E-${Number(shelf[1])}` : loc;
+}
+
+// New boxes are only created from codes shaped like a real box ("OSC-205",
+// "STICKERS-005"), so a stray "f" in the box column isn't turned into a box.
+const BOX_CODE_SHAPE = /^[A-Z]{2,}-\d{1,4}$/;
+
 function normalizeOperationalDate(value) {
   const raw = str(value, 40);
   let match = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
@@ -390,6 +409,30 @@ function excelConnectionState() {
   };
 }
 
+async function ensureExcelRowMemorySchema(db) {
+  await db.query(`CREATE TABLE IF NOT EXISTS overstock_excel_row_memory (
+    row_key TEXT PRIMARY KEY,
+    location TEXT NOT NULL DEFAULT '',
+    container_code TEXT NOT NULL DEFAULT '',
+    seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+}
+
+// What each workbook row said at this sync, for spotting edits next time.
+async function rememberExcelRows(db, rows, rowKey) {
+  const byKey = new Map();
+  for (const raw of rows) {
+    const key = rowKey(raw);
+    if (key === 'P:') continue;
+    byKey.set(key, { row_key: key, location: normalizeLocation(raw?.location), container_code: normalizeBoxCode(raw?.containerCode) });
+  }
+  if (!byKey.size) return;
+  await db.query(`INSERT INTO overstock_excel_row_memory(row_key,location,container_code,seen_at)
+    SELECT row_key,location,container_code,NOW() FROM json_to_recordset($1::json) AS x(row_key TEXT,location TEXT,container_code TEXT)
+    ON CONFLICT(row_key) DO UPDATE SET location=EXCLUDED.location,container_code=EXCLUDED.container_code,seen_at=NOW()`,
+  [JSON.stringify([...byKey.values()])]);
+}
+
 async function importExcelLocations(rawRows, rawAssociates) {
   // The workbook can exceed 1,000 rows. Reject oversized requests explicitly
   // rather than silently ignoring later corrections.
@@ -436,14 +479,95 @@ async function importExcelLocations(rawRows, rawAssociates) {
       }
     }
 
+    // Only real Overstock locations (plus CAR, the cart/staging area) are
+    // accepted, so a typo like "caro" or "F" is reported instead of saved.
+    const knownLocations = new Set([
+      ...(Array.isArray(masters.overstockLocations) && masters.overstockLocations.length
+        ? masters.overstockLocations : Array.from({ length: 24 }, (_, i) => `E-${i + 1}`)),
+      'CAR',
+    ].map(normalizeLocation));
+
+    // A box's location is shared, but the workbook stores one per row, and
+    // Excel doesn't record when a cell was edited. So the server remembers what
+    // each row said at the last sync: a row whose location changed since then
+    // is the newest information. When a box's rows disagree:
+    //  - exactly one new location among changed rows -> it wins, box moves;
+    //  - no row changed (old leftovers) -> the box stays where Overstock has it;
+    //  - changed rows disagree with each other -> reported, box not moved.
+    // (The workbook script then copies the box's location onto all its rows.)
+    await ensureExcelRowMemorySchema(client);
+    const memoryRows = await client.query('SELECT row_key, location FROM overstock_excel_row_memory');
+    const memory = new Map(memoryRows.rows.map(row => [row.row_key, row.location]));
+    const firstRemembered = memory.size === 0; // nothing to compare against yet
+    const rowKey = (raw) => {
+      const deliveryId = str(raw?.deliveryId, 120).toUpperCase();
+      return deliveryId ? `D:${deliveryId}` : `P:${normalizePo(raw?.po)}`;
+    };
+    const changedSinceLastSync = (raw) => {
+      const before = memory.get(rowKey(raw));
+      if (before === undefined) return !firstRemembered; // a brand-new row counts as new information
+      return before !== normalizeLocation(raw?.location);
+    };
+    // Exact code first, so the real "OSC-157" wins over a typo box "0SC-157".
+    const findBox = (code) => containers.find(c => str(c?.code, 120).toUpperCase() === code)
+      || containers.find(c => normalizeBoxCode(c?.code) === code);
+    const boxCodesForRow = (raw) => {
+      const code = normalizeBoxCode(raw?.containerCode);
+      if (code) return [code];
+      const deliveryId = str(raw?.deliveryId, 120).toUpperCase();
+      const po = normalizePo(raw?.po);
+      const matched = deliveryId ? entries.filter(entry => str(entry?.deliveryId, 120).toUpperCase() === deliveryId) : [];
+      const items = matched.length ? matched : (po ? entries.filter(entry => normalizePo(entry?.po) === po) : []);
+      return [...new Set(items.map(entry => {
+        const box = containers.find(c => String(c.id) === String(entry?.containerId || ''));
+        return box ? normalizeBoxCode(box.code) : '';
+      }).filter(Boolean))];
+    };
+    const boxVotes = new Map();
+    for (const raw of rows) {
+      const loc = normalizeLocation(raw?.location);
+      if (isUnknownAssociate(str(raw?.associate, 120)) || !loc || !knownLocations.has(loc)) continue;
+      const fresh = changedSinceLastSync(raw);
+      for (const code of boxCodesForRow(raw)) {
+        if (!boxVotes.has(code)) boxVotes.set(code, { all: new Map(), fresh: new Map() });
+        const votes = boxVotes.get(code);
+        votes.all.set(loc, (votes.all.get(loc) || 0) + 1);
+        if (fresh) votes.fresh.set(loc, (votes.fresh.get(loc) || 0) + 1);
+      }
+    }
+    // code -> location every row of that box should use; null = real conflict.
+    const boxDecision = new Map();
+    result.boxNewestWins = 0;
+    result.boxLocationConflicts = 0;
+    for (const [code, votes] of boxVotes) {
+      if (votes.all.size < 2) continue;
+      const listed = [...votes.all].map(([loc, n]) => `${loc} x${n}`).join(', ');
+      const freshLocations = [...votes.fresh.keys()];
+      if (freshLocations.length === 1) {
+        boxDecision.set(code, freshLocations[0]);
+        result.boxNewestWins += 1;
+      } else if (freshLocations.length === 0) {
+        const current = normalizeLocation(findBox(code)?.currentLocation);
+        boxDecision.set(code, current || null);
+        if (!current) {
+          result.boxLocationConflicts += 1;
+          result.unresolved.push(`${code}: workbook rows disagree on its location (${listed}); box not created.`);
+        }
+      } else {
+        boxDecision.set(code, null);
+        result.boxLocationConflicts += 1;
+        result.unresolved.push(`${code}: rows were changed to different locations since the last sync (${[...votes.fresh].map(([loc, n]) => `${loc} x${n}`).join(', ')}); box not moved. Make those rows match.`);
+      }
+    }
+
     for (const raw of rows) {
       const po = normalizePo(raw?.po);
       const deliveryId = str(raw?.deliveryId, 120).toUpperCase();
       const associate = str(raw?.associate, 120);
       const category = str(raw?.category, 120);
       const operationalDate = normalizeOperationalDate(raw?.operationalDate);
-      const location = str(raw?.location, 120).toUpperCase();
-      const containerCode = str(raw?.containerCode, 120).toUpperCase();
+      let location = normalizeLocation(raw?.location);
+      const containerCode = normalizeBoxCode(raw?.containerCode);
       const key = deliveryId || po || '(blank row)';
 
       // Overstock should only receive workbook rows that have actually been
@@ -459,6 +583,21 @@ async function importExcelLocations(rawRows, rawAssociates) {
       if (!location) {
         result.skipped.push(`${key}: no Overstock location.`);
         continue;
+      }
+      if (!knownLocations.has(location)) {
+        result.unresolved.push(`${key}: "${str(raw?.location, 60)}" isn't an Overstock location; nothing moved.`);
+        continue;
+      }
+      // Rows of a box whose rows disagree all use the decided location (the
+      // newest change, or where Overstock already has it). A real conflict
+      // keeps the box where it is; items still get category, date and prep.
+      const decided = boxCodesForRow(raw).filter(code => boxDecision.has(code));
+      if (decided.length) {
+        const decision = boxDecision.get(decided[0]);
+        const box = findBox(decided[0]);
+        if (decision) location = decision;
+        else if (box) location = normalizeLocation(box.currentLocation) || location;
+        else continue;
       }
 
       let matches = deliveryId ? entries.filter(entry => str(entry?.deliveryId, 120).toUpperCase() === deliveryId) : [];
@@ -489,8 +628,12 @@ async function importExcelLocations(rawRows, rawAssociates) {
         }
 
         let targetContainer = containerCode
-          ? containers.find(container => str(container?.code, 120).toUpperCase() === containerCode)
+          ? findBox(containerCode)
           : null;
+        if (!targetContainer && !BOX_CODE_SHAPE.test(containerCode)) {
+          result.unresolved.push(`${key}: "${str(raw?.containerCode, 60)}" doesn't look like a box code; no box was created.`);
+          continue;
+        }
         if (!targetContainer) {
           targetContainer = cleanContainer({
             code: containerCode,
@@ -554,7 +697,7 @@ async function importExcelLocations(rawRows, rawAssociates) {
       }
       const matchingBoxIds = new Set(matches.map(entry => str(entry?.containerId, 160)));
       const currentBox = containers.find(container => String(container?.id) === [...matchingBoxIds][0]);
-      if (containerCode && (matchingBoxIds.size > 1 || (!deliveryId && matches.length > 1 && str(currentBox?.code, 120).toUpperCase() !== containerCode))) {
+      if (containerCode && (matchingBoxIds.size > 1 || (!deliveryId && matches.length > 1 && normalizeBoxCode(currentBox?.code) !== containerCode))) {
         result.unresolved.push(`${key}: multiple boxes match; select the item to move in Overstock Control.`);
         continue;
       }
@@ -592,7 +735,11 @@ async function importExcelLocations(rawRows, rawAssociates) {
       }
 
       if (containerCode) {
-        let target = containers.find(container => str(container?.code, 120).toUpperCase() === containerCode);
+        let target = findBox(containerCode);
+        if (!target && !BOX_CODE_SHAPE.test(containerCode)) {
+          result.unresolved.push(`${key}: "${str(raw?.containerCode, 60)}" doesn't look like a box code; item not moved.`);
+          continue;
+        }
         if (!target) {
           if (num(raw?.quantity, 0) <= 0) {
             result.unresolved.push(`${key}: cannot create a new box for a zero-quantity PO.`);
@@ -634,7 +781,7 @@ async function importExcelLocations(rawRows, rawAssociates) {
           const entry = entries[i];
           const isMatch = matchIds.has(String(entry.id));
           if (!isMatch && String(entry.containerId) !== targetId) continue;
-          const corrected = isMatch && (String(entry.containerId) !== targetId || str(entry.containerCode, 120).toUpperCase() !== containerCode);
+          const corrected = isMatch && (String(entry.containerId) !== targetId || normalizeBoxCode(entry.containerCode) !== containerCode);
           if (!corrected && str(entry.location, 120).toUpperCase() === location) continue;
           entries[i] = excelEntryUpdate(entry, associate, {
             ...(isMatch ? { containerId: targetId, containerCode } : {}),
@@ -653,7 +800,7 @@ async function importExcelLocations(rawRows, rawAssociates) {
       }
 
       const explicitContainer = containerCode
-        ? containers.find(container => str(container?.code, 120).toUpperCase() === containerCode)
+        ? findBox(containerCode)
         : null;
       const containerIds = new Set(matches.map(entry => str(entry?.containerId, 160)).filter(Boolean));
       if (explicitContainer?.id) containerIds.add(String(explicitContainer.id));
@@ -735,13 +882,13 @@ async function importExcelLocations(rawRows, rawAssociates) {
     // searchable and reopenable if a valid workbook entry references them.
     const referencedCodes = new Set(
       rows.filter(raw => str(raw?.associate, 120) && str(raw?.location, 120))
-        .map(raw => str(raw?.containerCode, 120).toUpperCase()).filter(Boolean)
+        .map(raw => normalizeBoxCode(raw?.containerCode)).filter(Boolean)
     );
     for (let i = 0; i < containers.length; i += 1) {
       const box = containers[i];
       if (!isExcelCreatedBox(box) || box.retainEmpty === true
         || str(box.status, 80).toLowerCase() === 'closed') continue;
-      if (referencedCodes.has(str(box.code, 120).toUpperCase())) continue;
+      if (referencedCodes.has(normalizeBoxCode(box.code))) continue;
       if (entries.some(entry => String(entry.containerId || '') === String(box.id))) continue;
       containers[i] = {
         ...box,
@@ -769,12 +916,87 @@ async function importExcelLocations(rawRows, rawAssociates) {
       [...excelActivities, ...(Array.isArray(data.overstockActivity) ? data.overstockActivity : [])].slice(0, 50);
     if (workbookAssociates.length) masters.associates = workbookAssociates;
     await persistBoxEvents(client, boxEvents);
+    await rememberExcelRows(client, rows, rowKey);
     await client.query(
       `UPDATE workflow_sync_state SET data_json=$1::jsonb, masters_json=$2::jsonb, updated_at=NOW() WHERE state_key='default'`,
       [JSON.stringify(data), JSON.stringify(masters)],
     );
     await client.query('COMMIT');
     return result;
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// One-time cleanup for boxes created from workbook typos ("0SC-157",
+// "OSC--208"). Each typo box is merged into its real box (items move, typo box
+// is closed) or, if there's no real box, renamed. dryRun only returns the plan.
+async function mergeTypoBoxes(dryRun = true) {
+  const db = pool();
+  await ensureBoxAuditSchema(db);
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const state = await client.query(`SELECT data_json, masters_json FROM workflow_sync_state WHERE state_key='default' LIMIT 1 FOR UPDATE`);
+    if (!state.rows.length) throw new Error('Houston workflow state is unavailable.');
+    const data = { ...(state.rows[0].data_json || {}) };
+    const filtered = filterDeleted(data);
+    const entries = filtered.entries.slice();
+    const containers = filtered.containers.slice();
+    const now = Date.now();
+    const boxEvents = [];
+    const plan = [];
+
+    for (let i = 0; i < containers.length; i += 1) {
+      const typo = containers[i];
+      const code = str(typo?.code, 120).toUpperCase();
+      const fixed = normalizeBoxCode(code);
+      // Only box-code typos ("0SC-157", "OSC--208"), not other names.
+      if (!fixed || fixed === code || !BOX_CODE_SHAPE.test(fixed)) continue;
+      const items = entries.filter(entry => String(entry?.containerId || '') === String(typo.id));
+      const real = containers.find(c => String(c.id) !== String(typo.id) && str(c?.code, 120).toUpperCase() === fixed);
+      // If both boxes hold a place and the typo box has items, merging would
+      // move those items to the real box's location: someone has to decide.
+      const conflict = Boolean(real) && items.length > 0
+        && normalizeLocation(typo.currentLocation) !== normalizeLocation(real.currentLocation);
+      plan.push({
+        from: code, to: fixed, action: conflict ? 'needs-decision' : real ? 'merge' : 'rename', items: items.length,
+        pos: items.map(entry => str(entry?.po, 40)).slice(0, 30),
+        fromLocation: str(typo.currentLocation, 60), toLocation: str(real?.currentLocation, 60),
+        locationsDiffer: Boolean(real) && normalizeLocation(typo.currentLocation) !== normalizeLocation(real.currentLocation),
+        fromStatus: str(typo.status, 30), toStatus: str(real?.status, 30),
+      });
+      if (dryRun || conflict) continue;
+      if (!real) {
+        containers[i] = { ...typo, code: fixed, updatedAt: now };
+        for (let j = 0; j < entries.length; j += 1) {
+          if (String(entries[j]?.containerId || '') === String(typo.id)) entries[j] = { ...entries[j], containerCode: fixed, updatedAt: now };
+        }
+        boxEvent(boxEvents, containers[i], 'renamed', 'Typo cleanup', 'Typo cleanup', { from: code, to: fixed });
+        continue;
+      }
+      // Items join the real box and take its location.
+      for (let j = 0; j < entries.length; j += 1) {
+        if (String(entries[j]?.containerId || '') !== String(typo.id)) continue;
+        entries[j] = { ...entries[j], containerId: real.id, containerCode: real.code, location: real.currentLocation, updatedAt: now };
+        boxEvent(boxEvents, typo, 'po-moved-out', 'Typo cleanup', 'Typo cleanup', { po: entries[j].po, to: real.code });
+        boxEvent(boxEvents, real, 'po-moved-in', 'Typo cleanup', 'Typo cleanup', { po: entries[j].po, from: code });
+      }
+      containers[i] = { ...typo, status: 'Closed', notes: `Merged into ${real.code} (typo cleanup).`, updatedAt: now };
+      boxEvent(boxEvents, containers[i], 'merged', 'Typo cleanup', 'Typo cleanup', { to: real.code, quantity: items.length });
+    }
+
+    if (!dryRun && plan.length) {
+      data.overstockEntries = entries;
+      data.overstockContainers = containers;
+      await persistBoxEvents(client, boxEvents);
+      await client.query(`UPDATE workflow_sync_state SET data_json=$1::jsonb, updated_at=NOW() WHERE state_key='default'`, [JSON.stringify(data)]);
+    }
+    await client.query(dryRun ? 'ROLLBACK' : 'COMMIT');
+    return { dryRun, plan };
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch {}
     throw error;
@@ -901,7 +1123,12 @@ async function excelPullChanges(db) {
     });
   }
   changes.sort((a, b) => (a.changedAt || 0) - (b.changedAt || 0));
-  return { since, cursor, firstPull: !saved.rows[0], changes };
+  // What each Daily Log row said at the last push, so the script can tell a
+  // row someone just edited (and leave it alone) from a stale one.
+  await ensureExcelRowMemorySchema(db);
+  const memory = await db.query('SELECT row_key, location FROM overstock_excel_row_memory');
+  const rowMemory = Object.fromEntries(memory.rows.map((row) => [row.row_key, row.location]));
+  return { since, cursor, firstPull: !saved.rows[0], changes, rowMemory };
 }
 
 async function ackExcelPull(db, cursor) {
@@ -1452,6 +1679,11 @@ export default async (request) => {
       if (!expected || !safeEqual(supplied, expected)) return json(401, { error: 'Excel sync authorization failed.' });
       const importResult = await importExcelLocations(body.rows, body.associates);
       return json(200, { ok: true, import: importResult, snapshot: await readSnapshot(pool()) });
+    }
+
+    if (action === 'mergeTypoBoxes') {
+      if (!excelKeyOk(request)) return json(401, { error: 'Excel sync authorization failed.' });
+      return json(200, await mergeTypoBoxes(body.dryRun !== false));
     }
 
     if (action === 'ackExcelPull') {
