@@ -1130,10 +1130,10 @@
   function renderAdmin() {
     if (!adminData) return;
     $('announcementAdminList').innerHTML = adminData.announcements.length
-      ? adminData.announcements.map((a) => `<div class="admin-row"><div><strong>${escapeHtml(a.title)}</strong><small>${escapeHtml(a.startDate)}${a.endDate ? ' → ' + escapeHtml(a.endDate) : ''}</small></div><div class="admin-row-actions">${popupToggle('announcement', a)}<button class="mini-delete" data-del-ann="${escapeHtml(a.id)}">Delete</button></div></div>`).join('')
+      ? adminData.announcements.map((a) => `<div class="admin-row"><div><strong>${escapeHtml(a.title)}</strong><small>${escapeHtml(a.startDate)}${a.endDate ? ' → ' + escapeHtml(a.endDate) : ''}</small></div><div class="admin-row-actions"><button class="mini-toggle" type="button" data-edit-ann="${escapeHtml(a.id)}">Edit</button>${popupToggle('announcement', a)}<button class="mini-delete" data-del-ann="${escapeHtml(a.id)}">Delete</button></div></div>`).join('')
       : '<div class="policy-meta">None posted.</div>';
     $('policyAdminList').innerHTML = adminData.policies.length
-      ? adminData.policies.map((p) => `<div class="admin-row"><div><strong>${escapeHtml(p.title)}</strong><small>Effective ${escapeHtml(p.effectiveDate)}</small></div><div class="admin-row-actions">${popupToggle('policy', p)}<button class="mini-delete" data-del-pol="${escapeHtml(p.id)}">Delete</button></div></div>`).join('')
+      ? adminData.policies.map((p) => `<div class="admin-row"><div><strong>${escapeHtml(p.title)}</strong><small>Effective ${escapeHtml(p.effectiveDate)}</small></div><div class="admin-row-actions"><button class="mini-toggle" type="button" data-edit-pol="${escapeHtml(p.id)}">Edit</button>${popupToggle('policy', p)}<button class="mini-delete" data-del-pol="${escapeHtml(p.id)}">Delete</button></div></div>`).join('')
       : '<div class="policy-meta">None posted.</div>';
     bindAdminDeletes();
     renderTeamAdmin();
@@ -1145,7 +1145,44 @@
 
   const popupToggle = (kind, item) => `<button class="mini-toggle${item.showOnOpen ? ' on' : ''}" type="button" data-popup-kind="${kind}" data-popup-id="${escapeHtml(item.id)}" data-popup-on="${item.showOnOpen ? '1' : ''}" title="Open in a pop-up the first time someone opens the Hub each day">${item.showOnOpen ? '🔔 Pop-up on' : 'Pop-up off'}</button>`;
 
+  // Edit: load a posted item back into its form; saving updates it in place.
+  function startEdit(formId, item, values) {
+    const form = $(formId);
+    if (!form || !item) return;
+    form.reset();
+    Object.entries({ id: item.id, ...values }).forEach(([name, value]) => {
+      const input = form.elements[name];
+      if (!input) return;
+      if (input.type === 'checkbox') input.checked = !!value; else input.value = value ?? '';
+    });
+    form.querySelector('.edit-banner').hidden = false;
+    form.querySelector('[type=submit]').textContent = 'Save changes';
+    form.classList.add('editing');
+    form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    form.elements.title?.focus({ preventScroll: true });
+  }
+  function endEdit(formId) {
+    const form = $(formId);
+    if (!form) return;
+    form.reset();
+    form.elements.id.value = '';
+    form.querySelector('.edit-banner').hidden = true;
+    const submit = form.querySelector('[type=submit]');
+    submit.textContent = submit.dataset.label;
+    form.classList.remove('editing');
+    setDefaultDates();
+  }
+  document.querySelectorAll('[data-cancel-edit]').forEach((b) => b.addEventListener('click', () => endEdit(b.dataset.cancelEdit)));
+
   function bindAdminDeletes() {
+    document.querySelectorAll('[data-edit-ann]').forEach((b) => { b.onclick = () => {
+      const a = adminData.announcements.find((x) => x.id === b.dataset.editAnn);
+      startEdit('announcementForm', a, { title: a?.title, message: a?.message, startDate: a?.startDate, endDate: a?.endDate, department: a?.department, pinned: a?.pinned, showOnOpen: a?.showOnOpen });
+    }; });
+    document.querySelectorAll('[data-edit-pol]').forEach((b) => { b.onclick = () => {
+      const p = adminData.policies.find((x) => x.id === b.dataset.editPol);
+      startEdit('policyForm', p, { title: p?.title, summary: p?.summary, effectiveDate: p?.effectiveDate, readRequired: p?.readRequired, showOnOpen: p?.showOnOpen });
+    }; });
     document.querySelectorAll('[data-popup-kind]').forEach((b) => { b.onclick = async () => {
       b.disabled = true;
       try {
@@ -1199,9 +1236,8 @@
     const payload = formObject(form);
     try {
       await adminFetch({ action: 'upsertAnnouncement', ...payload });
-      form.reset();
-      setDefaultDates();
-      await refreshAdmin('Announcement posted.');
+      endEdit('announcementForm');
+      await refreshAdmin(payload.id ? 'Announcement updated.' : 'Announcement posted.');
     } catch (err) {
       showMessage('managerMessage', err.message || 'Could not post announcement.', true);
     }
@@ -1213,9 +1249,8 @@
     const payload = formObject(form);
     try {
       await adminFetch({ action: 'upsertPolicy', ...payload });
-      form.reset();
-      setDefaultDates();
-      await refreshAdmin('Policy update published.');
+      endEdit('policyForm');
+      await refreshAdmin(payload.id ? 'Policy updated.' : 'Policy update published.');
     } catch (err) {
       showMessage('managerMessage', err.message || 'Could not publish policy.', true);
     }

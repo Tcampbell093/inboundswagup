@@ -107,3 +107,8 @@
 .admin-row-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 .mini-toggle{border:1px solid var(--line);background:#fff;color:#55615b;border-radius:9px;padding:7px 9px;font-size:11px;font-weight:850;cursor:pointer}
 .mini-toggle.on{background:#fff4ec;border-color:#f3c3aa;color:#a94a22}
+
+/* Admin: editing a posted announcement or policy */
+.edit-banner{background:#fff4ec;border:1px solid #f3c3aa;color:#a94a22;border-radius:10px;padding:9px 11px;font-size:12px;font-weight:800;margin-bottom:10px}
+.edit-banner .linkbtn{border:0;background:none;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit}
+form.editing{outline:2px solid #f3c3aa;outline-offset:6px;border-radius:12px}
