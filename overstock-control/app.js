@@ -323,7 +323,7 @@
 
   function render(){lists();syncPill();renderDonationPoolButton();const stats=renderStats();renderCart(stats);renderLocations(stats);renderBoxes(stats);renderLog();renderActivityFeed();renderGlobalSearch()
     // Prepare the search text in the background so the first keystroke is fast.
-    (window.requestIdleCallback||(f=>setTimeout(f,300)))(()=>globalSearchIndex());
+    ;(window.requestIdleCallback||(f=>setTimeout(f,300)))(()=>globalSearchIndex());
   }
   async function openBoxHistory(reference=''){
     await loadHubSession();
