@@ -195,6 +195,76 @@
       :`<div class="empty">${all.length?'No donated items match this search.':'The Donation Pool is empty.'}</div>`;
   }
 
+  // Donation readiness, worked out from data.donationInfo (built by the
+  // Overstock function). Bulk and Bulk+Assembly POs can go 30 days after they
+  // were first added to Overstock; Pack Builder POs 30 days after the assembly
+  // date a lead enters. POs not in the workbook have no route and are left out.
+  const isLead=()=>['manager','team lead'].includes(String(hubSession?.role||'').toLowerCase());
+  const localToday=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
+  const dayPlus=(day,n)=>{const d=new Date(`${day}T12:00:00Z`);d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
+  const dayDiff=(a,b)=>Math.round((Date.parse(`${a}T12:00:00Z`)-Date.parse(`${b}T12:00:00Z`))/864e5);
+  const shortDay=day=>day?dateFormat.format(new Date(`${day}T12:00:00`)):'—';
+  const poKey=v=>String(v??'').trim().replace(/^PO[-\s]*/i,'').trim().toUpperCase();
+  const routeLabel=route=>route==='Assembly'?'Pack Builder':route;
+  function donationReadiness(po){
+    const info=data.donationInfo,row=info?.pos?.[poKey(po)],wait=Number(info?.waitDays||30);
+    if(!row?.route)return{status:'no-route'};
+    const packBuilder=row.route==='Assembly',start=packBuilder?row.assembly?.date:row.added;
+    if(!start)return{status:packBuilder?'needs-assembly-date':'no-route',route:row.route,wait};
+    const readyOn=dayPlus(start,wait),today=localToday();
+    return{status:today>=readyOn?'ready':'waiting',route:row.route,start,readyOn,wait,days:dayDiff(today,start),left:dayDiff(readyOn,today),assembly:row.assembly};
+  }
+  const stillInBox=e=>norm(e.action)!=='donated';
+  function readyEntries(){return data.entries.filter(stillInBox).map(e=>({e,r:donationReadiness(e.po)}))}
+  function renderReadyButton(){
+    const count=readyEntries().filter(x=>x.r.status==='ready').length;
+    $('readyDonateBtn').innerHTML=`✅ Ready to donate <span class="button-count">${count}</span>`;
+  }
+  async function saveAssemblyDate(po,date){
+    const j=await request({action:'setAssemblyDate',po,date});
+    data={...data,...j};render();
+    toast(date?`Assembly date saved for PO ${po}.`:`Assembly date cleared for PO ${po}.`);
+  }
+  const assemblyForm=(po,current='')=>`<span class="asm-form"><input type="date" max="${localToday()}" value="${esc(current)}" data-asm-date="${esc(po)}" aria-label="Assembly date for PO ${esc(po)}"><button type="button" class="ghost" data-asm-save="${esc(po)}">Save</button></span>`;
+  function wireAssemblyForms(root,after=()=>{}){
+    root.querySelectorAll('[data-asm-save]').forEach(btn=>btn.onclick=async()=>{
+      const po=btn.dataset.asmSave,input=[...root.querySelectorAll('[data-asm-date]')].find(i=>i.dataset.asmDate===po);
+      if(!input?.value)return toast('Pick the assembly date first.',true);
+      btn.disabled=true;
+      try{await saveAssemblyDate(po,input.value);after()}catch(x){toast(x.message,true)}finally{btn.disabled=false}
+    });
+  }
+  let openNeeds=false;
+  function renderReadyDonations(){
+    const rows=readyEntries(),ready=rows.filter(x=>x.r.status==='ready');
+    const soon=rows.filter(x=>x.r.status==='waiting'&&x.r.left<=7).sort((a,b)=>cmp(a.r.readyOn,b.r.readyOn)||cmp(a.e.po,b.e.po));
+    const needs=new Map();
+    rows.filter(x=>x.r.status==='needs-assembly-date').forEach(x=>{const k=poKey(x.e.po);if(!needs.has(k))needs.set(k,{po:x.e.po,boxes:new Set(),units:0});const n=needs.get(k);n.boxes.add(container(x.e.containerId)?.code||x.e.containerCode||'No box');n.units+=Number(x.e.quantity||0)});
+    const where=e=>{const c=container(e.containerId);return{loc:c?.currentLocation||e.location||'No location',code:c?.code||e.containerCode||'No box',id:c?.id||''}};
+    const groups=new Map();
+    ready.forEach(x=>{const w=where(x.e),k=`${w.loc}|${w.code}`;if(!groups.has(k))groups.set(k,{...w,items:[]});groups.get(k).items.push(x)});
+    const ordered=[...groups.values()].sort((a,b)=>cmp(a.loc,b.loc)||cmp(a.code,b.code));
+    const units=ready.reduce((n,x)=>n+Number(x.e.quantity||0),0);
+    $('readyDialogSub').textContent=ready.length?`${ready.length} PO${ready.length===1?'':'s'} · ${units.toLocaleString()} units in ${ordered.length} box${ordered.length===1?'':'es'}`:'Nothing is ready to donate right now.';
+    const since=x=>x.r.route==='Assembly'?`assembled ${shortDay(x.r.start)}`:`added ${shortDay(x.r.start)}`;
+    let html=`<p class="ready-rule">Bulk and Bulk+Assembly: 30 days after being added to Overstock. Pack Builder: 30 days after assembly. POs that aren't in the workbook aren't listed.</p>`;
+    html+=ordered.length?ordered.map(g=>`<section class="ready-group"><button type="button" class="ready-box" data-ready-box="${esc(g.id)}"><b>📍 ${esc(g.loc)}</b><span class="mono">${esc(g.code)}</span><span>${g.items.length} PO${g.items.length===1?'':'s'}</span></button>
+      ${g.items.sort((a,b)=>cmp(a.e.po,b.e.po)).map(x=>`<button type="button" class="ready-row" data-ready-entry="${esc(x.e.id)}"><b>PO ${esc(x.e.po)}</b><span class="qty">${Number(x.e.quantity||0).toLocaleString()} units</span><span class="tag">${esc(routeLabel(x.r.route))}</span><small>${esc(since(x))} · ${x.r.days} days</small></button>`).join('')}</section>`).join('')
+      :'<div class="empty">Nothing is ready to donate right now.</div>';
+    if(soon.length)html+=`<details class="ready-more"><summary>Coming up in the next 7 days (${soon.length})</summary>`+soon.map(x=>{const w=where(x.e);return`<button type="button" class="ready-row soon" data-ready-entry="${esc(x.e.id)}"><b>PO ${esc(x.e.po)}</b><span class="tag">${esc(routeLabel(x.r.route))}</span><span>📍 ${esc(w.loc)} · <span class="mono">${esc(w.code)}</span></span><small>ready ${esc(shortDay(x.r.readyOn))}</small></button>`}).join('')+'</details>';
+    if(needs.size){
+      const lead=isLead();
+      html+=`<details class="ready-more"${openNeeds?' open':''}><summary>Pack Builder POs waiting for an assembly date (${needs.size})</summary><p class="ready-rule">${lead?'Enter the date each PO was assembled. It becomes ready 30 days later.':'A lead or admin enters the assembly date. The PO becomes ready 30 days later.'}</p>`+
+        [...needs.values()].sort((a,b)=>cmp(a.po,b.po)).map(n=>`<div class="ready-row needs"><b>PO ${esc(n.po)}</b><span class="qty">${n.units.toLocaleString()} units</span><span class="mono">${esc([...n.boxes].join(', '))}</span>${lead?assemblyForm(n.po):''}</div>`).join('')+'</details>';
+    }
+    const body=$('readyDialogBody');body.innerHTML=html;
+    body.querySelectorAll('details.ready-more').forEach(d=>d.ontoggle=()=>{if(d.querySelector('.needs'))openNeeds=d.open});
+    body.querySelectorAll('[data-ready-entry]').forEach(b=>b.onclick=()=>{close('readyDialog');openEntry(b.dataset.readyEntry)});
+    body.querySelectorAll('[data-ready-box]').forEach(b=>b.onclick=()=>{if(!b.dataset.readyBox)return;close('readyDialog');openBox(b.dataset.readyBox)});
+    wireAssemblyForms(body);
+  }
+  function openReadyDonations(){renderReadyDonations();if(!$('readyDialog').open)$('readyDialog').showModal()}
+
   function openDonationPool(prefill=''){
     const input=$('donationSearch');
     if(input)input.value=prefill||'';
@@ -321,7 +391,7 @@
     });
   }
 
-  function render(){lists();syncPill();renderDonationPoolButton();const stats=renderStats();renderCart(stats);renderLocations(stats);renderBoxes(stats);renderLog();renderActivityFeed();renderGlobalSearch()
+  function render(){lists();syncPill();renderDonationPoolButton();renderReadyButton();if($('readyDialog').open)renderReadyDonations();const stats=renderStats();renderCart(stats);renderLocations(stats);renderBoxes(stats);renderLog();renderActivityFeed();renderGlobalSearch()
     // Prepare the search text in the background so the first keystroke is fast.
     ;(window.requestIdleCallback||(f=>setTimeout(f,300)))(()=>globalSearchIndex());
   }
@@ -430,17 +500,41 @@
     if(entryReturnBoxId)returnToBoxList();
     else close('editDialog');
   }
+  // Known route: show the 30-day rule and its result (early donation needs a
+  // lead or admin). No route: the original five-point checklist.
   function confirmDonationEligibility({po='',quantity=0,containerCode=''}={}){
     const dlg=$('donationEligibilityDialog'),confirmBtn=$('donationEligibilityConfirm'),cancelBtn=$('donationEligibilityCancel'),closeBtn=$('donationEligibilityClose'),summary=$('donationEligibilityItem');
-    const checks=[...dlg.querySelectorAll('[data-donation-check]')];
+    const checks=[...dlg.querySelectorAll('[data-donation-check]')],rule=$('eligibilityRule');
+    let manual=true;
     checks.forEach(c=>{c.checked=false});
-    confirmBtn.disabled=true;
     summary.textContent=`PO ${po||'—'} · ${Number(quantity||0).toLocaleString()} units${containerCode?` · ${containerCode}`:''}`;
+    const paint=()=>{
+      const r=donationReadiness(po),lead=isLead();
+      manual=r.status==='no-route';
+      $('eligibilityManual').hidden=!manual;rule.hidden=manual;
+      if(manual){confirmBtn.textContent='Confirm Donation';confirmBtn.disabled=!checks.every(c=>c.checked);return}
+      const packBuilder=r.route==='Assembly',ok=r.status==='ready';
+      const dateLine=packBuilder
+        ?(r.start?`Assembled <b>${esc(shortDay(r.start))}</b> · ${r.days} day${r.days===1?'':'s'} ago`:'No assembly date entered yet')
+        :`First added to Overstock <b>${esc(shortDay(r.start))}</b> · ${r.days} day${r.days===1?'':'s'} ago`;
+      const verdict=ok?`<div class="rule-verdict ok">✓ Ready to donate. ${r.wait} days have passed (ready since ${esc(shortDay(r.readyOn))}).</div>`
+        :r.status==='waiting'?`<div class="rule-verdict wait">Not ready until <b>${esc(shortDay(r.readyOn))}</b> (${r.left} day${r.left===1?'':'s'} left).</div>`
+        :`<div class="rule-verdict wait">Pack Builder POs need an assembly date before they can be donated.</div>`;
+      rule.innerHTML=`<div class="rule-line">Route <span class="tag">${esc(routeLabel(r.route))}</span> <small>from the workbook</small></div>
+        <div class="rule-line">${dateLine}</div>
+        ${packBuilder&&lead?`<div class="rule-line">${r.start?'Change':'Enter'} assembly date ${assemblyForm(po,r.start||'')}</div>`:''}
+        ${verdict}
+        ${ok?'':`<p class="rule-note">${lead?'You are a lead or admin, so you can donate it early if needed.':r.status==='needs-assembly-date'?'Ask a lead or admin to enter the assembly date.':'Ask a lead or admin if this needs to be donated early.'}</p>`}`;
+      wireAssemblyForms(rule,paint);
+      confirmBtn.textContent=ok?'Confirm Donation':lead?'Donate early':'Not ready yet';
+      confirmBtn.disabled=!(ok||lead);
+    };
+    paint();
     return new Promise(resolve=>{
       let finished=false;
       const cleanup=()=>{checks.forEach(c=>c.removeEventListener('change',update));confirmBtn.removeEventListener('click',yes);cancelBtn.removeEventListener('click',no);closeBtn.removeEventListener('click',no);dlg.removeEventListener('cancel',cancelEvent)};
       const finish=value=>{if(finished)return;finished=true;cleanup();if(dlg.open)dlg.close();resolve(value)};
-      const update=()=>{confirmBtn.disabled=!checks.every(c=>c.checked)};
+      const update=()=>{if(manual)confirmBtn.disabled=!checks.every(c=>c.checked)};
       const yes=()=>finish(true),no=()=>finish(false),cancelEvent=e=>{e.preventDefault();finish(false)};
       checks.forEach(c=>c.addEventListener('change',update));
       confirmBtn.addEventListener('click',yes);
@@ -450,6 +544,7 @@
       dlg.showModal();
     });
   }
+
   function newEntry(containerId){const actor=requireHubUser();if(!actor)return;entryReturnBoxId='';$('editBackBtn').hidden=true;const f=$('editForm');f.reset();f.elements.id.value='';lists();f.elements.containerId.value=containerId||'';$('editOriginalAssociate').textContent=actor;$('editCurrentUser').textContent=actor;$('editTitle').textContent='Add PO to box';$('editSubtitle').textContent=container(containerId)?.code||'Choose a box';$('deleteEntryBtn').hidden=true;$('donateEntryBtn').hidden=true;$('editDialog').showModal();setTimeout(()=>f.elements.po.focus(),20)}
   function openEntry(id,returnBoxId=''){const e=data.entries.find(x=>String(x.id)===String(id));if(!e||norm(e.action)==='donated')return;entryReturnBoxId=returnBoxId||'';$('editBackBtn').hidden=!entryReturnBoxId;const f=$('editForm');lists();['id','po','deliveryId','containerId','quantity','category','action','note'].forEach(k=>f.elements[k].value=e[k]??'');$('editOriginalAssociate').textContent=e.originalAssociate||e.associate||'Unknown';$('editCurrentUser').textContent=hubUser()||'Not signed in';$('editTitle').textContent=`PO ${e.po}`;$('editSubtitle').textContent=`${e.deliveryId||e.containerCode||''}${e.lastChangedBy?` · Last changed by ${e.lastChangedBy}`:''}`;$('deleteEntryBtn').hidden=false;$('donateEntryBtn').hidden=false;$('editDialog').showModal()}
   function editContainer(id='',focusLocation=false){close('boxDialog');const c=id?container(id):null,f=$('containerForm');f.reset();lists();f.elements.id.value=c?.id||'';f.elements.code.value=c?.code||'';f.elements.currentLocation.value=c?.currentLocation||'';f.elements.status.value=c?.status||'Open';f.elements.notes.value=c?.notes||'';$('containerTitle').textContent=c?`Edit ${c.code}`:'New box';$('containerDialog').showModal();setTimeout(()=>focusLocation?f.elements.currentLocation.focus():f.elements.code.focus(),20)}
@@ -522,7 +617,7 @@
     finally{delete form.dataset.saving}
   };
   $('siSwitchContainer').onclick=()=>{intake.container=null;$('siItemStep').hidden=true;$('siContainerStep').hidden=false;$('siContainerCode').value='';$('siExistingContainer').hidden=true};$('stockIntakeBtn').onclick=()=>openIntake();$('stockIntakeCancel').onclick=()=>{if(!intake.items.length||confirm('Cancel? Saved items will remain in Houston.'))closeIntake()};$('stockIntakeComplete').onclick=()=>{toast(`Stock Intake complete · ${intake.items.length} item(s) added.`);closeIntake()};
-  $('activityFeedHide').onclick=()=>setActivityHidden(true);$('activityFeedShow').onclick=()=>setActivityHidden(false);$('refreshBtn').onclick=()=>load(true);$('donationPoolBtn').onclick=()=>openDonationPool();
+  $('activityFeedHide').onclick=()=>setActivityHidden(true);$('activityFeedShow').onclick=()=>setActivityHidden(false);$('refreshBtn').onclick=()=>load(true);$('donationPoolBtn').onclick=()=>openDonationPool();$('readyDonateBtn').onclick=()=>openReadyDonations();
   // Wait for a short pause in typing before searching.
   let globalSearchTimer=0;
   $('globalSearchInput').oninput=()=>{clearTimeout(globalSearchTimer);globalSearchTimer=setTimeout(renderGlobalSearch,150)};
