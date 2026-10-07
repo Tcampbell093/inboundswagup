@@ -164,7 +164,8 @@ async function readDonationInfo(db, entries) {
   const assembly = await db.query(`SELECT po, assembly_date::text AS date, set_by, set_at FROM overstock_po_assembly`);
   const assemblyByPo = new Map(assembly.rows.map(row => [row.po, { date: row.date, by: row.set_by || '', at: row.set_at }]));
   const pos = {};
-  for (const entry of Array.isArray(entries) ? entries : []) {
+  entries = Array.isArray(entries) ? entries : [];
+  for (const entry of entries) {
     const po = normalizePo(entry?.po);
     if (!po) continue;
     const info = pos[po] ||= { route: routes.get(po) || '', ...(assemblyByPo.has(po) ? { assembly: assemblyByPo.get(po) } : {}) };
@@ -172,6 +173,9 @@ async function readDonationInfo(db, entries) {
       if (added && (!info.added || added < info.added)) info.added = added;
     }
   }
+  // Only POs with a route that are still in a box; the rest never show.
+  const inBox = new Set(entries.filter(entry => str(entry?.action, 40).toLowerCase() !== 'donated').map(entry => normalizePo(entry?.po)));
+  for (const po of Object.keys(pos)) if (!pos[po].route || !inBox.has(po)) delete pos[po];
   return { waitDays: DONATION_WAIT_DAYS, today: warehouseToday(), pos };
 }
 
