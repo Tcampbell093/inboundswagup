@@ -81,6 +81,50 @@ function worksheetRows(workbook: ExcelScript.Workbook, sheetName: string): Recor
   );
 }
 
+// Same shape as worksheetRows, built from rows already in memory (used for
+// Daily Log so it isn't read again right after the sync writes to it).
+function tableRecords(headers: string[], texts: string[][]): Record<string, string>[] {
+  const names: string[] = headers.map((header: string): string => oneLine(header));
+  return texts.map((row: string[]): Record<string, string> => {
+    const record: Record<string, string> = {};
+    names.forEach((header: string, column: number): void => {
+      if (header) record[header] = String(row[column] ?? '').trim();
+    });
+    return record;
+  }).filter((record: Record<string, string>): boolean =>
+    Boolean(record['PO # (Orden)'] || record['Delivery ID (auto)'] || record['Delivery ID'])
+  );
+}
+
+// Finds Delivery IDs that appear more than once on a sheet and returns
+// a readable list like "312530-P1 (rows 754, 755)". Empty list = no duplicates.
+function findDuplicateDeliveryIds(workbook: ExcelScript.Workbook, sheetName: string): string[] {
+  const sheet: ExcelScript.Worksheet | undefined = workbook.getWorksheet(sheetName);
+  if (!sheet) return [];
+  const used: ExcelScript.Range | undefined = sheet.getUsedRange(true);
+  if (!used) return [];
+  const firstRow: number = used.getRowIndex() + 1;
+  const texts: string[][] = used.getTexts();
+  const headerIndex: number = texts.findIndex((row: string[]): boolean =>
+    row.some((cell: string): boolean => oneLine(cell) === 'PO # (Orden)')
+  );
+  if (headerIndex < 0) return [];
+  const headers: string[] = texts[headerIndex].map((cell: string): string => oneLine(cell));
+  let idCol: number = headers.indexOf('Delivery ID (auto)');
+  if (idCol < 0) idCol = headers.indexOf('Delivery ID');
+  if (idCol < 0) return [];
+  const seen: Record<string, number[]> = {};
+  for (let i = headerIndex + 1; i < texts.length; i++) {
+    const id: string = String(texts[i][idCol] ?? '').trim();
+    if (!id) continue;
+    if (!seen[id]) seen[id] = [];
+    seen[id].push(firstRow + i);
+  }
+  return Object.keys(seen)
+    .filter((id: string): boolean => seen[id].length > 1)
+    .map((id: string): string => `${id} (rows ${seen[id].join(', ')})`);
+}
+
 interface OverstockChange {
   deliveryId: string;
   po: string;
@@ -101,6 +145,8 @@ interface PullResult {
   updatedCells: number;
   notInDailyLog: string[];
   splitAcrossBoxes: string[];
+  failedWrites: string[];
+  texts: string[][];
 }
 
 const DISPOSITION_TEXT: Record<string, string> = {
@@ -117,7 +163,7 @@ const sameText = (a: string, b: string): boolean =>
 async function pullFromOverstock(
   endpoint: string, key: string, body: ExcelScript.Range, headers: string[],
 ): Promise<PullResult> {
-  const result: PullResult = { updatedRows: 0, updatedCells: 0, notInDailyLog: [], splitAcrossBoxes: [] };
+  const result: PullResult = { updatedRows: 0, updatedCells: 0, notInDailyLog: [], splitAcrossBoxes: [], failedWrites: [], texts: [] };
   let response: Response;
   try {
     response = await fetch(`${endpoint}?excelPull=1`, { headers: { 'x-overstock-import-key': key } });
@@ -135,6 +181,7 @@ async function pullFromOverstock(
   if (poCol < 0 || deliveryCol < 0 || locCol < 0 || boxCol < 0) throw new Error('DailyLog is missing a PO, Delivery ID, Overstock Loc or Overstock Cont. column.');
 
   const texts: string[][] = body.getTexts();
+  result.texts = texts; // kept up to date below, so step 2 doesn't re-read the sheet
   const byDelivery = new Map<string, number>();
   const byPo = new Map<string, number[]>();
   texts.forEach((row: string[], index: number): void => {
@@ -156,10 +203,20 @@ async function pullFromOverstock(
 
     const row: string[] = texts[index];
     let changed = 0;
+    // Excel queues writes and only applies them at the next read, so read the
+    // cell back straight away: a cell that refuses the value is reported here
+    // instead of failing the whole script later.
     const write = (column: number, value: string): void => {
       if (column < 0 || !value || sameText(row[column], value)) return;
-      body.getCell(index as number, column).setValue(value);
-      changed += 1;
+      const cell: ExcelScript.Range = body.getCell(index as number, column);
+      try {
+        cell.setValue(value);
+        cell.getText();
+        row[column] = value;
+        changed += 1;
+      } catch (error) {
+        result.failedWrites.push(`${label} ${headers[column]} -> "${value}": ${String(error)}`);
+      }
     };
     if (change.disposition !== 'Donated') {
       write(locCol, change.location);
@@ -173,6 +230,10 @@ async function pullFromOverstock(
     if (change.disposition === 'Required' && current.startsWith('donat')) write(dispCol, DISPOSITION_TEXT.Required);
     if (changed) { result.updatedRows += 1; result.updatedCells += changed; }
   }
+
+  // Only confirm when every cell took its value; otherwise the next click
+  // brings the same changes again (safe: only differing cells are written).
+  if (result.failedWrites.length) return result;
 
   // Remember how far we got so the next click only brings newer changes.
   const ack: Response = await fetch(endpoint, {
@@ -193,6 +254,16 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
     throw new Error('Paste your new Netlify import key into IMPORT_KEY before running this script.');
   }
 
+  // Stop before changing anything if Daily Log has duplicate Delivery IDs.
+  const dailyLogDuplicates: string[] = findDuplicateDeliveryIds(workbook, 'Daily Log');
+  if (dailyLogDuplicates.length) {
+    throw new Error(
+      'Sync stopped: Daily Log has the same Delivery ID on more than one row. ' +
+      'Fix the Delivery / Part # on these rows, then run again: ' +
+      dailyLogDuplicates.join('; ')
+    );
+  }
+
   const table = workbook.getTable('DailyLog');
   if (!table) throw new Error('Excel table DailyLog was not found.');
 
@@ -203,8 +274,10 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
   //    overwritten by older sheet values in step 2.
   const pulled: PullResult = await pullFromOverstock(HOUSTON_ENDPOINT, IMPORT_KEY, body, headers);
 
-  // 2. Workbook -> Overstock (reads the sheet again, including step 1's edits).
-  const textRows = body.getTexts();
+  // 2. Workbook -> Overstock. Uses step 1's copy of the sheet (with its edits
+  //    applied) instead of reading the whole table again: right after the
+  //    writes Excel is recalculating, and a full re-read can time out.
+  const textRows: string[][] = pulled.texts;
   const indexOf = (name: string) => headers.indexOf(name);
   const associateColumns: number[] = headers
     .map((name: string, index: number): number => /\bBy\b|\(Por\)/i.test(name) ? index : -1)
@@ -302,7 +375,9 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
   };
   for (const sheet of sheets) {
     if (!workbook.getWorksheet(sheet.name)) continue; // optional sheets may not exist in older files
-    const rows: Record<string, string>[] = worksheetRows(workbook, sheet.name);
+    const rows: Record<string, string>[] = sheet.name === 'Daily Log'
+      ? tableRecords(headers, textRows)
+      : worksheetRows(workbook, sheet.name);
     for (let start = 0; start < rows.length; start += 100) {
       const batch: PoHistorySyncResult = await postHistory(
         { action: 'syncWorkbookHistory', [sheet.field]: rows.slice(start, start + 100) },
@@ -319,6 +394,7 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
     `From Overstock: ${pulled.updatedRows} Daily Log row(s) updated (${pulled.updatedCells} cell(s): location, box or disposition).`,
     pulled.notInDailyLog.length ? `${pulled.notInDailyLog.length} changed Overstock item(s) have no Daily Log row: ${pulled.notInDailyLog.slice(0, 8).join(', ')}.` : '',
     pulled.splitAcrossBoxes.length ? `${pulled.splitAcrossBoxes.length} split across several boxes, so location/box left as is: ${pulled.splitAcrossBoxes.slice(0, 8).join(', ')}.` : '',
+    pulled.failedWrites.length ? `${pulled.failedWrites.length} Daily Log cell(s) could not be updated, so these changes will be retried next time: ${pulled.failedWrites.slice(0, 5).join(' | ')}.` : '',
     `${result.updatedEntries ?? 0} item(s) updated`,
     `${result.createdEntries ?? 0} new item(s) added`,
     `${result.updatedContainers ?? 0} container(s) moved`,
@@ -334,5 +410,5 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
     `${historyResult.archivePa ?? 0} put-away history row(s) copied`,
     `${historyResult.putAway ?? 0} put-away row(s), ${historyResult.cases ?? 0} case(s) and ${historyResult.watch ?? 0} watch-list row(s) copied`,
     `${finished.hidden ?? 0} row(s) no longer in the workbook hidden from PO History`,
-  ].filter(Boolean).join(' ');
+  ].filter((line: string): boolean => line.length > 0).join(' ');
 }
