@@ -27,6 +27,8 @@ interface HoustonSyncResult {
   skipped?: string[];
   unresolved?: string[];
   importedAssociates?: number;
+  boxNewestWins?: number;
+  boxLocationConflicts?: number;
 }
 
 interface HoustonApiResponse extends HoustonSyncResult {
@@ -138,6 +140,7 @@ interface OverstockPull {
   error?: string;
   cursor?: number;
   changes?: OverstockChange[];
+  rowMemory?: Record<string, string>;
 }
 
 interface PullResult {
@@ -146,6 +149,8 @@ interface PullResult {
   notInDailyLog: string[];
   splitAcrossBoxes: string[];
   failedWrites: string[];
+  boxMatesUpdated: number;
+  keptSheetEdits: string[];
   texts: string[][];
 }
 
@@ -153,6 +158,20 @@ const DISPOSITION_TEXT: Record<string, string> = {
   Required: 'Required / Requerido',
   Donated: 'Donated / Donado',
 };
+
+// Same tidying the site does: "0SC-157"/"OSC--208"/"osc 205" -> "OSC-…",
+// "car"/"CAR-" -> "CAR", "E6" -> "E-6".
+function normalizeBoxCode(value: string): string {
+  let code: string = String(value ?? '').trim().toUpperCase().replace(/\s+/g, '-');
+  code = code.replace(/^0SC(?=[-\d])/, 'OSC').replace(/-{2,}/g, '-').replace(/-+$/, '');
+  return code.replace(/^OSC(?=\d)/, 'OSC-');
+}
+
+function normalizeLocation(value: string): string {
+  const loc: string = String(value ?? '').trim().toUpperCase().replace(/\s+/g, '').replace(/-+$/, '');
+  const shelf: RegExpExecArray | null = /^E-?(\d{1,2})$/.exec(loc);
+  return shelf ? `E-${Number(shelf[1])}` : loc;
+}
 
 const sameText = (a: string, b: string): boolean =>
   String(a ?? '').replace(/\s+/g, '').toUpperCase() === String(b ?? '').replace(/\s+/g, '').toUpperCase();
@@ -163,7 +182,7 @@ const sameText = (a: string, b: string): boolean =>
 async function pullFromOverstock(
   endpoint: string, key: string, body: ExcelScript.Range, headers: string[],
 ): Promise<PullResult> {
-  const result: PullResult = { updatedRows: 0, updatedCells: 0, notInDailyLog: [], splitAcrossBoxes: [], failedWrites: [], texts: [] };
+  const result: PullResult = { updatedRows: 0, updatedCells: 0, notInDailyLog: [], splitAcrossBoxes: [], failedWrites: [], boxMatesUpdated: 0, keptSheetEdits: [], texts: [] };
   let response: Response;
   try {
     response = await fetch(`${endpoint}?excelPull=1`, { headers: { 'x-overstock-import-key': key } });
@@ -191,8 +210,43 @@ async function pullFromOverstock(
     if (po) byPo.set(po, [...(byPo.get(po) ?? []), index]);
   });
 
+  // A row whose location differs from what it said at the last sync was just
+  // edited in the sheet: leave it, and the push will treat it as the newest.
+  const memory: Record<string, string> = pull.rowMemory ?? {};
+  const rowKey = (row: string[]): string => {
+    const delivery: string = String(row[deliveryCol] ?? '').trim().toUpperCase();
+    return delivery ? `D:${delivery}` : `P:${String(row[poCol] ?? '').trim().replace(/^PO[-\s]*/i, '').toUpperCase()}`;
+  };
+  const editedInSheet = (row: string[]): boolean => {
+    const before: string | undefined = memory[rowKey(row)];
+    return before !== undefined && before !== normalizeLocation(row[locCol]);
+  };
+  const changedRows = new Set<number>();
+  // Excel queues writes and only applies them at the next read, so read the
+  // cell back straight away: a cell that refuses the value is reported here
+  // instead of failing the whole script later.
+  const writeCell = (index: number, column: number, value: string, label: string): void => {
+    const row: string[] = texts[index];
+    if (column < 0 || !value || sameText(row[column], value)) return;
+    const cell: ExcelScript.Range = body.getCell(index, column);
+    try {
+      cell.setValue(value);
+      cell.getText();
+      row[column] = value;
+      result.updatedCells += 1;
+      changedRows.add(index);
+    } catch (error) {
+      result.failedWrites.push(`${label} ${headers[column]} -> "${value}": ${String(error)}`);
+    }
+  };
+
+  // Where each box is now in Overstock, for updating every row in that box.
+  const boxLocation = new Map<string, string>();
   for (const change of pull.changes ?? []) {
     const label: string = change.deliveryId || `PO ${change.po}`;
+    if (change.disposition !== 'Donated' && !change.splitAcrossBoxes && change.containerCode && change.location) {
+      boxLocation.set(normalizeBoxCode(change.containerCode), change.location);
+    }
     let index: number | undefined = change.deliveryId ? byDelivery.get(change.deliveryId.toUpperCase()) : undefined;
     if (index === undefined && !change.deliveryId) {
       const rows: number[] = byPo.get(change.po) ?? [];
@@ -202,34 +256,32 @@ async function pullFromOverstock(
     if (change.splitAcrossBoxes) result.splitAcrossBoxes.push(label);
 
     const row: string[] = texts[index];
-    let changed = 0;
-    // Excel queues writes and only applies them at the next read, so read the
-    // cell back straight away: a cell that refuses the value is reported here
-    // instead of failing the whole script later.
-    const write = (column: number, value: string): void => {
-      if (column < 0 || !value || sameText(row[column], value)) return;
-      const cell: ExcelScript.Range = body.getCell(index as number, column);
-      try {
-        cell.setValue(value);
-        cell.getText();
-        row[column] = value;
-        changed += 1;
-      } catch (error) {
-        result.failedWrites.push(`${label} ${headers[column]} -> "${value}": ${String(error)}`);
-      }
-    };
     if (change.disposition !== 'Donated') {
-      write(locCol, change.location);
-      write(boxCol, change.containerCode);
+      if (editedInSheet(row) && !sameText(row[locCol], change.location)) result.keptSheetEdits.push(label);
+      else writeCell(index, locCol, change.location, label);
+      writeCell(index, boxCol, change.containerCode, label);
     }
     // Disposition is only written when it matters: Overstock donated it, or the
     // sheet says Donated but Overstock has it back in stock. Blank, Required and
     // Retained all mean "kept", so they are left alone otherwise.
     const current: string = String(row[dispCol] ?? '').trim().toLowerCase();
-    if (change.disposition === 'Donated' && !current.startsWith('donat')) write(dispCol, DISPOSITION_TEXT.Donated);
-    if (change.disposition === 'Required' && current.startsWith('donat')) write(dispCol, DISPOSITION_TEXT.Required);
-    if (changed) { result.updatedRows += 1; result.updatedCells += changed; }
+    if (change.disposition === 'Donated' && !current.startsWith('donat')) writeCell(index, dispCol, DISPOSITION_TEXT.Donated, label);
+    if (change.disposition === 'Required' && current.startsWith('donat')) writeCell(index, dispCol, DISPOSITION_TEXT.Required, label);
   }
+
+  // Every other row that names one of those boxes gets the box's location too,
+  // so rows in the same box don't disagree (unless someone just edited one).
+  texts.forEach((row: string[], index: number): void => {
+    const target: string | undefined = boxLocation.get(normalizeBoxCode(row[boxCol]));
+    if (!target || sameText(row[locCol], target)) return;
+    if (String(row[dispCol] ?? '').trim().toLowerCase().startsWith('donat')) return;
+    const label: string = String(row[deliveryCol] ?? '').trim() || `PO ${String(row[poCol] ?? '').trim()}`;
+    if (editedInSheet(row)) { result.keptSheetEdits.push(label); return; }
+    const wasChanged: boolean = changedRows.has(index);
+    writeCell(index, locCol, target, label);
+    if (!wasChanged && changedRows.has(index)) result.boxMatesUpdated += 1;
+  });
+  result.updatedRows = changedRows.size;
 
   // Only confirm when every cell took its value; otherwise the next click
   // brings the same changes again (safe: only differing cells are written).
@@ -389,15 +441,20 @@ async function main(workbook: ExcelScript.Workbook): Promise<string> {
   }
   const finished: PoHistorySyncResult = await postHistory({ action: 'finishSync', sheets: sentSheets }, 'the finishing step');
 
+  const keptEdits: string[] = pulled.keptSheetEdits.filter((label: string, i: number, all: string[]): boolean => all.indexOf(label) === i);
   return [
     'Houston sync complete.',
     `From Overstock: ${pulled.updatedRows} Daily Log row(s) updated (${pulled.updatedCells} cell(s): location, box or disposition).`,
     pulled.notInDailyLog.length ? `${pulled.notInDailyLog.length} changed Overstock item(s) have no Daily Log row: ${pulled.notInDailyLog.slice(0, 8).join(', ')}.` : '',
     pulled.splitAcrossBoxes.length ? `${pulled.splitAcrossBoxes.length} split across several boxes, so location/box left as is: ${pulled.splitAcrossBoxes.slice(0, 8).join(', ')}.` : '',
+    pulled.boxMatesUpdated ? `${pulled.boxMatesUpdated} of those were other rows in the same box, updated to match.` : '',
+    keptEdits.length ? `${keptEdits.length} row(s) you just edited were kept instead of Overstock's value: ${keptEdits.slice(0, 8).join(', ')}.` : '',
     pulled.failedWrites.length ? `${pulled.failedWrites.length} Daily Log cell(s) could not be updated, so these changes will be retried next time: ${pulled.failedWrites.slice(0, 5).join(' | ')}.` : '',
     `${result.updatedEntries ?? 0} item(s) updated`,
     `${result.createdEntries ?? 0} new item(s) added`,
     `${result.updatedContainers ?? 0} container(s) moved`,
+    result.boxNewestWins ? `${result.boxNewestWins} box(es) whose rows disagreed went to the newest location` : '',
+    result.boxLocationConflicts ? `${result.boxLocationConflicts} box(es) not moved: rows were changed to different places` : '',
     `${result.createdContainers ?? 0} new container(s) added`,
     `${result.retiredEmptyExcelBoxes ?? 0} empty Excel box(es) retired`,
     `${result.unchanged ?? 0} already current`,

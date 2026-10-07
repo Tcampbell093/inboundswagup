@@ -409,6 +409,30 @@ function excelConnectionState() {
   };
 }
 
+async function ensureExcelRowMemorySchema(db) {
+  await db.query(`CREATE TABLE IF NOT EXISTS overstock_excel_row_memory (
+    row_key TEXT PRIMARY KEY,
+    location TEXT NOT NULL DEFAULT '',
+    container_code TEXT NOT NULL DEFAULT '',
+    seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+}
+
+// What each workbook row said at this sync, for spotting edits next time.
+async function rememberExcelRows(db, rows, rowKey) {
+  const byKey = new Map();
+  for (const raw of rows) {
+    const key = rowKey(raw);
+    if (key === 'P:') continue;
+    byKey.set(key, { row_key: key, location: normalizeLocation(raw?.location), container_code: normalizeBoxCode(raw?.containerCode) });
+  }
+  if (!byKey.size) return;
+  await db.query(`INSERT INTO overstock_excel_row_memory(row_key,location,container_code,seen_at)
+    SELECT row_key,location,container_code,NOW() FROM json_to_recordset($1::json) AS x(row_key TEXT,location TEXT,container_code TEXT)
+    ON CONFLICT(row_key) DO UPDATE SET location=EXCLUDED.location,container_code=EXCLUDED.container_code,seen_at=NOW()`,
+  [JSON.stringify([...byKey.values()])]);
+}
+
 async function importExcelLocations(rawRows, rawAssociates) {
   // The workbook can exceed 1,000 rows. Reject oversized requests explicitly
   // rather than silently ignoring later corrections.
@@ -463,9 +487,27 @@ async function importExcelLocations(rawRows, rawAssociates) {
       'CAR',
     ].map(normalizeLocation));
 
-    // A box's location is shared, but the workbook stores one per row. When
-    // rows that point at the same box disagree, moving it would just follow
-    // whichever row came last, so those boxes are left where they are.
+    // A box's location is shared, but the workbook stores one per row, and
+    // Excel doesn't record when a cell was edited. So the server remembers what
+    // each row said at the last sync: a row whose location changed since then
+    // is the newest information. When a box's rows disagree:
+    //  - exactly one new location among changed rows -> it wins, box moves;
+    //  - no row changed (old leftovers) -> the box stays where Overstock has it;
+    //  - changed rows disagree with each other -> reported, box not moved.
+    // (The workbook script then copies the box's location onto all its rows.)
+    await ensureExcelRowMemorySchema(client);
+    const memoryRows = await client.query('SELECT row_key, location FROM overstock_excel_row_memory');
+    const memory = new Map(memoryRows.rows.map(row => [row.row_key, row.location]));
+    const firstRemembered = memory.size === 0; // nothing to compare against yet
+    const rowKey = (raw) => {
+      const deliveryId = str(raw?.deliveryId, 120).toUpperCase();
+      return deliveryId ? `D:${deliveryId}` : `P:${normalizePo(raw?.po)}`;
+    };
+    const changedSinceLastSync = (raw) => {
+      const before = memory.get(rowKey(raw));
+      if (before === undefined) return !firstRemembered; // a brand-new row counts as new information
+      return before !== normalizeLocation(raw?.location);
+    };
     // Exact code first, so the real "OSC-157" wins over a typo box "0SC-157".
     const findBox = (code) => containers.find(c => str(c?.code, 120).toUpperCase() === code)
       || containers.find(c => normalizeBoxCode(c?.code) === code);
@@ -485,18 +527,38 @@ async function importExcelLocations(rawRows, rawAssociates) {
     for (const raw of rows) {
       const loc = normalizeLocation(raw?.location);
       if (isUnknownAssociate(str(raw?.associate, 120)) || !loc || !knownLocations.has(loc)) continue;
+      const fresh = changedSinceLastSync(raw);
       for (const code of boxCodesForRow(raw)) {
-        if (!boxVotes.has(code)) boxVotes.set(code, new Map());
-        boxVotes.get(code).set(loc, (boxVotes.get(code).get(loc) || 0) + 1);
+        if (!boxVotes.has(code)) boxVotes.set(code, { all: new Map(), fresh: new Map() });
+        const votes = boxVotes.get(code);
+        votes.all.set(loc, (votes.all.get(loc) || 0) + 1);
+        if (fresh) votes.fresh.set(loc, (votes.fresh.get(loc) || 0) + 1);
       }
     }
-    const conflictedBoxes = new Set();
+    // code -> location every row of that box should use; null = real conflict.
+    const boxDecision = new Map();
+    result.boxNewestWins = 0;
+    result.boxLocationConflicts = 0;
     for (const [code, votes] of boxVotes) {
-      if (votes.size < 2) continue;
-      conflictedBoxes.add(code);
-      result.unresolved.push(`${code}: workbook rows disagree on its location (${[...votes].map(([loc, n]) => `${loc} x${n}`).join(', ')}); box not moved. Make those rows match.`);
+      if (votes.all.size < 2) continue;
+      const listed = [...votes.all].map(([loc, n]) => `${loc} x${n}`).join(', ');
+      const freshLocations = [...votes.fresh.keys()];
+      if (freshLocations.length === 1) {
+        boxDecision.set(code, freshLocations[0]);
+        result.boxNewestWins += 1;
+      } else if (freshLocations.length === 0) {
+        const current = normalizeLocation(findBox(code)?.currentLocation);
+        boxDecision.set(code, current || null);
+        if (!current) {
+          result.boxLocationConflicts += 1;
+          result.unresolved.push(`${code}: workbook rows disagree on its location (${listed}); box not created.`);
+        }
+      } else {
+        boxDecision.set(code, null);
+        result.boxLocationConflicts += 1;
+        result.unresolved.push(`${code}: rows were changed to different locations since the last sync (${[...votes.fresh].map(([loc, n]) => `${loc} x${n}`).join(', ')}); box not moved. Make those rows match.`);
+      }
     }
-    result.boxLocationConflicts = conflictedBoxes.size;
 
     for (const raw of rows) {
       const po = normalizePo(raw?.po);
@@ -526,16 +588,16 @@ async function importExcelLocations(rawRows, rawAssociates) {
         result.unresolved.push(`${key}: "${str(raw?.location, 60)}" isn't an Overstock location; nothing moved.`);
         continue;
       }
-      // Rows for a disputed box keep the box where it is (items still get
-      // their category, date, prep and box assignment).
-      const disputed = boxCodesForRow(raw).filter(code => conflictedBoxes.has(code));
-      if (disputed.length) {
-        const box = findBox(disputed[0]);
-        if (!box) {
-          result.unresolved.push(`${key}: box ${disputed[0]} has conflicting locations in the workbook; not created.`);
-          continue;
-        }
-        location = normalizeLocation(box.currentLocation) || location;
+      // Rows of a box whose rows disagree all use the decided location (the
+      // newest change, or where Overstock already has it). A real conflict
+      // keeps the box where it is; items still get category, date and prep.
+      const decided = boxCodesForRow(raw).filter(code => boxDecision.has(code));
+      if (decided.length) {
+        const decision = boxDecision.get(decided[0]);
+        const box = findBox(decided[0]);
+        if (decision) location = decision;
+        else if (box) location = normalizeLocation(box.currentLocation) || location;
+        else continue;
       }
 
       let matches = deliveryId ? entries.filter(entry => str(entry?.deliveryId, 120).toUpperCase() === deliveryId) : [];
@@ -854,6 +916,7 @@ async function importExcelLocations(rawRows, rawAssociates) {
       [...excelActivities, ...(Array.isArray(data.overstockActivity) ? data.overstockActivity : [])].slice(0, 50);
     if (workbookAssociates.length) masters.associates = workbookAssociates;
     await persistBoxEvents(client, boxEvents);
+    await rememberExcelRows(client, rows, rowKey);
     await client.query(
       `UPDATE workflow_sync_state SET data_json=$1::jsonb, masters_json=$2::jsonb, updated_at=NOW() WHERE state_key='default'`,
       [JSON.stringify(data), JSON.stringify(masters)],
@@ -1060,7 +1123,12 @@ async function excelPullChanges(db) {
     });
   }
   changes.sort((a, b) => (a.changedAt || 0) - (b.changedAt || 0));
-  return { since, cursor, firstPull: !saved.rows[0], changes };
+  // What each Daily Log row said at the last push, so the script can tell a
+  // row someone just edited (and leave it alone) from a stale one.
+  await ensureExcelRowMemorySchema(db);
+  const memory = await db.query('SELECT row_key, location FROM overstock_excel_row_memory');
+  const rowMemory = Object.fromEntries(memory.rows.map((row) => [row.row_key, row.location]));
+  return { since, cursor, firstPull: !saved.rows[0], changes, rowMemory };
 }
 
 async function ackExcelPull(db, cursor) {
