@@ -91,6 +91,104 @@ function normalizePo(value) {
   return str(value, 120).replace(/^PO[-\s]*/i, '').trim().toUpperCase();
 }
 
+// Donation readiness. Bulk and Bulk+Assembly POs may be donated 30 days
+// after they were first added to Overstock; Pack Builder (Assembly) POs 30
+// days after their assembly date, which a lead or admin enters. The route
+// comes from the workbook rows PO History keeps (Daily Log and Archive);
+// POs not in the workbook have no route and keep the manual checklist.
+const DONATION_WAIT_DAYS = 30;
+const ROUTE_CACHE_MS = 2 * 60000;
+let routeCache = { at: 0, routes: new Map() };
+let assemblySchemaReady = false;
+
+function prepRoute(value) {
+  const text = str(value, 60).toLowerCase();
+  const bulk = text.includes('bulk'), assembly = /assem|pack/.test(text);
+  if (bulk && assembly) return 'Bulk+Assembly';
+  if (bulk) return 'Bulk';
+  if (assembly) return 'Assembly';
+  return '';
+}
+
+function isoDay(value) {
+  const text = str(value, 40);
+  return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : '';
+}
+
+function addDays(day, days) {
+  const date = new Date(`${day}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function warehouseToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+}
+
+async function ensureAssemblySchema(db) {
+  if (assemblySchemaReady) return;
+  await db.query(`CREATE TABLE IF NOT EXISTS overstock_po_assembly (
+    po TEXT PRIMARY KEY,
+    assembly_date DATE NOT NULL,
+    set_by TEXT,
+    set_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+  assemblySchemaReady = true;
+}
+
+async function workbookRoutes(db) {
+  if (Date.now() - routeCache.at < ROUTE_CACHE_MS) return routeCache.routes;
+  const routes = new Map();
+  try {
+    // Current Daily Log rows win over archived and older rows.
+    const result = await db.query(`
+      SELECT po, COALESCE(NULLIF(row_json->>'Prep Route / Ruta Prep',''), row_json->>'Prep Route') AS route
+      FROM po_history_records
+      WHERE source_sheet IN ('Daily Log','Archive') AND COALESCE(po,'') <> ''
+      ORDER BY (removed_at IS NULL) ASC, (source_sheet = 'Daily Log') ASC, last_seen_at ASC`);
+    for (const row of result.rows) {
+      const route = prepRoute(row.route);
+      if (route) routes.set(normalizePo(row.po), route);
+    }
+  } catch {
+    return routeCache.routes; // PO History not set up yet
+  }
+  routeCache = { at: Date.now(), routes };
+  return routes;
+}
+
+// Route, assembly date and first-added date for each PO in Overstock.
+async function readDonationInfo(db, entries) {
+  await ensureAssemblySchema(db);
+  const routes = await workbookRoutes(db);
+  const assembly = await db.query(`SELECT po, assembly_date::text AS date, set_by, set_at FROM overstock_po_assembly`);
+  const assemblyByPo = new Map(assembly.rows.map(row => [row.po, { date: row.date, by: row.set_by || '', at: row.set_at }]));
+  const pos = {};
+  entries = Array.isArray(entries) ? entries : [];
+  for (const entry of entries) {
+    const po = normalizePo(entry?.po);
+    if (!po) continue;
+    const info = pos[po] ||= { route: routes.get(po) || '', ...(assemblyByPo.has(po) ? { assembly: assemblyByPo.get(po) } : {}) };
+    for (const added of [isoDay(entry?.date), isoDay(entry?.originalDate)]) {
+      if (added && (!info.added || added < info.added)) info.added = added;
+    }
+  }
+  // Only POs with a route that are still in a box; the rest never show.
+  const inBox = new Set(entries.filter(entry => str(entry?.action, 40).toLowerCase() !== 'donated').map(entry => normalizePo(entry?.po)));
+  for (const po of Object.keys(pos)) if (!pos[po].route || !inBox.has(po)) delete pos[po];
+  return { waitDays: DONATION_WAIT_DAYS, today: warehouseToday(), pos };
+}
+
+// status: ready | waiting | needs-assembly-date | no-route
+function donationReadiness(info, po, today = warehouseToday()) {
+  const row = info?.pos?.[normalizePo(po)];
+  if (!row?.route) return { status: 'no-route' };
+  const start = row.route === 'Assembly' ? row.assembly?.date : row.added;
+  if (!start) return { status: row.route === 'Assembly' ? 'needs-assembly-date' : 'no-route', route: row.route };
+  const readyOn = addDays(start, DONATION_WAIT_DAYS);
+  return { status: today >= readyOn ? 'ready' : 'waiting', route: row.route, start, readyOn };
+}
+
 // Workbook box-code typos: "0SC-157" (zero), "OSC--208", "osc 205", "OSC205"
 // all mean the same box as "OSC-157" etc.
 function normalizeBoxCode(value) {
@@ -1248,8 +1346,10 @@ async function readSnapshot(db) {
     : Array.from({ length: 24 }, (_, i) => `E-${i + 1}`);
   const categories = Array.isArray(masters.categories) ? masters.categories : [];
   const associates = Array.isArray(masters.associates) ? masters.associates : [];
+  const donationInfo = await readDonationInfo(db, visibleEntries).catch(() => null);
   return {
     entries: visibleEntries,
+    donationInfo,
     containers: filtered.containers,
     donations: visibleDonations,
     activities: filtered.activities,
@@ -1487,6 +1587,11 @@ async function mutate(action, body, actor = '', adminOrLead = false) {
       if (idx < 0) throw new Error('Overstock entry was not found.');
       const existing = entries[idx];
       if (!actor) throw new Error('A signed-in Hub user is required.');
+      if (!adminOrLead) {
+        const readiness = donationReadiness(await readDonationInfo(db, entries), existing.po);
+        if (readiness.status === 'waiting') throw new Error(`PO ${existing.po} is not ready to donate until ${readiness.readyOn}. A lead or admin can donate it early.`);
+        if (readiness.status === 'needs-assembly-date') throw new Error(`PO ${existing.po} is Pack Builder and has no assembly date yet. Ask a lead or admin.`);
+      }
       donateRecordFor(existing, actor);
       const donated = detachAsDonated(existing, actor);
       entries[idx] = donated;
@@ -1704,6 +1809,23 @@ export default async (request) => {
 
     const actor = hubActor(request);
     if (!actor) return json(401, { error: 'Sign in to the Work Hub before making Overstock changes.' });
+    if (action === 'setAssemblyDate') {
+      if (!hubIsAdminOrLead(request)) return json(403, { error: 'Only a lead or admin can set assembly dates.' });
+      const po = normalizePo(body.po);
+      const date = isoDay(body.date);
+      if (!po) return json(400, { error: 'PO is required.' });
+      if (body.date && !date) return json(400, { error: 'Assembly date must be a date.' });
+      if (date && date > warehouseToday()) return json(400, { error: 'Assembly date cannot be in the future.' });
+      const db = pool();
+      await ensureAssemblySchema(db);
+      if (date) {
+        await db.query(`INSERT INTO overstock_po_assembly (po, assembly_date, set_by, set_at) VALUES ($1,$2,$3,NOW())
+          ON CONFLICT (po) DO UPDATE SET assembly_date=EXCLUDED.assembly_date, set_by=EXCLUDED.set_by, set_at=NOW()`, [po, date, actor]);
+      } else {
+        await db.query(`DELETE FROM overstock_po_assembly WHERE po=$1`, [po]);
+      }
+      return json(200, { ok: true, ...(await readSnapshot(db)) });
+    }
     const result = await mutate(action, body, actor, hubIsAdminOrLead(request));
     const excelWrite = result.excelEvent ? await sendExcelEvent(result.excelEvent) : { configured: false, ok: false, status: 'no-event' };
     return json(200, { ok: true, ...result.snapshot, excelWrite });

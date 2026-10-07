@@ -98,3 +98,30 @@
   .overstock-search-list{grid-template-columns:1fr;max-height:480px}
   .overstock-search-help{font-size:10px;line-height:1.45}
 }
+
+/* Ready to donate */
+.ready-dialog .dialog-body{max-height:min(70vh,760px);overflow:auto;padding-top:12px}
+.ready-rule{margin:0 0 12px;color:var(--muted);font-size:11px;line-height:1.5}
+.ready-more{margin-top:14px}
+.ready-more summary{cursor:pointer;font-weight:850;font-size:13px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#f6f9fc;margin-bottom:8px}
+.ready-more[open] summary{background:#eaf3fa}
+.ready-group{border:1px solid var(--line);border-radius:11px;margin-bottom:10px;overflow:hidden}
+.ready-box{width:100%;display:flex;align-items:center;gap:10px;border:0;border-bottom:1px solid var(--line);background:#f1f7fb;padding:10px 12px;cursor:pointer;text-align:left}
+.ready-box span:last-child{margin-left:auto;color:var(--muted);font-size:11px}
+.ready-row{width:100%;display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;border:0;border-bottom:1px solid #edf2f6;background:#fff;padding:10px 12px;text-align:left;cursor:pointer;font-size:12px}
+.ready-row:last-child{border-bottom:0}
+.ready-row:hover{background:#f8fbfd}
+.ready-row small{margin-left:auto;color:var(--muted)}
+.ready-row.soon,.ready-row.needs{border:1px solid var(--line);border-radius:9px;margin-bottom:6px}
+.ready-row.needs{cursor:default}
+.asm-form{display:inline-flex;gap:6px;align-items:center;margin-left:auto}
+.asm-form input{border:1px solid #cbd8e4;border-radius:8px;padding:6px 8px;font-size:12px}
+.asm-form .ghost{padding:6px 10px}
+.eligibility-rule{display:grid;gap:10px}
+.rule-line{font-size:13px;display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.rule-line small{color:var(--muted)}
+.rule-verdict{padding:12px;border-radius:10px;font-weight:800;font-size:13px}
+.rule-verdict.ok{background:#e7f6ef;color:#14724e;border:1px solid #b9e2cf}
+.rule-verdict.wait{background:#fff3d9;color:#8a5b05;border:1px solid #f0d49a}
+.rule-note{margin:0;color:var(--muted);font-size:12px}
+@media(max-width:560px){.ready-row small,.asm-form{margin-left:0}}
