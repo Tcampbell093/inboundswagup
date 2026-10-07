@@ -62,6 +62,9 @@ async function ensureSchema() {
       id TEXT PRIMARY KEY,title TEXT NOT NULL,summary TEXT NOT NULL,effective_date DATE NOT NULL,
       read_required BOOLEAN NOT NULL DEFAULT FALSE,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    -- Shown as a pop-up the first time someone opens the Hub each day.
+    ALTER TABLE hub_announcements ADD COLUMN IF NOT EXISTS show_on_open BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE hub_policies ADD COLUMN IF NOT EXISTS show_on_open BOOLEAN NOT NULL DEFAULT FALSE;
     CREATE TABLE IF NOT EXISTS hub_cleaning_assignments (
       id TEXT PRIMARY KEY,work_date DATE NOT NULL,area TEXT NOT NULL,task TEXT,employee_name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'scheduled',started_at TIMESTAMPTZ,finished_at TIMESTAMPTZ,completed_by TEXT,
@@ -162,8 +165,8 @@ function withHubCheckin(row, checkin) {
 
 async function readFeed(includeAdmin = false) {
   const [a, p, c, fs, sideRows] = await Promise.all([
-    pool.query(`SELECT id,title,message,start_date,end_date,department,pinned,updated_at FROM hub_announcements ORDER BY pinned DESC,start_date DESC,updated_at DESC`),
-    pool.query(`SELECT id,title,summary,effective_date,read_required,updated_at FROM hub_policies ORDER BY effective_date DESC,updated_at DESC`),
+    pool.query(`SELECT id,title,message,start_date,end_date,department,pinned,show_on_open,updated_at FROM hub_announcements ORDER BY pinned DESC,start_date DESC,updated_at DESC`),
+    pool.query(`SELECT id,title,summary,effective_date,read_required,show_on_open,updated_at FROM hub_policies ORDER BY effective_date DESC,updated_at DESC`),
     pool.query(`SELECT * FROM hub_cleaning_assignments ORDER BY work_date,area,employee_name`),
     fetchFairShiftCleaning(),
     pool.query('SELECT department_id,department_name,side FROM hub_cleaning_area_sides'),
@@ -183,8 +186,8 @@ async function readFeed(includeAdmin = false) {
   const cleaningAreas=knownAreas.length?knownAreas:
     [...new Set(activeCleaning.map(x=>x.area))].map(name=>({name,side:sideFor(name)}));
   const result = {
-    announcements: a.rows.map(r => ({ id: r.id, title: r.title, message: r.message, startDate: dateValue(r.start_date), endDate: r.end_date ? dateValue(r.end_date) : '', department: r.department, pinned: !!r.pinned, updatedAt: r.updated_at })),
-    policies: p.rows.map(r => ({ id: r.id, title: r.title, summary: r.summary, effectiveDate: dateValue(r.effective_date), readRequired: !!r.read_required, updatedAt: r.updated_at })),
+    announcements: a.rows.map(r => ({ id: r.id, title: r.title, message: r.message, startDate: dateValue(r.start_date), endDate: r.end_date ? dateValue(r.end_date) : '', department: r.department, pinned: !!r.pinned, showOnOpen: !!r.show_on_open, updatedAt: r.updated_at })),
+    policies: p.rows.map(r => ({ id: r.id, title: r.title, summary: r.summary, effectiveDate: dateValue(r.effective_date), readRequired: !!r.read_required, showOnOpen: !!r.show_on_open, updatedAt: r.updated_at })),
     cleaning: activeCleaning,
     cleaningAreas,
     cleaningSource: fs.ok ? 'fairshift' : 'hub-fallback',
@@ -204,14 +207,14 @@ async function upsertAnnouncement(body) {
   const title = text(body.title, 120), message = text(body.message, 1200), startDate = validDate(body.startDate), endDate = validDate(body.endDate);
   if (!title || !message || !startDate) throw new Error('Title, message, and start date are required.');
   const id = text(body.id, 80) || crypto.randomUUID();
-  const saved = await pool.query(`INSERT INTO hub_announcements(id,title,message,start_date,end_date,department,pinned,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,NOW()) ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,message=EXCLUDED.message,start_date=EXCLUDED.start_date,end_date=EXCLUDED.end_date,department=EXCLUDED.department,pinned=EXCLUDED.pinned,updated_at=NOW() RETURNING (xmax = 0) AS inserted`, [id, title, message, startDate, endDate || null, text(body.department, 80) || 'All teams', !!body.pinned]);
+  const saved = await pool.query(`INSERT INTO hub_announcements(id,title,message,start_date,end_date,department,pinned,show_on_open,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NOW()) ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,message=EXCLUDED.message,start_date=EXCLUDED.start_date,end_date=EXCLUDED.end_date,department=EXCLUDED.department,pinned=EXCLUDED.pinned,show_on_open=EXCLUDED.show_on_open,updated_at=NOW() RETURNING (xmax = 0) AS inserted`, [id, title, message, startDate, endDate || null, text(body.department, 80) || 'All teams', !!body.pinned, !!body.showOnOpen]);
   return { id, created: saved.rows[0]?.inserted === true, title, detail: message };
 }
 async function upsertPolicy(body) {
   const title = text(body.title, 140), summary = text(body.summary, 1600), effectiveDate = validDate(body.effectiveDate);
   if (!title || !summary || !effectiveDate) throw new Error('Title, summary, and effective date are required.');
   const id = text(body.id, 80) || crypto.randomUUID();
-  const saved = await pool.query(`INSERT INTO hub_policies(id,title,summary,effective_date,read_required,updated_at) VALUES($1,$2,$3,$4,$5,NOW()) ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,summary=EXCLUDED.summary,effective_date=EXCLUDED.effective_date,read_required=EXCLUDED.read_required,updated_at=NOW() RETURNING (xmax = 0) AS inserted`, [id, title, summary, effectiveDate, !!body.readRequired]);
+  const saved = await pool.query(`INSERT INTO hub_policies(id,title,summary,effective_date,read_required,show_on_open,updated_at) VALUES($1,$2,$3,$4,$5,$6,NOW()) ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,summary=EXCLUDED.summary,effective_date=EXCLUDED.effective_date,read_required=EXCLUDED.read_required,show_on_open=EXCLUDED.show_on_open,updated_at=NOW() RETURNING (xmax = 0) AS inserted`, [id, title, summary, effectiveDate, !!body.readRequired, !!body.showOnOpen]);
   return { id, created: saved.rows[0]?.inserted === true, title, detail: summary };
 }
 async function deleteRecord(body) {
@@ -293,6 +296,13 @@ exports.handler = async function handler(event) {
     if (result) result = { id: result.id };
     else if (body.action === 'deleteAnnouncement') { body.kind = 'announcement'; await deleteRecord(body); }
     else if (body.action === 'deletePolicy') { body.kind = 'policy'; await deleteRecord(body); }
+    else if (body.action === 'setShowOnOpen') {
+      const table = { announcement: 'hub_announcements', policy: 'hub_policies' }[text(body.kind, 30)];
+      const id = text(body.id, 80);
+      if (!table || !id) return json(400, { error: 'Choose an announcement or policy.' });
+      const updated = await pool.query(`UPDATE ${table} SET show_on_open=$2 WHERE id=$1`, [id, !!body.on]);
+      if (!updated.rowCount) return json(404, { error: 'That item no longer exists.' });
+    }
     else return json(400, { error: 'Unsupported action.' });
     return json(200, { ok: true, result });
   } catch (error) {

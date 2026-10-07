@@ -82,3 +82,28 @@
 .cleaning-side-title span{font-size:10px;letter-spacing:0;text-transform:none;font-weight:750;color:var(--muted);background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:4px 8px}
 .cleaning-side-rows{display:grid;gap:9px}
 .cleaning-side-empty{border:1px dashed var(--line);border-radius:12px;padding:11px 14px;font-size:12px;color:var(--muted);background:rgba(255,255,255,.55)}
+
+/* Long announcement / policy text: cut off with "Read more" */
+.clamp{white-space:pre-line;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;line-clamp:4;overflow:hidden}
+.clamp.expanded{display:block;-webkit-line-clamp:unset;line-clamp:unset;overflow:visible}
+.policy-summary{font-size:13px;color:#4f5d57;line-height:1.5;margin-top:6px}
+.read-more{border:0;background:none;padding:4px 0 0;color:var(--ink);font-weight:850;font-size:12px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.ack-inline{color:#a94a22;font-weight:900}
+/* Policy bank */
+.bank-dialog{max-width:min(760px,calc(100% - 28px))}
+.bank-search{width:100%;border:1px solid var(--line);border-radius:12px;padding:11px 13px;font:inherit;background:#fff;margin-bottom:14px}
+.bank-list{display:grid;gap:12px}
+.bank-item{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:15px 16px}
+.bank-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bank-head h4{margin:0;font-size:16px;flex:1 1 220px}
+/* Daily pop-up */
+.popup-dialog{max-width:min(640px,calc(100% - 28px))}
+.popup-list{display:grid;gap:14px}
+.popup-item{background:var(--paper);border:1px solid var(--line);border-left:4px solid var(--orange);border-radius:14px;padding:14px 16px}
+.popup-item h4{margin:0 0 7px;font-size:17px}
+.popup-item p{margin:0;white-space:pre-line;line-height:1.55;color:#3f4b46;font-size:14px}
+.popup-ok{width:100%;margin-top:16px}
+/* Admin: pop-up toggle */
+.admin-row-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.mini-toggle{border:1px solid var(--line);background:#fff;color:#55615b;border-radius:9px;padding:7px 9px;font-size:11px;font-weight:850;cursor:pointer}
+.mini-toggle.on{background:#fff4ec;border-color:#f3c3aa;color:#a94a22}

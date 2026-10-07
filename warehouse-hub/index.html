@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="theme-color" content="#123d34" />
 <title>Warehouse Operations Hub</title>
-<link rel="stylesheet" href="style.css?v=20260930-bingophotos1" />
+<link rel="stylesheet" href="style.css?v=20261007-policybank1" />
 </head>
 <body>
 <div class="topbar"><div class="topbar-inner">
@@ -23,7 +23,7 @@
     <div class="view-panel active" id="todayView" role="tabpanel" aria-labelledby="todayDot">
       <div class="dashboard-grid">
         <div class="card"><div class="card-title"><h3>Today’s cleaning</h3><span class="smallpill">Inbound + Outbound</span></div><div class="cleaning-list" id="todayCleaning"></div><div class="cleaning-footer"><span id="cleaningSourceLabel">Cleaning schedule · 15 min credit</span><button class="linkbtn" type="button" onclick="window.HubRotations?.open?.()">Open Cleaning ↗</button></div></div>
-        <div class="stack"><div class="card"><div class="card-title"><h3>Announcements</h3><span class="smallpill" id="announcementCount">0 active</span></div><div id="todayAnnouncements"></div></div><div class="card"><div class="card-title"><h3>Policy updates</h3><span class="smallpill" id="policyCount">0 current</span></div><div id="todayPolicies"></div></div></div>
+        <div class="stack"><div class="card"><div class="card-title"><h3>Announcements</h3><span class="smallpill" id="announcementCount">0 active</span></div><div id="todayAnnouncements"></div></div><div class="card"><div class="card-title"><h3>Policy updates</h3><span class="smallpill" id="policyCount">0 current</span></div><div id="todayPolicies"></div><div class="cleaning-footer"><span id="policyBankNote"></span><button class="linkbtn" type="button" id="policyBankBtn">Policy bank ↗</button></div></div></div>
       </div>
     </div>
 
@@ -57,11 +57,13 @@
 </main>
 <footer><div class="wrap">Warehouse Operations Hub • Internal operations launcher</div></footer>
 
+<dialog class="dialog bank-dialog" id="policyBank"><div class="dialog-head"><div><h3>Policy bank</h3><div class="policy-meta" id="policyBankCount"></div></div><button class="close" data-close="policyBank" type="button">×</button></div><div class="dialog-body"><input id="policyBankSearch" class="bank-search" type="search" placeholder="Search policies…" aria-label="Search policies" autocomplete="off" /><div id="policyBankList" class="bank-list"></div></div></dialog>
+<dialog class="dialog popup-dialog" id="hubPopup"><div class="dialog-head"><h3 id="hubPopupTitle">Please read before you start</h3></div><div class="dialog-body"><div id="hubPopupList" class="popup-list"></div><button class="action popup-ok" id="hubPopupOk" type="button">Got it · Entendido</button></div></dialog>
 <dialog class="dialog" id="checkinDialog"><div class="dialog-head"><h3>Cleaning check-in</h3><button class="close" data-close="checkinDialog" type="button">×</button></div><div class="dialog-body"><div class="checkin-box"><div class="message" id="checkinMessage"></div><p id="checkinAssignment" class="policy-meta"></p><div class="field"><label for="checkinName">Employee name</label><input id="checkinName" autocomplete="name" /></div><div class="field"><label for="checkinPin">PIN</label><input id="checkinPin" type="password" inputmode="numeric" maxlength="8" autocomplete="off" /></div><button class="action" id="checkinSubmit" type="button">Start cleaning</button></div></div></dialog>
 
 <dialog class="dialog" id="managerDialog"><div class="dialog-head"><h3>Admin Hub tools</h3><button class="close" data-close="managerDialog" type="button">×</button></div><div class="dialog-body"><div class="message" id="managerMessage"></div><div class="manager-grid">
-  <section class="manager-section"><h4>Announcement</h4><form id="announcementForm"><div class="field"><label>Title</label><input name="title" required maxlength="120" /></div><div class="field"><label>Message</label><textarea name="message" required maxlength="1200"></textarea></div><div class="form-row"><div class="field"><label>Start date</label><input name="startDate" type="date" required /></div><div class="field"><label>End date (optional)</label><input name="endDate" type="date" /></div></div><div class="field"><label>Department</label><input name="department" value="All teams" maxlength="80" /></div><label class="check"><input name="pinned" type="checkbox" /> Pin this announcement</label><button class="action" type="submit">Post announcement</button></form><div class="admin-list" id="announcementAdminList"></div></section>
-  <section class="manager-section"><h4>Policy update</h4><form id="policyForm"><div class="field"><label>Title</label><input name="title" required maxlength="140" /></div><div class="field"><label>Summary</label><textarea name="summary" required maxlength="1600"></textarea></div><div class="field"><label>Effective date</label><input name="effectiveDate" type="date" required /></div><label class="check"><input name="readRequired" type="checkbox" /> Mark as read required</label><button class="action" type="submit">Publish policy</button></form><div class="admin-list" id="policyAdminList"></div></section>
+  <section class="manager-section"><h4>Announcement</h4><form id="announcementForm"><div class="field"><label>Title</label><input name="title" required maxlength="120" /></div><div class="field"><label>Message</label><textarea name="message" required maxlength="1200"></textarea></div><div class="form-row"><div class="field"><label>Start date</label><input name="startDate" type="date" required /></div><div class="field"><label>End date (optional)</label><input name="endDate" type="date" /></div></div><div class="field"><label>Department</label><input name="department" value="All teams" maxlength="80" /></div><label class="check"><input name="pinned" type="checkbox" /> Pin this announcement</label><label class="check"><input name="showOnOpen" type="checkbox" /> Pop up when the Hub opens (once a day)</label><button class="action" type="submit">Post announcement</button></form><div class="admin-list" id="announcementAdminList"></div></section>
+  <section class="manager-section"><h4>Policy update</h4><form id="policyForm"><div class="field"><label>Title</label><input name="title" required maxlength="140" /></div><div class="field"><label>Summary</label><textarea name="summary" required maxlength="1600"></textarea></div><div class="field"><label>Effective date</label><input name="effectiveDate" type="date" required /></div><label class="check"><input name="readRequired" type="checkbox" /> Mark as read required</label><label class="check"><input name="showOnOpen" type="checkbox" /> Pop up when the Hub opens (once a day)</label><button class="action" type="submit">Publish policy</button></form><div class="admin-list" id="policyAdminList"></div></section>
   <section class="manager-section"><h4>Cleaning & rotations</h4><p class="policy-meta">Plan weekly cleaning across Inbound and Outbound, manage absences and rotate the same employee pool across all enabled areas. Existing cleaning and Bingo history remain connected during the transition.</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px"><button class="action" type="button" onclick="document.getElementById('managerDialog').close();window.HubRotations?.open?.()">Open Cleaning Planner</button><button class="action secondary" type="button" onclick="document.getElementById('managerDialog').close();window.HubRotations?.open?.('areas')">Configure Inbound / Outbound</button></div></section>
 </div></div></dialog>
 <script>
@@ -77,7 +79,7 @@
 <script src="associate-auth.js?v=20260930-bingophotos1"></script>
 <script src="push.js?v=20261006-alertprefs"></script>
 <script src="request-alerts.js?v=20260925-2"></script>
-<script src="script.js?v=20260930-hubpinauthority1"></script>
+<script src="script.js?v=20261007-policybank1"></script>
 <script src="rotations.js?v=20261005-posterprint4"></script>
 <script src="cleaning-inline.js?v=20260924-1415"></script>
 <script src="labor-board.js?v=20261007-3"></script>
