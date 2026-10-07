@@ -13,7 +13,7 @@ const SESSION_COOKIE = 'hub_associate_session';
 const SESSION_VERSION = 2;
 // The departments the morning board and UPH track (names match the team list).
 const LABOR_DEPARTMENTS = ['QA Receiving', 'QA Prep', 'Assembly'];
-const DEFAULT_GOALS = { 'QA Receiving': 200, 'QA Prep': 300, Assembly: 175 };
+const DEFAULT_GOALS = { 'QA Receiving': 200, 'QA Prep': 300, Assembly: 220 };
 const SPANISH = {
   'QA Receiving': 'Recepción QA', 'QA Prep': 'Preparación QA', Assembly: 'Ensamblaje', 'Put-Away': 'Almacenamiento',
   'Printing Station': 'Estación de impresión', Printing: 'Impresión', Returns: 'Devoluciones', Fulfillment: 'Despacho',
@@ -74,6 +74,8 @@ async function ensureSchema(db) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (work_date, department)
     );
+    -- Hours let the month's UPH be total units / total hours, like the report.
+    ALTER TABLE hub_labor_uph ADD COLUMN IF NOT EXISTS hours NUMERIC;
     CREATE TABLE IF NOT EXISTS hub_labor_goals (
       department TEXT PRIMARY KEY,
       goal NUMERIC NOT NULL,
@@ -115,12 +117,30 @@ function workdaysInMonth(text) {
 }
 const label = (text, opts) => asDate(text).toLocaleDateString('en-US', { timeZone: 'UTC', ...opts });
 
-// UPH needed today and every remaining workday for the month to finish at goal.
-// Only entered days count as done, so a missed entry doesn't drag the target.
+// Month UPH = total units / total hours (units = UPH x hours), matching the
+// report. Days entered without hours fall back to a plain average.
+function monthUph(entries) {
+  if (!entries.length) return null;
+  if (entries.every((e) => e.hours > 0)) {
+    const hours = entries.reduce((sum, e) => sum + e.hours, 0);
+    return entries.reduce((sum, e) => sum + e.uph * e.hours, 0) / hours;
+  }
+  return entries.reduce((sum, e) => sum + e.uph, 0) / entries.length;
+}
+
+// UPH needed today and every remaining workday for the month to finish at
+// goal. Only entered days count as done, so a missed entry doesn't drag the
+// target. With hours, remaining days are assumed to run the month's average
+// hours: need = goal + (goal x hours so far - units so far) / (avg hours x days left).
 function minimumToday(goal, entries, total) {
   const left = total - entries.length;
   if (!goal || left <= 0) return null;
-  const banked = entries.reduce((sum, value) => sum + value, 0);
+  if (entries.length && entries.every((e) => e.hours > 0)) {
+    const hours = entries.reduce((sum, e) => sum + e.hours, 0);
+    const units = entries.reduce((sum, e) => sum + e.uph * e.hours, 0);
+    return Math.max(0, Math.ceil(goal + (goal * hours - units) / ((hours / entries.length) * left)));
+  }
+  const banked = entries.reduce((sum, e) => sum + e.uph, 0);
   return Math.max(0, Math.ceil((goal * total - banked) / left));
 }
 
@@ -131,7 +151,7 @@ async function boardState(db, viewer) {
   const monthStart = `${today.slice(0, 7)}-01`;
   const [boardRows, uphRows, goalRows, assignRows, people] = await Promise.all([
     db.query(`SELECT department,pos,units,updated_by,updated_at FROM hub_labor_board WHERE work_date=$1`, [today]),
-    db.query(`SELECT to_char(work_date,'YYYY-MM-DD') AS work_date,department,uph FROM hub_labor_uph WHERE work_date >= $1 AND work_date < $2 OR work_date=$3`, [monthStart, today, lastWorkday]),
+    db.query(`SELECT to_char(work_date,'YYYY-MM-DD') AS work_date,department,uph,hours FROM hub_labor_uph WHERE work_date >= $1 AND work_date < $2 OR work_date >= $3`, [monthStart, today, addDays(today, -62)]),
     db.query(`SELECT department,goal FROM hub_labor_goals`),
     db.query(`SELECT employee_id,department FROM hub_labor_assignments WHERE work_date=$1`, [today]),
     schedule.employees(db),
@@ -143,13 +163,15 @@ async function boardState(db, viewer) {
 
   const uph = LABOR_DEPARTMENTS.map((department) => {
     const mine = uphRows.rows.filter((row) => row.department === department);
-    const monthEntries = mine.filter((row) => row.work_date >= monthStart && row.work_date < today && isWorkday(row.work_date)).map((row) => Number(row.uph));
+    const monthEntries = mine.filter((row) => row.work_date >= monthStart && row.work_date < today && isWorkday(row.work_date))
+      .map((row) => ({ uph: Number(row.uph), hours: row.hours === null ? 0 : Number(row.hours) }));
     const yesterday = mine.find((row) => row.work_date === lastWorkday);
+    const month = monthUph(monthEntries);
     return {
       department,
       goal: goals[department] || null,
       yesterday: yesterday ? Math.round(Number(yesterday.uph)) : null,
-      month: monthEntries.length ? Math.round(monthEntries.reduce((s, v) => s + v, 0) / monthEntries.length) : null,
+      month: month === null ? null : Math.round(month),
       entries: monthEntries.length,
       minimum: minimumToday(goals[department], monthEntries, total),
     };
@@ -204,6 +226,9 @@ async function boardState(db, viewer) {
     }
   }
   if (result.canEdit) {
+    // Recent daily UPH and hours, so a lead can view or correct a past day.
+    result.history = uphRows.rows.filter((row) => row.work_date < today)
+      .map((row) => ({ date: row.work_date, department: row.department, uph: Number(row.uph), hours: row.hours === null ? null : Number(row.hours) }));
     result.roster = placed.map(({ id, name, home, today: dept }) => ({ id, name, home, today: dept }));
     result.departments = (await schedule.departments(db)).filter((d) => d.active).map((d) => d.name);
   }
@@ -217,6 +242,36 @@ const count = (value) => {
   return Math.round(number);
 };
 
+const decimal = (value) => {
+  if (value === '' || value === null || value === undefined) return null;
+  const number = Number(String(value).replace(/,/g, ''));
+  if (!Number.isFinite(number) || number < 0 || number > 100000) throw new Error('UPH and hours must be zero or more.');
+  return Math.round(number * 100) / 100;
+};
+
+// The day a UPH entry is for: the last workday by default, or a past workday
+// within ~2 months (for corrections and back-filling).
+function pastWorkday(value, fallback) {
+  const date = clean(value, 10);
+  if (!date) return fallback;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date >= easternToday() || date < addDays(easternToday(), -62)) throw new Error('Choose a past day within the last two months.');
+  if (!isWorkday(date)) throw new Error('UPH is only kept for Monday to Friday.');
+  return date;
+}
+
+async function saveUph(db, date, department, uphValue, hoursValue, actor) {
+  if (!LABOR_DEPARTMENTS.includes(department)) return;
+  const uph = decimal(uphValue);
+  const hours = decimal(hoursValue);
+  if (uph === null) {
+    await db.query('DELETE FROM hub_labor_uph WHERE work_date=$1 AND department=$2', [date, department]);
+    return;
+  }
+  await db.query(`INSERT INTO hub_labor_uph(work_date,department,uph,hours,updated_by,updated_at) VALUES($1,$2,$3,$4,$5,NOW())
+    ON CONFLICT(work_date,department) DO UPDATE SET uph=EXCLUDED.uph,hours=EXCLUDED.hours,updated_by=EXCLUDED.updated_by,updated_at=NOW()`,
+  [date, department, uph, hours, actor]);
+}
+
 async function save(db, viewer, body) {
   const actor = clean(viewer.name, 100);
   const today = easternToday();
@@ -225,6 +280,7 @@ async function save(db, viewer, body) {
   try {
     await client.query('BEGIN');
     if (body.action === 'saveBoard') {
+      const uphDate = pastWorkday(body.uphDate, lastWorkday);
       for (const row of Array.isArray(body.board) ? body.board : []) {
         if (!LABOR_DEPARTMENTS.includes(row?.department)) continue;
         const pos = count(row.pos); const units = count(row.units);
@@ -235,11 +291,7 @@ async function save(db, viewer, body) {
             ON CONFLICT(work_date,department) DO UPDATE SET pos=EXCLUDED.pos,units=EXCLUDED.units,updated_by=EXCLUDED.updated_by,updated_at=NOW()`,
           [today, row.department, pos || 0, units || 0, actor]);
         }
-        const uph = count(row.uph);
-        if (uph === null) await client.query('DELETE FROM hub_labor_uph WHERE work_date=$1 AND department=$2', [lastWorkday, row.department]);
-        else await client.query(`INSERT INTO hub_labor_uph(work_date,department,uph,updated_by,updated_at) VALUES($1,$2,$3,$4,NOW())
-          ON CONFLICT(work_date,department) DO UPDATE SET uph=EXCLUDED.uph,updated_by=EXCLUDED.updated_by,updated_at=NOW()`,
-        [lastWorkday, row.department, uph, actor]);
+        await saveUph(client, uphDate, row.department, row.uph, row.hours, actor);
         const goal = count(row.goal);
         if (goal) await client.query(`INSERT INTO hub_labor_goals(department,goal,updated_by,updated_at) VALUES($1,$2,$3,NOW())
           ON CONFLICT(department) DO UPDATE SET goal=EXCLUDED.goal,updated_by=EXCLUDED.updated_by,updated_at=NOW()`,
@@ -273,6 +325,31 @@ async function save(db, viewer, body) {
   }
 }
 
+// Back-fill past days' UPH and hours from the daily report, authorized with
+// the workbook import key (same key as the Excel sync).
+async function backfill(db, request, body) {
+  const expected = env('OVERSTOCK_EXCEL_IMPORT_SECRET');
+  const supplied = request.headers.get('x-overstock-import-key') || '';
+  if (!expected || supplied.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))) {
+    return [401, { error: 'Invalid import key.' }];
+  }
+  const rows = Array.isArray(body.rows) ? body.rows.slice(0, 200) : [];
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    for (const row of rows) {
+      await saveUph(client, pastWorkday(row.date, ''), row.department, row.uph, row.hours, clean(body.by || 'Daily report back-fill', 100));
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    return [400, { error: clean(error.message, 200) }];
+  } finally {
+    client.release();
+  }
+  return [200, { ok: true, saved: rows.length, ...(await boardState(db, null)) }];
+}
+
 export default async (request) => {
   try {
     const db = getPool();
@@ -281,9 +358,10 @@ export default async (request) => {
     const viewer = session(request);
     if (request.method === 'GET') return json(200, await boardState(db, viewer));
     if (request.method !== 'POST') return json(405, { error: 'Method not allowed.' });
+    const body = await request.json().catch(() => ({}));
+    if (body.action === 'backfillUph') return json(...(await backfill(db, request, body)));
     if (!viewer) return json(401, { error: 'Sign in to the Hub first.' });
     if (!canEdit(viewer)) return json(403, { error: 'Only Team Leads and Admins can change the labor board.' });
-    const body = await request.json().catch(() => ({}));
     await save(db, viewer, body);
     return json(200, { ok: true, ...(await boardState(db, viewer)) });
   } catch (error) {
