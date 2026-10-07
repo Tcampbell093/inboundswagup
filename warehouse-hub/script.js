@@ -48,6 +48,8 @@
     todayDot.classList.toggle('active', isToday);
     weekDot.classList.toggle('active', isWeek);
     bingoDot.classList.toggle('active', isBingo);
+    // Text in a hidden panel can't be measured; check it once it shows.
+    if (isToday) requestAnimationFrame(() => { clampLongText($('todayAnnouncements')); clampLongText($('todayPolicies')); });
     todayDot.setAttribute('aria-selected', String(isToday));
     weekDot.setAttribute('aria-selected', String(isWeek));
     bingoDot.setAttribute('aria-selected', String(isBingo));
@@ -132,14 +134,96 @@
     const anns = activeAnnouncements(t).sort((a, b) => Number(b.pinned) - Number(a.pinned));
     $('announcementCount').textContent = `${anns.length} active`;
     $('todayAnnouncements').innerHTML = anns.length
-      ? anns.map((a) => `<div class="notice"><div class="notice-meta">${a.pinned ? 'Pinned • ' : ''}${escapeHtml(a.department || 'All teams')}</div><h4>${escapeHtml(a.title)}</h4><p>${escapeHtml(a.message)}</p></div>`).join('')
+      ? anns.map((a) => `<div class="notice"><div class="notice-meta">${a.pinned ? 'Pinned • ' : ''}${escapeHtml(a.department || 'All teams')}</div><h4>${escapeHtml(a.title)}</h4><p class="clamp">${escapeHtml(a.message)}</p></div>`).join('')
       : '<div class="empty">No active announcements.</div>';
 
     const pol = currentPolicies();
     $('policyCount').textContent = `${pol.length} current`;
     $('todayPolicies').innerHTML = pol.length
-      ? pol.map((p) => `<div class="policy-row"><div><div class="policy-title">${escapeHtml(p.title)}</div><div class="policy-meta">Effective ${escapeHtml(fmtDay(p.effectiveDate))} • ${escapeHtml(p.summary)}</div></div>${p.readRequired ? '<div class="ack">Read required</div>' : ''}</div>`).join('')
+      ? pol.map((p) => `<div class="policy-row"><div><div class="policy-title">${escapeHtml(p.title)}</div><div class="policy-meta">Effective ${escapeHtml(fmtDay(p.effectiveDate))}${p.readRequired ? ' • <b class="ack-inline">Read required</b>' : ''}</div><div class="policy-summary clamp">${escapeHtml(p.summary)}</div></div></div>`).join('')
       : '<div class="empty">No policy updates have been published.</div>';
+    $('policyBankNote').textContent = feed.policies.length ? `${feed.policies.length} polic${feed.policies.length === 1 ? 'y' : 'ies'} on file` : '';
+    clampLongText($('todayAnnouncements'));
+    clampLongText($('todayPolicies'));
+    if ($('policyBank')?.open) renderPolicyBank();
+  }
+
+
+  // Long announcement and policy text is cut to a few lines with a
+  // "Read more" toggle, so one long post doesn't stretch the page.
+  function clampLongText(root) {
+    root?.querySelectorAll('.clamp').forEach((el) => {
+      if (el.nextElementSibling?.classList.contains('read-more')) return;
+      if (el.scrollHeight <= el.clientHeight + 2) return;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'read-more';
+      btn.textContent = 'Read more';
+      btn.addEventListener('click', () => {
+        const open = el.classList.toggle('expanded');
+        btn.textContent = open ? 'Show less' : 'Read more';
+      });
+      el.after(btn);
+    });
+  }
+
+  // Policy bank: every policy ever published, newest first, searchable.
+  function renderPolicyBank() {
+    const q = String($('policyBankSearch').value || '').trim().toLowerCase();
+    const t = today();
+    const all = feed.policies.slice().sort((a, b) => String(b.effectiveDate).localeCompare(String(a.effectiveDate)));
+    const rows = all.filter((p) => !q || `${p.title} ${p.summary}`.toLowerCase().includes(q));
+    $('policyBankCount').textContent = q ? `${rows.length} of ${all.length} policies` : `${all.length} polic${all.length === 1 ? 'y' : 'ies'}`;
+    $('policyBankList').innerHTML = rows.length
+      ? rows.map((p) => `<article class="bank-item"><div class="bank-head"><h4>${escapeHtml(p.title)}</h4>${p.effectiveDate > t ? '<span class="smallpill">Upcoming</span>' : ''}${p.readRequired ? '<span class="ack">Read required</span>' : ''}</div><div class="policy-meta">Effective ${escapeHtml(fmtDay(p.effectiveDate))}</div><div class="policy-summary clamp">${escapeHtml(p.summary)}</div></article>`).join('')
+      : `<div class="empty">${all.length ? 'No policies match this search.' : 'No policies have been published.'}</div>`;
+    clampLongText($('policyBankList'));
+  }
+  function openPolicyBank() {
+    $('policyBankSearch').value = '';
+    if (!$('policyBank').open) $('policyBank').showModal();
+    renderPolicyBank(); // after opening, so long text can be measured
+  }
+  $('policyBankBtn')?.addEventListener('click', openPolicyBank);
+  $('policyBankSearch')?.addEventListener('input', renderPolicyBank);
+
+  // Announcements and policies an admin marked "pop up" open in a window the
+  // first time this browser opens the Hub each day, so nobody misses them.
+  const POPUP_KEY = 'hubPopupSeen';
+  function popupSeen() {
+    try { const v = JSON.parse(localStorage.getItem(POPUP_KEY) || '{}'); return v.date === today() ? v.ids || [] : []; } catch { return []; }
+  }
+  function markPopupSeen(ids) {
+    try { localStorage.setItem(POPUP_KEY, JSON.stringify({ date: today(), ids: [...new Set([...popupSeen(), ...ids])] })); } catch {}
+  }
+  let popupChecked = false;
+  function maybeShowPopups() {
+    if (popupChecked) return;
+    popupChecked = true;
+    const t = today(), seen = popupSeen();
+    const items = [
+      ...activeAnnouncements(t).filter((a) => a.showOnOpen).map((a) => ({ key: `a:${a.id}`, label: `Announcement • ${a.department || 'All teams'}`, title: a.title, body: a.message })),
+      ...feed.policies.filter((p) => p.showOnOpen && p.effectiveDate <= t).map((p) => ({ key: `p:${p.id}`, label: `Policy • Effective ${fmtDay(p.effectiveDate)}`, title: p.title, body: p.summary })),
+    ].filter((item) => !seen.includes(item.key));
+    if (!items.length) return;
+    // Wait for the sign-in window (and any other) to close first, so the
+    // two never stack. It must stay clear for two checks in a row.
+    let clear = 0;
+    const waitTimer = setInterval(() => {
+      clear = document.querySelector('dialog[open]') ? 0 : clear + 1;
+      if (clear < 2) return;
+      clearInterval(waitTimer);
+      showPopups(items);
+    }, 800);
+  }
+  function showPopups(items) {
+    $('hubPopupList').innerHTML = items.map((item) => `<article class="popup-item"><div class="notice-meta">${escapeHtml(item.label)}</div><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.body)}</p></article>`).join('');
+    $('hubPopupTitle').textContent = items.length === 1 ? 'Please read before you start' : `Please read these ${items.length} updates`;
+    const dlg = $('hubPopup');
+    const done = () => { markPopupSeen(items.map((item) => item.key)); dlg.close(); };
+    $('hubPopupOk').onclick = done;
+    dlg.oncancel = (e) => { e.preventDefault(); done(); };
+    dlg.showModal();
   }
 
   function renderWeek() {
@@ -171,6 +255,7 @@
       if (!r.ok) throw new Error('Hub data unavailable.');
       feed = await r.json();
       render();
+      maybeShowPopups();
     } catch (e) {
       $('todayCleaning').innerHTML = `<div class="empty">${escapeHtml(e.message || 'Hub data is unavailable.')}</div>`;
       $('todayAnnouncements').innerHTML = '<div class="empty">Unable to load announcements.</div>';
@@ -1045,10 +1130,10 @@
   function renderAdmin() {
     if (!adminData) return;
     $('announcementAdminList').innerHTML = adminData.announcements.length
-      ? adminData.announcements.map((a) => `<div class="admin-row"><div><strong>${escapeHtml(a.title)}</strong><small>${escapeHtml(a.startDate)}${a.endDate ? ' → ' + escapeHtml(a.endDate) : ''}</small></div><button class="mini-delete" data-del-ann="${escapeHtml(a.id)}">Delete</button></div>`).join('')
+      ? adminData.announcements.map((a) => `<div class="admin-row"><div><strong>${escapeHtml(a.title)}</strong><small>${escapeHtml(a.startDate)}${a.endDate ? ' → ' + escapeHtml(a.endDate) : ''}</small></div><div class="admin-row-actions">${popupToggle('announcement', a)}<button class="mini-delete" data-del-ann="${escapeHtml(a.id)}">Delete</button></div></div>`).join('')
       : '<div class="policy-meta">None posted.</div>';
     $('policyAdminList').innerHTML = adminData.policies.length
-      ? adminData.policies.map((p) => `<div class="admin-row"><div><strong>${escapeHtml(p.title)}</strong><small>Effective ${escapeHtml(p.effectiveDate)}</small></div><button class="mini-delete" data-del-pol="${escapeHtml(p.id)}">Delete</button></div>`).join('')
+      ? adminData.policies.map((p) => `<div class="admin-row"><div><strong>${escapeHtml(p.title)}</strong><small>Effective ${escapeHtml(p.effectiveDate)}</small></div><div class="admin-row-actions">${popupToggle('policy', p)}<button class="mini-delete" data-del-pol="${escapeHtml(p.id)}">Delete</button></div></div>`).join('')
       : '<div class="policy-meta">None posted.</div>';
     bindAdminDeletes();
     renderTeamAdmin();
@@ -1058,7 +1143,19 @@
     setDefaultDates();
   }
 
+  const popupToggle = (kind, item) => `<button class="mini-toggle${item.showOnOpen ? ' on' : ''}" type="button" data-popup-kind="${kind}" data-popup-id="${escapeHtml(item.id)}" data-popup-on="${item.showOnOpen ? '1' : ''}" title="Open in a pop-up the first time someone opens the Hub each day">${item.showOnOpen ? '🔔 Pop-up on' : 'Pop-up off'}</button>`;
+
   function bindAdminDeletes() {
+    document.querySelectorAll('[data-popup-kind]').forEach((b) => { b.onclick = async () => {
+      b.disabled = true;
+      try {
+        await adminFetch({ action: 'setShowOnOpen', kind: b.dataset.popupKind, id: b.dataset.popupId, on: !b.dataset.popupOn });
+        await refreshAdmin(b.dataset.popupOn ? 'Pop-up turned off.' : 'Pop-up turned on. It shows once a day when someone opens the Hub.');
+      } catch (e) {
+        showMessage('managerMessage', e.message || 'Could not change the pop-up.', true);
+        b.disabled = false;
+      }
+    }; });
     document.querySelectorAll('[data-del-ann]').forEach((b) => { b.onclick = () => deleteAdmin({ action: 'deleteAnnouncement', id: b.dataset.delAnn }); });
     document.querySelectorAll('[data-del-pol]').forEach((b) => { b.onclick = () => deleteAdmin({ action: 'deletePolicy', id: b.dataset.delPol }); });
   }
