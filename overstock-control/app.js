@@ -197,8 +197,9 @@
 
   // Donation readiness, worked out from data.donationInfo (built by the
   // Overstock function). Bulk and Bulk+Assembly POs can go 30 days after they
-  // were first added to Overstock; Pack Builder POs 30 days after the assembly
-  // date a lead enters. POs not in the workbook have no route and are left out.
+  // were first added to Overstock; Pack Builder POs 30 days after their
+  // assembly date, or any time if no date has been added (anyone can add one).
+  // POs not in the workbook have no route and are left out.
   const isLead=()=>['manager','team lead'].includes(String(hubSession?.role||'').toLowerCase());
   const localToday=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
   const dayPlus=(day,n)=>{const d=new Date(`${day}T12:00:00Z`);d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
@@ -253,9 +254,8 @@
       :'<div class="empty">Nothing is ready to donate right now.</div>';
     if(soon.length)html+=`<details class="ready-more"><summary>Coming up in the next 7 days (${soon.length})</summary>`+soon.map(x=>{const w=where(x.e);return`<button type="button" class="ready-row soon" data-ready-entry="${esc(x.e.id)}"><b>PO ${esc(x.e.po)}</b><span class="tag">${esc(routeLabel(x.r.route))}</span><span>📍 ${esc(w.loc)} · <span class="mono">${esc(w.code)}</span></span><small>ready ${esc(shortDay(x.r.readyOn))}</small></button>`}).join('')+'</details>';
     if(needs.size){
-      const lead=isLead();
-      html+=`<details class="ready-more"${openNeeds?' open':''}><summary>Pack Builder POs waiting for an assembly date (${needs.size})</summary><p class="ready-rule">${lead?'Enter the date each PO was assembled. It becomes ready 30 days later.':'A lead or admin enters the assembly date. The PO becomes ready 30 days later.'}</p>`+
-        [...needs.values()].sort((a,b)=>cmp(a.po,b.po)).map(n=>`<div class="ready-row needs"><b>PO ${esc(n.po)}</b><span class="qty">${n.units.toLocaleString()} units</span><span class="mono">${esc([...n.boxes].join(', '))}</span>${lead?assemblyForm(n.po):''}</div>`).join('')+'</details>';
+      html+=`<details class="ready-more"${openNeeds?' open':''}><summary>Pack Builder POs with no assembly date (${needs.size})</summary><p class="ready-rule">These can be donated without a date. If you know when a PO was assembled, add it; it then becomes ready 30 days after that date.</p>`+
+        [...needs.values()].sort((a,b)=>cmp(a.po,b.po)).map(n=>`<div class="ready-row needs"><b>PO ${esc(n.po)}</b><span class="qty">${n.units.toLocaleString()} units</span><span class="mono">${esc([...n.boxes].join(', '))}</span>${assemblyForm(n.po)}</div>`).join('')+'</details>';
     }
     const body=$('readyDialogBody');body.innerHTML=html;
     body.querySelectorAll('details.ready-more').forEach(d=>d.ontoggle=()=>{if(d.querySelector('.needs'))openNeeds=d.open});
@@ -513,18 +513,19 @@
       manual=r.status==='no-route';
       $('eligibilityManual').hidden=!manual;rule.hidden=manual;
       if(manual){confirmBtn.textContent='Confirm Donation';confirmBtn.disabled=!checks.every(c=>c.checked);return}
-      const packBuilder=r.route==='Assembly',ok=r.status==='ready';
+      // No assembly date: still donatable; adding the date is optional.
+      const packBuilder=r.route==='Assembly',ok=r.status==='ready'||r.status==='needs-assembly-date';
       const dateLine=packBuilder
         ?(r.start?`Assembled <b>${esc(shortDay(r.start))}</b> · ${r.days} day${r.days===1?'':'s'} ago`:'No assembly date entered yet')
         :`First added to Overstock <b>${esc(shortDay(r.start))}</b> · ${r.days} day${r.days===1?'':'s'} ago`;
-      const verdict=ok?`<div class="rule-verdict ok">✓ Ready to donate. ${r.wait} days have passed (ready since ${esc(shortDay(r.readyOn))}).</div>`
+      const verdict=r.status==='ready'?`<div class="rule-verdict ok">✓ Ready to donate. ${r.wait} days have passed (ready since ${esc(shortDay(r.readyOn))}).</div>`
         :r.status==='waiting'?`<div class="rule-verdict wait">Not ready until <b>${esc(shortDay(r.readyOn))}</b> (${r.left} day${r.left===1?'':'s'} left).</div>`
-        :`<div class="rule-verdict wait">Pack Builder POs need an assembly date before they can be donated.</div>`;
+        :`<div class="rule-verdict ok">No assembly date yet. You can add it above if you know it, or donate without it.</div>`;
       rule.innerHTML=`<div class="rule-line">Route <span class="tag">${esc(routeLabel(r.route))}</span> <small>from the workbook</small></div>
         <div class="rule-line">${dateLine}</div>
-        ${packBuilder&&lead?`<div class="rule-line">${r.start?'Change':'Enter'} assembly date ${assemblyForm(po,r.start||'')}</div>`:''}
+        ${packBuilder?`<div class="rule-line">${r.start?'Change':'Add'} assembly date ${assemblyForm(po,r.start||'')}</div>`:''}
         ${verdict}
-        ${ok?'':`<p class="rule-note">${lead?'You are a lead or admin, so you can donate it early if needed.':r.status==='needs-assembly-date'?'Ask a lead or admin to enter the assembly date.':'Ask a lead or admin if this needs to be donated early.'}</p>`}`;
+        ${ok?'':`<p class="rule-note">${lead?'You are a lead or admin, so you can donate it early if needed.':'Ask a lead or admin if this needs to be donated early.'}</p>`}`;
       wireAssemblyForms(rule,paint);
       confirmBtn.textContent=ok?'Confirm Donation':lead?'Donate early':'Not ready yet';
       confirmBtn.disabled=!(ok||lead);
