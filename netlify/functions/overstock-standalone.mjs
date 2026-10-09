@@ -93,7 +93,8 @@ function normalizePo(value) {
 
 // Donation readiness. Bulk and Bulk+Assembly POs may be donated 30 days
 // after they were first added to Overstock; Pack Builder (Assembly) POs 30
-// days after their assembly date, which a lead or admin enters. The route
+// days after their assembly date. Without an assembly date a Pack Builder PO
+// can still be donated; the date is optional and anyone can add it. The route
 // comes from the workbook rows PO History keeps (Daily Log and Archive);
 // POs not in the workbook have no route and keep the manual checklist.
 const DONATION_WAIT_DAYS = 30;
@@ -1590,7 +1591,6 @@ async function mutate(action, body, actor = '', adminOrLead = false) {
       if (!adminOrLead) {
         const readiness = donationReadiness(await readDonationInfo(db, entries), existing.po);
         if (readiness.status === 'waiting') throw new Error(`PO ${existing.po} is not ready to donate until ${readiness.readyOn}. A lead or admin can donate it early.`);
-        if (readiness.status === 'needs-assembly-date') throw new Error(`PO ${existing.po} is Pack Builder and has no assembly date yet. Ask a lead or admin.`);
       }
       donateRecordFor(existing, actor);
       const donated = detachAsDonated(existing, actor);
@@ -1810,9 +1810,11 @@ export default async (request) => {
     const actor = hubActor(request);
     if (!actor) return json(401, { error: 'Sign in to the Work Hub before making Overstock changes.' });
     if (action === 'setAssemblyDate') {
-      if (!hubIsAdminOrLead(request)) return json(403, { error: 'Only a lead or admin can set assembly dates.' });
+      // Anyone signed in can add or change an assembly date; clearing one
+      // takes a lead or admin.
       const po = normalizePo(body.po);
       const date = isoDay(body.date);
+      if (!body.date && !hubIsAdminOrLead(request)) return json(403, { error: 'Only a lead or admin can clear an assembly date.' });
       if (!po) return json(400, { error: 'PO is required.' });
       if (body.date && !date) return json(400, { error: 'Assembly date must be a date.' });
       if (date && date > warehouseToday()) return json(400, { error: 'Assembly date cannot be in the future.' });
