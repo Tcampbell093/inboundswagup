@@ -130,15 +130,21 @@ function roundInfo(settings = {}) {
   const cycle = Math.max(0, Math.floor((currentDay - anchorDay) / ROUND_DAYS));
   const startDay = anchorDay + cycle * ROUND_DAYS;
   const endDay = startDay + ROUND_DAYS - 1;
-  const weekNumber = Math.max(1, Math.floor((currentDay - startDay) / 7) + 1);
   const start = dateFromEpoch(startDay);
   const resetNumber = Math.max(0, Number(settings.resetNumber || 0));
+
+  // Free Bingo draws refresh on the warehouse calendar week: every Monday
+  // in America/New_York, regardless of when the current Bingo round began.
+  const weekday = new Date(currentDay * 86400000).getUTCDay();
+  const daysSinceMonday = (weekday + 6) % 7;
+  const monday = dateFromEpoch(currentDay - daysSinceMonday);
+
   return {
     key: resetNumber > 0 ? `${start}:r${resetNumber}` : start,
     start,
     end: dateFromEpoch(endDay),
     daysLeft: Math.max(0, endDay - currentDay + 1),
-    weekKey: `${start}:r${resetNumber}:w${weekNumber}`,
+    weekKey: `monday:${monday}`,
   };
 }
 
