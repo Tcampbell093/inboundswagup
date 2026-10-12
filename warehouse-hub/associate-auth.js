@@ -63,6 +63,16 @@
     .bingo-size-btn.active{background:var(--ink);border-color:var(--ink);color:#fff}
     .bingo-reset-btn{border-color:#d9aaa4;color:#8f2d22;background:#fff7f5}
     .bingo-reset-btn:hover{background:#f8e9e6}
+    .bingo-lookup select{width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 10px;font:inherit;background:#fff}
+    .bingo-lookup-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-top:12px}
+    .bingo-lookup-grid div{border:1px solid var(--line);border-radius:12px;padding:9px 10px;background:#fff;font-size:11px;color:var(--muted)}
+    .bingo-lookup-grid b{display:block;font-size:15px;color:var(--ink);margin-top:2px}
+    .bingo-lookup-free.used b{color:#a94a22}.bingo-lookup-free.available b{color:var(--green)}
+    .bingo-lookup-draws{margin-top:12px;display:grid;gap:6px}
+    .bingo-lookup-draw{display:flex;justify-content:space-between;gap:10px;font-size:12px;border-top:1px solid var(--line);padding-top:6px}
+    .bingo-lookup-draw span:last-child{color:var(--muted);text-align:right}
+    .bingo-lookup-tag{font-size:10px;font-weight:900;border-radius:99px;padding:2px 7px;margin-left:6px;background:#eef3f0}
+    .bingo-lookup-tag.free{background:#e7f6ef;color:#14724e}
     .bingo-admin-current{font-size:11px;color:var(--muted);font-weight:800;text-align:right}
     .bingo-photo-admin{border:1px solid var(--line);border-radius:16px;background:var(--paper);padding:14px;margin-bottom:16px}
     .bingo-photo-admin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
@@ -178,6 +188,14 @@
           <span class="bingo-photo-tip">Photos are cropped square and compressed automatically.</span>
         </div>
         <div class="bingo-photo-grid" id="bingoPhotoGrid"></div>
+      </section>
+      <section class="bingo-admin-controls bingo-lookup">
+        <h4>Player lookup</h4>
+        <p>See one player's coins, this week's free draw, and this round's draws. Read only — nothing changes. Draw times are recorded from Oct 12, 2026.</p>
+        <div class="bingo-admin-control-row">
+          <select id="bingoLookupSelect" aria-label="Choose a player"><option value="">Choose a player…</option></select>
+        </div>
+        <div id="bingoLookupResult"></div>
       </section>
       <p class="bingo-reward-intro">Bingo wins appear below automatically. Mark a reward given only after the winner actually receives it.</p>
       <section class="bingo-reward-section">
@@ -426,7 +444,49 @@
     </article>`;
   }
 
+  // Player lookup (read only).
+  const lookupSelect = document.getElementById('bingoLookupSelect');
+  const lookupResult = document.getElementById('bingoLookupResult');
+  function renderLookupOptions() {
+    const players = Array.isArray(rewardLedger.players) ? rewardLedger.players : [];
+    const chosen = lookupSelect.value;
+    lookupSelect.innerHTML = '<option value="">Choose a player…</option>' + players.map((p) => `<option value="${esc(p.key)}"${p.key === chosen ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
+  }
+  const shortDay = (day) => { try { return new Date(`${day}T12:00:00`).toLocaleDateString([], { weekday:'short', month:'short', day:'numeric' }); } catch { return day; } };
+  async function runLookup() {
+    const key = lookupSelect.value;
+    if (!key) { lookupResult.innerHTML = ''; return; }
+    lookupResult.innerHTML = '<div class="bingo-reward-empty">Looking up…</div>';
+    try {
+      const response = await fetch(`/api/bingo-rewards?player=${encodeURIComponent(key)}`, { cache:'no-store', credentials:'same-origin' });
+      const d = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(d.error || 'Lookup failed.');
+      if (lookupSelect.value !== key) return;
+      const week = `${shortDay(d.round.weekStart)} – ${shortDay(d.round.weekEnd)}`;
+      const free = d.freeDrawThisWeek === 'used'
+        ? `Used${d.freeDrawUsedAt ? ` ${rewardDate(d.freeDrawUsedAt)}` : ' (before draw times were recorded)'}`
+        : 'Still available';
+      const timed = Array.isArray(d.draws) ? d.draws : [];
+      lookupResult.innerHTML = `
+        <div class="bingo-lookup-grid">
+          <div class="bingo-lookup-free ${d.freeDrawThisWeek}">Free draw this week<b>${esc(free)}</b>${esc(week)}</div>
+          <div>Coins now<b>${esc(d.coins)}</b></div>
+          <div>Draws this round<b>${esc(d.drawsThisRound)}</b>${esc(shortDay(d.round.start))} – ${esc(shortDay(d.round.end))}</div>
+          <div>Bingo<b>${d.won ? `Won ${esc(rewardDate(d.wonAt))}` : 'Not yet'}</b></div>
+        </div>
+        <div class="bingo-lookup-draws">
+          ${timed.map((x) => `<div class="bingo-lookup-draw"><span>${esc(x.symbol)}${x.free ? '<span class="bingo-lookup-tag free">Free draw</span>' : '<span class="bingo-lookup-tag">1 coin</span>'}${x.matched ? ' · on card' : ''}${x.bingo ? ' · BINGO' : ''}</span><span>${esc(rewardDate(x.at))}${x.coinsAfter !== null && x.coinsAfter !== undefined ? ` · ${esc(x.coinsAfter)} coins left` : ''}</span></div>`).join('')}
+          ${d.untimedDraws ? `<div class="bingo-lookup-draw"><span>${esc(d.untimedDraws)} earlier draw${d.untimedDraws === 1 ? '' : 's'} this round</span><span>before draw times were recorded${d.lastCardChange ? ` · card last changed ${esc(rewardDate(d.lastCardChange))}` : ''}</span></div>` : ''}
+          ${!timed.length && !d.untimedDraws ? '<div class="bingo-lookup-draw"><span>No draws yet this round.</span><span></span></div>' : ''}
+        </div>`;
+    } catch (error) {
+      lookupResult.innerHTML = `<div class="bingo-reward-empty">${esc(error.message || 'Lookup failed.')}</div>`;
+    }
+  }
+  lookupSelect.addEventListener('change', runLookup);
+
   function renderRewardLedger() {
+    renderLookupOptions();
     const pending = Array.isArray(rewardLedger.pending) ? rewardLedger.pending : [];
     const history = Array.isArray(rewardLedger.history) ? rewardLedger.history : [];
     document.getElementById('bingoPendingLabel').textContent = `${pending.length} pending`;
