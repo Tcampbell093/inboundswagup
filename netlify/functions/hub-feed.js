@@ -65,6 +65,10 @@ async function ensureSchema() {
     -- Shown as a pop-up the first time someone opens the Hub each day.
     ALTER TABLE hub_announcements ADD COLUMN IF NOT EXISTS show_on_open BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE hub_policies ADD COLUMN IF NOT EXISTS show_on_open BOOLEAN NOT NULL DEFAULT FALSE;
+    -- Hub-wide settings, e.g. the seasonal theme ('' = standard look).
+    CREATE TABLE IF NOT EXISTS hub_settings (
+      key TEXT PRIMARY KEY,value TEXT NOT NULL DEFAULT '',updated_by TEXT NOT NULL DEFAULT '',updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS hub_cleaning_assignments (
       id TEXT PRIMARY KEY,work_date DATE NOT NULL,area TEXT NOT NULL,task TEXT,employee_name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'scheduled',started_at TIMESTAMPTZ,finished_at TIMESTAMPTZ,completed_by TEXT,
@@ -164,12 +168,13 @@ function withHubCheckin(row, checkin) {
 }
 
 async function readFeed(includeAdmin = false) {
-  const [a, p, c, fs, sideRows] = await Promise.all([
+  const [a, p, c, fs, sideRows, themeRow] = await Promise.all([
     pool.query(`SELECT id,title,message,start_date,end_date,department,pinned,show_on_open,updated_at FROM hub_announcements ORDER BY pinned DESC,start_date DESC,updated_at DESC`),
     pool.query(`SELECT id,title,summary,effective_date,read_required,show_on_open,updated_at FROM hub_policies ORDER BY effective_date DESC,updated_at DESC`),
     pool.query(`SELECT * FROM hub_cleaning_assignments ORDER BY work_date,area,employee_name`),
     fetchFairShiftCleaning(),
     pool.query('SELECT department_id,department_name,side FROM hub_cleaning_area_sides'),
+    pool.query(`SELECT value FROM hub_settings WHERE key='theme'`),
   ]);
   const savedById=new Map(sideRows.rows.map(x=>[Number(x.department_id),x.side]));
   const savedByName=new Map(sideRows.rows.map(x=>[text(x.department_name,100).toLowerCase(),x.side]));
@@ -189,6 +194,7 @@ async function readFeed(includeAdmin = false) {
     announcements: a.rows.map(r => ({ id: r.id, title: r.title, message: r.message, startDate: dateValue(r.start_date), endDate: r.end_date ? dateValue(r.end_date) : '', department: r.department, pinned: !!r.pinned, showOnOpen: !!r.show_on_open, updatedAt: r.updated_at })),
     policies: p.rows.map(r => ({ id: r.id, title: r.title, summary: r.summary, effectiveDate: dateValue(r.effective_date), readRequired: !!r.read_required, showOnOpen: !!r.show_on_open, updatedAt: r.updated_at })),
     cleaning: activeCleaning,
+    theme: text(themeRow.rows[0]?.value, 40),
     cleaningAreas,
     cleaningSource: fs.ok ? 'fairshift' : 'hub-fallback',
     fairshiftConnected: !!fs.ok,
@@ -296,6 +302,12 @@ exports.handler = async function handler(event) {
     if (result) result = { id: result.id };
     else if (body.action === 'deleteAnnouncement') { body.kind = 'announcement'; await deleteRecord(body); }
     else if (body.action === 'deletePolicy') { body.kind = 'policy'; await deleteRecord(body); }
+    else if (body.action === 'setTheme') {
+      const theme = text(body.theme, 40).toLowerCase();
+      if (theme && !/^[a-z0-9-]+$/.test(theme)) return json(400, { error: 'Unknown theme.' });
+      await pool.query(`INSERT INTO hub_settings(key,value,updated_by,updated_at) VALUES('theme',$1,$2,NOW())
+        ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_by=EXCLUDED.updated_by,updated_at=NOW()`, [theme, text(hubSession(event)?.name || 'Admin key', 100)]);
+    }
     else if (body.action === 'setShowOnOpen') {
       const table = { announcement: 'hub_announcements', policy: 'hub_policies' }[text(body.kind, 30)];
       const id = text(body.id, 80);
