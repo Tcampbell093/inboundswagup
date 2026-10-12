@@ -174,7 +174,7 @@ async function readFeed(includeAdmin = false) {
     pool.query(`SELECT * FROM hub_cleaning_assignments ORDER BY work_date,area,employee_name`),
     fetchFairShiftCleaning(),
     pool.query('SELECT department_id,department_name,side FROM hub_cleaning_area_sides'),
-    pool.query(`SELECT value FROM hub_settings WHERE key='theme'`),
+    pool.query(`SELECT key,value FROM hub_settings WHERE key IN ('theme','themeBanner')`),
   ]);
   const savedById=new Map(sideRows.rows.map(x=>[Number(x.department_id),x.side]));
   const savedByName=new Map(sideRows.rows.map(x=>[text(x.department_name,100).toLowerCase(),x.side]));
@@ -194,7 +194,9 @@ async function readFeed(includeAdmin = false) {
     announcements: a.rows.map(r => ({ id: r.id, title: r.title, message: r.message, startDate: dateValue(r.start_date), endDate: r.end_date ? dateValue(r.end_date) : '', department: r.department, pinned: !!r.pinned, showOnOpen: !!r.show_on_open, updatedAt: r.updated_at })),
     policies: p.rows.map(r => ({ id: r.id, title: r.title, summary: r.summary, effectiveDate: dateValue(r.effective_date), readRequired: !!r.read_required, showOnOpen: !!r.show_on_open, updatedAt: r.updated_at })),
     cleaning: activeCleaning,
-    theme: text(themeRow.rows[0]?.value, 40),
+    // 'auto' = holiday calendar, '' = standard, otherwise a theme key.
+    theme: text(themeRow.rows.find((row) => row.key === 'theme')?.value, 40),
+    themeBanner: text(themeRow.rows.find((row) => row.key === 'themeBanner')?.value, 160),
     cleaningAreas,
     cleaningSource: fs.ok ? 'fairshift' : 'hub-fallback',
     fairshiftConnected: !!fs.ok,
@@ -305,8 +307,11 @@ exports.handler = async function handler(event) {
     else if (body.action === 'setTheme') {
       const theme = text(body.theme, 40).toLowerCase();
       if (theme && !/^[a-z0-9-]+$/.test(theme)) return json(400, { error: 'Unknown theme.' });
-      await pool.query(`INSERT INTO hub_settings(key,value,updated_by,updated_at) VALUES('theme',$1,$2,NOW())
-        ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_by=EXCLUDED.updated_by,updated_at=NOW()`, [theme, text(hubSession(event)?.name || 'Admin key', 100)]);
+      const by = text(hubSession(event)?.name || 'Admin key', 100);
+      for (const [key, value] of [['theme', theme], ['themeBanner', text(body.banner, 160)]]) {
+        await pool.query(`INSERT INTO hub_settings(key,value,updated_by,updated_at) VALUES($1,$2,$3,NOW())
+          ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_by=EXCLUDED.updated_by,updated_at=NOW()`, [key, value, by]);
+      }
     }
     else if (body.action === 'setShowOnOpen') {
       const table = { announcement: 'hub_announcements', policy: 'hub_policies' }[text(body.kind, 30)];
