@@ -262,6 +262,7 @@
       const r = await fetch(API, { cache: 'no-store' });
       if (!r.ok) throw new Error('Hub data unavailable.');
       feed = await r.json();
+      window.HubTheme?.apply(feed.theme || '');
       render();
       maybeShowPopups();
     } catch (e) {
@@ -964,6 +965,34 @@
     }
   }
 
+  // Seasonal theme picker (Standard / Halloween / …), Admins only.
+  function injectThemeManager() {
+    if ($('themeManagerSection') || !window.HubTheme) return;
+    const managerGrid = document.querySelector('.manager-grid');
+    if (!managerGrid) return;
+    const section = document.createElement('section');
+    section.className = 'manager-section';
+    section.id = 'themeManagerSection';
+    section.innerHTML = `<h4>Hub theme</h4>
+      <p class="policy-meta" style="margin:-5px 0 12px;line-height:1.5">Changes the look of the Hub for everyone. Switch back to Standard anytime.</p>
+      <div class="field"><label>Theme</label><select id="themeSelect">${window.HubTheme.list().map((t) => `<option value="${escapeHtml(t.key)}">${escapeHtml(t.label)}</option>`).join('')}</select></div>
+      <button class="action" type="button" id="themeSave">Apply theme</button>`;
+    managerGrid.prepend(section);
+    $('themeSave').addEventListener('click', async () => {
+      const theme = $('themeSelect').value;
+      $('themeSave').disabled = true;
+      try {
+        await adminFetch({ action: 'setTheme', theme });
+        window.HubTheme.apply(theme);
+        showMessage('managerMessage', theme ? `${$('themeSelect').selectedOptions[0].textContent} theme is on for everyone.` : 'Standard look is back for everyone.');
+      } catch (err) {
+        showMessage('managerMessage', err.message || 'Could not change the theme.', true);
+      } finally {
+        $('themeSave').disabled = false;
+      }
+    });
+  }
+
   function injectToolManager() {
     if ($('toolManagerSection')) return;
     const managerGrid = document.querySelector('.manager-grid');
@@ -1137,6 +1166,7 @@
 
   function renderAdmin() {
     if (!adminData) return;
+    if ($('themeSelect')) $('themeSelect').value = adminData.theme || '';
     $('announcementAdminList').innerHTML = adminData.announcements.length
       ? adminData.announcements.map((a) => `<div class="admin-row"><div><strong>${escapeHtml(a.title)}</strong><small>${escapeHtml(a.startDate)}${a.endDate ? ' → ' + escapeHtml(a.endDate) : ''}</small></div><div class="admin-row-actions"><button class="mini-toggle" type="button" data-edit-ann="${escapeHtml(a.id)}">Edit</button>${popupToggle('announcement', a)}<button class="mini-delete" data-del-ann="${escapeHtml(a.id)}">Delete</button></div></div>`).join('')
       : '<div class="policy-meta">None posted.</div>';
@@ -1267,6 +1297,7 @@
   injectTeamManager();
   injectAccessManager();
   injectToolManager();
+  injectThemeManager();
   setDefaultDates();
   loadFeed();
   loadTools();
