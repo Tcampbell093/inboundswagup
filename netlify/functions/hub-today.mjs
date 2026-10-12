@@ -90,6 +90,21 @@ async function ensureSchema(db) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (work_date, employee_id)
     );
+    -- Assembly uses pos as its order count; packs is Assembly-only.
+    ALTER TABLE hub_labor_board ADD COLUMN IF NOT EXISTS packs INTEGER;
+    -- End-of-day huddle notes, keyed by the day they're about:
+    -- reads/issues = how that day went (written at its end-of-day meeting);
+    -- expect = what to expect that day (written the workday before).
+    CREATE TABLE IF NOT EXISTS hub_huddle_days (
+      work_date DATE PRIMARY KEY,
+      reads JSONB NOT NULL DEFAULT '{}'::jsonb,
+      issues TEXT NOT NULL DEFAULT '',
+      expect TEXT NOT NULL DEFAULT '',
+      closed_by TEXT NOT NULL DEFAULT '',
+      closed_at TIMESTAMPTZ,
+      planned_by TEXT NOT NULL DEFAULT '',
+      planned_at TIMESTAMPTZ
+    );
   `);
   schemaReady = true;
 }
@@ -109,6 +124,13 @@ function previousWorkday(text) {
   while (!isWorkday(day)) day = addDays(day, -1);
   return day;
 }
+function nextWorkday(text) {
+  let day = addDays(text, 1);
+  while (!isWorkday(day)) day = addDays(day, 1);
+  return day;
+}
+const OFF = 'Off';
+const READS = ['On track', 'Close', 'Behind', 'Unsure'];
 function workdaysInMonth(text) {
   const first = `${text.slice(0, 7)}-01`;
   let count = 0;
@@ -138,13 +160,18 @@ async function boardState(db, viewer) {
   const today = easternToday();
   const lastWorkday = previousWorkday(today);
   const monthStart = `${today.slice(0, 7)}-01`;
-  const [boardRows, uphRows, goalRows, assignRows, people] = await Promise.all([
-    db.query(`SELECT department,pos,units,updated_by,updated_at FROM hub_labor_board WHERE work_date=$1`, [today]),
+  const planDay = nextWorkday(today);
+  const [boardRows, uphRows, goalRows, assignRows, people, huddleRows] = await Promise.all([
+    db.query(`SELECT department,pos,units,packs,updated_by,updated_at FROM hub_labor_board WHERE work_date=$1`, [today]),
     db.query(`SELECT to_char(work_date,'YYYY-MM-DD') AS work_date,department,uph,hours FROM hub_labor_uph WHERE work_date >= $1 AND work_date < $2 OR work_date >= $3`, [monthStart, today, addDays(today, -62)]),
     db.query(`SELECT department,goal FROM hub_labor_goals`),
     db.query(`SELECT employee_id,department FROM hub_labor_assignments WHERE work_date=$1`, [today]),
     schedule.employees(db),
+    db.query(`SELECT to_char(work_date,'YYYY-MM-DD') AS work_date,reads,issues,expect,closed_by,closed_at,planned_by,planned_at
+      FROM hub_huddle_days WHERE work_date IN ($1,$2,$3)`, [lastWorkday, today, planDay]),
   ]);
+  const huddle = Object.fromEntries(huddleRows.rows.map((row) => [row.work_date, row]));
+  const readsOf = (day) => (huddle[day]?.reads && typeof huddle[day].reads === 'object' ? huddle[day].reads : {});
   const goals = { ...DEFAULT_GOALS, ...Object.fromEntries(goalRows.rows.map((row) => [row.department, Number(row.goal)])) };
   const boardByDept = new Map(boardRows.rows.map((row) => [row.department, row]));
   const latest = boardRows.rows.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
@@ -160,6 +187,7 @@ async function boardState(db, viewer) {
       department,
       goal: goals[department] || null,
       yesterday: yesterday ? Math.round(Number(yesterday.uph)) : null,
+      read: readsOf(lastWorkday)[department] || '',
       month: month === null ? null : Math.round(month),
       entries: monthEntries.length,
       minimum: minimumToday(goals[department], monthEntries, total),
@@ -174,8 +202,10 @@ async function boardState(db, viewer) {
     workdaysTotal: total,
     board: LABOR_DEPARTMENTS.map((department) => {
       const row = boardByDept.get(department);
-      return { department, pos: row ? Number(row.pos) : null, units: row ? Number(row.units) : null };
+      return { department, pos: row ? Number(row.pos) : null, units: row ? Number(row.units) : null, packs: row && row.packs !== null ? Number(row.packs) : null };
     }),
+    // Notes can mention people, so only signed-in viewers get them.
+    expect: viewer ? clean(huddle[today]?.expect, 2000) : '',
     boardBy: latest ? clean(latest.updated_by, 100) : '',
     boardAt: latest ? new Date(latest.updated_at).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }) : '',
     uph,
@@ -190,7 +220,7 @@ async function boardState(db, viewer) {
     today: moved.get(person.id) || person.homeDepartment,
   }));
   const counts = {};
-  for (const person of placed) counts[person.today] = (counts[person.today] || 0) + 1;
+  for (const person of placed) if (person.today !== OFF) counts[person.today] = (counts[person.today] || 0) + 1;
   result.floor = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([department, count]) => ({ department, count }));
 
   if (viewer) {
@@ -209,7 +239,7 @@ async function boardState(db, viewer) {
         departmentEs: SPANISH[me.today] || me.today,
         homeDepartment: me.home,
         moved: me.today !== me.home,
-        teammates: placed.filter((person) => person.today === me.today && person.id !== me.id).map((person) => person.name),
+        teammates: me.today === OFF ? [] : placed.filter((person) => person.today === me.today && person.id !== me.id).map((person) => person.name),
         cleaning: cleaning.rows[0] ? { area: cleaning.rows[0].to_department } : null,
       };
     }
@@ -220,6 +250,30 @@ async function boardState(db, viewer) {
       .map((row) => ({ date: row.work_date, department: row.department, uph: Number(row.uph), hours: row.hours === null ? null : Number(row.hours) }));
     result.roster = placed.map(({ id, name, home, today: dept }) => ({ id, name, home, today: dept }));
     result.departments = (await schedule.departments(db)).filter((d) => d.active).map((d) => d.name);
+    // Last workday's notes for the huddle, and a draft of tonight's close-out
+    // (today's read + the plan already saved for the next workday, if any).
+    result.lastIssues = clean(huddle[lastWorkday]?.issues, 2000);
+    const [planAssign, planBoard] = await Promise.all([
+      db.query(`SELECT employee_id,department FROM hub_labor_assignments WHERE work_date=$1`, [planDay]),
+      db.query(`SELECT department,pos,units,packs FROM hub_labor_board WHERE work_date=$1`, [planDay]),
+    ]);
+    const planMoved = new Map(planAssign.rows.map((row) => [Number(row.employee_id), row.department]));
+    const planByDept = new Map(planBoard.rows.map((row) => [row.department, row]));
+    result.closeOut = {
+      today, planDay,
+      todayLabel: label(today, { weekday: 'short', month: 'short', day: 'numeric' }),
+      planLabel: label(planDay, { weekday: 'long', month: 'short', day: 'numeric' }),
+      reads: readsOf(today),
+      issues: clean(huddle[today]?.issues, 2000),
+      expect: clean(huddle[planDay]?.expect, 2000),
+      closedBy: clean(huddle[today]?.closed_by, 100),
+      plannedBy: clean(huddle[planDay]?.planned_by, 100),
+      people: active.map((person) => ({ id: person.id, name: person.name, home: person.homeDepartment, plan: planMoved.get(person.id) || person.homeDepartment })),
+      floor: LABOR_DEPARTMENTS.map((department) => {
+        const row = planByDept.get(department);
+        return { department, pos: row ? Number(row.pos) : null, units: row ? Number(row.units) : null, packs: row && row.packs !== null ? Number(row.packs) : null };
+      }),
+    };
   }
   return result;
 }
@@ -261,6 +315,26 @@ async function saveUph(db, date, department, uphValue, hoursValue, actor) {
   [date, department, uph, hours, actor]);
 }
 
+// Where people work on a day: only moves out of the home department are stored.
+// "Off" marks someone not in that day.
+async function saveAssignments(client, day, rows, actor) {
+  const people = new Map((await schedule.employees(client)).map((person) => [person.id, person]));
+  const departments = new Set((await schedule.departments(client)).filter((d) => d.active).map((d) => d.name));
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const person = people.get(Number(row?.id));
+    if (!person || !person.active) continue;
+    const department = clean(row.department, 100);
+    if (!department || department === person.homeDepartment) {
+      await client.query('DELETE FROM hub_labor_assignments WHERE work_date=$1 AND employee_id=$2', [day, person.id]);
+    } else {
+      if (department !== OFF && !departments.has(department)) throw new Error(`${department} isn't an active department.`);
+      await client.query(`INSERT INTO hub_labor_assignments(work_date,employee_id,department,updated_by,updated_at) VALUES($1,$2,$3,$4,NOW())
+        ON CONFLICT(work_date,employee_id) DO UPDATE SET department=EXCLUDED.department,updated_by=EXCLUDED.updated_by,updated_at=NOW()`,
+      [day, person.id, department, actor]);
+    }
+  }
+}
+
 async function save(db, viewer, body) {
   const actor = clean(viewer.name, 100);
   const today = easternToday();
@@ -272,13 +346,13 @@ async function save(db, viewer, body) {
       const uphDate = pastWorkday(body.uphDate, lastWorkday);
       for (const row of Array.isArray(body.board) ? body.board : []) {
         if (!LABOR_DEPARTMENTS.includes(row?.department)) continue;
-        const pos = count(row.pos); const units = count(row.units);
-        if (pos === null && units === null) {
+        const pos = count(row.pos); const units = count(row.units); const packs = row.department === 'Assembly' ? count(row.packs) : null;
+        if (pos === null && units === null && packs === null) {
           await client.query('DELETE FROM hub_labor_board WHERE work_date=$1 AND department=$2', [today, row.department]);
         } else {
-          await client.query(`INSERT INTO hub_labor_board(work_date,department,pos,units,updated_by,updated_at) VALUES($1,$2,$3,$4,$5,NOW())
-            ON CONFLICT(work_date,department) DO UPDATE SET pos=EXCLUDED.pos,units=EXCLUDED.units,updated_by=EXCLUDED.updated_by,updated_at=NOW()`,
-          [today, row.department, pos || 0, units || 0, actor]);
+          await client.query(`INSERT INTO hub_labor_board(work_date,department,pos,units,packs,updated_by,updated_at) VALUES($1,$2,$3,$4,$5,$6,NOW())
+            ON CONFLICT(work_date,department) DO UPDATE SET pos=EXCLUDED.pos,units=EXCLUDED.units,packs=EXCLUDED.packs,updated_by=EXCLUDED.updated_by,updated_at=NOW()`,
+          [today, row.department, pos || 0, units || 0, packs, actor]);
         }
         await saveUph(client, uphDate, row.department, row.uph, row.hours, actor);
         const goal = count(row.goal);
@@ -287,19 +361,31 @@ async function save(db, viewer, body) {
         [row.department, goal, actor]);
       }
     } else if (body.action === 'saveAssignments') {
-      const people = new Map((await schedule.employees(client)).map((person) => [person.id, person]));
-      const departments = new Set((await schedule.departments(client)).filter((d) => d.active).map((d) => d.name));
-      for (const row of Array.isArray(body.assignments) ? body.assignments : []) {
-        const person = people.get(Number(row?.id));
-        if (!person || !person.active) continue;
-        const department = clean(row.department, 100);
-        if (!department || department === person.homeDepartment) {
-          await client.query('DELETE FROM hub_labor_assignments WHERE work_date=$1 AND employee_id=$2', [today, person.id]);
+      await saveAssignments(client, today, body.assignments, actor);
+    } else if (body.action === 'closeOut') {
+      // End of day: how today went (for today) + the plan (for the next workday).
+      const planDay = nextWorkday(today);
+      const reads = {};
+      for (const department of LABOR_DEPARTMENTS) {
+        const value = clean(body.reads?.[department], 20);
+        if (READS.includes(value)) reads[department] = value;
+      }
+      await client.query(`INSERT INTO hub_huddle_days(work_date,reads,issues,closed_by,closed_at) VALUES($1,$2::jsonb,$3,$4,NOW())
+        ON CONFLICT(work_date) DO UPDATE SET reads=EXCLUDED.reads,issues=EXCLUDED.issues,closed_by=EXCLUDED.closed_by,closed_at=NOW()`,
+      [today, JSON.stringify(reads), clean(body.issues, 2000), actor]);
+      await client.query(`INSERT INTO hub_huddle_days(work_date,expect,planned_by,planned_at) VALUES($1,$2,$3,NOW())
+        ON CONFLICT(work_date) DO UPDATE SET expect=EXCLUDED.expect,planned_by=EXCLUDED.planned_by,planned_at=NOW()`,
+      [planDay, clean(body.expect, 2000), actor]);
+      await saveAssignments(client, planDay, body.assignments, actor);
+      for (const row of Array.isArray(body.floor) ? body.floor : []) {
+        if (!LABOR_DEPARTMENTS.includes(row?.department)) continue;
+        const pos = count(row.pos); const units = count(row.units); const packs = row.department === 'Assembly' ? count(row.packs) : null;
+        if (pos === null && units === null && packs === null) {
+          await client.query('DELETE FROM hub_labor_board WHERE work_date=$1 AND department=$2', [planDay, row.department]);
         } else {
-          if (!departments.has(department)) throw new Error(`${department} isn't an active department.`);
-          await client.query(`INSERT INTO hub_labor_assignments(work_date,employee_id,department,updated_by,updated_at) VALUES($1,$2,$3,$4,NOW())
-            ON CONFLICT(work_date,employee_id) DO UPDATE SET department=EXCLUDED.department,updated_by=EXCLUDED.updated_by,updated_at=NOW()`,
-          [today, person.id, department, actor]);
+          await client.query(`INSERT INTO hub_labor_board(work_date,department,pos,units,packs,updated_by,updated_at) VALUES($1,$2,$3,$4,$5,$6,NOW())
+            ON CONFLICT(work_date,department) DO UPDATE SET pos=EXCLUDED.pos,units=EXCLUDED.units,packs=EXCLUDED.packs,updated_by=EXCLUDED.updated_by,updated_at=NOW()`,
+          [planDay, row.department, pos || 0, units || 0, packs, actor]);
         }
       }
     } else {
