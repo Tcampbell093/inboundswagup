@@ -262,7 +262,7 @@
       const r = await fetch(API, { cache: 'no-store' });
       if (!r.ok) throw new Error('Hub data unavailable.');
       feed = await r.json();
-      window.HubTheme?.apply(feed.theme || '');
+      window.HubTheme?.apply(feed.theme || '', feed.themeBanner || '');
       render();
       maybeShowPopups();
     } catch (e) {
@@ -965,26 +965,37 @@
     }
   }
 
-  // Seasonal theme picker (Standard / Halloween / …), Admins only.
+  // Seasonal theme picker, Admins only: Automatic (holiday calendar),
+  // Standard, or one theme; optional banner text; preview on this screen.
   function injectThemeManager() {
     if ($('themeManagerSection') || !window.HubTheme) return;
     const managerGrid = document.querySelector('.manager-grid');
     if (!managerGrid) return;
+    const fmt = (d) => parseDate(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     const section = document.createElement('section');
     section.className = 'manager-section';
     section.id = 'themeManagerSection';
     section.innerHTML = `<h4>Hub theme</h4>
-      <p class="policy-meta" style="margin:-5px 0 12px;line-height:1.5">Changes the look of the Hub for everyone. Switch back to Standard anytime.</p>
-      <div class="field"><label>Theme</label><select id="themeSelect">${window.HubTheme.list().map((t) => `<option value="${escapeHtml(t.key)}">${escapeHtml(t.label)}</option>`).join('')}</select></div>
-      <button class="action" type="button" id="themeSave">Apply theme</button>`;
+      <p class="policy-meta" style="margin:-5px 0 12px;line-height:1.5">Changes the look of the Hub for everyone. <b>Automatic</b> follows the holiday calendar below; pick a theme to override it, or Standard for none.</p>
+      <div class="field"><label>Theme</label><select id="themeSelect"><option value="auto">Automatic — holiday calendar</option>${window.HubTheme.list().map((t) => `<option value="${escapeHtml(t.key)}">${escapeHtml(t.label)}</option>`).join('')}</select></div>
+      <div class="field"><label>Banner text <span style="font-weight:500">(optional — e.g. this month's birthdays)</span></label><input id="themeBanner" maxlength="160" placeholder="Leave blank to use the theme's own banner" /></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="action" type="button" id="themeSave">Apply for everyone</button><button class="action secondary" type="button" id="themePreview">Preview on my screen</button></div>
+      <p class="policy-meta" id="themeAutoNote" style="margin:12px 0 0;line-height:1.55"></p>`;
     managerGrid.prepend(section);
+    const today = window.HubTheme.auto();
+    const label = (key) => (window.HubTheme.list().find((t) => t.key === key) || {}).label || key;
+    $('themeAutoNote').innerHTML = `Automatic today: <b>${escapeHtml(label(today.key))}</b>${today.note && !label(today.key).startsWith(today.note) ? ` (${escapeHtml(today.note)})` : ''}<br>Coming up: ${window.HubTheme.upcoming(5).map((u) => `${escapeHtml(fmt(u.date))} ${escapeHtml(u.label)}`).join(' · ')}`;
+    $('themePreview').addEventListener('click', () => {
+      window.HubTheme.apply($('themeSelect').value, $('themeBanner').value.trim());
+      showMessage('managerMessage', 'Previewing on this screen only. Refresh to go back to what everyone sees.');
+    });
     $('themeSave').addEventListener('click', async () => {
-      const theme = $('themeSelect').value;
+      const theme = $('themeSelect').value, banner = $('themeBanner').value.trim();
       $('themeSave').disabled = true;
       try {
-        await adminFetch({ action: 'setTheme', theme });
-        window.HubTheme.apply(theme);
-        showMessage('managerMessage', theme ? `${$('themeSelect').selectedOptions[0].textContent} theme is on for everyone.` : 'Standard look is back for everyone.');
+        await adminFetch({ action: 'setTheme', theme, banner });
+        window.HubTheme.apply(theme, banner);
+        showMessage('managerMessage', theme === 'auto' ? 'Automatic themes are on for everyone.' : theme ? `${label(theme)} theme is on for everyone.` : 'Standard look is back for everyone.');
       } catch (err) {
         showMessage('managerMessage', err.message || 'Could not change the theme.', true);
       } finally {
@@ -1167,6 +1178,7 @@
   function renderAdmin() {
     if (!adminData) return;
     if ($('themeSelect')) $('themeSelect').value = adminData.theme || '';
+    if ($('themeBanner')) $('themeBanner').value = adminData.themeBanner || '';
     $('announcementAdminList').innerHTML = adminData.announcements.length
       ? adminData.announcements.map((a) => `<div class="admin-row"><div><strong>${escapeHtml(a.title)}</strong><small>${escapeHtml(a.startDate)}${a.endDate ? ' → ' + escapeHtml(a.endDate) : ''}</small></div><div class="admin-row-actions"><button class="mini-toggle" type="button" data-edit-ann="${escapeHtml(a.id)}">Edit</button>${popupToggle('announcement', a)}<button class="mini-delete" data-del-ann="${escapeHtml(a.id)}">Delete</button></div></div>`).join('')
       : '<div class="policy-meta">None posted.</div>';
