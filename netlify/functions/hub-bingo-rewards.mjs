@@ -1,5 +1,6 @@
 import pg from 'pg';
 import crypto from 'node:crypto';
+import bingoRound from './_hub_bingo_round.js';
 
 const { Pool } = pg;
 const SESSION_COOKIE = 'hub_associate_session';
@@ -116,6 +117,21 @@ async function ensureSchema() {
       rules_version INTEGER NOT NULL DEFAULT 1,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS hub_bingo_draws (
+      id BIGSERIAL PRIMARY KEY,
+      round_key TEXT NOT NULL,
+      week_key TEXT NOT NULL,
+      employee_key TEXT NOT NULL,
+      employee_name TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      used_free BOOLEAN NOT NULL,
+      matched BOOLEAN NOT NULL,
+      bingo BOOLEAN NOT NULL DEFAULT FALSE,
+      coins_after INTEGER,
+      drawn_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS hub_bingo_draws_player_idx ON hub_bingo_draws(employee_key, drawn_at DESC);
 
     CREATE TABLE IF NOT EXISTS hub_bingo_photos (
       id TEXT PRIMARY KEY,
@@ -271,6 +287,60 @@ async function resetBingoRound(db, session) {
   };
 }
 
+
+// Read-only player lookup for Bingo Admin: coins, this week's free draw,
+// and this round's draws (each draw's time is recorded from Oct 12, 2026;
+// draws made before that show only as a count).
+async function bingoPlayers(db) {
+  const result = await db.query(`SELECT employee_key,employee_name FROM hub_bingo_wallet ORDER BY LOWER(employee_name)`).catch(() => ({ rows: [] }));
+  return result.rows.map((row) => ({ key: row.employee_key, name: clean(row.employee_name, 100) }));
+}
+
+const optionalRows = (promise) => promise.then((result) => result.rows).catch(() => []);
+
+async function playerLookup(db, employeeKeyInput) {
+  const employeeKey = clean(employeeKeyInput, 100);
+  const round = bingoRound.roundInfo(await bingoSettings(db));
+  const [wallet, players, draws, coinEvents] = await Promise.all([
+    optionalRows(db.query(`SELECT employee_name,coins FROM hub_bingo_wallet WHERE employee_key=$1`, [employeeKey])),
+    optionalRows(db.query(`SELECT employee_name,drawn,marked,weekly_free_key,won_at,updated_at FROM hub_bingo_players
+      WHERE round_key=$1 AND employee_key=$2 AND voided_at IS NULL`, [round.key, employeeKey])),
+    optionalRows(db.query(`SELECT symbol,used_free,matched,bingo,coins_after,week_key,drawn_at FROM hub_bingo_draws
+      WHERE round_key=$1 AND employee_key=$2 ORDER BY drawn_at DESC LIMIT 200`, [round.key, employeeKey])),
+    optionalRows(db.query(`SELECT amount,created_at FROM hub_bingo_coin_events WHERE employee_key=$1 ORDER BY created_at DESC LIMIT 10`, [employeeKey])),
+  ]);
+  if (!wallet.length && !players.length) return { status: 404, body: { error: 'No Bingo player by that name.' } };
+  const player = players[0] || null;
+  const drawn = Array.isArray(player?.drawn) ? player.drawn : [];
+  const photoIds = [...new Set(draws.map((d) => (/^PHOTO\|([^|]+)\|\d+$/.exec(d.symbol) || [])[1]).filter(Boolean))];
+  const photoLabels = new Map((photoIds.length ? await optionalRows(db.query(`SELECT id,label FROM hub_bingo_photos WHERE id = ANY($1::text[])`, [photoIds])) : [])
+    .map((row) => [row.id, clean(row.label, 100) || 'Bingo photo']));
+  const symbolLabel = (symbol) => {
+    const id = (/^PHOTO\|([^|]+)\|\d+$/.exec(symbol) || [])[1];
+    return id ? `Photo: ${photoLabels.get(id) || 'Bingo photo'}` : symbol;
+  };
+  const freeUsed = !!player && player.weekly_free_key === round.weekKey;
+  const freeDraw = draws.find((d) => d.used_free && d.week_key === round.weekKey);
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      name: clean(wallet[0]?.employee_name || player?.employee_name, 100),
+      coins: Number(wallet[0]?.coins || 0),
+      round: { start: round.start, end: round.end, weekStart: round.weekStart, weekEnd: round.weekEnd },
+      hasCard: !!player,
+      freeDrawThisWeek: freeUsed ? 'used' : 'available',
+      freeDrawUsedAt: freeDraw?.drawn_at || null,
+      won: !!player?.won_at,
+      wonAt: player?.won_at || null,
+      drawsThisRound: drawn.length,
+      untimedDraws: Math.max(0, drawn.length - draws.length),
+      lastCardChange: player?.updated_at || null,
+      draws: draws.map((d) => ({ at: d.drawn_at, symbol: symbolLabel(d.symbol), free: d.used_free, matched: d.matched, bingo: d.bingo, coinsAfter: d.coins_after })),
+      coinsEarned: coinEvents.map((c) => ({ at: c.created_at, amount: Number(c.amount || 0) })),
+    },
+  };
+}
 
 function bingoPhotoUrl(id) {
   return `/api/bingo-photo?id=${encodeURIComponent(id)}`;
@@ -488,6 +558,11 @@ export default async (request) => {
     const db = getPool();
 
     if (request.method === 'GET') {
+      const lookup = new URL(request.url).searchParams.get('player');
+      if (lookup) {
+        const result = await playerLookup(db, lookup);
+        return json(result.status, result.body);
+      }
       return json(200, {
         ok: true,
         viewer: {
@@ -497,6 +572,7 @@ export default async (request) => {
         ...(await rewardLedger(db)),
         settings: await bingoSettings(db),
         photos: await bingoPhotos(db),
+        players: await bingoPlayers(db),
       });
     }
 

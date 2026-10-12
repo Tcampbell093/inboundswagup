@@ -3,12 +3,14 @@ import crypto from 'node:crypto';
 import hubCleaning from './_hub_cleaning.js';
 import hubPush from './_hub_push.js';
 import schedule from './_hub_schedule.js';
+import bingoRound from './_hub_bingo_round.js';
+
+const { roundInfo } = bingoRound;
 
 const { Pool } = pg;
 const SESSION_COOKIE = 'hub_associate_session';
 const SESSION_VERSION = 2;
 const DEFAULT_ROUND_ANCHOR = '2026-09-21';
-const ROUND_DAYS = 28;
 const DEFAULT_BOARD_SIZE = 5;
 const SUPPORTED_BOARD_SIZES = [3, 5];
 const BINGO_RULES_VERSION = 2;
@@ -121,32 +123,6 @@ function boardMeta(value) {
   };
 }
 
-function roundInfo(settings = {}) {
-  const current = easternDate();
-  const currentDay = epochDay(current);
-  const requestedAnchor = clean(settings.anchorDate || '', 20);
-  const anchor = /^\d{4}-\d{2}-\d{2}$/.test(requestedAnchor) ? requestedAnchor : DEFAULT_ROUND_ANCHOR;
-  const anchorDay = epochDay(anchor);
-  const cycle = Math.max(0, Math.floor((currentDay - anchorDay) / ROUND_DAYS));
-  const startDay = anchorDay + cycle * ROUND_DAYS;
-  const endDay = startDay + ROUND_DAYS - 1;
-  const start = dateFromEpoch(startDay);
-  const resetNumber = Math.max(0, Number(settings.resetNumber || 0));
-
-  // Free Bingo draws refresh on the warehouse calendar week: every Monday
-  // in America/New_York, regardless of when the current Bingo round began.
-  const weekday = new Date(currentDay * 86400000).getUTCDay();
-  const daysSinceMonday = (weekday + 6) % 7;
-  const monday = dateFromEpoch(currentDay - daysSinceMonday);
-
-  return {
-    key: resetNumber > 0 ? `${start}:r${resetNumber}` : start,
-    start,
-    end: dateFromEpoch(endDay),
-    daysLeft: Math.max(0, endDay - currentDay + 1),
-    weekKey: `monday:${monday}`,
-  };
-}
 
 function shuffle(values) {
   const list = [...values];
@@ -238,6 +214,23 @@ async function ensureSchema() {
       coins INTEGER NOT NULL DEFAULT 0,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    -- One row per draw, so admins can see when each draw happened and
+    -- whether it was the weekly free draw or cost a coin.
+    CREATE TABLE IF NOT EXISTS hub_bingo_draws (
+      id BIGSERIAL PRIMARY KEY,
+      round_key TEXT NOT NULL,
+      week_key TEXT NOT NULL,
+      employee_key TEXT NOT NULL,
+      employee_name TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      used_free BOOLEAN NOT NULL,
+      matched BOOLEAN NOT NULL,
+      bingo BOOLEAN NOT NULL DEFAULT FALSE,
+      coins_after INTEGER,
+      drawn_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS hub_bingo_draws_player_idx ON hub_bingo_draws(employee_key, drawn_at DESC);
 
     CREATE TABLE IF NOT EXISTS hub_bingo_coin_events (
       source_key TEXT PRIMARY KEY,
@@ -680,6 +673,11 @@ async function drawSymbol(session) {
       useFree ? round.weekKey : player.weekly_free_key,
       bingo,
     ]);
+
+    await client.query(`
+      INSERT INTO hub_bingo_draws(round_key,week_key,employee_key,employee_name,symbol,used_free,matched,bingo,coins_after)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    `, [round.key, round.weekKey, employeeKey, clean(session.name, 100), clean(symbol, 120), useFree, matched, bingo, useFree ? coins : coins - 1]);
 
     await client.query('COMMIT');
     if (bingo && !player.won_at) {
