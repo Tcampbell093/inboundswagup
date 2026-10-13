@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#123d34" />
+  <meta name="robots" content="noindex" />
+  <title>QA Challenge · Operations Hub</title>
+  <style>
+    :root{
+      --ink:#17332c;--muted:#687d76;--green:#123d34;--green2:#1d6151;--line:#d9e3df;
+      --paper:#f5f8f6;--card:#fff;--blue:#2f69aa;--blue2:#eaf2fb;--red:#ba3a3a;
+      --amber:#b98113;--shadow:0 12px 30px rgba(22,54,46,.10)
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    button,a{font:inherit}
+    button{cursor:pointer}
+    .topbar{background:#0f332b;color:#fff;padding:13px 18px;position:sticky;top:0;z-index:10}
+    .topbar-inner{max-width:1500px;margin:0 auto;display:flex;gap:16px;align-items:center;justify-content:space-between}
+    .brand{display:flex;align-items:center;gap:9px;color:#fff;text-decoration:none;font-weight:900}
+    .brandmark{width:32px;height:32px;border-radius:9px;background:#245c4e;display:grid;place-items:center}
+    .top-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .pill,.back{border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:7px 11px;color:#fff;text-decoration:none;font-size:12px;font-weight:800}
+    .page{max-width:1500px;margin:0 auto;padding:24px 18px 42px}
+    .intro{display:flex;gap:18px;justify-content:space-between;align-items:flex-start;margin-bottom:17px}
+    .eyebrow{text-transform:uppercase;letter-spacing:.12em;font-size:11px;font-weight:900;color:#4d786c}
+    h1{font-size:clamp(26px,3vw,40px);line-height:1.04;margin:5px 0 8px}
+    .intro p{max-width:760px;margin:0;color:var(--muted);font-size:15px;line-height:1.55}
+    .scorebox{min-width:200px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:13px 15px;box-shadow:var(--shadow)}
+    .scorebox .top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .scorebox strong{font-size:20px}
+    .progress{height:8px;border-radius:999px;overflow:hidden;background:#e4ebe8;margin-top:10px}
+    .progress>span{display:block;height:100%;background:var(--green2);transition:width .2s ease}
+    .round-nav{display:flex;gap:8px;margin-top:10px}
+    .navbtn{flex:1;border:1px solid var(--line);background:#f8faf9;border-radius:9px;padding:8px;font-weight:800;color:var(--ink)}
+    .navbtn:disabled{opacity:.4;cursor:not-allowed}
+    .trainer{display:grid;grid-template-columns:minmax(280px,.9fr) minmax(340px,1.05fr) minmax(340px,1.05fr);gap:13px;align-items:stretch}
+    .panel{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 5px 16px rgba(22,54,46,.06);min-width:0}
+    .panel-title{background:var(--blue);color:#fff;padding:11px 13px;font-size:15px;font-weight:900;display:flex;justify-content:space-between;align-items:center;gap:10px}
+    .panel-title small{font-size:10px;opacity:.8;font-weight:800}
+    .spec-wrap{padding:11px}
+    .spec-table{border:1px solid #d8dee3;border-radius:10px;overflow:hidden;font-size:12px}
+    .spec-row{display:grid;grid-template-columns:115px minmax(0,1fr);border-bottom:1px solid #d8dee3}
+    .spec-row:last-child{border-bottom:0}
+    .spec-row>div{padding:9px 9px}
+    .spec-row>div:first-child{font-weight:900;background:#f0f3f5;border-right:1px solid #d8dee3}
+    .color-ref{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .swatch{width:38px;height:25px;border:1px solid rgba(0,0,0,.18);border-radius:6px;display:inline-block;box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)}
+    .helper{font-size:10px;color:var(--muted);line-height:1.35;margin-top:5px}
+    .photo-wrap{padding:10px}
+    .photo-stage{position:relative;height:420px;border-radius:11px;overflow:hidden;background:#e7ecea;border:1px solid #d6dfdb}
+    .photo-stage img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .2s ease,filter .2s ease}
+    .photo-stage.mock img{object-fit:contain;background:#f8f8f6}
+    .photo-stage .photo-label{position:absolute;top:9px;left:9px;padding:5px 7px;border-radius:7px;background:rgba(17,31,27,.72);color:#fff;font-size:10px;font-weight:900;z-index:3}
+    .photo-stage.zoomed img{transform:scale(1.45);filter:saturate(1.05)}
+    .photo-stage.zoomed .imprint{transform:translate(-50%,-50%) scale(1.45)}
+    .imprint{position:absolute;left:50%;top:60%;transform:translate(-50%,-50%);width:max-content;max-width:62%;text-align:center;pointer-events:none;z-index:2;transition:transform .2s ease}
+    .imprint .logo-mark{font-size:29px;line-height:.8;font-weight:1000}
+    .imprint .logo-name{font-size:16px;font-weight:1000;letter-spacing:.05em;line-height:1}
+    .imprint .logo-sub{font-size:7px;font-weight:900;letter-spacing:.22em;margin-top:4px}
+    .imprint.screen{color:var(--imprint-color,#173f70);text-shadow:0 1px 1px rgba(0,0,0,.08)}
+    .imprint.laser{color:rgba(224,228,225,.94);text-shadow:0 1px 1px rgba(30,30,30,.65),0 -1px 1px rgba(255,255,255,.28);mix-blend-mode:screen}
+    .imprint.transfer{color:var(--imprint-color,#173f70);filter:drop-shadow(0 1px 0 rgba(0,0,0,.18));}
+    .imprint.embroidery{color:var(--imprint-color,#173f70);text-shadow:1px 0 0 rgba(255,255,255,.2),-1px 0 0 rgba(0,0,0,.18);filter:contrast(1.15)}
+    .imprint.low{top:74%}.imprint.high{top:45%}.imprint.left{left:39%}.imprint.right{left:62%}.imprint.rotated{transform:translate(-50%,-50%) rotate(11deg)}
+    .imprint.small{transform:translate(-50%,-50%) scale(.72)}.imprint.large{transform:translate(-50%,-50%) scale(1.28)}
+    .viewbar{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-top:8px}
+    .viewbtn{border:1px solid var(--line);background:#f7faf8;border-radius:9px;padding:9px;font-size:11px;font-weight:900;color:#34584f}
+    .viewbtn.active{border-color:#4c8b7c;background:#e7f2ee}
+    .photo-note{margin-top:8px;padding:8px 9px;border-radius:9px;background:#f6f8f7;color:#61736d;font-size:11px;line-height:1.4}
+    .decision{margin-top:14px;background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+    .decision-head{padding:12px 14px;background:#edf3f6}
+    .decision-head h2{font-size:19px;margin:0 0 3px}
+    .decision-head p{margin:0;color:var(--muted);font-size:13px}
+    .decision-body{padding:13px}
+    .choice-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+    .choice{border:2px solid #dce5e1;background:#fff;border-radius:12px;min-height:68px;padding:10px;font-weight:1000;color:var(--ink)}
+    .choice span{display:block;color:var(--muted);font-size:11px;font-weight:700;margin-top:3px}
+    .choice[data-choice="approve"].selected{border-color:#3d8a59;background:#eaf6ed}
+    .choice[data-choice="hold"].selected{border-color:#d19b27;background:#fff6dd}
+    .choice[data-choice="reject"].selected{border-color:#cb5555;background:#fceaea}
+    .issue-wrap{margin-top:12px;border-top:1px solid var(--line);padding-top:11px}
+    .issue-title{font-size:13px;font-weight:900;margin-bottom:7px}
+    .issues{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:7px}
+    .issue{border:1px solid var(--line);background:#fafcfb;border-radius:9px;padding:9px;font-size:11px;font-weight:800;text-align:left;color:#36574f}
+    .issue.selected{border-color:#527f74;background:#eaf3f0}
+    .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:13px}
+    .primary,.secondary{border-radius:10px;min-height:44px;padding:10px 15px;font-weight:900}
+    .primary{border:0;background:var(--green);color:#fff}
+    .primary:disabled{opacity:.45;cursor:not-allowed}
+    .secondary{border:1px solid var(--line);background:#fff;color:var(--ink)}
+    .feedback{margin-top:12px;border-radius:11px;padding:12px 13px;border:1px solid var(--line);background:#f7faf8}
+    .feedback.correct{border-color:#a9d1b6;background:#eef8f1}.feedback.wrong{border-color:#e1b2b2;background:#fff1f1}
+    .feedback strong{display:block;margin-bottom:4px}
+    .legend{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}
+    .legend details{background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:11px;color:var(--muted)}
+    .legend summary{font-weight:900;color:#355a50;cursor:pointer}
+    .method-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:9px}
+    .method-demo{border:1px solid var(--line);border-radius:8px;padding:9px;background:#f7f9f8}
+    .method-demo b{display:block;color:var(--ink);margin-bottom:3px}
+    .final{padding:46px 18px;text-align:center;background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow)}
+    .bigscore{font-size:64px;line-height:1;font-weight:1000}
+    .final h2{font-size:27px;margin:8px 0}
+    .final p{max-width:660px;margin:0 auto 18px;color:var(--muted);line-height:1.55}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    [hidden]{display:none!important}
+    @media(max-width:1050px){.trainer{grid-template-columns:1fr 1fr}.trainer>.panel:first-child{grid-column:1/-1}.photo-stage{height:380px}.issues{grid-template-columns:repeat(3,1fr)}}
+    @media(max-width:720px){.intro{display:block}.scorebox{margin-top:14px}.trainer{grid-template-columns:1fr}.trainer>.panel:first-child{grid-column:auto}.photo-stage{height:360px}.choice-grid{grid-template-columns:1fr}.issues{grid-template-columns:1fr 1fr}.method-grid{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+  <a class="brand" href="/warehouse-hub/"><span class="brandmark">◇</span><span>Operations Hub</span></a>
+  <div class="top-actions"><span class="pill">Practice data only</span><a class="back" href="/warehouse-hub/">Back to Hub</a></div>
+</div></header>
+
+<main class="page">
+  <section class="intro">
+    <div>
+      <div class="eyebrow">Associate training game</div>
+      <h1>QA Challenge</h1>
+      <p>Inspect the fictional checklist, approved mockup, and associate photo just like a real QA review. Some items fail. Some pass. Some do not give you enough evidence to make the call.</p>
+    </div>
+    <aside class="scorebox">
+      <div class="top"><span class="eyebrow">Current run</span><strong id="scoreText">0 / 5</strong></div>
+      <div class="progress"><span id="progressBar" style="width:20%"></span></div>
+      <div class="round-nav">
+        <button class="navbtn" id="prevBtn" type="button">← Previous</button>
+        <button class="navbtn" id="nextNavBtn" type="button">Next →</button>
+      </div>
+    </aside>
+  </section>
+
+  <section id="game">
+    <div class="trainer">
+      <section class="panel">
+        <div class="panel-title"><span id="specTitle">1. Checklist / Spec</span><small id="itemCounter">Item 1 of 5</small></div>
+        <div class="spec-wrap"><div class="spec-table" id="specTable"></div></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title"><span>2. Approved Mockup</span><small>What it should look like</small></div>
+        <div class="photo-wrap">
+          <div class="photo-stage mock" id="mockStage"><span class="photo-label">APPROVED</span></div>
+          <div class="viewbar"><button class="viewbtn active" type="button" data-stage="mockStage" data-view="main">Main view</button><button class="viewbtn" type="button" data-stage="mockStage" data-view="close">Decoration close-up</button></div>
+          <div class="photo-note" id="mockNote"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title"><span>3. Associate QA Photo</span><small>What arrived</small></div>
+        <div class="photo-wrap">
+          <div class="photo-stage" id="actualStage"><span class="photo-label">ASSOCIATE PHOTO</span></div>
+          <div class="viewbar"><button class="viewbtn active" type="button" data-stage="actualStage" data-view="main">Main view</button><button class="viewbtn" type="button" data-stage="actualStage" data-view="close">Decoration close-up</button></div>
+          <div class="photo-note" id="actualNote"></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="decision">
+      <div class="decision-head"><h2>4. What is your QA decision?</h2><p>Use the evidence shown. Do not reject just because the game usually has a problem.</p></div>
+      <div class="decision-body">
+        <div class="choice-grid">
+          <button class="choice" type="button" data-choice="approve">✅ Approve<span>Evidence supports the item meeting spec.</span></button>
+          <button class="choice" type="button" data-choice="hold">📸 Hold / Need more info<span>You cannot verify a required detail.</span></button>
+          <button class="choice" type="button" data-choice="reject">❌ Reject<span>A requirement clearly does not match.</span></button>
+        </div>
+
+        <div class="issue-wrap" id="issueWrap" hidden>
+          <div class="issue-title">What is wrong? Select all that apply.</div>
+          <div class="issues">
+            <button class="issue" type="button" data-issue="item">Wrong item</button>
+            <button class="issue" type="button" data-issue="color">Wrong product color</button>
+            <button class="issue" type="button" data-issue="quantity">Wrong quantity</button>
+            <button class="issue" type="button" data-issue="placement">Decoration placement</button>
+            <button class="issue" type="button" data-issue="size">Decoration size</button>
+            <button class="issue" type="button" data-issue="imprint">Wrong imprint type</button>
+            <button class="issue" type="button" data-issue="imprintColor">Wrong imprint color</button>
+            <button class="issue" type="button" data-issue="quality">Print quality</button>
+            <button class="issue" type="button" data-issue="damage">Product damage</button>
+            <button class="issue" type="button" data-issue="other">Other</button>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="primary" id="submitBtn" type="button" disabled>Submit inspection</button>
+          <button class="secondary" id="nextBtn" type="button" hidden>Next item</button>
+          <button class="secondary" id="restartBtn" type="button">Restart run</button>
+        </div>
+        <div class="feedback" id="feedback" hidden aria-live="polite"></div>
+      </div>
+    </section>
+
+    <div class="legend">
+      <details>
+        <summary>Training reference: imprint types</summary>
+        <div class="method-grid">
+          <div class="method-demo"><b>Screen print</b>Flat, opaque ink sitting on the surface.</div>
+          <div class="method-demo"><b>Laser engrave</b>Material is removed/revealed. No colored ink layer.</div>
+          <div class="method-demo"><b>Heat transfer</b>Smooth film-like decoration applied to the surface.</div>
+          <div class="method-demo"><b>Embroidery</b>Visible thread and stitch texture.</div>
+        </div>
+      </details>
+      <details>
+        <summary>Why the game shows a color swatch</summary>
+        <div style="margin-top:8px;max-width:620px;line-height:1.5">The swatch is the game's digital reference. Associates should compare the simulated decoration to it. The game will not ask them to distinguish tiny Pantone differences that would require a physical color book.</div>
+      </details>
+    </div>
+  </section>
+  <section id="finalScreen" hidden></section>
+</main>
+
+<script>
+(() => {
+  const urls = {
+    bottleMock:'https://images.unsplash.com/photo-1561180796-dbaa5caf76e0?auto=format&fit=crop&fm=jpg&q=82&w=1200',
+    bottleActual:'https://images.unsplash.com/photo-1649769560353-4951d1c0e38d?auto=format&fit=crop&fm=jpg&q=82&w=1200',
+    toteMock:'https://images.unsplash.com/photo-1772890753143-24991d807710?auto=format&fit=crop&fm=jpg&q=82&w=1200',
+    toteActual:'https://images.unsplash.com/photo-1780480999314-b82a1f2f9de6?auto=format&fit=crop&fm=jpg&q=82&w=1200',
+    mugMock:'https://images.unsplash.com/photo-1611502692278-8790788af174?auto=format&fit=crop&fm=jpg&q=82&w=1200',
+    mugActual:'https://images.unsplash.com/photo-1612949059504-28e99fd0d69c?auto=format&fit=crop&fm=jpg&q=82&w=1200'
+  };
+
+  const scenarios = [
+    {
+      id:'imprint-type',
+      item:'7420-19', product:'Insulated Bottle · 20 oz', color:'Matte Navy', qty:'48',
+      imprint:'Laser Engrave', location:'Centered on front', dimensions:'2.00″ W × 1.50″ H',
+      imprintColor:'N/A · Engrave', swatch:'#c6cbc8', colorHelp:'Expected engraved metal / silver appearance',
+      notes:'Artwork level and centered.',
+      mock:{url:urls.bottleMock, method:'laser', color:'#dfe5e2', pos:'', logo:'NORTHRIDGE', sub:'OUTFITTERS'},
+      actual:{url:urls.bottleActual, method:'screen', color:'#56a7e8', pos:'', logo:'NORTHRIDGE', sub:'OUTFITTERS'},
+      mockNote:'Approved decoration is laser engraved: no colored ink layer.',
+      actualNote:'Use the close-up if you need to inspect how the decoration sits on the surface.',
+      answer:'reject', issues:['imprint'],
+      explanation:'Reject — wrong imprint type. The spec calls for laser engraving, but the simulated associate sample shows an opaque blue screen-print style decoration sitting on the surface.'
+    },
+    {
+      id:'wrong-color',
+      item:'9073-22', product:'Canvas Tote Bag · Medium', color:'Natural', qty:'36',
+      imprint:'Screen Print', location:'Centered on front panel', dimensions:'4.00″ W × 2.50″ H',
+      imprintColor:'PANTONE 2965 C', swatch:'#17365d', colorHelp:'Digital reference supplied for the game',
+      notes:'Artwork level and centered. No rotation.',
+      mock:{url:urls.toteMock, method:'screen', color:'#17365d', pos:'', logo:'RIVERMARK', sub:'OUTDOOR SUPPLY'},
+      actual:{url:urls.toteActual, method:'screen', color:'#663b8b', pos:'', logo:'RIVERMARK', sub:'OUTDOOR SUPPLY'},
+      mockNote:'The approved imprint color is shown in the checklist swatch.',
+      actualNote:'Judge the simulated color against the swatch. No physical Pantone book is needed for this training case.',
+      answer:'reject', issues:['imprintColor'],
+      explanation:'Reject — wrong imprint color. The expected reference is a dark navy. The simulated received imprint is visibly purple, a large enough difference to judge without a color book.'
+    },
+    {
+      id:'good-item',
+      item:'5518-40', product:'Ceramic Mug · 11 oz', color:'White', qty:'72',
+      imprint:'Screen Print', location:'Side 1 · opposite handle', dimensions:'2.25″ W × 1.25″ H',
+      imprintColor:'PANTONE 3435 C', swatch:'#154734', colorHelp:'Digital reference supplied for the game',
+      notes:'Logo must be level. Decoration should be clean with no voids.',
+      mock:{url:urls.mugMock, method:'screen', color:'#154734', pos:'', logo:'EVERGREEN', sub:'COFFEE CO.'},
+      actual:{url:urls.mugActual, method:'screen', color:'#154734', pos:'', logo:'EVERGREEN', sub:'COFFEE CO.'},
+      mockNote:'Approved white mug with dark green screen print.',
+      actualNote:'The visible decoration color, quality, and general placement match the approved reference.',
+      answer:'approve', issues:[],
+      explanation:'Approve. In this simulated case the visible product color, imprint color, print method, and decoration quality match the supplied evidence. There is no hidden defect just because this is a game.'
+    },
+    {
+      id:'placement',
+      item:'3891-07', product:'Insulated Bottle · 20 oz', color:'Blue', qty:'24',
+      imprint:'Screen Print', location:'Centered · 4.25″ from bottom', dimensions:'1.50″ W × 1.30″ H',
+      imprintColor:'PANTONE White', swatch:'#f4f4f1', colorHelp:'White ink reference',
+      notes:'Keep artwork level and centered in decoration area.',
+      mock:{url:urls.bottleMock, method:'screen', color:'#f3f3ef', pos:'', logo:'SUMMIT', sub:'WORKS'},
+      actual:{url:urls.bottleActual, method:'screen', color:'#f3f3ef', pos:'low', logo:'SUMMIT', sub:'WORKS'},
+      mockNote:'Approved artwork is centered vertically in the printable area.',
+      actualNote:'The associate image shows enough of the bottle to compare relative placement.',
+      answer:'reject', issues:['placement'],
+      explanation:'Reject — decoration placement. The imprint color and method are acceptable, but the simulated logo is clearly too low compared with the approved placement.'
+    },
+    {
+      id:'need-more-info',
+      item:'1184-07', product:'Ceramic Mug · 11 oz', color:'White', qty:'48',
+      imprint:'Screen Print', location:'Exactly opposite handle', dimensions:'2.00″ W × 1.10″ H',
+      imprintColor:'PANTONE 3435 C', swatch:'#154734', colorHelp:'Digital reference supplied for the game',
+      notes:'Handle relationship must be visible in QA evidence.',
+      mock:{url:urls.mugMock, method:'screen', color:'#154734', pos:'', logo:'CEDAR', sub:'SUPPLY CO.'},
+      actual:{url:urls.mugActual, method:'screen', color:'#154734', pos:'right', logo:'CEDAR', sub:'SUPPLY CO.'},
+      mockNote:'The key requirement is placement opposite the handle.',
+      actualNote:'The simulated associate photo does not clearly show the handle relationship. Do not guess.',
+      answer:'hold', issues:[],
+      explanation:'Hold / need more info. The photo does not give enough evidence to confirm the logo is exactly opposite the handle. The correct QA behavior is to request a better photo rather than approve or invent a failure.'
+    }
+  ];
+
+  let order = [];
+  let cursor = 0;
+  let score = 0;
+  let decision = '';
+  let selectedIssues = new Set();
+  let locked = false;
+  let scored = new Set();
+
+  const game = document.getElementById('game');
+  const finalScreen = document.getElementById('finalScreen');
+  const specTable = document.getElementById('specTable');
+  const mockStage = document.getElementById('mockStage');
+  const actualStage = document.getElementById('actualStage');
+  const mockNote = document.getElementById('mockNote');
+  const actualNote = document.getElementById('actualNote');
+  const itemCounter = document.getElementById('itemCounter');
+  const scoreText = document.getElementById('scoreText');
+  const progressBar = document.getElementById('progressBar');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextNavBtn = document.getElementById('nextNavBtn');
+  const submitBtn = document.getElementById('submitBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const restartBtn = document.getElementById('restartBtn');
+  const issueWrap = document.getElementById('issueWrap');
+  const feedback = document.getElementById('feedback');
+  const choiceBtns = [...document.querySelectorAll('.choice')];
+  const issueBtns = [...document.querySelectorAll('.issue')];
+
+  function shuffle(items){
+    const copy=[...items];
+    for(let i=copy.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[copy[i],copy[j]]=[copy[j],copy[i]]}
+    return copy;
+  }
+
+  function esc(value){
+    return String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function imprintHtml(cfg){
+    const pos = cfg.pos ? ' '+cfg.pos : '';
+    return '<div class="imprint '+esc(cfg.method)+pos+'" style="--imprint-color:'+esc(cfg.color)+'">'+
+      '<div class="logo-mark">▲</div><div class="logo-name">'+esc(cfg.logo)+'</div><div class="logo-sub">'+esc(cfg.sub)+'</div></div>';
+  }
+
+  function stageHtml(cfg, label){
+    return '<span class="photo-label">'+label+'</span><img src="'+esc(cfg.url)+'" alt="" referrerpolicy="no-referrer" loading="eager" />'+imprintHtml(cfg);
+  }
+
+  function specHtml(s){
+    return [
+      ['Item #',esc(s.item)],
+      ['Product',esc(s.product)],
+      ['Product color',esc(s.color)],
+      ['Quantity',esc(s.qty)],
+      ['Imprint type',esc(s.imprint)],
+      ['Location',esc(s.location)],
+      ['Dimensions',esc(s.dimensions)],
+      ['Imprint color','<div class="color-ref"><span class="swatch" style="background:'+esc(s.swatch)+'"></span><strong>'+esc(s.imprintColor)+'</strong></div><div class="helper">'+esc(s.colorHelp)+'</div>'],
+      ['Notes',esc(s.notes)]
+    ].map(([k,v])=>'<div class="spec-row"><div>'+k+'</div><div>'+v+'</div></div>').join('');
+  }
+
+  function current(){ return order[cursor]; }
+
+  function syncSubmit(){
+    submitBtn.disabled = locked || !decision || (decision==='reject' && selectedIssues.size===0);
+  }
+
+  function setView(stageId, close){
+    const stage=document.getElementById(stageId);
+    if(!stage)return;
+    stage.classList.toggle('zoomed',close);
+    document.querySelectorAll('[data-stage="'+stageId+'"]').forEach(btn=>btn.classList.toggle('active',btn.dataset.view===(close?'close':'main')));
+  }
+
+  function render(){
+    if(!order.length)return;
+    const s=current();
+    game.hidden=false; finalScreen.hidden=true;
+    specTable.innerHTML=specHtml(s);
+    mockStage.innerHTML=stageHtml(s.mock,'APPROVED');
+    actualStage.innerHTML=stageHtml(s.actual,'ASSOCIATE PHOTO');
+    mockNote.textContent=s.mockNote;
+    actualNote.textContent=s.actualNote;
+    itemCounter.textContent='Item '+(cursor+1)+' of '+order.length;
+    scoreText.textContent=score+' / '+order.length;
+    progressBar.style.width=((cursor+1)/order.length*100)+'%';
+
+    decision='';
+    selectedIssues=new Set();
+    locked=false;
+    choiceBtns.forEach(btn=>{btn.disabled=false;btn.classList.remove('selected')});
+    issueBtns.forEach(btn=>{btn.disabled=false;btn.classList.remove('selected')});
+    issueWrap.hidden=true;
+    feedback.hidden=true; feedback.className='feedback'; feedback.innerHTML='';
+    submitBtn.hidden=false; nextBtn.hidden=true;
+    prevBtn.disabled=cursor===0;
+    nextNavBtn.disabled=cursor===order.length-1;
+    setView('mockStage',false); setView('actualStage',false);
+    syncSubmit();
+  }
+
+  choiceBtns.forEach(btn=>btn.addEventListener('click',()=>{
+    if(locked)return;
+    decision=btn.dataset.choice;
+    choiceBtns.forEach(b=>b.classList.toggle('selected',b===btn));
+    issueWrap.hidden=decision!=='reject';
+    if(decision!=='reject'){selectedIssues.clear();issueBtns.forEach(b=>b.classList.remove('selected'))}
+    syncSubmit();
+  }));
+
+  issueBtns.forEach(btn=>btn.addEventListener('click',()=>{
+    if(locked)return;
+    const key=btn.dataset.issue;
+    if(selectedIssues.has(key))selectedIssues.delete(key);else selectedIssues.add(key);
+    btn.classList.toggle('selected',selectedIssues.has(key));
+    syncSubmit();
+  }));
+
+  document.querySelectorAll('.viewbtn').forEach(btn=>btn.addEventListener('click',()=>{
+    setView(btn.dataset.stage,btn.dataset.view==='close');
+  }));
+
+  submitBtn.addEventListener('click',()=>{
+    if(submitBtn.disabled)return;
+    locked=true;
+    const s=current();
+    const issueMatch=s.answer!=='reject' || (selectedIssues.size===s.issues.length && s.issues.every(x=>selectedIssues.has(x)));
+    const correct=decision===s.answer && issueMatch;
+    if(correct && !scored.has(s.id)){score++;scored.add(s.id)}
+    scoreText.textContent=score+' / '+order.length;
+    choiceBtns.forEach(btn=>btn.disabled=true);
+    issueBtns.forEach(btn=>btn.disabled=true);
+    feedback.hidden=false;
+    feedback.className='feedback '+(correct?'correct':'wrong');
+    feedback.innerHTML='<strong>'+(correct?'✅ Correct inspection':'❌ Not quite')+'</strong><div>'+esc(s.explanation)+'</div>';
+    submitBtn.hidden=true; nextBtn.hidden=false;
+    nextBtn.textContent=cursor===order.length-1?'See results':'Next item';
+  });
+
+  nextBtn.addEventListener('click',()=>{
+    if(cursor<order.length-1){cursor++;render();return}
+    showFinal();
+  });
+  prevBtn.addEventListener('click',()=>{if(cursor>0){cursor--;render()}});
+  nextNavBtn.addEventListener('click',()=>{if(cursor<order.length-1){cursor++;render()}});
+  restartBtn.addEventListener('click',start);
+
+  function showFinal(){
+    game.hidden=true; finalScreen.hidden=false;
+    const perfect=score===order.length;
+    finalScreen.className='final';
+    finalScreen.innerHTML='<div class="eyebrow">Run complete</div><div class="bigscore">'+score+'/'+order.length+'</div><h2>'+(perfect?'QA Eagle Eye 👁️':'QA practice complete')+'</h2><p>'+(perfect?'Perfect run. You approved good evidence, rejected real defects, and held the case that could not be verified.':'The goal is not to reject everything. Strong QA means knowing when something clearly fails, when it passes, and when the evidence is not enough.')+'</p><button class="primary" id="playAgain" type="button">Play another shuffled run</button>';
+    document.getElementById('playAgain').addEventListener('click',start);
+  }
+
+  function start(){
+    order=shuffle(scenarios);
+    cursor=0;score=0;decision='';selectedIssues=new Set();locked=false;scored=new Set();
+    render();
+  }
+
+  start();
+})();
+</script>
+</body>
+</html>
