@@ -51,10 +51,10 @@
     .photo-wrap{padding:10px}
     .photo-stage{position:relative;height:420px;border-radius:11px;overflow:hidden;background:#f3f5f4;border:1px solid #d6dfdb}
     .photo-stage .photo-label{position:absolute;top:9px;left:9px;padding:5px 7px;border-radius:7px;background:rgba(17,31,27,.72);color:#fff;font-size:10px;font-weight:900;z-index:5}
-    .photo-canvas{position:absolute;inset:0;transform:scale(1);transform-origin:var(--focus-x,50%) var(--focus-y,60%);transition:transform .28s ease;will-change:transform;background:#fff}
+    .photo-canvas{position:absolute;inset:0;transform:scale(var(--main-scale,1));transform-origin:50% 50%;transition:transform .28s ease,transform-origin .28s ease;will-change:transform;background:#fff}
     .photo-canvas img{width:100%;height:100%;object-fit:contain;display:block;background:#fff}
     .photo-stage.actual-photo .photo-canvas img{filter:brightness(.97) saturate(.94) contrast(1.02)}
-    .photo-stage.detail-view .photo-canvas{transform:scale(var(--zoom,2.8))}
+    .photo-stage.detail-view .photo-canvas{transform:scale(var(--detail-scale,2.8));transform-origin:var(--focus-x,50%) var(--focus-y,60%)}
     .imprint{position:absolute;left:50%;top:60%;transform:translate(-50%,-50%);width:max-content;max-width:62%;text-align:center;pointer-events:none;z-index:2}
     .imprint .logo-mark{font-size:29px;line-height:.8;font-weight:1000}
     .imprint .logo-name{font-size:16px;font-weight:1000;letter-spacing:.05em;line-height:1}
@@ -266,14 +266,14 @@
       id:'placement',
       item:'3891-07', product:'Insulated Bottle · 20 oz', color:'White', qty:'24',
       imprint:'Screen Print', location:'Centered · 4.25″ from bottom', dimensions:'1.50″ W × 1.30″ H',
-      imprintColor:'PANTONE White', swatch:'#f4f4f1', colorHelp:'White ink reference',
+      imprintColor:'PANTONE 2965 C', swatch:'#17365d', colorHelp:'Dark navy digital reference',
       notes:'Keep artwork level and centered in decoration area.',
-      mock:{url:urls.bottle, method:'screen', color:'#f3f3ef', pos:'', logo:'SUMMIT', sub:'WORKS'},
-      actual:{url:urls.bottle, method:'screen', color:'#f3f3ef', pos:'low', logo:'SUMMIT', sub:'WORKS'},
-      mockNote:'Approved artwork is centered vertically in the printable area.',
-      actualNote:'The associate image shows enough of the bottle to compare relative placement.',
+      mock:{url:urls.bottle, method:'screen', color:'#17365d', pos:'', logo:'SUMMIT', sub:'WORKS', mainScale:1.32, detailScale:3.4},
+      actual:{url:urls.bottle, method:'screen', color:'#17365d', pos:'low', logo:'SUMMIT', sub:'WORKS', mainScale:1.32, detailScale:3.4},
+      mockNote:'The dark navy imprint is intentionally high-contrast so this round tests placement only.',
+      actualNote:'Same exact bottle image and same imprint color. Only the decoration position is different.',
       answer:'reject', issues:['placement'],
-      explanation:'Reject — decoration placement. The imprint color and method are acceptable, but the simulated logo is clearly too low compared with the approved placement.'
+      explanation:'Reject — decoration placement. The product, screen-print method, and navy imprint color all match. The only failure is that the simulated logo is clearly too low compared with the approved placement.'
     },
     {
       id:'need-more-info',
@@ -346,7 +346,7 @@
   function stageHtml(cfg, label){
     const focus=focusFor(cfg);
     return '<span class="photo-label">'+label+'</span>'+
-      '<div class="photo-canvas" style="--focus-x:'+focus.x+'%;--focus-y:'+focus.y+'%;--zoom:'+(cfg.zoom||2.8)+'">'+
+      '<div class="photo-canvas" style="--focus-x:'+focus.x+'%;--focus-y:'+focus.y+'%;--main-scale:'+(cfg.mainScale||1)+';--detail-scale:'+(cfg.detailScale||2.8)+'">'+
       '<img src="'+esc(cfg.url)+'" alt="" referrerpolicy="no-referrer" loading="eager" />'+imprintHtml(cfg)+'</div>'+
       '<span class="zoom-help">Zoomed from this exact image</span>';
   }
