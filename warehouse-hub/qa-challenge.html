@@ -76,11 +76,10 @@
     .decision-head h2{font-size:19px;margin:0 0 3px}
     .decision-head p{margin:0;color:var(--muted);font-size:13px}
     .decision-body{padding:13px}
-    .choice-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+    .choice-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}
     .choice{border:2px solid #dce5e1;background:#fff;border-radius:12px;min-height:68px;padding:10px;font-weight:1000;color:var(--ink)}
     .choice span{display:block;color:var(--muted);font-size:11px;font-weight:700;margin-top:3px}
     .choice[data-choice="approve"].selected{border-color:#3d8a59;background:#eaf6ed}
-    .choice[data-choice="hold"].selected{border-color:#d19b27;background:#fff6dd}
     .choice[data-choice="reject"].selected{border-color:#cb5555;background:#fceaea}
     .issue-wrap{margin-top:12px;border-top:1px solid var(--line);padding-top:11px}
     .issue-title{font-size:13px;font-weight:900;margin-bottom:7px}
@@ -122,8 +121,8 @@
     <div>
       <div class="eyebrow">Associate training game</div>
       <h1>QA Challenge</h1>
-      <p>Inspect the fictional checklist, approved mockup, and associate photo just like a real QA review. Some items fail. Some pass. Some do not give you enough evidence to make the call.</p>
-      <p style="margin-top:7px;font-size:12px"><strong>Simulation rule:</strong> the mockup and associate photo use the exact same base product image unless the case is specifically testing the wrong item. “Decoration close-up” is a true zoom of that same image, not a recreated view.</p>
+      <p>Inspect the fictional checklist, approved mockup, and associate photo just like a real QA review. Some items fail and some pass. Every scored round is about the product or decoration itself — not whether the associate took a good photo.</p>
+      <p style="margin-top:7px;font-size:12px"><strong>Simulation rule:</strong> the mockup and associate photo use the exact same base product image unless the case is specifically testing the wrong item. Photo quality is not a scored defect. “Decoration close-up” is a true zoom of that same image.</p>
     </div>
     <aside class="scorebox">
       <div class="top"><span class="eyebrow">Current run</span><strong id="scoreText">0 / 5</strong></div>
@@ -162,11 +161,10 @@
     </div>
 
     <section class="decision">
-      <div class="decision-head"><h2>4. What is your QA decision?</h2><p>Use the evidence shown. Do not reject just because the game usually has a problem.</p></div>
+      <div class="decision-head"><h2>4. Does this item pass QA?</h2><p>Judge the item itself. If it fails, identify the actual product or decoration defect.</p></div>
       <div class="decision-body">
         <div class="choice-grid">
           <button class="choice" type="button" data-choice="approve">✅ Approve<span>Evidence supports the item meeting spec.</span></button>
-          <button class="choice" type="button" data-choice="hold">📸 Hold / Need more info<span>You cannot verify a required detail.</span></button>
           <button class="choice" type="button" data-choice="reject">❌ Reject<span>A requirement clearly does not match.</span></button>
         </div>
 
@@ -276,19 +274,18 @@
       explanation:'Reject — decoration placement. The product, screen-print method, and navy imprint color all match. The only failure is that the simulated logo is clearly too low compared with the approved placement.'
     },
     {
-      id:'need-more-info',
+      id:'decoration-size',
       item:'1184-07', product:'Ceramic Mug · 11 oz', color:'White', qty:'48',
-      imprint:'Screen Print', location:'Exactly opposite handle', dimensions:'2.00″ W × 1.10″ H',
-      imprintColor:'PANTONE 3435 C', swatch:'#154734', colorHelp:'Digital reference supplied for the game',
-      notes:'Handle relationship must be visible in QA evidence.',
-      mock:{url:urls.mug, method:'screen', color:'#154734', pos:'', logo:'CEDAR', sub:'SUPPLY CO.'},
-      actual:{url:urls.mug, method:'screen', color:'#154734', pos:'right', logo:'CEDAR', sub:'SUPPLY CO.'},
-      mockNote:'The key requirement is placement opposite the handle.',
-      actualNote:'The simulated associate photo does not clearly show the handle relationship. Do not guess.',
-      answer:'hold', issues:[],
-      explanation:'Hold / need more info. The photo does not give enough evidence to confirm the logo is exactly opposite the handle. The correct QA behavior is to request a better photo rather than approve or invent a failure.'
-    }
-  ];
+      imprint:'Screen Print', location:'Centered on front', dimensions:'2.00″ W × 1.10″ H',
+      imprintColor:'PANTONE 3435 C', swatch:'#154734', colorHelp:'Dark green digital reference',
+      notes:'Artwork must match the approved size and remain centered.',
+      mock:{url:urls.mug, method:'screen', color:'#154734', pos:'', logo:'CEDAR', sub:'SUPPLY CO.', mainScale:1.15, detailScale:3.1},
+      actual:{url:urls.mug, method:'screen', color:'#154734', pos:'large', logo:'CEDAR', sub:'SUPPLY CO.', mainScale:1.15, detailScale:3.1},
+      mockNote:'Approved decoration size and placement.',
+      actualNote:'Same exact mug, same color, and same screen-print style. Compare only the decoration size.',
+      answer:'reject', issues:['size'],
+      explanation:'Reject — decoration size. The item, color, imprint method, and placement match, but the simulated received decoration is clearly larger than the approved mockup.'
+    }  ];
 
   let order = [];
   let cursor = 0;
@@ -455,7 +452,7 @@
     game.hidden=true; finalScreen.hidden=false;
     const perfect=score===order.length;
     finalScreen.className='final';
-    finalScreen.innerHTML='<div class="eyebrow">Run complete</div><div class="bigscore">'+score+'/'+order.length+'</div><h2>'+(perfect?'QA Eagle Eye 👁️':'QA practice complete')+'</h2><p>'+(perfect?'Perfect run. You approved good evidence, rejected real defects, and held the case that could not be verified.':'The goal is not to reject everything. Strong QA means knowing when something clearly fails, when it passes, and when the evidence is not enough.')+'</p><button class="primary" id="playAgain" type="button">Play another shuffled run</button>';
+    finalScreen.innerHTML='<div class="eyebrow">Run complete</div><div class="bigscore">'+score+'/'+order.length+'</div><h2>'+(perfect?'QA Eagle Eye 👁️':'QA practice complete')+'</h2><p>'+(perfect?'Perfect run. You correctly approved the good item and identified the real defects on the failed items.':'The goal is not to reject everything. Strong QA means comparing the item to the approved requirements and identifying only real product or decoration defects.')+'</p><button class="primary" id="playAgain" type="button">Play another shuffled run</button>';
     document.getElementById('playAgain').addEventListener('click',start);
   }
 
