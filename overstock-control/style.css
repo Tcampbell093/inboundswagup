@@ -137,3 +137,8 @@
 .box-pick input{width:16px;height:16px;margin:0;accent-color:var(--purple);cursor:pointer}
 .box-card:has(.box-pick) .badge{margin-right:34px}
 .box-card.picked{border-color:#a98bd6;box-shadow:0 0 0 3px rgba(108,72,168,.15)}
+
+/* Admin delete */
+.action-btn.danger-btn{border-color:#efc7c1;background:#fff0ee;color:var(--red)}
+.action-btn.danger-btn:hover{border-color:#d9877c;background:#ffe6e2}
+.donation-delete{margin-top:8px;border:1px solid #efc7c1;background:#fff0ee;color:var(--red);border-radius:8px;padding:6px 10px;font-size:11px;font-weight:850;cursor:pointer}
