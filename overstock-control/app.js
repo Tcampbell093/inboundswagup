@@ -81,8 +81,8 @@
   function syncPill(){const p=$('excelSyncPill'),out=data.excelSync?.configured,inbound=data.excelSync?.importConfigured;p.textContent=out&&inbound?'Excel sync · Two-way ready':inbound?'Excel → Houston · Ready':out?'Houston → Excel · Ready':'Excel sync · Setup needed';p.classList.toggle('connected',out||inbound)}
   function status(c){const n=norm(c.status);if(n==='closed')return'closed';if(c.currentLocation&&(n==='stored'||n==='full'))return'stored';if(!c.currentLocation)return'cart';return n||'open'}
   function renderStats(){const active=data.containers.filter(c=>status(c)!=='closed'),cart=active.filter(c=>!c.currentLocation),open=active.filter(c=>status(c)==='open'||status(c)==='cart'),stored=active.filter(c=>c.currentLocation&&(status(c)==='stored'||status(c)==='full'));$('statCart').textContent=cart.length;$('statOpen').textContent=open.length;$('statStored').textContent=stored.length;$('statLocations').textContent=new Set(active.map(c=>c.currentLocation).filter(Boolean)).size;return{active,cart,open,stored}}
-  function boxCard(c,cart=false){const its=items(c.id),u=units(c.id);return`<article class="box-card" data-box="${esc(c.id)}"><div class="box-top"><div class="box-code"><i class="status-dot ${status(c)}"></i>${esc(c.code||'Unnamed')}</div><span class="badge ${cart?'amber':''}">${esc(cart?'On cart':c.status||'Open')}</span></div><div class="box-meta"><b>${its.length}</b> PO${its.length===1?'':'s'} · <b>${u.toLocaleString()}</b> units${c.currentLocation?` · 📍 ${esc(c.currentLocation)}`:''}</div><div class="box-meta">${its.slice(0,3).map(e=>`PO ${esc(e.po)}`).join(' · ')||'Empty box'}</div><div class="box-cta">${cart?'Assign location →':'Open box options →'}</div></article>`}
-  function bindBoxes(root=document){root.querySelectorAll('[data-box]').forEach(el=>el.onclick=()=>openBox(el.dataset.box))}
+  function boxCard(c,cart=false,pick=false){const its=items(c.id),u=units(c.id);return`<article class="box-card${pick&&retireSel.has(String(c.id))?' picked':''}" data-box="${esc(c.id)}">${pick?`<label class="box-pick" title="Select to retire"><input type="checkbox" data-pick="${esc(c.id)}"${retireSel.has(String(c.id))?' checked':''} aria-label="Select ${esc(c.code||'box')}"></label>`:''}<div class="box-top"><div class="box-code"><i class="status-dot ${status(c)}"></i>${esc(c.code||'Unnamed')}</div><span class="badge ${cart?'amber':''}">${esc(cart?'On cart':c.status||'Open')}</span></div><div class="box-meta"><b>${its.length}</b> PO${its.length===1?'':'s'} · <b>${u.toLocaleString()}</b> units${c.currentLocation?` · 📍 ${esc(c.currentLocation)}`:''}</div><div class="box-meta">${its.slice(0,3).map(e=>`PO ${esc(e.po)}`).join(' · ')||'Empty box'}</div><div class="box-cta">${cart?'Assign location →':'Open box options →'}</div></article>`}
+  function bindBoxes(root=document){root.querySelectorAll('[data-box]').forEach(el=>el.onclick=e=>{if(e.target.closest('.box-pick'))return;openBox(el.dataset.box)})}
   function renderCart(stats){$('cartCount').textContent=`${stats.cart.length} waiting`;$('cartGrid').innerHTML=stats.cart.length?stats.cart.sort((a,b)=>time(b)-time(a)).map(c=>boxCard(c,true)).join(''):'<div class="empty">✓ No boxes are waiting on the cart.</div>';bindBoxes($('cartGrid'))}
   function renderLocations(stats){const locs=[...new Set([...(data.locations||[]),...stats.active.map(c=>c.currentLocation).filter(Boolean)])].sort(cmp),used=new Set(stats.active.map(c=>c.currentLocation).filter(Boolean));$('locationCount').textContent=`${used.size} used`;$('locationGrid').innerHTML=locs.map(loc=>{const bs=stats.active.filter(c=>norm(c.currentLocation)===norm(loc)),u=bs.reduce((n,c)=>n+units(c.id),0);return`<button class="location ${bs.length?'occupied':''}" data-location="${esc(loc)}"><b>${esc(loc)}</b><span>${bs.length?`${bs.length} bx · ${u}u`:'free'}</span></button>`}).join('');document.querySelectorAll('[data-location]').forEach(b=>b.onclick=()=>openLocation(b.dataset.location))}
   function renderBoxes(stats){
@@ -114,9 +114,52 @@
       btn.classList.toggle('active',on);
       btn.setAttribute('aria-current',on?'true':'false');
     });
-    $('boxesGrid').innerHTML=bs.length?bs.map(c=>boxCard(c)).join('')
+    // Empty view: leads and admins can tick boxes and retire them together.
+    const picking=boxView==='empty'&&isLead();
+    [...retireSel].forEach(id=>{if(!picking||!emptyBoxes.some(c=>String(c.id)===id))retireSel.delete(id)});
+    let bar=$('boxSelectBar');
+    if(!bar){bar=document.createElement('div');bar.id='boxSelectBar';bar.className='box-select-bar';$('boxesGrid').before(bar)}
+    bar.hidden=!picking||!bs.length;
+    shownForPick=picking?bs:[];
+    renderSelectBar();
+    $('boxesGrid').innerHTML=bs.length?bs.map(c=>boxCard(c,false,picking)).join('')
       : `<div class="empty">${boxView==='retired'?'No retired boxes.':boxView==='empty'?'No empty containers right now.':'No active boxes match.'}</div>`;
     bindBoxes($('boxesGrid'));
+    $('boxesGrid').querySelectorAll('[data-pick]').forEach(cb=>cb.onchange=()=>{
+      cb.checked?retireSel.add(cb.dataset.pick):retireSel.delete(cb.dataset.pick);
+      cb.closest('.box-card')?.classList.toggle('picked',cb.checked);
+      renderSelectBar();
+    });
+  }
+  let shownForPick=[];
+  // The bar above the Empty containers grid; ticking a box only updates this.
+  function renderSelectBar(){
+    const bar=$('boxSelectBar');
+    if(!bar||!shownForPick.length)return;
+    const bs=shownForPick,n=retireSel.size,shownPicked=bs.filter(c=>retireSel.has(String(c.id))).length;
+    bar.innerHTML=`<span><b>${n}</b> selected</span>
+      <button type="button" class="ghost" data-sel="all"${shownPicked===bs.length?' disabled':''}>Select all shown (${bs.length})</button>
+      <button type="button" class="ghost" data-sel="none"${n?'':' disabled'}>Clear</button>
+      <button type="button" class="danger" data-sel="retire"${n?'':' disabled'}>Retire selected (${n})</button>
+      <small>Tip: search or sort first (e.g. by location) to narrow what "Select all" picks.</small>`;
+    bar.querySelector('[data-sel="all"]').onclick=()=>{bs.forEach(c=>retireSel.add(String(c.id)));renderBoxes(renderStats())};
+    bar.querySelector('[data-sel="none"]').onclick=()=>{retireSel.clear();renderBoxes(renderStats())};
+    bar.querySelector('[data-sel="retire"]').onclick=retireSelected;
+  }
+  const retireSel=new Set();
+  async function retireSelected(){
+    const ids=[...retireSel],n=ids.length;
+    if(!n||!requireHubUser())return;
+    if(!confirm(`Retire ${n} empty box${n===1?'':'es'}?\n\nThey move to the Retired view (not deleted) and can be reopened anytime. Any box that turns out to hold a PO is skipped.`))return;
+    const btn=$('boxSelectBar')?.querySelector('[data-sel="retire"]');if(btn)btn.disabled=true;
+    try{
+      const j=await request({action:'retireEmptyBoxes',ids});
+      data={...data,...j};
+      retireSel.clear();
+      render();
+      const done=Number(j.retiredBoxes||0),skipped=Number(j.skippedNotEmpty||0);
+      toast(`${done} empty box${done===1?'':'es'} retired.${skipped?` ${skipped} skipped because they hold POs.`:''}`);
+    }catch(error){toast(error.message||'Could not retire boxes.',true);if(btn)btn.disabled=false}
   }
   function logMatches(e,q){const c=container(e.containerId);return!q||norm([e.po,e.deliveryId,e.category,e.status,e.action,e.location,e.containerCode,e.associate,e.originalAssociate,e.lastChangedBy,c?.code,c?.currentLocation].join(' ')).includes(q)}
   function renderLog(){

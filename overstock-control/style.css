@@ -125,3 +125,15 @@
 .rule-verdict.wait{background:#fff3d9;color:#8a5b05;border:1px solid #f0d49a}
 .rule-note{margin:0;color:var(--muted);font-size:12px}
 @media(max-width:560px){.ready-row small,.asm-form{margin-left:0}}
+
+/* Bulk retire (Empty containers) */
+.box-select-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 18px 4px;padding:10px 12px;border:1px solid #e3d6f3;background:#f7f2fd;border-radius:11px;font-size:12px}
+.box-select-bar[hidden]{display:none}
+.box-select-bar small{color:var(--muted);flex-basis:100%}
+.box-select-bar .ghost,.box-select-bar .danger{padding:7px 11px;font-size:12px}
+.box-select-bar button:disabled{opacity:.5;cursor:default}
+.box-card{position:relative}
+.box-pick{position:absolute;top:10px;right:10px;width:28px;height:28px;display:grid;place-items:center;border-radius:7px;background:#fff;border:1px solid #cfdce8;cursor:pointer;z-index:1}
+.box-pick input{width:16px;height:16px;margin:0;accent-color:var(--purple);cursor:pointer}
+.box-card:has(.box-pick) .badge{margin-right:34px}
+.box-card.picked{border-color:#a98bd6;box-shadow:0 0 0 3px rgba(108,72,168,.15)}

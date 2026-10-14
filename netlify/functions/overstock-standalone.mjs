@@ -1385,6 +1385,8 @@ async function mutate(action, body, actor = '', adminOrLead = false) {
     let savedEntryId = '';
     let savedContainerId = '';
     let retiredEmptyExcelBoxes = 0;
+    let retiredBoxes = 0;
+    let skippedNotEmpty = 0;
     let transientIntakeContainer = null;
 
     const addActivity = ({ type='update', entry=null, container=null, summary='', po='', entryId='', containerId='', containerCode='', location='' } = {}) => {
@@ -1477,6 +1479,28 @@ async function mutate(action, body, actor = '', adminOrLead = false) {
         addActivity({ type:'box', container:containers[i],
           summary:`retired empty Excel-generated box ${box.code}` });
       }
+    } else if (action === 'retireEmptyBoxes') {
+      // Bulk retire chosen empty boxes. Each box is re-checked here: a box
+      // that holds any PO (including ones hidden from the screen) is skipped.
+      if (!adminOrLead) throw new Error('Admin or Team Lead access is required to retire boxes.');
+      const ids = new Set((Array.isArray(body.ids) ? body.ids : []).slice(0, 1000).map(id => str(id, 160)).filter(Boolean));
+      if (!ids.size) throw new Error('Choose at least one empty box.');
+      const occupiedIds = new Set(entries.filter(entry => str(entry?.action, 120).toLowerCase() !== 'donated')
+        .map(entry => String(entry?.containerId || '')).filter(Boolean));
+      const codes = [];
+      for (let i = 0; i < containers.length; i += 1) {
+        const box = containers[i];
+        if (!ids.has(String(box.id))) continue;
+        if (str(box.status, 80).toLowerCase() === 'closed') continue;
+        if (occupiedIds.has(String(box.id))) { skippedNotEmpty += 1; continue; }
+        containers[i] = { ...box, status: 'Closed', retainEmpty: false, updatedAt: now };
+        retiredBoxes += 1;
+        codes.push(box.code);
+        boxEvent(boxEvents, containers[i], 'retired-empty', 'Overstock', actor, { reason: 'Retired in bulk from Empty containers' });
+      }
+      if (retiredBoxes) {
+        addActivity({ type: 'box', summary: `retired ${retiredBoxes} empty box${retiredBoxes === 1 ? '' : 'es'}${codes.length <= 6 ? ` (${codes.join(', ')})` : ''}` });
+      }
     } else if (action === 'intakeAddEntry') {
       const draft = { ...(body.container || {}) };
       const candidate = { ...(body.entry || {}) };
@@ -1520,7 +1544,7 @@ async function mutate(action, body, actor = '', adminOrLead = false) {
       };
     }
 
-    if (action === 'reconcileEmptyExcelBoxes') {
+    if (action === 'reconcileEmptyExcelBoxes' || action === 'retireEmptyBoxes') {
       // Already handled above. Proceed to the shared transaction commit.
     } else if (action === 'upsertEntry' || action === 'intakeAddEntry') {
       const incoming = { ...(body.entry || {}) };
@@ -1738,7 +1762,7 @@ async function mutate(action, body, actor = '', adminOrLead = false) {
       [JSON.stringify(data)],
     );
     await client.query('COMMIT');
-    return { snapshot: await readSnapshot(db), excelEvent, savedEntryId, savedContainerId, retiredEmptyExcelBoxes };
+    return { snapshot: await readSnapshot(db), excelEvent, savedEntryId, savedContainerId, retiredEmptyExcelBoxes, retiredBoxes, skippedNotEmpty };
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch {}
     throw error;
@@ -1830,7 +1854,10 @@ export default async (request) => {
     }
     const result = await mutate(action, body, actor, hubIsAdminOrLead(request));
     const excelWrite = result.excelEvent ? await sendExcelEvent(result.excelEvent) : { configured: false, ok: false, status: 'no-event' };
-    return json(200, { ok: true, ...result.snapshot, excelWrite });
+    return json(200, {
+      ok: true, ...result.snapshot, excelWrite,
+      retiredEmptyExcelBoxes: result.retiredEmptyExcelBoxes, retiredBoxes: result.retiredBoxes, skippedNotEmpty: result.skippedNotEmpty,
+    });
   } catch (error) {
     return json(400, { error: str(error?.message || 'Unexpected error.', 300) });
   }
