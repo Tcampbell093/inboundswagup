@@ -249,8 +249,10 @@
         <div class="donation-meta">From <b>${esc(d.containerCode||'Unknown box')}</b>${d.location?` · 📍 ${esc(d.location)}`:''}</div>
         <div class="donation-meta">Originally added by <b>${esc(original)}</b></div>
         <div class="donation-meta">Donated by <b>${esc(donor)}</b> · ${esc(fullFmt(d.donatedAt||d.updatedAt||d.createdAt))}</div>
+        ${isAdmin()?`<button type="button" class="donation-delete" data-del-donation="${esc(d.id)}">🗑 Delete (Admin)</button>`:''}
       </article>`}).join('')+'</div>'
       :`<div class="empty">${all.length?'No donated items match this search.':'The Donation Pool is empty.'}</div>`;
+    $('donationDialogBody').querySelectorAll('[data-del-donation]').forEach(b=>b.onclick=e=>{e.stopPropagation();deleteDonation(b.dataset.delDonation)});
   }
 
   // Donation readiness, worked out from data.donationInfo (built by the
@@ -323,6 +325,12 @@
   }
   function openReadyDonations(){renderReadyDonations();if(!$('readyDialog').open)$('readyDialog').showModal()}
 
+  async function deleteDonation(id){
+    const d=(data.donations||[]).find(x=>String(x.id)===String(id));
+    if(!d||!isAdmin()||!requireHubUser())return;
+    if(!confirm(`⚠️ Permanently delete donated PO ${d.po} (${Number(d.quantity||0).toLocaleString()} units) from the Donation Pool?\n\nIts history keeps a record of the deletion.`))return;
+    try{const j=await request({action:'deleteDonation',id});data={...data,...j};render();renderDonationPool();toast(`Donated PO ${d.po} deleted.`)}catch(e){toast(e.message,true)}
+  }
   function openDonationPool(prefill=''){
     const input=$('donationSearch');
     if(input)input.value=prefill||'';
@@ -525,6 +533,7 @@
         ${closed?'':'<button class="action-btn" data-act="move">↗ Move location</button>'}
         <button class="action-btn" data-act="edit">✏️ Edit box</button>
         ${its.length===0?'<button class="action-btn" data-act="delete">🗑 Delete empty box</button>':''}
+        ${its.length&&isAdmin()?`<button class="action-btn danger-btn" data-act="delete-all">🗑 Delete box + ${its.length} PO${its.length===1?'':'s'} (Admin)</button>`:''}
       </div>`;
     $('boxDialog').showModal();
     $('boxDialogBody').querySelector('[data-act="add"]')?.addEventListener('click',()=>{close('boxDialog');newEntry(id)});
@@ -533,6 +542,7 @@
     $('boxDialogBody').querySelector('[data-act="move"]')?.addEventListener('click',()=>editContainer(id,true));
     $('boxDialogBody').querySelector('[data-act="edit"]').onclick=()=>editContainer(id);
     $('boxDialogBody').querySelector('[data-act="delete"]')?.addEventListener('click',()=>deleteContainer(id));
+    $('boxDialogBody').querySelector('[data-act="delete-all"]')?.addEventListener('click',()=>deleteBoxWithContents(id));
     $('boxDialogBody').querySelector('[data-act="reopen"]')?.addEventListener('click',async()=>{
       if(!requireHubUser())return;
       try{
@@ -607,6 +617,16 @@
   function newEntry(containerId){const actor=requireHubUser();if(!actor)return;entryReturnBoxId='';$('editBackBtn').hidden=true;const f=$('editForm');f.reset();f.elements.id.value='';lists();f.elements.containerId.value=containerId||'';$('editOriginalAssociate').textContent=actor;$('editCurrentUser').textContent=actor;$('editTitle').textContent='Add PO to box';$('editSubtitle').textContent=container(containerId)?.code||'Choose a box';$('deleteEntryBtn').hidden=true;$('donateEntryBtn').hidden=true;$('editDialog').showModal();setTimeout(()=>f.elements.po.focus(),20)}
   function openEntry(id,returnBoxId=''){const e=data.entries.find(x=>String(x.id)===String(id));if(!e||norm(e.action)==='donated')return;entryReturnBoxId=returnBoxId||'';$('editBackBtn').hidden=!entryReturnBoxId;const f=$('editForm');lists();['id','po','deliveryId','containerId','quantity','category','action','note'].forEach(k=>f.elements[k].value=e[k]??'');$('editOriginalAssociate').textContent=e.originalAssociate||e.associate||'Unknown';$('editCurrentUser').textContent=hubUser()||'Not signed in';$('editTitle').textContent=`PO ${e.po}`;$('editSubtitle').textContent=`${e.deliveryId||e.containerCode||''}${e.lastChangedBy?` · Last changed by ${e.lastChangedBy}`:''}`;$('deleteEntryBtn').hidden=false;$('donateEntryBtn').hidden=false;$('editDialog').showModal()}
   function editContainer(id='',focusLocation=false){close('boxDialog');const c=id?container(id):null,f=$('containerForm');f.reset();lists();f.elements.id.value=c?.id||'';f.elements.code.value=c?.code||'';f.elements.currentLocation.value=c?.currentLocation||'';f.elements.status.value=c?.status||'Open';f.elements.notes.value=c?.notes||'';$('containerTitle').textContent=c?`Edit ${c.code}`:'New box';$('containerDialog').showModal();setTimeout(()=>focusLocation?f.elements.currentLocation.focus():f.elements.code.focus(),20)}
+  const isAdmin=()=>String(hubSession?.role||'').toLowerCase()==='manager';
+  // Admin only: delete a box and every PO in it. Typing the box code confirms.
+  async function deleteBoxWithContents(id){
+    const c=container(id);if(!c||!isAdmin()||!requireHubUser())return;
+    const its=items(id),u=units(id);
+    const typed=prompt(`⚠️ PERMANENTLY DELETE ${c.code} AND ITS ${its.length} PO${its.length===1?'':'s'} (${u.toLocaleString()} units)?\n\nThis removes them from Overstock for good (box history keeps a record). If the POs are still in the workbook, the next Excel sync can add them back.\n\nType ${c.code} to confirm:`);
+    if(typed===null)return;
+    if(typed.trim().toUpperCase()!==String(c.code).toUpperCase())return toast('The box code did not match. Nothing was deleted.',true);
+    try{const j=await request({action:'deleteContainer',id,withContents:true});data={...data,...j};close('boxDialog');render();toast(`${c.code} and its ${its.length} PO${its.length===1?'':'s'} were deleted.`)}catch(e){toast(e.message,true)}
+  }
   async function deleteContainer(id){const c=container(id);if(!c||items(id).length||!confirm(`Delete empty box ${c.code}?`))return;try{const j=await request({action:'deleteContainer',id});data={...data,...j};close('boxDialog');render();toast('Empty box deleted.')}catch(e){toast(e.message,true)}}
   function inspectIntake(){const code=norm($('siContainerCode').value),c=data.containers.find(x=>norm(x.code)===code),el=$('siExistingContainer');el.hidden=!c;if(c){el.textContent=`Existing box · ${c.currentLocation||'On cart'} · ${items(c.id).length} PO(s)`;$('siContainerLocation').value=c.currentLocation||''}}
   function intakeStats(){$('siItemsCount').textContent=intake.items.length;$('siContainersCount').textContent=intake.touched.size;$('siStartedAt').textContent=intake.started?new Date(intake.started).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'—';$('siRecentList').innerHTML=intake.items.slice().reverse().map(e=>`<div class="recent-item"><b>PO ${esc(e.po)}</b> · ${Number(e.quantity||0)} units · ${esc(e.containerCode)}</div>`).join('')}

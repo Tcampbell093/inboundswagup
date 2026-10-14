@@ -82,6 +82,11 @@ function hubActor(request) {
   return str(hubSession(request)?.name, 120);
 }
 
+// "Admin" in the Hub is the Manager role (Team Leads are not Admins).
+function hubIsAdmin(request) {
+  return str(hubSession(request)?.role, 60).toLowerCase() === 'manager';
+}
+
 function hubIsAdminOrLead(request) {
   const role = str(hubSession(request)?.role, 60).toLowerCase();
   return role === 'manager' || role === 'team lead';
@@ -1362,7 +1367,7 @@ async function readSnapshot(db) {
   };
 }
 
-async function mutate(action, body, actor = '', adminOrLead = false) {
+async function mutate(action, body, actor = '', adminOrLead = false, isAdmin = false) {
   const db = pool();
   await ensureBoxAuditSchema(db);
   const client = await db.connect();
@@ -1741,10 +1746,24 @@ async function mutate(action, body, actor = '', adminOrLead = false) {
     } else if (action === 'deleteContainer') {
       const id = str(body.id, 160);
       if (!id) throw new Error('Container id is required.');
-      if (entries.some(e => String(e.containerId) === id)) throw new Error('Move or remove the items in this container before deleting it.');
+      const inside = entries.filter(e => String(e.containerId) === id);
+      // Admins may delete a box together with every PO in it.
+      if (inside.length && !(isAdmin && body.withContents === true)) throw new Error('Move or remove the items in this container before deleting it.');
       const existing = containers.find(c => String(c.id) === id) || null;
+      for (const entry of inside) {
+        poEvent(boxEvents, existing, 'po-deleted', 'Overstock', actor, {
+          po: entry.po, deliveryId: entry.deliveryId, quantity: entry.quantity, category: entry.category,
+          action: entry.action, location: existing?.currentLocation || entry.location, notes: entry.note,
+          addedBy: entry.originalAssociate || entry.associate, deletedWithBox: true,
+        });
+        entryTombs = normalizeTombs([...entryTombs, { id: String(entry.id), ts: now }]);
+      }
+      if (inside.length) {
+        const insideIds = new Set(inside.map(entry => String(entry.id)));
+        entries = entries.filter(entry => !insideIds.has(String(entry.id)));
+      }
       if (existing) {
-        addActivity({ type:'deleted', container:existing, summary:`deleted box ${existing.code}` });
+        addActivity({ type:'deleted', container:existing, summary:`deleted box ${existing.code}${inside.length ? ` and its ${inside.length} PO${inside.length === 1 ? '' : 's'}` : ''}` });
         boxEvent(boxEvents, existing, 'deleted', 'Overstock', actor,
           { location: existing.currentLocation, notes: existing.notes });
       }
@@ -1756,8 +1775,27 @@ async function mutate(action, body, actor = '', adminOrLead = false) {
         occurredAt: new Date().toISOString(),
         containerCode: str(existing?.code, 120),
         location: str(existing?.currentLocation, 120),
-        rows: [],
+        rows: inside.map(entry => excelRow(entry)),
       };
+    } else if (action === 'deleteDonation') {
+      // Admins only: remove a PO from the Donation Pool for good.
+      if (!isAdmin) throw new Error('Only an Admin can delete donated POs.');
+      const id = str(body.id, 160);
+      const record = donations.find(d => String(d.id) === id);
+      if (!record) throw new Error('That donated PO was not found.');
+      const entry = entries.find(e => String(e.id) === String(record.entryId || ''));
+      poEvent(boxEvents, containers.find(c => String(c.id) === String(record.containerId)), 'po-deleted', 'Donation Pool', actor, {
+        po: record.po, deliveryId: record.deliveryId, quantity: record.quantity, category: record.category,
+        action: 'Donated', location: record.location, notes: record.note,
+        addedBy: record.originalAssociate || record.associate, donatedBy: record.donatedBy, donated: true,
+      });
+      donations = donations.filter(d => String(d.id) !== id);
+      donationTombs = normalizeTombs([...donationTombs, { id, ts: now }]);
+      if (entry) {
+        entries = entries.filter(e => String(e.id) !== String(entry.id));
+        entryTombs = normalizeTombs([...entryTombs, { id: String(entry.id), ts: now }]);
+      }
+      addActivity({ type:'deleted', po: record.po, summary:`deleted donated PO ${record.po}` });
     } else {
       throw new Error('Unsupported action.');
     }
@@ -1866,7 +1904,7 @@ export default async (request) => {
       }
       return json(200, { ok: true, ...(await readSnapshot(db)) });
     }
-    const result = await mutate(action, body, actor, hubIsAdminOrLead(request));
+    const result = await mutate(action, body, actor, hubIsAdminOrLead(request), hubIsAdmin(request));
     const excelWrite = result.excelEvent ? await sendExcelEvent(result.excelEvent) : { configured: false, ok: false, status: 'no-event' };
     return json(200, {
       ok: true, ...result.snapshot, excelWrite,
