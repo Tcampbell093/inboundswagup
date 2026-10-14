@@ -1501,6 +1501,20 @@ async function mutate(action, body, actor = '', adminOrLead = false) {
       if (retiredBoxes) {
         addActivity({ type: 'box', summary: `retired ${retiredBoxes} empty box${retiredBoxes === 1 ? '' : 'es'}${codes.length <= 6 ? ` (${codes.join(', ')})` : ''}` });
       }
+    } else if (action === 'retireBoxIfEmpty') {
+      // Offered to whoever removed a box's last PO; anyone signed in may say yes.
+      const id = str(body.id, 160);
+      const idx = containers.findIndex(box => String(box.id) === id);
+      if (idx < 0) throw new Error('That box was not found.');
+      const box = containers[idx];
+      const occupied = entries.some(entry => String(entry?.containerId || '') === id && str(entry?.action, 120).toLowerCase() !== 'donated');
+      if (occupied) skippedNotEmpty += 1;
+      else if (str(box.status, 80).toLowerCase() !== 'closed') {
+        containers[idx] = { ...box, status: 'Closed', retainEmpty: false, updatedAt: now };
+        retiredBoxes += 1;
+        boxEvent(boxEvents, containers[idx], 'retired-empty', 'Overstock', actor, { reason: 'Retired after its last PO was removed' });
+        addActivity({ type: 'box', container: containers[idx], summary: `retired empty box ${box.code}` });
+      }
     } else if (action === 'intakeAddEntry') {
       const draft = { ...(body.container || {}) };
       const candidate = { ...(body.entry || {}) };
@@ -1544,7 +1558,7 @@ async function mutate(action, body, actor = '', adminOrLead = false) {
       };
     }
 
-    if (action === 'reconcileEmptyExcelBoxes' || action === 'retireEmptyBoxes') {
+    if (action === 'reconcileEmptyExcelBoxes' || action === 'retireEmptyBoxes' || action === 'retireBoxIfEmpty') {
       // Already handled above. Proceed to the shared transaction commit.
     } else if (action === 'upsertEntry' || action === 'intakeAddEntry') {
       const incoming = { ...(body.entry || {}) };
