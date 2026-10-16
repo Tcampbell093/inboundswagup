@@ -84,7 +84,16 @@
       return `<span class="checkin-actions">${done}<button class="checkin-undo" type="button" data-reopen="${escapeHtml(r.fairshiftId)}">Reopen</button></span>`;
     }
     if (!['scheduled', 'in_progress'].includes(r.status)) return '';
-    const label = r.status === 'scheduled' ? 'Start' : 'Finish';
+
+    if (r.status === 'in_progress' && !isCleaningLead()) {
+      const waiting = '<span class="checkin checkin-waiting">Awaiting lead</span>';
+      if (r.source === 'fairshift' && canUndoStart(r)) {
+        return `<span class="checkin-actions">${waiting}<button class="checkin-undo" type="button" data-undo-start="${escapeHtml(r.fairshiftId)}">Undo start</button></span>`;
+      }
+      return waiting;
+    }
+
+    const label = r.status === 'scheduled' ? 'Start' : 'Verify & Finish';
     if (r.source === 'fairshift') {
       const href = r.checkinUrl || `${FAIRSHIFT}/checkin?assignment=${encodeURIComponent(r.fairshiftId || '')}`;
       const link = `<a class="checkin" href="${escapeHtml(href)}">${label}</a>`;
@@ -97,6 +106,11 @@
   function isHubAdmin() {
     const s = window.HubAssociate?.getSession?.() || {};
     return !!s.signedIn && String(s.role || '').toLowerCase() === 'manager';
+  }
+
+  function isCleaningLead() {
+    const s = window.HubAssociate?.getSession?.() || {};
+    return !!s.signedIn && ['manager', 'team lead'].includes(String(s.role || '').toLowerCase());
   }
 
   // Mirrors the server rule: the assigned person (today) or a Manager/Team Lead.
@@ -450,14 +464,26 @@
   }
 
   function openCheckin(data) {
+    const finishing = data.status === 'in_progress';
+    const session = window.HubAssociate?.getSession?.() || {};
+    if (finishing && !isCleaningLead()) {
+      alert('A Team Lead or Admin must verify the area and finish this cleaning duty.');
+      return;
+    }
     checkinTarget = { assignmentId: data.checkin, date: data.date, employeeName: data.name, status: data.status };
-    $('checkinName').value = data.name || '';
+    const nameField = $('checkinName')?.closest('.field');
+    const pinField = $('checkinPin')?.closest('.field');
+    if (nameField) nameField.hidden = finishing;
+    if (pinField) pinField.hidden = finishing;
+    $('checkinName').value = finishing ? (session.name || '') : (data.name || '');
     $('checkinPin').value = '';
-    $('checkinAssignment').textContent = `${data.name || 'Cleaning'} • ${data.status === 'scheduled' ? 'Start' : 'Finish'} today’s cleaning assignment`;
-    $('checkinSubmit').textContent = data.status === 'scheduled' ? 'Start cleaning' : 'Finish cleaning';
+    $('checkinAssignment').textContent = finishing
+      ? `${data.name || 'Cleaner'} • Verify the area, then confirm completion${session.name ? ` · Signed in as ${session.name}` : ''}`
+      : `${data.name || 'Cleaning'} • Start today’s cleaning assignment`;
+    $('checkinSubmit').textContent = finishing ? 'Verify & finish cleaning' : 'Start cleaning';
     $('checkinMessage').style.display = 'none';
     $('checkinDialog').showModal();
-    $('checkinPin').focus();
+    (finishing ? $('checkinSubmit') : $('checkinPin')).focus();
   }
 
   $('checkinSubmit').addEventListener('click', async () => {
@@ -471,7 +497,9 @@
       const r = await fetch(API, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || 'Check-in failed.');
-      showMessage('checkinMessage', action === 'start' ? 'Cleaning started. Your status is now In progress.' : 'Cleaning completed. 15 minutes of credit were awarded.');
+      showMessage('checkinMessage', action === 'start'
+        ? 'Cleaning started. A Team Lead or Admin will verify it when finished.'
+        : `Cleaning verified and completed. 15 minutes were credited to ${checkinTarget.employeeName || 'the cleaner'}.`);
       await loadFeed();
       checkinTarget.status = j.result.status;
       $('checkinSubmit').disabled = true;
