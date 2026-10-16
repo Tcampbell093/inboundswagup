@@ -111,6 +111,73 @@
     return feed.namesHidden ? '<span class="names-hidden">Sign in to see</span>' : escapeHtml(r.employeeName);
   }
 
+  function announcementResponseTime(value) {
+    if (!value) return '';
+    try { return new Date(value).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit', second:'2-digit' }); }
+    catch { return String(value); }
+  }
+
+  function announcementQuestionHtml(a) {
+    if (!a.questionEnabled) return '';
+    const session = window.HubAssociate?.getSession?.() || {};
+    const slots = Math.max(1, Number(a.rewardSlots || 3));
+    const mine = a.myResponse || null;
+    const rewardLine = mine?.winner
+      ? (mine.rewardedAt ? '<span class="ann-question-status winner given">🏆 Winner · reward given</span>' : '<span class="ann-question-status winner">🏆 Winner · reward pending</span>')
+      : '';
+    if (mine) {
+      return `<div class="ann-question">
+        <div class="ann-question-label">Prize question · first ${slots} correct answer${slots === 1 ? '' : 's'} selected by Admin win${slots === 1 ? 's' : ''}</div>
+        <div class="ann-question-text">${escapeHtml(a.questionText || '')}</div>
+        <div class="ann-answer-submitted"><strong>Your answer:</strong> ${escapeHtml(mine.answer || '')}<small>Submitted ${escapeHtml(announcementResponseTime(mine.submittedAt))} · Your first response is the one that counts.</small></div>
+        ${rewardLine}
+      </div>`;
+    }
+    if (!session.signedIn) {
+      return `<div class="ann-question">
+        <div class="ann-question-label">Prize question · first ${slots} correct answer${slots === 1 ? '' : 's'} selected by Admin win${slots === 1 ? 's' : ''}</div>
+        <div class="ann-question-text">${escapeHtml(a.questionText || '')}</div>
+        <button class="ann-answer-signin" type="button" data-ann-signin>Sign in to answer</button>
+      </div>`;
+    }
+    return `<div class="ann-question">
+      <div class="ann-question-label">Prize question · first ${slots} correct answer${slots === 1 ? '' : 's'} selected by Admin win${slots === 1 ? 's' : ''}</div>
+      <div class="ann-question-text">${escapeHtml(a.questionText || '')}</div>
+      <form class="ann-answer-form" data-ann-answer="${escapeHtml(a.id)}">
+        <input name="answer" maxlength="700" autocomplete="off" placeholder="Enter your answer…" required />
+        <button type="submit">Submit answer</button>
+      </form>
+      <div class="ann-answer-note">One submission per person. The Hub records the server time so response order is exact.</div>
+      <div class="ann-answer-message" aria-live="polite"></div>
+    </div>`;
+  }
+
+  async function submitAnnouncementAnswer(form) {
+    const answer = String(form.elements.answer?.value || '').trim();
+    const message = form.parentElement?.querySelector('.ann-answer-message');
+    if (!answer) return;
+    const button = form.querySelector('button[type=submit]');
+    button.disabled = true;
+    button.textContent = 'Submitting…';
+    if (message) { message.textContent = ''; message.classList.remove('error'); }
+    try {
+      const r = await fetch(API, {
+        method:'POST',
+        credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ action:'submitAnnouncementResponse', announcementId:form.dataset.annAnswer, answer }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'Could not submit your answer.');
+      if (message) message.textContent = 'Answer submitted. Your response time has been recorded.';
+      await loadFeed();
+    } catch (error) {
+      if (message) { message.textContent = error.message || 'Could not submit your answer.'; message.classList.add('error'); }
+      button.disabled = false;
+      button.textContent = 'Submit answer';
+    }
+  }
+
   function renderToday() {
     const t = today();
     const rows = feed.cleaning.filter((r) => r.date === t);
@@ -134,8 +201,13 @@
     const anns = activeAnnouncements(t).sort((a, b) => Number(b.pinned) - Number(a.pinned));
     $('announcementCount').textContent = `${anns.length} active`;
     $('todayAnnouncements').innerHTML = anns.length
-      ? anns.map((a) => `<div class="notice"><div class="notice-meta">${a.pinned ? 'Pinned • ' : ''}${escapeHtml(a.department || 'All teams')}</div><h4>${escapeHtml(a.title)}</h4><p class="clamp">${escapeHtml(a.message)}</p></div>`).join('')
+      ? anns.map((a) => `<div class="notice${a.questionEnabled ? ' has-question' : ''}"><div class="notice-meta">${a.pinned ? 'Pinned • ' : ''}${escapeHtml(a.department || 'All teams')}${a.questionEnabled ? ' • Prize question' : ''}</div><h4>${escapeHtml(a.title)}</h4><p class="clamp">${escapeHtml(a.message)}</p>${announcementQuestionHtml(a)}</div>`).join('')
       : '<div class="empty">No active announcements.</div>';
+    $('todayAnnouncements').querySelectorAll('[data-ann-answer]').forEach((form) => form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      submitAnnouncementAnswer(form);
+    }));
+    $('todayAnnouncements').querySelectorAll('[data-ann-signin]').forEach((button) => button.addEventListener('click', () => window.HubAssociate?.open?.()));
 
     const pol = currentPolicies();
     $('policyCount').textContent = `${pol.length} current`;
@@ -245,14 +317,14 @@
       const pol = policiesForDate(date);
       const events = [];
       clean.forEach((r, i) => events.push(`<div class="week-event"><div class="event-label">${i === 0 || r.side !== clean[i-1]?.side ? escapeHtml(r.side || 'Inbound') + ' cleaning' : ''}</div><div class="event-title">${escapeHtml(r.area)}</div><div class="event-meta">${personLabel(r)} • ${escapeHtml(statusLabel(r.status))}</div></div>`));
-      ann.slice(0, 3).forEach((a) => events.push(`<div class="week-event"><div class="event-label">Announcement</div><div class="event-title">${escapeHtml(a.title)}</div><div class="event-meta">${escapeHtml(a.department || 'All teams')}</div></div>`));
+      ann.slice(0, 3).forEach((a) => events.push(`<div class="week-event"><div class="event-label">${a.questionEnabled ? 'Prize question' : 'Announcement'}</div><div class="event-title">${escapeHtml(a.title)}</div><div class="event-meta">${escapeHtml(a.department || 'All teams')}${a.questionEnabled ? ` · ${Number(a.rewardSlots || 3)} rewards` : ''}</div></div>`));
       pol.forEach((p) => events.push(`<div class="week-event"><div class="event-label">Policy</div><div class="event-title">${escapeHtml(p.title)}</div><div class="event-meta">${p.readRequired ? 'Read required' : 'Effective'}</div></div>`));
       if (!events.length) events.push('<div class="event-meta">Nothing published.</div>');
       return `<article class="day-column ${date === todayIso ? 'today-day' : ''}"><div class="day-head"><div class="day-name">${date === todayIso ? 'Today • ' : ''}${parseDate(date).toLocaleDateString(undefined, { weekday: 'long' })}</div><div class="day-date">${parseDate(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</div></div><div class="day-body">${events.join('')}</div></article>`;
     }).join('');
   }
 
-  function render() { renderToday(); renderWeek(); }
+  function render() { renderToday(); renderWeek(); renderQuestionRewardButton(); }
 
   document.addEventListener('hub-cleaning-refresh', () => loadFeed());
   document.addEventListener('hub-associate-ready', () => { if (feed) render(); });
@@ -1127,6 +1199,170 @@
     });
   }
 
+  let questionReviewAnnouncementId = '';
+  let questionRewardBtn = null;
+  let questionRewardDialog = null;
+  let questionResponseDialog = null;
+
+  function updateAnnouncementQuestionFields() {
+    const enabled = !!document.querySelector('#announcementForm [name=questionEnabled]')?.checked;
+    const fields = $('announcementQuestionFields');
+    if (fields) fields.hidden = !enabled;
+  }
+
+  function ensureAnnouncementQuestionUi() {
+    if (questionRewardBtn) return;
+    const top = document.querySelector('.top-actions');
+    if (!top) return;
+    questionRewardBtn = document.createElement('button');
+    questionRewardBtn.type = 'button';
+    questionRewardBtn.className = 'toolcount question-reward-btn';
+    questionRewardBtn.hidden = true;
+    questionRewardBtn.innerHTML = '🏆 Question Rewards';
+    top.insertBefore(questionRewardBtn, $('manageBtn') || null);
+
+    questionRewardDialog = document.createElement('dialog');
+    questionRewardDialog.className = 'dialog question-reward-dialog';
+    questionRewardDialog.innerHTML = `
+      <div class="dialog-head"><div><h3>Question rewards</h3><p class="policy-meta" style="margin:4px 0 0">Winners selected from announcement questions</p></div><button class="close" type="button" data-qreward-close>×</button></div>
+      <div class="dialog-body"><div class="message" id="questionRewardMessage"></div>
+        <section class="question-reward-section"><h4><span>Pending rewards</span><span id="questionRewardPendingLabel">0 pending</span></h4><div id="questionRewardPending" class="question-reward-list"></div></section>
+        <section class="question-reward-section"><h4><span>Reward history</span><span id="questionRewardHistoryLabel">0 given</span></h4><div id="questionRewardHistory" class="question-reward-list"></div></section>
+      </div>`;
+    document.body.appendChild(questionRewardDialog);
+
+    questionResponseDialog = document.createElement('dialog');
+    questionResponseDialog.className = 'dialog question-response-dialog';
+    questionResponseDialog.innerHTML = `
+      <div class="dialog-head"><div><h3 id="questionResponseTitle">Question responses</h3><p class="policy-meta" id="questionResponseMeta" style="margin:4px 0 0"></p></div><button class="close" type="button" data-qresponse-close>×</button></div>
+      <div class="dialog-body"><div class="message" id="questionResponseMessage"></div><div id="questionResponseList" class="question-response-list"></div></div>`;
+    document.body.appendChild(questionResponseDialog);
+
+    questionRewardBtn.addEventListener('click', () => {
+      renderQuestionRewards();
+      if (!questionRewardDialog.open) questionRewardDialog.showModal();
+    });
+    questionRewardDialog.querySelector('[data-qreward-close]').onclick = () => questionRewardDialog.close();
+    questionResponseDialog.querySelector('[data-qresponse-close]').onclick = () => questionResponseDialog.close();
+    document.querySelector('#announcementForm [name=questionEnabled]')?.addEventListener('change', updateAnnouncementQuestionFields);
+    updateAnnouncementQuestionFields();
+  }
+
+  function isQuestionRewardAdmin() {
+    const session = window.HubAssociate?.getSession?.() || {};
+    const role = String(session.role || '').toLowerCase();
+    return !!session.signedIn && (role === 'manager' || role === 'team lead');
+  }
+
+  function renderQuestionRewardButton() {
+    if (!questionRewardBtn) return;
+    const allowed = isQuestionRewardAdmin();
+    const count = Number(feed?.questionRewards?.pendingCount || 0);
+    questionRewardBtn.hidden = !allowed;
+    questionRewardBtn.classList.toggle('show', allowed);
+    questionRewardBtn.innerHTML = count
+      ? `🏆 Question Rewards <span class="question-reward-count">${count}</span>`
+      : '🏆 Question Rewards';
+    questionRewardBtn.title = count
+      ? `${count} announcement reward${count === 1 ? '' : 's'} waiting to be given`
+      : 'Announcement question reward history';
+    if (!allowed && questionRewardDialog?.open) questionRewardDialog.close();
+    if (questionRewardDialog?.open) renderQuestionRewards();
+  }
+
+  function questionRewardCard(row, pending) {
+    return `<article class="question-reward-card${pending ? ' pending' : ''}" data-question-reward="${escapeHtml(row.responseId)}">
+      <div class="question-reward-top"><div><strong>${escapeHtml(row.employeeName)}</strong><small>${escapeHtml(row.announcementTitle || 'Announcement question')} · answered ${escapeHtml(announcementResponseTime(row.submittedAt))}</small></div><span class="question-reward-status">${pending ? 'Reward pending' : 'Given'}</span></div>
+      <div class="question-reward-answer">“${escapeHtml(row.answer || '')}”</div>
+      ${pending ? `<div class="question-reward-actions"><input data-question-reward-note maxlength="500" placeholder="Optional reward note…" /><button type="button" data-question-reward-given="${escapeHtml(row.responseId)}">Mark Reward Given</button></div>`
+        : `<div class="question-reward-history">Given ${escapeHtml(announcementResponseTime(row.rewardedAt))}${row.rewardedBy ? ' by ' + escapeHtml(row.rewardedBy) : ''}${row.rewardNote ? ' · ' + escapeHtml(row.rewardNote) : ''}</div>`}
+    </article>`;
+  }
+
+  function renderQuestionRewards() {
+    if (!questionRewardDialog) return;
+    const rewards = feed?.questionRewards || { pending:[], history:[], pendingCount:0 };
+    const pending = Array.isArray(rewards.pending) ? rewards.pending : [];
+    const history = Array.isArray(rewards.history) ? rewards.history : [];
+    $('questionRewardPendingLabel').textContent = `${pending.length} pending`;
+    $('questionRewardHistoryLabel').textContent = `${history.length} given`;
+    $('questionRewardPending').innerHTML = pending.length ? pending.map(r => questionRewardCard(r, true)).join('') : '<div class="empty">No question rewards are waiting to be given.</div>';
+    $('questionRewardHistory').innerHTML = history.length ? history.map(r => questionRewardCard(r, false)).join('') : '<div class="empty">No question rewards have been marked given yet.</div>';
+    $('questionRewardPending').querySelectorAll('[data-question-reward-given]').forEach(btn => btn.onclick = async () => {
+      const row = pending.find(x => String(x.responseId) === String(btn.dataset.questionRewardGiven));
+      if (!row || !confirm(`Confirm that ${row.employeeName} received their reward?`)) return;
+      const card = btn.closest('[data-question-reward]');
+      const note = card?.querySelector('[data-question-reward-note]')?.value?.trim() || '';
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const r = await fetch(API, { method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ action:'markAnnouncementRewardGiven', responseId:row.responseId, rewardNote:note }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || 'Could not mark the reward given.');
+        await loadFeed();
+        if (String(window.HubAssociate?.getSession?.()?.role || '').toLowerCase() === 'manager' && adminData) {
+          try { adminData = await adminFetch(); renderAdmin(); } catch {}
+        }
+        const msg = $('questionRewardMessage'); if (msg) { msg.textContent = j.message || 'Reward marked given.'; msg.style.display='block'; }
+      } catch (error) {
+        const msg = $('questionRewardMessage'); if (msg) { msg.textContent = error.message || 'Could not mark the reward given.'; msg.classList.add('error'); msg.style.display='block'; }
+        btn.disabled = false; btn.textContent = 'Mark Reward Given';
+      }
+    });
+  }
+
+  function renderQuestionReview(announcementId = questionReviewAnnouncementId) {
+    questionReviewAnnouncementId = announcementId;
+    const a = adminData?.announcements?.find(x => x.id === announcementId);
+    if (!a || !questionResponseDialog) return;
+    const responses = Array.isArray(a.responses) ? a.responses.slice() : [];
+    responses.sort((x,y) => new Date(x.submittedAt || 0) - new Date(y.submittedAt || 0) || Number(x.id) - Number(y.id));
+    const winners = responses.filter(r => r.winner).length;
+    $('questionResponseTitle').textContent = a.title;
+    $('questionResponseMeta').textContent = `${responses.length} responses · ${winners}/${Number(a.rewardSlots || 3)} winners selected · ordered by Hub submission time`;
+    $('questionResponseList').innerHTML = responses.length ? responses.map((r,index) => `
+      <article class="question-response-row${r.winner ? ' winner' : ''}">
+        <div class="question-response-rank">#${index + 1}</div>
+        <div class="question-response-copy"><strong>${escapeHtml(r.employeeName)}</strong><small>${escapeHtml(announcementResponseTime(r.submittedAt))}</small><p>${escapeHtml(r.answer)}</p>${r.winner ? `<span class="question-response-winner">🏆 Winner${r.rewardedAt ? ' · reward given' : ' · reward pending'}</span>` : ''}</div>
+        <div class="question-response-actions">
+          ${r.winner
+            ? (r.rewardedAt ? '<span class="question-response-locked">Reward given</span>' : `<button class="mini-delete" type="button" data-unselect-response="${r.id}">Remove winner</button>`)
+            : `<button class="action question-winner-select" type="button" data-select-response="${r.id}"${winners >= Number(a.rewardSlots || 3) ? ' disabled' : ''}>Select winner</button>`}
+        </div>
+      </article>`).join('') : '<div class="empty">No one has answered this question yet.</div>';
+    $('questionResponseList').querySelectorAll('[data-select-response]').forEach(btn => btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        await adminFetch({ action:'selectAnnouncementWinner', responseId:Number(btn.dataset.selectResponse) });
+        adminData = await adminFetch();
+        renderAdmin();
+        await loadFeed();
+        renderQuestionReview(announcementId);
+      } catch (error) {
+        showMessage('questionResponseMessage', error.message || 'Could not select the winner.', true);
+        btn.disabled = false;
+      }
+    });
+    $('questionResponseList').querySelectorAll('[data-unselect-response]').forEach(btn => btn.onclick = async () => {
+      if (!confirm('Remove this person from the winner list?')) return;
+      btn.disabled = true;
+      try {
+        await adminFetch({ action:'unselectAnnouncementWinner', responseId:Number(btn.dataset.unselectResponse) });
+        adminData = await adminFetch();
+        renderAdmin();
+        await loadFeed();
+        renderQuestionReview(announcementId);
+      } catch (error) {
+        showMessage('questionResponseMessage', error.message || 'Could not remove the winner.', true);
+        btn.disabled = false;
+      }
+    });
+  }
+
+  function openQuestionReview(announcementId) {
+    renderQuestionReview(announcementId);
+    if (!questionResponseDialog.open) questionResponseDialog.showModal();
+  }
+
   async function openManager() {
     const session = window.HubAssociate?.getSession?.() || { signedIn: false };
     const designatedManager = session.signedIn && String(session.role || '').toLowerCase() === 'manager';
@@ -1180,7 +1416,14 @@
     if ($('themeSelect')) $('themeSelect').value = adminData.theme || '';
     if ($('themeBanner')) $('themeBanner').value = adminData.themeBanner || '';
     $('announcementAdminList').innerHTML = adminData.announcements.length
-      ? adminData.announcements.map((a) => `<div class="admin-row"><div><strong>${escapeHtml(a.title)}</strong><small>${escapeHtml(a.startDate)}${a.endDate ? ' → ' + escapeHtml(a.endDate) : ''}</small></div><div class="admin-row-actions"><button class="mini-toggle" type="button" data-edit-ann="${escapeHtml(a.id)}">Edit</button>${popupToggle('announcement', a)}<button class="mini-delete" data-del-ann="${escapeHtml(a.id)}">Delete</button></div></div>`).join('')
+      ? adminData.announcements.map((a) => {
+          const responses = Array.isArray(a.responses) ? a.responses : [];
+          const winners = responses.filter((r) => r.winner).length;
+          const questionMeta = a.questionEnabled
+            ? `<small class="ann-admin-question">Prize question · ${responses.length} response${responses.length === 1 ? '' : 's'} · ${winners}/${Number(a.rewardSlots || 3)} winners selected</small>`
+            : '';
+          return `<div class="admin-row"><div><strong>${escapeHtml(a.title)}</strong><small>${escapeHtml(a.startDate)}${a.endDate ? ' → ' + escapeHtml(a.endDate) : ''}</small>${questionMeta}</div><div class="admin-row-actions"><button class="mini-toggle" type="button" data-edit-ann="${escapeHtml(a.id)}">Edit</button>${a.questionEnabled ? `<button class="mini-toggle question-review-btn" type="button" data-review-ann="${escapeHtml(a.id)}">Review answers${responses.length ? ` (${responses.length})` : ''}</button>` : ''}${popupToggle('announcement', a)}<button class="mini-delete" data-del-ann="${escapeHtml(a.id)}">Delete</button></div></div>`;
+        }).join('')
       : '<div class="policy-meta">None posted.</div>';
     $('policyAdminList').innerHTML = adminData.policies.length
       ? adminData.policies.map((p) => `<div class="admin-row"><div><strong>${escapeHtml(p.title)}</strong><small>Effective ${escapeHtml(p.effectiveDate)}</small></div><div class="admin-row-actions"><button class="mini-toggle" type="button" data-edit-pol="${escapeHtml(p.id)}">Edit</button>${popupToggle('policy', p)}<button class="mini-delete" data-del-pol="${escapeHtml(p.id)}">Delete</button></div></div>`).join('')
@@ -1209,6 +1452,7 @@
     form.querySelector('[type=submit]').textContent = 'Save changes';
     form.classList.add('editing');
     form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (formId === 'announcementForm') updateAnnouncementQuestionFields();
     form.elements.title?.focus({ preventScroll: true });
   }
   function endEdit(formId) {
@@ -1220,6 +1464,7 @@
     const submit = form.querySelector('[type=submit]');
     submit.textContent = submit.dataset.label;
     form.classList.remove('editing');
+    if (formId === 'announcementForm') updateAnnouncementQuestionFields();
     setDefaultDates();
   }
   document.querySelectorAll('[data-cancel-edit]').forEach((b) => b.addEventListener('click', () => endEdit(b.dataset.cancelEdit)));
@@ -1227,8 +1472,9 @@
   function bindAdminDeletes() {
     document.querySelectorAll('[data-edit-ann]').forEach((b) => { b.onclick = () => {
       const a = adminData.announcements.find((x) => x.id === b.dataset.editAnn);
-      startEdit('announcementForm', a, { title: a?.title, message: a?.message, startDate: a?.startDate, endDate: a?.endDate, department: a?.department, pinned: a?.pinned, showOnOpen: a?.showOnOpen });
+      startEdit('announcementForm', a, { title: a?.title, message: a?.message, startDate: a?.startDate, endDate: a?.endDate, department: a?.department, pinned: a?.pinned, showOnOpen: a?.showOnOpen, questionEnabled: a?.questionEnabled, questionText: a?.questionText, rewardSlots: a?.rewardSlots || 3 });
     }; });
+    document.querySelectorAll('[data-review-ann]').forEach((b) => { b.onclick = () => openQuestionReview(b.dataset.reviewAnn); });
     document.querySelectorAll('[data-edit-pol]').forEach((b) => { b.onclick = () => {
       const p = adminData.policies.find((x) => x.id === b.dataset.editPol);
       startEdit('policyForm', p, { title: p?.title, summary: p?.summary, effectiveDate: p?.effectiveDate, readRequired: p?.readRequired, showOnOpen: p?.showOnOpen });
@@ -1306,11 +1552,13 @@
     }
   });
 
+  ensureAnnouncementQuestionUi();
   injectTeamManager();
   injectAccessManager();
   injectToolManager();
   injectThemeManager();
   setDefaultDates();
+  updateAnnouncementQuestionFields();
   loadFeed();
   loadTools();
   document.addEventListener('hub-associate-session', () => loadTools());
