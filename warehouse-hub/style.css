@@ -288,3 +288,26 @@ form.editing{outline:2px solid #f3c3aa;outline-offset:6px;border-radius:12px}
 @media(max-width:760px){
   .memory-image-stage img{max-height:58vh}
 }
+
+
+/* Show the entire uploaded Memory Challenge photo in Admin preview too. */
+.memory-image-preview{
+  height:auto;
+  min-height:0;
+  aspect-ratio:4 / 3;
+  padding:0;
+  overflow:hidden;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.memory-image-preview img{
+  display:block;
+  width:100%;
+  height:100%;
+  max-width:100%;
+  max-height:100%;
+  object-fit:contain !important;
+  object-position:center;
+  background:#fff;
+}
