@@ -256,3 +256,9 @@ form.editing{outline:2px solid #f3c3aa;outline-offset:6px;border-radius:12px}
   .memory-admin-row>img{width:70px;height:64px}
   .memory-admin-row>.mini-delete,.memory-admin-row>.policy-meta{grid-column:2}
 }
+
+.memory-review-variant{border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:14px;background:rgba(255,255,255,.7)}
+.memory-review-variant-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}
+.memory-review-variant-head strong{display:block}
+.memory-review-variant-head small{display:block;color:var(--muted);margin-top:3px;line-height:1.4}
+.memory-review-variant-head>span{white-space:nowrap;font-size:10px;font-weight:900;color:var(--muted);background:#eef2ef;border-radius:999px;padding:5px 8px}
