@@ -364,8 +364,9 @@ async function reopenCompleted(session, assignment) {
 // couldn't tap Finish). Credits whoever actually did it with the 15 minutes,
 // fairness history and the Bingo Coin, exactly like Finish would.
 async function markDone(session, assignment, doneById) {
-  if (clean(session.role, 40).toLowerCase() !== 'manager') {
-    return json(403, { error: 'Only an Admin can mark a cleaning duty as done.' });
+  const role = clean(session.role, 40).toLowerCase();
+  if (!['manager', 'team lead'].includes(role)) {
+    return json(403, { error: 'Only a Team Lead or Admin can mark a cleaning duty as done.' });
   }
   if (String(assignment.assignmentDate || '').slice(0, 10) > easternToday()) {
     return json(409, { error: 'Future duties can’t be marked as done yet.' });
@@ -447,16 +448,22 @@ async function handle(request) {
   if (action === 'undo') return undoStart(session, assignment, assignedName);
   if (action === 'reopen') return reopenCompleted(session, assignment);
   if (action === 'markDone') return markDone(session, assignment, body.employeeId);
-  if (slug(assignedName) !== slug(session.name)) {
+
+  const role = clean(session.role, 40).toLowerCase();
+  const isCleaningLead = role === 'manager' || role === 'team lead';
+  if (action === 'start' && slug(assignedName) !== slug(session.name)) {
     return json(403, { error: `This cleaning duty is assigned to ${assignedName || 'someone else'}.` });
+  }
+  if (action === 'finish' && !isCleaningLead) {
+    return json(403, { error: 'A Team Lead or Admin must verify the area and finish this cleaning duty.' });
   }
   if (String(assignment.assignmentDate || '').slice(0, 10) !== easternToday()) {
     return json(409, { error: 'Only today’s cleaning can be started or finished.' });
   }
 
   const status = clean(assignment.dutyStatus, 40);
-  const employeeKey = slug(session.name);
-  const employeeName = clean(session.name, 100);
+  const employeeName = action === 'finish' ? assignedName : clean(session.name, 100);
+  const employeeKey = slug(employeeName);
   const db = getPool();
   await hubCleaning.ensureSchema(db);
 
@@ -493,22 +500,32 @@ async function handle(request) {
     await hubPush.sendAdmins(getPool(), {
       category: action === 'start' ? 'cleaning_start' : 'cleaning_finish',
       eventKey: `cleaning-${action}:${assignmentId}:${Date.now()}`,
-      title: action === 'start' ? `🧹 ${employeeName} started cleaning` : `✅ ${employeeName} finished cleaning`,
+      title: action === 'start'
+        ? `🧹 ${employeeName} started cleaning`
+        : `✅ ${clean(session.name, 100)} verified ${employeeName}'s cleaning`,
       body: `${area} · ${assignment.assignmentDate}`,
       url: '/warehouse-hub/',
       tag: `cleaning-${assignmentId}`,
-      excludeName: employeeName,
+      excludeName: clean(session.name, 100),
     });
   }
 
   const updated = (await loadAssignment(assignmentId)).assignment || assignment;
   const response = { ok: true, assignment: updated };
   if (action === 'finish' && updated.dutyStatus === 'completed') {
-    const award = await awardBingoCoin(session.name, assignmentId);
+    await audit(db, assignmentId, 'finish_verified', {
+      employee_name: employeeName,
+      status: 'completed',
+      started_at: assignment.startTime || null,
+      finished_at: new Date().toISOString(),
+    }, session.name);
+    const award = await awardBingoCoin(employeeName, assignmentId);
     if (award) {
       response.bingoCoinAwarded = award.awarded;
       response.bingoCoins = award.coins;
+      response.bingoCoinEmployee = employeeName;
     }
+    response.verifiedBy = clean(session.name, 100);
   }
   return json(200, response);
 }
