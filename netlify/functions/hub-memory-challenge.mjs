@@ -157,7 +157,7 @@ async function ensureSchema() {
   `);
   schemaReady = true;
 }
-async function activeChallenge(db) {
+async function activeChallenges(db) {
   const today = todayEastern();
   const result = await db.query(`
     SELECT * FROM hub_memory_challenges
@@ -165,6 +165,42 @@ async function activeChallenge(db) {
       AND active_date <= $1::date
       AND (end_date IS NULL OR end_date >= $1::date)
     ORDER BY active_date DESC,created_at DESC
+  `, [today]);
+  return result.rows;
+}
+
+async function challengeById(db, id) {
+  const result = await db.query(`SELECT * FROM hub_memory_challenges WHERE id=$1 LIMIT 1`, [id]);
+  return result.rows[0] || null;
+}
+
+async function assignedActiveAttempt(db, session) {
+  const today = todayEastern();
+  const result = await db.query(`
+    SELECT a.*
+    FROM hub_memory_attempts a
+    JOIN hub_memory_challenges c ON c.id=a.challenge_id
+    WHERE a.employee_key=$1
+      AND c.active=TRUE
+      AND c.active_date <= $2::date
+      AND (c.end_date IS NULL OR c.end_date >= $2::date)
+    ORDER BY a.started_at DESC,a.id DESC
+    LIMIT 1
+  `, [slug(session.name), today]);
+  return result.rows[0] || null;
+}
+
+async function chooseChallengeForAssignment(db) {
+  const today = todayEastern();
+  const result = await db.query(`
+    SELECT c.*, COUNT(a.id)::int AS attempt_count
+    FROM hub_memory_challenges c
+    LEFT JOIN hub_memory_attempts a ON a.challenge_id=c.id
+    WHERE c.active=TRUE
+      AND c.active_date <= $1::date
+      AND (c.end_date IS NULL OR c.end_date >= $1::date)
+    GROUP BY c.id
+    ORDER BY COUNT(a.id) ASC, RANDOM()
     LIMIT 1
   `, [today]);
   return result.rows[0] || null;
@@ -204,19 +240,39 @@ async function getAttempt(db, challengeId, session) {
   return result.rows[0] || null;
 }
 async function loadState(db, session) {
-  const challenge = await activeChallenge(db);
-  if (!challenge) {
+  const pool = await activeChallenges(db);
+  const viewer = { name: clean(session.name, 100), role: clean(session.role, 60), isManager: isManager(session), isLead: isLead(session) };
+  if (!pool.length) return { ok: true, viewer, challenge: null, attempt: null, poolCount: 0 };
+
+  const attempt = await assignedActiveAttempt(db, session);
+  if (!attempt) {
     return {
       ok: true,
-      viewer: { name: clean(session.name, 100), role: clean(session.role, 60), isManager: isManager(session), isLead: isLead(session) },
-      challenge: null,
+      viewer,
+      poolCount: pool.length,
+      challenge: {
+        id: 'pool',
+        title: 'Memory Challenge',
+        instructions: pool.length === 1
+          ? 'Your challenge will be revealed when you start.'
+          : `You will be assigned 1 of ${pool.length} different challenge versions when you start.`,
+        question: '',
+        answerType: 'text',
+        options: [],
+        viewSeconds: null,
+        pooled: true,
+        poolCount: pool.length,
+      },
       attempt: null,
     };
   }
-  const attempt = await getAttempt(db, challenge.id, session);
+
+  const challenge = await challengeById(db, attempt.challenge_id);
+  if (!challenge) return { ok: true, viewer, challenge: null, attempt: null, poolCount: pool.length };
   const body = {
     ok: true,
-    viewer: { name: clean(session.name, 100), role: clean(session.role, 60), isManager: isManager(session), isLead: isLead(session) },
+    viewer,
+    poolCount: pool.length,
     challenge: challengePublic(challenge),
     attempt: attemptPayload(attempt, challenge),
   };
@@ -270,15 +326,22 @@ async function imageResponse(db, session, id) {
   });
 }
 async function startAttempt(db, session) {
-  const challenge = await activeChallenge(db);
-  if (!challenge) return { status: 404, body: { error: 'There is no active Memory Challenge right now.' } };
-  const key = slug(session.name);
-  await db.query(`
-    INSERT INTO hub_memory_attempts(challenge_id,employee_key,employee_name,started_at)
-    VALUES($1,$2,$3,NOW())
-    ON CONFLICT(challenge_id,employee_key) DO NOTHING
-  `, [challenge.id, key, clean(session.name, 100)]);
-  const attempt = await getAttempt(db, challenge.id, session);
+  let attempt = await assignedActiveAttempt(db, session);
+  let challenge = attempt ? await challengeById(db, attempt.challenge_id) : null;
+
+  if (!attempt) {
+    challenge = await chooseChallengeForAssignment(db);
+    if (!challenge) return { status: 404, body: { error: 'There is no active Memory Challenge right now.' } };
+    const key = slug(session.name);
+    await db.query(`
+      INSERT INTO hub_memory_attempts(challenge_id,employee_key,employee_name,started_at)
+      VALUES($1,$2,$3,NOW())
+      ON CONFLICT(challenge_id,employee_key) DO NOTHING
+    `, [challenge.id, key, clean(session.name, 100)]);
+    attempt = await getAttempt(db, challenge.id, session);
+  }
+
+  if (!challenge || !attempt) return { status: 409, body: { error: 'Your Memory Challenge could not be assigned. Try again.' } };
   const payload = attemptPayload(attempt, challenge);
   return {
     status: 200,
@@ -291,12 +354,12 @@ async function startAttempt(db, session) {
   };
 }
 async function submitAttempt(db, session, body) {
-  const challenge = await activeChallenge(db);
-  if (!challenge) return { status: 404, body: { error: 'There is no active Memory Challenge right now.' } };
+  const attempt = await assignedActiveAttempt(db, session);
+  if (!attempt) return { status: 409, body: { error: 'Start the Memory Challenge before answering.' } };
+  const challenge = await challengeById(db, attempt.challenge_id);
+  if (!challenge) return { status: 404, body: { error: 'Your assigned Memory Challenge is no longer available.' } };
   const answer = clean(body.answer, 700);
   if (!answer) return { status: 400, body: { error: 'Enter an answer before submitting.' } };
-  const attempt = await getAttempt(db, challenge.id, session);
-  if (!attempt) return { status: 409, body: { error: 'Start the Memory Challenge before answering.' } };
   if (attempt.submitted_at) return { status: 409, body: { error: 'You already submitted this Memory Challenge.' } };
   const deadline = new Date(attempt.started_at).getTime() + (Math.max(3, Math.min(60, Number(challenge.view_seconds || 10))) * 1000);
   if (Date.now() < deadline) return { status: 409, body: { error: 'Finish the viewing timer before answering.' } };
@@ -313,6 +376,19 @@ async function submitAttempt(db, session, body) {
     body: { ok: true, attempt: attemptPayload(saved.rows[0], challenge), message: correct ? 'Correct — nice recall.' : 'Answer submitted.' },
   };
 }
+async function activeReviewPool(db) {
+  const pool = await activeChallenges(db);
+  const variants = [];
+  for (const challenge of pool) {
+    variants.push({
+      challenge: challengePublic(challenge),
+      correctAnswer: challenge.correct_answer,
+      responses: await responsesFor(db, challenge.id),
+    });
+  }
+  return variants;
+}
+
 async function adminList(db) {
   const challenges = await db.query(`
     SELECT id,title,instructions,question,correct_answer,answer_type,options,view_seconds,
@@ -404,8 +480,11 @@ export default async (request) => {
       }
       if (url.searchParams.get('review') === '1') {
         if (!isLead(session)) return json(403, { error: 'Team Lead or Admin access is required.' });
-        const state = await loadState(db, session);
-        return json(200, state);
+        return json(200, {
+          ok: true,
+          viewer: { name: clean(session.name, 100), role: clean(session.role, 60), isManager: isManager(session), isLead: true },
+          pool: await activeReviewPool(db),
+        });
       }
       return json(200, await loadState(db, session));
     }
