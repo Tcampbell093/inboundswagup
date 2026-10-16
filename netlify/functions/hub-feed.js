@@ -48,6 +48,11 @@ function managerAuthorized(event) {
   if (safeEqual(event.headers?.['x-hub-key'] || event.headers?.['X-Hub-Key'] || '', process.env.HUB_MANAGER_KEY || '')) return true;
   return String(hubSession(event)?.role || '').toLowerCase() === 'manager';
 }
+function rewardAdminAuthorized(event) {
+  if (managerAuthorized(event)) return true;
+  const role = String(hubSession(event)?.role || '').toLowerCase();
+  return role === 'team lead';
+}
 function slug(value) { return text(value, 100).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80); }
 function hashPin(pin) { return crypto.createHash('sha256').update(`${process.env.HUB_PIN_SALT || ''}:${pin}`).digest('hex'); }
 
@@ -64,7 +69,30 @@ async function ensureSchema() {
     );
     -- Shown as a pop-up the first time someone opens the Hub each day.
     ALTER TABLE hub_announcements ADD COLUMN IF NOT EXISTS show_on_open BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE hub_announcements ADD COLUMN IF NOT EXISTS question_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE hub_announcements ADD COLUMN IF NOT EXISTS question_text TEXT NOT NULL DEFAULT '';
+    ALTER TABLE hub_announcements ADD COLUMN IF NOT EXISTS reward_slots INTEGER NOT NULL DEFAULT 3;
     ALTER TABLE hub_policies ADD COLUMN IF NOT EXISTS show_on_open BOOLEAN NOT NULL DEFAULT FALSE;
+    CREATE TABLE IF NOT EXISTS hub_announcement_responses (
+      id BIGSERIAL PRIMARY KEY,
+      announcement_id TEXT NOT NULL,
+      announcement_title TEXT NOT NULL DEFAULT '',
+      employee_key TEXT NOT NULL,
+      employee_name TEXT NOT NULL,
+      answer TEXT NOT NULL,
+      submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      winner BOOLEAN NOT NULL DEFAULT FALSE,
+      winner_selected_at TIMESTAMPTZ,
+      winner_selected_by TEXT NOT NULL DEFAULT '',
+      rewarded_at TIMESTAMPTZ,
+      rewarded_by TEXT NOT NULL DEFAULT '',
+      reward_note TEXT NOT NULL DEFAULT '',
+      UNIQUE(announcement_id, employee_key)
+    );
+    CREATE INDEX IF NOT EXISTS hub_announcement_responses_ann_idx
+      ON hub_announcement_responses(announcement_id, submitted_at ASC);
+    CREATE INDEX IF NOT EXISTS hub_announcement_responses_rewards_idx
+      ON hub_announcement_responses(winner, rewarded_at, winner_selected_at DESC);
     -- Hub-wide settings, e.g. the seasonal theme ('' = standard look).
     CREATE TABLE IF NOT EXISTS hub_settings (
       key TEXT PRIMARY KEY,value TEXT NOT NULL DEFAULT '',updated_by TEXT NOT NULL DEFAULT '',updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -167,9 +195,9 @@ function withHubCheckin(row, checkin) {
   };
 }
 
-async function readFeed(includeAdmin = false) {
+async function readFeed(includeAdmin = false, session = null) {
   const [a, p, c, fs, sideRows, themeRow] = await Promise.all([
-    pool.query(`SELECT id,title,message,start_date,end_date,department,pinned,show_on_open,updated_at FROM hub_announcements ORDER BY pinned DESC,start_date DESC,updated_at DESC`),
+    pool.query(`SELECT id,title,message,start_date,end_date,department,pinned,show_on_open,question_enabled,question_text,reward_slots,updated_at FROM hub_announcements ORDER BY pinned DESC,start_date DESC,updated_at DESC`),
     pool.query(`SELECT id,title,summary,effective_date,read_required,show_on_open,updated_at FROM hub_policies ORDER BY effective_date DESC,updated_at DESC`),
     pool.query(`SELECT * FROM hub_cleaning_assignments ORDER BY work_date,area,employee_name`),
     fetchFairShiftCleaning(),
@@ -191,7 +219,7 @@ async function readFeed(includeAdmin = false) {
   const cleaningAreas=knownAreas.length?knownAreas:
     [...new Set(activeCleaning.map(x=>x.area))].map(name=>({name,side:sideFor(name)}));
   const result = {
-    announcements: a.rows.map(r => ({ id: r.id, title: r.title, message: r.message, startDate: dateValue(r.start_date), endDate: r.end_date ? dateValue(r.end_date) : '', department: r.department, pinned: !!r.pinned, showOnOpen: !!r.show_on_open, updatedAt: r.updated_at })),
+    announcements: a.rows.map(r => ({ id: r.id, title: r.title, message: r.message, startDate: dateValue(r.start_date), endDate: r.end_date ? dateValue(r.end_date) : '', department: r.department, pinned: !!r.pinned, showOnOpen: !!r.show_on_open, questionEnabled: !!r.question_enabled, questionText: r.question_text || '', rewardSlots: Math.max(1, Math.min(20, Number(r.reward_slots || 3))), updatedAt: r.updated_at })),
     policies: p.rows.map(r => ({ id: r.id, title: r.title, summary: r.summary, effectiveDate: dateValue(r.effective_date), readRequired: !!r.read_required, showOnOpen: !!r.show_on_open, updatedAt: r.updated_at })),
     cleaning: activeCleaning,
     // 'auto' = holiday calendar, '' = standard, otherwise a theme key.
@@ -202,7 +230,82 @@ async function readFeed(includeAdmin = false) {
     fairshiftConnected: !!fs.ok,
     generatedAt: new Date().toISOString(),
   };
+  const sessionKey = slug(session?.name || '');
+  if (sessionKey) {
+    const mine = await pool.query(`
+      SELECT id,announcement_id,answer,submitted_at,winner,rewarded_at
+      FROM hub_announcement_responses
+      WHERE employee_key=$1
+    `, [sessionKey]).catch(() => ({ rows: [] }));
+    const mineByAnnouncement = new Map(mine.rows.map(row => [row.announcement_id, row]));
+    result.announcements = result.announcements.map((announcement) => {
+      const response = mineByAnnouncement.get(announcement.id);
+      return response ? {
+        ...announcement,
+        myResponse: {
+          id: Number(response.id),
+          answer: response.answer,
+          submittedAt: response.submitted_at || null,
+          winner: !!response.winner,
+          rewardedAt: response.rewarded_at || null,
+        },
+      } : announcement;
+    });
+  }
+  const role = String(session?.role || '').toLowerCase();
+  if (role === 'manager' || role === 'team lead') {
+    const rewardRows = await pool.query(`
+      SELECT id,announcement_id,announcement_title,employee_key,employee_name,answer,submitted_at,
+             winner,winner_selected_at,winner_selected_by,rewarded_at,rewarded_by,reward_note
+      FROM hub_announcement_responses
+      WHERE winner=TRUE
+      ORDER BY CASE WHEN rewarded_at IS NULL THEN 0 ELSE 1 END,
+               winner_selected_at DESC NULLS LAST, submitted_at ASC
+      LIMIT 500
+    `).catch(() => ({ rows: [] }));
+    const rewardMap = row => ({
+      responseId: Number(row.id),
+      announcementId: row.announcement_id,
+      announcementTitle: row.announcement_title,
+      employeeKey: row.employee_key,
+      employeeName: row.employee_name,
+      answer: row.answer,
+      submittedAt: row.submitted_at || null,
+      winnerSelectedAt: row.winner_selected_at || null,
+      winnerSelectedBy: row.winner_selected_by || '',
+      rewardedAt: row.rewarded_at || null,
+      rewardedBy: row.rewarded_by || '',
+      rewardNote: row.reward_note || '',
+    });
+    const pending = rewardRows.rows.filter(row => !row.rewarded_at).map(rewardMap);
+    const history = rewardRows.rows.filter(row => !!row.rewarded_at).map(rewardMap);
+    result.questionRewards = { pendingCount: pending.length, pending, history };
+  }
   if (includeAdmin) {
+    const responses = await pool.query(`
+      SELECT id,announcement_id,employee_key,employee_name,answer,submitted_at,winner,
+             winner_selected_at,winner_selected_by,rewarded_at,rewarded_by,reward_note
+      FROM hub_announcement_responses
+      ORDER BY announcement_id,submitted_at ASC,id ASC
+    `).catch(() => ({ rows: [] }));
+    const byAnnouncement = new Map();
+    for (const row of responses.rows) {
+      if (!byAnnouncement.has(row.announcement_id)) byAnnouncement.set(row.announcement_id, []);
+      byAnnouncement.get(row.announcement_id).push({
+        id: Number(row.id),
+        employeeKey: row.employee_key,
+        employeeName: row.employee_name,
+        answer: row.answer,
+        submittedAt: row.submitted_at || null,
+        winner: !!row.winner,
+        winnerSelectedAt: row.winner_selected_at || null,
+        winnerSelectedBy: row.winner_selected_by || '',
+        rewardedAt: row.rewarded_at || null,
+        rewardedBy: row.rewarded_by || '',
+        rewardNote: row.reward_note || '',
+      });
+    }
+    result.announcements = result.announcements.map(a => ({ ...a, responses: byAnnouncement.get(a.id) || [] }));
     const e = await pool.query(`SELECT employee_name,department,active FROM hub_employee_pins ORDER BY employee_name`);
     result.employees = e.rows.map(r => ({ name: r.employee_name, department: r.department || '', active: !!r.active }));
     result.manualCleaning = manualCleaning;
@@ -214,8 +317,25 @@ async function readFeed(includeAdmin = false) {
 async function upsertAnnouncement(body) {
   const title = text(body.title, 120), message = text(body.message, 1200), startDate = validDate(body.startDate), endDate = validDate(body.endDate);
   if (!title || !message || !startDate) throw new Error('Title, message, and start date are required.');
+  const questionEnabled = !!body.questionEnabled;
+  const questionText = questionEnabled ? text(body.questionText, 500) : '';
+  if (questionEnabled && !questionText) throw new Error('Enter the question associates should answer.');
+  const rewardSlots = Math.max(1, Math.min(20, Math.round(Number(body.rewardSlots || 3))));
   const id = text(body.id, 80) || crypto.randomUUID();
-  const saved = await pool.query(`INSERT INTO hub_announcements(id,title,message,start_date,end_date,department,pinned,show_on_open,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NOW()) ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,message=EXCLUDED.message,start_date=EXCLUDED.start_date,end_date=EXCLUDED.end_date,department=EXCLUDED.department,pinned=EXCLUDED.pinned,show_on_open=EXCLUDED.show_on_open,updated_at=NOW() RETURNING (xmax = 0) AS inserted`, [id, title, message, startDate, endDate || null, text(body.department, 80) || 'All teams', !!body.pinned, !!body.showOnOpen]);
+  const saved = await pool.query(`
+    INSERT INTO hub_announcements(
+      id,title,message,start_date,end_date,department,pinned,show_on_open,
+      question_enabled,question_text,reward_slots,updated_at
+    )
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+    ON CONFLICT(id) DO UPDATE SET
+      title=EXCLUDED.title,message=EXCLUDED.message,start_date=EXCLUDED.start_date,
+      end_date=EXCLUDED.end_date,department=EXCLUDED.department,pinned=EXCLUDED.pinned,
+      show_on_open=EXCLUDED.show_on_open,question_enabled=EXCLUDED.question_enabled,
+      question_text=EXCLUDED.question_text,reward_slots=EXCLUDED.reward_slots,updated_at=NOW()
+    RETURNING (xmax = 0) AS inserted
+  `, [id, title, message, startDate, endDate || null, text(body.department, 80) || 'All teams',
+      !!body.pinned, !!body.showOnOpen, questionEnabled, questionText, rewardSlots]);
   return { id, created: saved.rows[0]?.inserted === true, title, detail: message };
 }
 async function upsertPolicy(body) {
@@ -257,6 +377,116 @@ async function cleaningAction(body) {
   return normalizeLocalCleaning(updated.rows[0]);
 }
 
+
+async function submitAnnouncementResponse(event, body) {
+  const session = hubSession(event);
+  if (!session?.name) return { status: 401, body: { error: 'Sign in to the Warehouse Hub before answering.' } };
+  const announcementId = text(body.announcementId, 80);
+  const answer = text(body.answer, 700);
+  if (!announcementId || !answer) return { status: 400, body: { error: 'Enter your answer before submitting.' } };
+  const announcement = await pool.query(`
+    SELECT id,title,start_date,end_date,question_enabled
+    FROM hub_announcements WHERE id=$1 LIMIT 1
+  `, [announcementId]);
+  const row = announcement.rows[0];
+  if (!row || !row.question_enabled) return { status: 404, body: { error: 'That question is no longer available.' } };
+  const today = todayEastern();
+  if (dateValue(row.start_date) > today || (row.end_date && dateValue(row.end_date) < today)) {
+    return { status: 400, body: { error: 'That question is not accepting responses right now.' } };
+  }
+  const employeeKey = slug(session.name);
+  const inserted = await pool.query(`
+    INSERT INTO hub_announcement_responses(
+      announcement_id,announcement_title,employee_key,employee_name,answer,submitted_at
+    )
+    VALUES($1,$2,$3,$4,$5,NOW())
+    ON CONFLICT(announcement_id,employee_key) DO NOTHING
+    RETURNING id,answer,submitted_at
+  `, [announcementId, text(row.title, 120), employeeKey, text(session.name, 100), answer]);
+  if (!inserted.rowCount) {
+    return { status: 409, body: { error: 'You already submitted an answer to this question. Your first response is the one that counts.' } };
+  }
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      response: {
+        id: Number(inserted.rows[0].id),
+        answer: inserted.rows[0].answer,
+        submittedAt: inserted.rows[0].submitted_at,
+      },
+    },
+  };
+}
+
+async function selectAnnouncementWinner(event, body) {
+  const responseId = Number(body.responseId);
+  if (!Number.isSafeInteger(responseId) || responseId <= 0) return { status: 400, body: { error: 'Choose a response.' } };
+  const session = hubSession(event);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const response = await client.query(`
+      SELECT r.id,r.announcement_id,r.employee_name,r.winner,r.rewarded_at,
+             COALESCE(a.reward_slots,3) AS reward_slots
+      FROM hub_announcement_responses r
+      LEFT JOIN hub_announcements a ON a.id=r.announcement_id
+      WHERE r.id=$1 FOR UPDATE
+    `, [responseId]);
+    const row = response.rows[0];
+    if (!row) { await client.query('ROLLBACK'); return { status: 404, body: { error: 'That response no longer exists.' } }; }
+    if (row.winner) { await client.query('ROLLBACK'); return { status: 200, body: { ok: true, message: `${row.employee_name} is already selected as a winner.` } }; }
+    const count = await client.query(`
+      SELECT COUNT(*)::int AS n FROM hub_announcement_responses
+      WHERE announcement_id=$1 AND winner=TRUE
+    `, [row.announcement_id]);
+    const limit = Math.max(1, Math.min(20, Number(row.reward_slots || 3)));
+    if (Number(count.rows[0]?.n || 0) >= limit) {
+      await client.query('ROLLBACK');
+      return { status: 409, body: { error: `This question already has ${limit} winner${limit === 1 ? '' : 's'}. Remove one before selecting another.` } };
+    }
+    await client.query(`
+      UPDATE hub_announcement_responses
+      SET winner=TRUE,winner_selected_at=NOW(),winner_selected_by=$2
+      WHERE id=$1
+    `, [responseId, text(session?.name || 'Admin', 100)]);
+    await client.query('COMMIT');
+    return { status: 200, body: { ok: true, message: `${row.employee_name} selected as a winner. Their reward is now pending.` } };
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function unselectAnnouncementWinner(event, body) {
+  const responseId = Number(body.responseId);
+  if (!Number.isSafeInteger(responseId) || responseId <= 0) return { status: 400, body: { error: 'Choose a response.' } };
+  const result = await pool.query(`
+    UPDATE hub_announcement_responses
+    SET winner=FALSE,winner_selected_at=NULL,winner_selected_by='',reward_note=''
+    WHERE id=$1 AND winner=TRUE AND rewarded_at IS NULL
+    RETURNING employee_name
+  `, [responseId]);
+  if (!result.rowCount) return { status: 409, body: { error: 'That winner cannot be removed after the reward has been marked given.' } };
+  return { status: 200, body: { ok: true, message: `${result.rows[0].employee_name} removed from the winner list.` } };
+}
+
+async function markAnnouncementRewardGiven(event, body) {
+  const responseId = Number(body.responseId);
+  if (!Number.isSafeInteger(responseId) || responseId <= 0) return { status: 400, body: { error: 'Choose a pending reward.' } };
+  const session = hubSession(event);
+  const result = await pool.query(`
+    UPDATE hub_announcement_responses
+    SET rewarded_at=NOW(),rewarded_by=$2,reward_note=$3
+    WHERE id=$1 AND winner=TRUE AND rewarded_at IS NULL
+    RETURNING employee_name
+  `, [responseId, text(session?.name || 'Admin / Team Lead', 100), text(body.rewardNote, 500)]);
+  if (!result.rowCount) return { status: 409, body: { error: 'That reward is no longer pending.' } };
+  return { status: 200, body: { ok: true, message: `Reward marked given to ${result.rows[0].employee_name}.` } };
+}
+
 // Signed-out visitors still see cleaning areas and status, but not who is assigned.
 function hideCleaningNames(feed) {
   return {
@@ -279,16 +509,36 @@ exports.handler = async function handler(event) {
     if (event.httpMethod === 'GET') {
       const admin = String(event.queryStringParameters?.admin || '') === '1';
       if (admin && !managerAuthorized(event)) return json(401, { error: 'Admin access denied.' });
-      const feed = await readFeed(admin);
-      return json(200, admin || hubSession(event) ? feed : hideCleaningNames(feed));
+      const session = hubSession(event);
+      const feed = await readFeed(admin, session);
+      return json(200, admin || session ? feed : hideCleaningNames(feed));
     }
     if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed' });
     const body = JSON.parse(event.body || '{}');
     if (body.action === 'cleaningAction') return json(200, { ok: true, result: await cleaningAction(body) });
+    if (body.action === 'submitAnnouncementResponse') {
+      const response = await submitAnnouncementResponse(event, body);
+      return json(response.status, response.body);
+    }
+    if (body.action === 'markAnnouncementRewardGiven') {
+      if (!rewardAdminAuthorized(event)) return json(401, { error: 'Admin or Team Lead access is required.' });
+      const response = await markAnnouncementRewardGiven(event, body);
+      return json(response.status, response.body);
+    }
     if (!managerAuthorized(event)) return json(401, { error: 'Admin access denied.' });
     let result = null;
     if (body.action === 'upsertAnnouncement') result = await upsertAnnouncement(body);
     else if (body.action === 'upsertPolicy') result = await upsertPolicy(body);
+    else if (body.action === 'selectAnnouncementWinner') {
+      const response = await selectAnnouncementWinner(event, body);
+      if (response.status !== 200) return json(response.status, response.body);
+      result = response.body;
+    }
+    else if (body.action === 'unselectAnnouncementWinner') {
+      const response = await unselectAnnouncementWinner(event, body);
+      if (response.status !== 200) return json(response.status, response.body);
+      result = response.body;
+    }
     if (result?.created) {
       const isPolicy = body.action === 'upsertPolicy';
       await hubPush.sendAdmins(pool, {
@@ -301,7 +551,7 @@ exports.handler = async function handler(event) {
         excludeName: hubSession(event)?.name || '',
       });
     }
-    if (result) result = { id: result.id };
+    if (result && result.id) result = { id: result.id };
     else if (body.action === 'deleteAnnouncement') { body.kind = 'announcement'; await deleteRecord(body); }
     else if (body.action === 'deletePolicy') { body.kind = 'policy'; await deleteRecord(body); }
     else if (body.action === 'setTheme') {
