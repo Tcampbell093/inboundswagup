@@ -455,7 +455,8 @@ async function selectAnnouncementWinner(event, body) {
              COALESCE(a.reward_slots,3) AS reward_slots
       FROM hub_announcement_responses r
       LEFT JOIN hub_announcements a ON a.id=r.announcement_id
-      WHERE r.id=$1 FOR UPDATE
+      WHERE r.id=$1
+      FOR UPDATE OF r
     `, [responseId]);
     const row = response.rows[0];
     if (!row) { await client.query('ROLLBACK'); return { status: 404, body: { error: 'That response no longer exists.' } }; }
