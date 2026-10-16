@@ -125,12 +125,15 @@
     const rewardLine = mine?.winner
       ? (mine.rewardedAt ? '<span class="ann-question-status winner given">🏆 Winner · reward given</span>' : '<span class="ann-question-status winner">🏆 Winner · reward pending</span>')
       : '';
+    const leadershipAnswer = a.correctAnswer
+      ? `<div class="ann-correct-answer"><strong>🔒 Leadership answer</strong><span>${escapeHtml(a.correctAnswer)}</span><small>Visible only to Admins and Team Leads.</small></div>`
+      : '';
     if (mine) {
       return `<div class="ann-question">
         <div class="ann-question-label">Prize question · first ${slots} correct answer${slots === 1 ? '' : 's'} selected by Admin win${slots === 1 ? 's' : ''}</div>
         <div class="ann-question-text">${escapeHtml(a.questionText || '')}</div>
         <div class="ann-answer-submitted"><strong>Your answer:</strong> ${escapeHtml(mine.answer || '')}<small>Submitted ${escapeHtml(announcementResponseTime(mine.submittedAt))} · Your first response is the one that counts.</small></div>
-        ${rewardLine}
+        ${rewardLine}${leadershipAnswer}
       </div>`;
     }
     if (!session.signedIn) {
@@ -138,6 +141,7 @@
         <div class="ann-question-label">Prize question · first ${slots} correct answer${slots === 1 ? '' : 's'} selected by Admin win${slots === 1 ? 's' : ''}</div>
         <div class="ann-question-text">${escapeHtml(a.questionText || '')}</div>
         <button class="ann-answer-signin" type="button" data-ann-signin>Sign in to answer</button>
+        ${leadershipAnswer}
       </div>`;
     }
     return `<div class="ann-question">
@@ -149,6 +153,7 @@
       </form>
       <div class="ann-answer-note">One submission per person. The Hub records the server time so response order is exact.</div>
       <div class="ann-answer-message" aria-live="polite"></div>
+      ${leadershipAnswer}
     </div>`;
   }
 
@@ -1333,7 +1338,10 @@
     const winners = responses.filter(r => r.winner).length;
     $('questionResponseTitle').textContent = a.title || a.questionText || 'Prize question';
     $('questionResponseMeta').textContent = `${responses.length} responses · ${winners}/${Number(a.rewardSlots || 3)} winners selected · ordered by Hub submission time`;
-    $('questionResponseList').innerHTML = responses.length ? responses.map((r,index) => `
+    const correctAnswerHtml = a.correctAnswer
+      ? `<div class="question-review-answer"><strong>🔒 Correct answer</strong><span>${escapeHtml(a.correctAnswer)}</span><small>Leadership only</small></div>`
+      : '<div class="question-review-answer missing"><strong>🔒 Correct answer</strong><span>No answer was saved for this question.</span></div>';
+    $('questionResponseList').innerHTML = correctAnswerHtml + (responses.length ? responses.map((r,index) => `
       <article class="question-response-row${r.winner ? ' winner' : ''}">
         <div class="question-response-rank">#${index + 1}</div>
         <div class="question-response-copy"><strong>${escapeHtml(r.employeeName)}</strong><small>${escapeHtml(announcementResponseTime(r.submittedAt))}</small><p>${escapeHtml(r.answer)}</p>${r.winner ? `<span class="question-response-winner">🏆 Winner${r.rewardedAt ? ' · reward given' : ' · reward pending'}</span>` : ''}</div>
@@ -1342,7 +1350,7 @@
             ? (r.rewardedAt ? '<span class="question-response-locked">Reward given</span>' : `<button class="mini-delete" type="button" data-unselect-response="${r.id}">Remove winner</button>`)
             : `<button class="action question-winner-select" type="button" data-select-response="${r.id}"${winners >= Number(a.rewardSlots || 3) ? ' disabled' : ''}>Select winner</button>`}
         </div>
-      </article>`).join('') : '<div class="empty">No one has answered this question yet.</div>';
+      </article>`).join('') : '<div class="empty">No one has answered this question yet.</div>');
     $('questionResponseList').querySelectorAll('[data-select-response]').forEach(btn => btn.onclick = async () => {
       btn.disabled = true;
       try {
@@ -1486,7 +1494,7 @@
   function bindAdminDeletes() {
     document.querySelectorAll('[data-edit-ann]').forEach((b) => { b.onclick = () => {
       const a = adminData.announcements.find((x) => x.id === b.dataset.editAnn);
-      startEdit('announcementForm', a, { title: a?.title, message: a?.message, startDate: a?.startDate, endDate: a?.endDate, department: a?.department, pinned: a?.pinned, showOnOpen: a?.showOnOpen, questionEnabled: a?.questionEnabled, questionText: a?.questionText, rewardSlots: a?.rewardSlots || 3 });
+      startEdit('announcementForm', a, { title: a?.title, message: a?.message, startDate: a?.startDate, endDate: a?.endDate, department: a?.department, pinned: a?.pinned, showOnOpen: a?.showOnOpen, questionEnabled: a?.questionEnabled, questionText: a?.questionText, correctAnswer: a?.correctAnswer || '', rewardSlots: a?.rewardSlots || 3 });
     }; });
     document.querySelectorAll('[data-review-ann]').forEach((b) => { b.onclick = () => openQuestionReview(b.dataset.reviewAnn); });
     document.querySelectorAll('[data-edit-pol]').forEach((b) => { b.onclick = () => {
