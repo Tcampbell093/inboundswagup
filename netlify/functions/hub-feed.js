@@ -71,6 +71,7 @@ async function ensureSchema() {
     ALTER TABLE hub_announcements ADD COLUMN IF NOT EXISTS show_on_open BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE hub_announcements ADD COLUMN IF NOT EXISTS question_enabled BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE hub_announcements ADD COLUMN IF NOT EXISTS question_text TEXT NOT NULL DEFAULT '';
+    ALTER TABLE hub_announcements ADD COLUMN IF NOT EXISTS correct_answer TEXT NOT NULL DEFAULT '';
     ALTER TABLE hub_announcements ADD COLUMN IF NOT EXISTS reward_slots INTEGER NOT NULL DEFAULT 3;
     ALTER TABLE hub_policies ADD COLUMN IF NOT EXISTS show_on_open BOOLEAN NOT NULL DEFAULT FALSE;
     CREATE TABLE IF NOT EXISTS hub_announcement_responses (
@@ -197,7 +198,7 @@ function withHubCheckin(row, checkin) {
 
 async function readFeed(includeAdmin = false, session = null) {
   const [a, p, c, fs, sideRows, themeRow] = await Promise.all([
-    pool.query(`SELECT id,title,message,start_date,end_date,department,pinned,show_on_open,question_enabled,question_text,reward_slots,updated_at FROM hub_announcements ORDER BY pinned DESC,start_date DESC,updated_at DESC`),
+    pool.query(`SELECT id,title,message,start_date,end_date,department,pinned,show_on_open,question_enabled,question_text,correct_answer,reward_slots,updated_at FROM hub_announcements ORDER BY pinned DESC,start_date DESC,updated_at DESC`),
     pool.query(`SELECT id,title,summary,effective_date,read_required,show_on_open,updated_at FROM hub_policies ORDER BY effective_date DESC,updated_at DESC`),
     pool.query(`SELECT * FROM hub_cleaning_assignments ORDER BY work_date,area,employee_name`),
     fetchFairShiftCleaning(),
@@ -253,6 +254,13 @@ async function readFeed(includeAdmin = false, session = null) {
     });
   }
   const role = String(session?.role || '').toLowerCase();
+  if (includeAdmin || role === 'manager' || role === 'team lead') {
+    const answerById = new Map(a.rows.map(row => [row.id, row.correct_answer || '']));
+    result.announcements = result.announcements.map(announcement => ({
+      ...announcement,
+      correctAnswer: answerById.get(announcement.id) || '',
+    }));
+  }
   if (role === 'manager' || role === 'team lead') {
     const rewardRows = await pool.query(`
       SELECT id,announcement_id,announcement_title,employee_key,employee_name,answer,submitted_at,
@@ -318,6 +326,7 @@ async function upsertAnnouncement(body) {
   const title = text(body.title, 120), message = text(body.message, 1200), startDate = validDate(body.startDate), endDate = validDate(body.endDate);
   const questionEnabled = !!body.questionEnabled;
   const questionText = questionEnabled ? text(body.questionText, 500) : '';
+  const correctAnswer = questionEnabled ? text(body.correctAnswer, 700) : '';
   if (!startDate) throw new Error('Start date is required.');
   if (questionEnabled && !questionText) throw new Error('Enter the question associates should answer.');
   if (!questionEnabled && (!title || !message)) throw new Error('Title and message are required for a regular announcement.');
@@ -326,17 +335,18 @@ async function upsertAnnouncement(body) {
   const saved = await pool.query(`
     INSERT INTO hub_announcements(
       id,title,message,start_date,end_date,department,pinned,show_on_open,
-      question_enabled,question_text,reward_slots,updated_at
+      question_enabled,question_text,correct_answer,reward_slots,updated_at
     )
-    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
     ON CONFLICT(id) DO UPDATE SET
       title=EXCLUDED.title,message=EXCLUDED.message,start_date=EXCLUDED.start_date,
       end_date=EXCLUDED.end_date,department=EXCLUDED.department,pinned=EXCLUDED.pinned,
       show_on_open=EXCLUDED.show_on_open,question_enabled=EXCLUDED.question_enabled,
-      question_text=EXCLUDED.question_text,reward_slots=EXCLUDED.reward_slots,updated_at=NOW()
+      question_text=EXCLUDED.question_text,correct_answer=EXCLUDED.correct_answer,
+      reward_slots=EXCLUDED.reward_slots,updated_at=NOW()
     RETURNING (xmax = 0) AS inserted
   `, [id, title, message, startDate, endDate || null, text(body.department, 80) || 'All teams',
-      !!body.pinned, !!body.showOnOpen, questionEnabled, questionText, rewardSlots]);
+      !!body.pinned, !!body.showOnOpen, questionEnabled, questionText, correctAnswer, rewardSlots]);
   return {
     id,
     created: saved.rows[0]?.inserted === true,
