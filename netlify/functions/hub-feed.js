@@ -370,25 +370,32 @@ async function deleteRecord(body) {
   if (kind === 'employee' && body.name) return pool.query(`DELETE FROM hub_employee_pins WHERE employee_key=$1`, [slug(body.name)]);
   throw new Error('Unsupported delete request.');
 }
-async function cleaningAction(body) {
+async function cleaningAction(event, body) {
   if (!process.env.HUB_PIN_SALT) throw new Error('HUB_PIN_SALT is not configured.');
   const assignmentId = text(body.assignmentId, 80), employeeName = text(body.employeeName, 100), pin = text(body.pin, 12), action = text(body.cleaningAction, 20);
-  if (!assignmentId || !employeeName || !pin || !['start', 'finish'].includes(action)) throw new Error('Incomplete cleaning check-in request.');
-  const employee = await pool.query(`SELECT employee_name,pin_hash,active FROM hub_employee_pins WHERE employee_key=$1 LIMIT 1`, [slug(employeeName)]);
-  const e = employee.rows[0];
-  if (!e || !e.active || !safeEqual(e.pin_hash, hashPin(pin))) throw new Error('Name or PIN is incorrect.');
+  if (!assignmentId || !['start', 'finish'].includes(action)) throw new Error('Incomplete cleaning check-in request.');
   const assignment = await pool.query(`SELECT * FROM hub_cleaning_assignments WHERE id=$1 LIMIT 1`, [assignmentId]);
   const row = assignment.rows[0];
   if (!row) throw new Error('Cleaning assignment not found.');
   const workDate = dateValue(row.work_date);
   if (workDate !== todayEastern()) throw new Error('Cleaning can only be checked in for today.');
-  if (String(row.employee_name).toLowerCase() !== employeeName.toLowerCase()) throw new Error('This assignment is scheduled to another employee.');
+
   if (action === 'start') {
+    if (!employeeName || !pin) throw new Error('Enter your name and PIN to start cleaning.');
+    const employee = await pool.query(`SELECT employee_name,pin_hash,active FROM hub_employee_pins WHERE employee_key=$1 LIMIT 1`, [slug(employeeName)]);
+    const e = employee.rows[0];
+    if (!e || !e.active || !safeEqual(e.pin_hash, hashPin(pin))) throw new Error('Name or PIN is incorrect.');
+    if (String(row.employee_name).toLowerCase() !== employeeName.toLowerCase()) throw new Error('This assignment is scheduled to another employee.');
     if (row.status !== 'scheduled') throw new Error('This assignment has already been started or closed.');
     await pool.query(`UPDATE hub_cleaning_assignments SET status='in_progress',started_at=NOW(),updated_at=NOW() WHERE id=$1`, [assignmentId]);
   } else {
+    const session = hubSession(event);
+    const role = String(session?.role || '').toLowerCase();
+    if (!session?.name || !['manager', 'team lead'].includes(role)) {
+      throw new Error('A Team Lead or Admin must verify the area and finish this cleaning duty.');
+    }
     if (row.status !== 'in_progress') throw new Error('Start the cleaning assignment before finishing it.');
-    await pool.query(`UPDATE hub_cleaning_assignments SET status='completed',finished_at=NOW(),completed_by=$2,credit_minutes=15,updated_at=NOW() WHERE id=$1`, [assignmentId, employeeName]);
+    await pool.query(`UPDATE hub_cleaning_assignments SET status='completed',finished_at=NOW(),completed_by=$2,credit_minutes=15,updated_at=NOW() WHERE id=$1`, [assignmentId, row.employee_name]);
   }
   const updated = await pool.query(`SELECT * FROM hub_cleaning_assignments WHERE id=$1`, [assignmentId]);
   return normalizeLocalCleaning(updated.rows[0]);
@@ -532,7 +539,7 @@ exports.handler = async function handler(event) {
     }
     if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed' });
     const body = JSON.parse(event.body || '{}');
-    if (body.action === 'cleaningAction') return json(200, { ok: true, result: await cleaningAction(body) });
+    if (body.action === 'cleaningAction') return json(200, { ok: true, result: await cleaningAction(event, body) });
     if (body.action === 'submitAnnouncementResponse') {
       const response = await submitAnnouncementResponse(event, body);
       return json(response.status, response.body);
