@@ -201,7 +201,11 @@
     const anns = activeAnnouncements(t).sort((a, b) => Number(b.pinned) - Number(a.pinned));
     $('announcementCount').textContent = `${anns.length} active`;
     $('todayAnnouncements').innerHTML = anns.length
-      ? anns.map((a) => `<div class="notice${a.questionEnabled ? ' has-question' : ''}"><div class="notice-meta">${a.pinned ? 'Pinned • ' : ''}${escapeHtml(a.department || 'All teams')}${a.questionEnabled ? ' • Prize question' : ''}</div><h4>${escapeHtml(a.title)}</h4><p class="clamp">${escapeHtml(a.message)}</p>${announcementQuestionHtml(a)}</div>`).join('')
+      ? anns.map((a) => {
+          const title = String(a.title || '').trim();
+          const message = String(a.message || '').trim();
+          return `<div class="notice${a.questionEnabled ? ' has-question' : ''}"><div class="notice-meta">${a.pinned ? 'Pinned • ' : ''}${escapeHtml(a.department || 'All teams')}${a.questionEnabled ? ' • Prize question' : ''}</div>${title ? `<h4>${escapeHtml(title)}</h4>` : ''}${message ? `<p class="clamp">${escapeHtml(message)}</p>` : ''}${announcementQuestionHtml(a)}</div>`;
+        }).join('')
       : '<div class="empty">No active announcements.</div>';
     $('todayAnnouncements').querySelectorAll('[data-ann-answer]').forEach((form) => form.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -317,7 +321,7 @@
       const pol = policiesForDate(date);
       const events = [];
       clean.forEach((r, i) => events.push(`<div class="week-event"><div class="event-label">${i === 0 || r.side !== clean[i-1]?.side ? escapeHtml(r.side || 'Inbound') + ' cleaning' : ''}</div><div class="event-title">${escapeHtml(r.area)}</div><div class="event-meta">${personLabel(r)} • ${escapeHtml(statusLabel(r.status))}</div></div>`));
-      ann.slice(0, 3).forEach((a) => events.push(`<div class="week-event"><div class="event-label">${a.questionEnabled ? 'Prize question' : 'Announcement'}</div><div class="event-title">${escapeHtml(a.title)}</div><div class="event-meta">${escapeHtml(a.department || 'All teams')}${a.questionEnabled ? ` · ${Number(a.rewardSlots || 3)} rewards` : ''}</div></div>`));
+      ann.slice(0, 3).forEach((a) => events.push(`<div class="week-event"><div class="event-label">${a.questionEnabled ? 'Prize question' : 'Announcement'}</div><div class="event-title">${escapeHtml(a.title || a.questionText || 'Prize question')}</div><div class="event-meta">${escapeHtml(a.department || 'All teams')}${a.questionEnabled ? ` · ${Number(a.rewardSlots || 3)} rewards` : ''}</div></div>`));
       pol.forEach((p) => events.push(`<div class="week-event"><div class="event-label">Policy</div><div class="event-title">${escapeHtml(p.title)}</div><div class="event-meta">${p.readRequired ? 'Read required' : 'Effective'}</div></div>`));
       if (!events.length) events.push('<div class="event-meta">Nothing published.</div>');
       return `<article class="day-column ${date === todayIso ? 'today-day' : ''}"><div class="day-head"><div class="day-name">${date === todayIso ? 'Today • ' : ''}${parseDate(date).toLocaleDateString(undefined, { weekday: 'long' })}</div><div class="day-date">${parseDate(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</div></div><div class="day-body">${events.join('')}</div></article>`;
@@ -1205,9 +1209,19 @@
   let questionResponseDialog = null;
 
   function updateAnnouncementQuestionFields() {
-    const enabled = !!document.querySelector('#announcementForm [name=questionEnabled]')?.checked;
+    const form = $('announcementForm');
+    if (!form) return;
+    const enabled = !!form.elements.questionEnabled?.checked;
     const fields = $('announcementQuestionFields');
     if (fields) fields.hidden = !enabled;
+    if (form.elements.title) form.elements.title.required = !enabled;
+    if (form.elements.message) form.elements.message.required = !enabled;
+    if (form.elements.questionText) form.elements.questionText.required = enabled;
+    const submit = form.querySelector('[type=submit]');
+    if (submit && !form.classList.contains('editing')) {
+      submit.textContent = enabled ? 'Post question' : 'Post announcement';
+      submit.dataset.label = enabled ? 'Post question' : 'Post announcement';
+    }
   }
 
   function ensureAnnouncementQuestionUi() {
@@ -1317,7 +1331,7 @@
     const responses = Array.isArray(a.responses) ? a.responses.slice() : [];
     responses.sort((x,y) => new Date(x.submittedAt || 0) - new Date(y.submittedAt || 0) || Number(x.id) - Number(y.id));
     const winners = responses.filter(r => r.winner).length;
-    $('questionResponseTitle').textContent = a.title;
+    $('questionResponseTitle').textContent = a.title || a.questionText || 'Prize question';
     $('questionResponseMeta').textContent = `${responses.length} responses · ${winners}/${Number(a.rewardSlots || 3)} winners selected · ordered by Hub submission time`;
     $('questionResponseList').innerHTML = responses.length ? responses.map((r,index) => `
       <article class="question-response-row${r.winner ? ' winner' : ''}">
@@ -1422,7 +1436,7 @@
           const questionMeta = a.questionEnabled
             ? `<small class="ann-admin-question">Prize question · ${responses.length} response${responses.length === 1 ? '' : 's'} · ${winners}/${Number(a.rewardSlots || 3)} winners selected</small>`
             : '';
-          return `<div class="admin-row"><div><strong>${escapeHtml(a.title)}</strong><small>${escapeHtml(a.startDate)}${a.endDate ? ' → ' + escapeHtml(a.endDate) : ''}</small>${questionMeta}</div><div class="admin-row-actions"><button class="mini-toggle" type="button" data-edit-ann="${escapeHtml(a.id)}">Edit</button>${a.questionEnabled ? `<button class="mini-toggle question-review-btn" type="button" data-review-ann="${escapeHtml(a.id)}">Review answers${responses.length ? ` (${responses.length})` : ''}</button>` : ''}${popupToggle('announcement', a)}<button class="mini-delete" data-del-ann="${escapeHtml(a.id)}">Delete</button></div></div>`;
+          return `<div class="admin-row"><div><strong>${escapeHtml(a.title || a.questionText || 'Prize question')}</strong><small>${escapeHtml(a.startDate)}${a.endDate ? ' → ' + escapeHtml(a.endDate) : ''}</small>${questionMeta}</div><div class="admin-row-actions"><button class="mini-toggle" type="button" data-edit-ann="${escapeHtml(a.id)}">Edit</button>${a.questionEnabled ? `<button class="mini-toggle question-review-btn" type="button" data-review-ann="${escapeHtml(a.id)}">Review answers${responses.length ? ` (${responses.length})` : ''}</button>` : ''}${popupToggle('announcement', a)}<button class="mini-delete" data-del-ann="${escapeHtml(a.id)}">Delete</button></div></div>`;
         }).join('')
       : '<div class="policy-meta">None posted.</div>';
     $('policyAdminList').innerHTML = adminData.policies.length
@@ -1462,9 +1476,9 @@
     form.elements.id.value = '';
     form.querySelector('.edit-banner').hidden = true;
     const submit = form.querySelector('[type=submit]');
-    submit.textContent = submit.dataset.label;
     form.classList.remove('editing');
     if (formId === 'announcementForm') updateAnnouncementQuestionFields();
+    else submit.textContent = submit.dataset.label;
     setDefaultDates();
   }
   document.querySelectorAll('[data-cancel-edit]').forEach((b) => b.addEventListener('click', () => endEdit(b.dataset.cancelEdit)));
