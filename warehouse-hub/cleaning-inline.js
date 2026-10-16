@@ -37,9 +37,17 @@
     }, 6000);
   }
 
+  function currentSession() {
+    return window.HubAssociate?.getSession?.() || { signedIn: false };
+  }
+
   function sessionFor(name) {
-    const session = window.HubAssociate?.getSession?.() || { signedIn: false };
+    const session = currentSession();
     return session.signedIn && normalize(session.name) === normalize(name) ? session : null;
+  }
+
+  function isCleaningLead(session = currentSession()) {
+    return !!session.signedIn && ['manager', 'team lead'].includes(String(session.role || '').toLowerCase());
   }
 
   async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 13000) {
@@ -62,9 +70,9 @@
     }
     if (link?.isConnected) {
       link.classList.remove('is-busy');
-      link.textContent = 'Finish';
+      link.textContent = 'Awaiting lead';
     }
-    setNote(row, 'Cleaning started. Finish here when the area is done.', 'good');
+    setNote(row, 'Cleaning started. A Team Lead or Admin will verify it when finished.', 'good');
   }
 
   function markCompleted(row, link, statusEl, bingoCoinAwarded = false) {
@@ -122,15 +130,18 @@
     const assignmentId = assignmentIdFromLink(link);
     if (!assignmentId) return;
 
-    const session = sessionFor(person);
-    if (!session) {
-      setNote(row, `Sign in as ${person} to update this cleaning duty.`, 'bad');
+    const inProgress = statusEl?.classList.contains('in_progress') || /finish|verify/i.test(link.textContent || '');
+    const action = inProgress ? 'finish' : 'start';
+    const session = action === 'finish' ? currentSession() : sessionFor(person);
+    if (action === 'start' && !session) {
+      setNote(row, `Sign in as ${person} to start this cleaning duty.`, 'bad');
       window.HubAssociate?.open?.(person);
       return;
     }
-
-    const inProgress = statusEl?.classList.contains('in_progress') || /finish/i.test(link.textContent || '');
-    const action = inProgress ? 'finish' : 'start';
+    if (action === 'finish' && !isCleaningLead(session)) {
+      setNote(row, 'A Team Lead or Admin must verify the area and finish this cleaning duty.', 'bad');
+      return;
+    }
     const originalText = link.textContent;
     link.classList.add('is-busy');
     link.textContent = action === 'start' ? 'Starting…' : 'Finishing…';
@@ -150,7 +161,10 @@
             link.classList.remove('is-busy');
             link.textContent = originalText;
           }
-          if (refreshed?.signedIn && normalize(refreshed.name) === normalize(person)) {
+          if (action === 'finish') {
+            setNote(row, 'Sign in again as a Team Lead or Admin, then verify the cleaning.', 'bad');
+            window.HubAssociate?.open?.();
+          } else if (refreshed?.signedIn && normalize(refreshed.name) === normalize(person)) {
             setNote(row, 'Your Hub sign-in was refreshed. Tap Start again.', 'bad');
           } else {
             setNote(row, `Sign in as ${person} again, then tap Start.`, 'bad');
@@ -163,6 +177,7 @@
 
       if (action === 'start') {
         markInProgress(row, link, statusEl);
+        document.dispatchEvent(new CustomEvent('hub-cleaning-refresh'));
       } else {
         markCompleted(row, link, statusEl, !!body.bingoCoinAwarded);
         document.dispatchEvent(new CustomEvent('hub-bingo-refresh', {
