@@ -12,7 +12,7 @@
 <body>
 <header class="top"><div class="wrap"><div class="brand">Warehouse Hub · Cleaning</div><a class="back" href="/warehouse-hub/">← Operations Hub</a></div></header>
 <main class="wrap">
-<section class="hero"><div class="kicker">Cleaning check-in</div><h1>Start it. Clean it. Finish it.</h1><p>Start and finish your cleaning duty using your Warehouse Hub sign-in. No extra PIN needed.</p></section>
+<section class="hero"><div class="kicker">Cleaning check-in</div><h1>Start it. Clean it. Get it verified.</h1><p>The assigned associate starts the duty. A Team Lead or Admin verifies the area and marks it complete.</p></section>
 <section class="card" id="card"><div class="loading">Loading today’s assignment…</div></section>
 </main>
 <script src="signin-reminder.js?v=20261006-1"></script>
@@ -32,30 +32,47 @@
     const r=await fetch(`${API}?assignmentId=${encodeURIComponent(assignmentId)}`,{cache:'no-store'});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Unable to load the cleaning assignment.'); return j.assignment;
   }
+  function isLead(){
+    return session.signedIn && ['manager','team lead'].includes(String(session.role||'').toLowerCase());
+  }
   function actionHtml(a){
-    const done=a.dutyStatus==='completed', missed=a.dutyStatus==='missed', action=a.dutyStatus==='in_progress'?'finish':'start';
+    const done=a.dutyStatus==='completed', missed=a.dutyStatus==='missed', inProgress=a.dutyStatus==='in_progress';
     if(done) return '<div class="complete">Completed ✓ &nbsp; 15 minutes credited.</div>';
     if(missed) return '<div class="alert error">This duty is closed as missed. No credit was added.</div>';
-    if(!session.signedIn) return `<div class="alert error">Sign in to the Warehouse Hub to start this duty.</div><a class="action" style="display:block;text-align:center;text-decoration:none" href="/warehouse-hub/">Sign in on the Hub</a>`;
+    if(!session.signedIn) return `<div class="alert error">Sign in to the Warehouse Hub to update this duty.</div><a class="action" style="display:block;text-align:center;text-decoration:none" href="/warehouse-hub/">Sign in on the Hub</a>`;
+
+    if(inProgress){
+      if(isLead()){
+        return `<div class="complete">Signed in as ${esc(session.name)} · Leadership verification</div><button class="action" id="submit" type="button">Verify & finish cleaning</button><button class="action" id="undo" type="button" style="background:#fff;color:var(--ink);border:1px solid var(--line)">Undo start</button>`;
+      }
+      const mine=normalize(session.name)===normalize(a.activeEmployeeName);
+      return `<div class="complete">Cleaning is in progress.</div><div class="note">A Team Lead or Admin must inspect the area and mark it complete.</div>${mine?'<button class="action" id="undo" type="button" style="background:#fff;color:var(--ink);border:1px solid var(--line)">Undo start</button>':''}`;
+    }
+
     if(normalize(session.name)!==normalize(a.activeEmployeeName)) return `<div class="alert error">You’re signed in as ${esc(session.name)}. This duty is assigned to ${esc(a.activeEmployeeName)}.</div>`;
-    return `<div class="complete">Signed in as ${esc(session.name)}.</div><button class="action" id="submit" type="button">${action==='start'?'Start cleaning':'Finish cleaning · +15 min'}</button>${action==='finish'?'<button class="action" id="undo" type="button" style="background:#fff;color:var(--ink);border:1px solid var(--line)">Undo start</button>':''}`;
+    return `<div class="complete">Signed in as ${esc(session.name)}.</div><button class="action" id="submit" type="button">Start cleaning</button>`;
   }
   function render(a,message='',isError=false){
     card.innerHTML=`<div class="head"><div><div class="label">Today’s assignment</div><h2>${esc(a.area)}</h2></div><span class="status ${esc(a.dutyStatus)}">${esc(statusLabel(a.dutyStatus))}</span></div>
       <div class="details"><div class="detail"><small>Cleaner</small><strong>${esc(a.activeEmployeeName||'Sign in to see')}</strong></div><div class="detail"><small>Scheduled</small><strong>${esc(a.scheduledEmployeeName||'Sign in to see')}</strong></div><div class="detail"><small>Date</small><strong>${esc(a.assignmentDate)}</strong></div></div>
       ${message?`<div class="alert ${isError?'error':'success'}">${esc(message)}</div>`:''}
       ${actionHtml(a)}
-      <div class="note">Start and finish are recorded in the Warehouse Hub and count toward fairness tracking and Bingo Coins.</div>`;
+      <div class="note">The associate starts the duty. Completion is recorded only after a Team Lead or Admin verifies the area. Credit and Bingo Coins still go to the associate who did the cleaning.</div>`;
     document.getElementById('submit')?.addEventListener('click',()=>submit(a));
     document.getElementById('undo')?.addEventListener('click',()=>{ if(confirm('Undo this start? The duty goes back to Scheduled.')) submit(a,'undo'); });
   }
   async function submit(a,forced){
     const action=forced||(a.dutyStatus==='in_progress'?'finish':'start'); const btn=document.getElementById(action==='undo'?'undo':'submit');
+    if(!btn)return;
     btn.disabled=true; btn.textContent='Saving…';
     try{
       const r=await fetch(API,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,assignmentId})});
       const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||'Check-in failed.');
-      render(j.assignment||await getAssignment(),action==='undo'?'Start undone. The duty is back to Scheduled.':action==='start'?'Cleaning started. Finish here when the area is done.':(j.bingoCoinAwarded?'Cleaning completed. 15 minutes + 1 Bingo Coin earned.':'Cleaning completed. 15 minutes credited.'));
+      const worker=j.bingoCoinEmployee||a.activeEmployeeName||a.scheduledEmployeeName||'the cleaner';
+      render(j.assignment||await getAssignment(),
+        action==='undo'?'Start undone. The duty is back to Scheduled.':
+        action==='start'?'Cleaning started. A Team Lead or Admin must verify it when finished.':
+        (j.bingoCoinAwarded?`Cleaning verified. ${worker} received 15 minutes + 1 Bingo Coin.`:`Cleaning verified. 15 minutes were credited to ${worker}.`));
     }catch(err){ try{render(await getAssignment(),err.message||'Check-in failed.',true);}catch{card.innerHTML=`<div class="alert error">${esc(err.message||'Check-in failed.')}</div>`;} }
   }
   Promise.all([
