@@ -179,3 +179,10 @@ form.editing{outline:2px solid #f3c3aa;outline-offset:6px;border-radius:12px}
   .question-response-row{grid-template-columns:40px 1fr}
   .question-response-actions{grid-column:2/3}
 }
+
+.ann-correct-answer,.question-review-answer{margin-top:10px;border:1px solid #d6ccb0;border-radius:10px;background:#fff9e9;padding:10px 11px;color:#53451e}
+.ann-correct-answer strong,.question-review-answer strong{display:block;font-size:10px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px}
+.ann-correct-answer span,.question-review-answer span{display:block;font-size:13px;font-weight:850;line-height:1.45;white-space:pre-wrap}
+.ann-correct-answer small,.question-review-answer small{display:block;margin-top:4px;font-size:9px;color:#7b6c45}
+.question-review-answer{grid-column:1/-1;margin:0 0 4px}
+.question-review-answer.missing{background:#f5f6f5;border-color:var(--line);color:var(--muted)}
