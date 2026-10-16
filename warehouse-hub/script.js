@@ -44,20 +44,28 @@
     const isToday = view === 'today';
     const isWeek = view === 'week';
     const isBingo = view === 'bingo';
+    const isMemory = view === 'memory';
 
     todayDot.classList.toggle('active', isToday);
     weekDot.classList.toggle('active', isWeek);
     bingoDot.classList.toggle('active', isBingo);
+    memoryDot.classList.toggle('active', isMemory);
     // Text in a hidden panel can't be measured; check it once it shows.
     if (isToday) requestAnimationFrame(() => { clampLongText($('todayAnnouncements')); clampLongText($('todayPolicies')); });
     todayDot.setAttribute('aria-selected', String(isToday));
     weekDot.setAttribute('aria-selected', String(isWeek));
     bingoDot.setAttribute('aria-selected', String(isBingo));
+    memoryDot.setAttribute('aria-selected', String(isMemory));
     todayView.classList.toggle('active', isToday);
     weekView.classList.toggle('active', isWeek);
     bingoView.classList.toggle('active', isBingo);
+    memoryView.classList.toggle('active', isMemory);
 
-    if (isBingo) {
+    if (isMemory) {
+      sectionEyebrow.textContent = 'Brain training';
+      sectionTitle.textContent = 'Memory Challenge';
+      sectionNote.textContent = 'Study the image before the timer runs out, then answer from memory.';
+    } else if (isBingo) {
       sectionEyebrow.textContent = 'Today at a glance';
       sectionTitle.textContent = 'Warehouse Bingo';
       sectionNote.textContent = 'Cleaning earns Bingo Coins. Spend them on random symbol draws.';
@@ -76,6 +84,7 @@
   todayDot.addEventListener('click', () => setView('today'));
   weekDot.addEventListener('click', () => setView('week'));
   bingoDot.addEventListener('click', () => setView('bingo'));
+  memoryDot.addEventListener('click', () => setView('memory'));
 
   function actionForCleaning(r) {
     if (r.status === 'completed') {
