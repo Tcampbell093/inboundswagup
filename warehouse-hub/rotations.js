@@ -124,7 +124,8 @@
     <div class="rotations-tabs">
       <button type="button" data-rot-tab="today" class="active">Today</button>
       <button type="button" data-rot-tab="week">Weekly schedule</button>
-      <button type="button" data-rot-tab="fairness">Fairness & history</button>
+      <button type="button" data-rot-tab="line" hidden>Line</button>
+      <button type="button" data-rot-tab="fairness" hidden>Fairness & history</button>
       <button type="button" data-rot-tab="areas" hidden>Areas</button>
       <button type="button" class="rotations-refresh" id="rotationsRefresh">↻ Refresh</button>
     </div>
@@ -134,7 +135,7 @@
     </div>`;
   document.body.appendChild(dialog);
 
-  let data=null,tab='today',week=weekStart(today()),draft=[],busy=false,message='',isError=false;
+  let data=null,tab='today',week=weekStart(today()),draft=[],preview=null,busy=false,message='',isError=false;
   const role=()=>isAdmin()?'admin':isLead()?'lead':'associate';
   const person=id=>data?.employees.find(e=>e.id===Number(id));
   const personName=id=>person(id)?.name||'Unassigned';
@@ -149,11 +150,19 @@
   const associates=()=>data?.employees.filter(e=>e.active&&e.role==='Associate')||[];
   const duty=(date,area)=>data?.assignments.find(a=>a.date===date&&a.area===area)||null;
   const weekDays=()=>Array.from({length:5},(_,i)=>addDays(week,i));
-  const optionList=(date,selected,excluded=[],allowEmpty=false)=>{
+  // With an area, that side's line comes first in line order; everyone else is still
+  // listed below so a lead can override when someone's home department is off.
+  const optionList=(date,selected,excluded=[],allowEmpty=false,area=null)=>{
     const people=associates().filter(e=>available(e.id,date)&&(!excluded.includes(e.id)||e.id===Number(selected)))
       .sort((a,b)=>a.name.localeCompare(b.name));
-    return(allowEmpty?'<option value="">No alternate</option>':'<option value="">Choose cleaner…</option>')
-      +people.map(e=>`<option value="${e.id}"${e.id===Number(selected)?' selected':''}>${esc(e.name)}</option>`).join('');
+    const opt=e=>`<option value="${e.id}"${e.id===Number(selected)?' selected':''}>${esc(e.name)}</option>`;
+    const head=allowEmpty?'<option value="">No alternate</option>':'<option value="">Choose cleaner…</option>';
+    if(!area||!line())return head+people.map(opt).join('');
+    const side=areaSide(area),order=line().line[side].map(x=>x.id);
+    const own=people.filter(e=>order.includes(e.id)).sort((a,b)=>order.indexOf(a.id)-order.indexOf(b.id));
+    const rest=people.filter(e=>!order.includes(e.id));
+    return head+`<optgroup label="${esc(side)} line (next up first)">${own.map(opt).join('')}</optgroup>`
+      +(rest.length?`<optgroup label="Other associates">${rest.map(opt).join('')}</optgroup>`:'');
   };
   const showMessage=(text,error=false)=>{message=text;isError=error;const el=$('rotationsMessage');if(el)el.innerHTML=text?`<div class="rotations-${error?'error':'ok'}">${esc(text)}</div>`:'';};
   async function fetchJSON(url,options={}){
@@ -168,8 +177,9 @@
     if(!preserveMessage)showMessage('');
     try{
       data=await fetchJSON(API+'?date='+encodeURIComponent(today()));
+      lineCache=null;
       if(data?.source)$('rotationsSubtitle').textContent='Warehouse-wide cleaning · '+data.source;
-      draft=[];
+      draft=[];preview=null;
       render();
     }catch(error){
       data=null;
@@ -234,103 +244,28 @@
       balance:p.minutes+p.protected,daysSince:gap(p,p.last)
     })).sort((a,b)=>a.balance-b.balance||b.daysSince-a.daysSince||a.name.localeCompare(b.name));
   }
+  // Suggestions, the Line tab and conflict checks all come from cleaning-line.js.
+  const LINE=window.HubCleaningLine;
+  let lineCache=null;
+  const line=()=>lineCache||(lineCache=data?LINE.simulate(data,{today:today()}):null);
   function buildSuggestions(){
     if(!data)return[];
-    const current=today(),pool=associates(),fields=areas(),score=new Map(fairness().map(p=>[p.id,{
-      minutes:p.balance,worked:p.minutes,week:0,last:p.last,side:{...p.bySide},area:{...p.byArea},lastArea:{...p.lastArea},commitmentDates:new Set()
-    }]));
-    const planned=[];
-    const addCommitment=(id,date,{worked=false,area=null}={})=>{
-      const target=score.get(Number(id));
-      if(!target||!date)return;
-      target.week++;
-      target.commitmentDates.add(date);
-      if(worked&&area){
-        target.minutes+=15;
-        target.side[areaSide(area)]+=1;
-        target.area[area]=(target.area[area]||0)+1;
-        if(!target.last||target.last<date)target.last=date;
-        if(!target.lastArea[area]||target.lastArea[area]<date)target.lastArea[area]=date;
-      }
-    };
-    const adjacentCommitment=(id,date)=>{
-      const dates=score.get(Number(id))?.commitmentDates;
-      return !!dates&&(dates.has(addDays(date,-1))||dates.has(addDays(date,1)));
-    };
-
-    // Count every existing primary and backup commitment this week. Completed
-    // work is already included in fairness(), so only unfinished primary work
-    // adds projected minutes here. Backups count toward weekly load and spacing,
-    // but do not receive worked minutes unless they actually complete the duty.
-    for(const row of data.assignments.filter(a=>a.date>=week&&a.date<=addDays(week,4))){
-      if(row.status==='missed')continue;
-      const primaryId=row.actualEmployeeId||row.employeeId;
-      addCommitment(primaryId,row.date,{worked:row.status!=='completed',area:row.area});
-      if(row.alternateEmployeeId&&Number(row.alternateEmployeeId)!==Number(primaryId)){
-        addCommitment(row.alternateEmployeeId,row.date);
-      }
-    }
-
-    for(const date of weekDays()){
-      if(date<current)continue;
-      const occupied=new Set(data.assignments.filter(a=>a.date===date&&a.status!=='missed')
-        .flatMap(a=>[a.employeeId,a.alternateEmployeeId,a.actualEmployeeId].filter(Boolean)));
-      for(const area of fields){
-        if(duty(date,area))continue;
-        const eligible=pool.filter(p=>available(p.id,date)&&!occupied.has(p.id));
-        if(!eligible.length)continue;
-
-        // First avoid anyone already committed on the previous or next day.
-        // Only relax that rule if staffing leaves no other eligible choice.
-        const spaced=eligible.filter(p=>!adjacentCommitment(p.id,date));
-        const spacingPool=spaced.length?spaced:eligible;
-
-        // Primary + backup commitments both count toward the weekly load cap.
-        const preferred=spacingPool.filter(p=>(score.get(p.id)?.week||0)<2);
-        const choices=(preferred.length?preferred:spacingPool).sort((a,b)=>{
-          const sa=score.get(a.id),sb=score.get(b.id);
-          return (sa?.minutes||0)-(sb?.minutes||0)
-            ||(sa?.side[areaSide(area)]||0)-(sb?.side[areaSide(area)]||0)
-            ||(sa?.area[area]||0)-(sb?.area[area]||0)
-            ||(sa?.week||0)-(sb?.week||0)
-            ||dayGap(sb?.lastArea[area],date)-dayGap(sa?.lastArea[area],date)
-            ||dayGap(sb?.last,date)-dayGap(sa?.last,date)
-            ||a.name.localeCompare(b.name);
-        });
-        const primary=choices[0];
-        occupied.add(primary.id);
-        addCommitment(primary.id,date,{worked:true,area});
-        planned.push({assignmentDate:date,department:area,employeeId:primary.id,alternateEmployeeId:null});
-      }
-
-      for(const plannedRow of planned.filter(r=>r.assignmentDate===date)){
-        const eligibleAlternates=pool.filter(p=>available(p.id,date)&&!occupied.has(p.id));
-        const spacedAlternates=eligibleAlternates.filter(p=>!adjacentCommitment(p.id,date));
-        const spacingPool=spacedAlternates.length?spacedAlternates:eligibleAlternates;
-        const preferred=spacingPool.filter(p=>(score.get(p.id)?.week||0)<2);
-        const alternates=(preferred.length?preferred:spacingPool).sort((a,b)=>
-          (score.get(a.id)?.week||0)-(score.get(b.id)?.week||0)
-          ||(score.get(a.id)?.minutes||0)-(score.get(b.id)?.minutes||0)
-          ||a.name.localeCompare(b.name));
-        if(alternates[0]){
-          plannedRow.alternateEmployeeId=alternates[0].id;
-          occupied.add(alternates[0].id);
-          addCommitment(alternates[0].id,date);
-        }
-      }
-    }
-    return planned;
+    return LINE.suggest(data,{today:today(),dates:weekDays()}).planned;
   }
   function render(){
     if(!dialog.open||!data)return;
     document.querySelectorAll('[data-rot-tab]').forEach(b=>{
       b.classList.toggle('active',b.dataset.rotTab===tab);
       if(b.dataset.rotTab==='areas')b.hidden=!isAdmin();
+      // Everyone's place in line and history is for Team Leads and Admins only.
+      if(['line','fairness'].includes(b.dataset.rotTab))b.hidden=!isLead();
     });
+    if(['line','fairness'].includes(tab)&&!isLead())tab='today';
     $('rotationsMessage').innerHTML=message?`<div class="rotations-${isError?'error':'ok'}">${esc(message)}</div>`:'';
     if(tab==='today')renderToday();
     else if(tab==='week')renderWeek();
     else if(tab==='areas'&&isAdmin())renderAreas();
+    else if(tab==='line')renderLine();
     else renderFairness();
   }
   function renderToday(){
@@ -565,7 +500,9 @@
         ${isAdmin()?`<button class="action" type="button" id="rotationsSuggest">✦ Generate suggestions</button>
         <button type="button" id="rotationsPublish" ${!draft.length?'disabled':''}>Publish ${draft.length} suggested</button>`:''}
       </div>
-      <p class="rotations-note">Everyone in the active Associate pool can rotate through every cleaning area, regardless of home department. Suggestions avoid back-to-back cleaning days when staffing allows, then balance the last 90 days of completed minutes, leave protection, area variety and this week's primary/backup commitments. Existing assignments and completed work are preserved.</p>
+      <p class="rotations-note">Inbound associates clean Inbound areas and Outbound associates clean Outbound areas, based on home department. Suggestions take whoever has worked the most days since their last clean (days out don't count), avoid back-to-back working days (Friday → Monday counts), then give each person the area they've cleaned least recently. Anything already scheduled counts as done, so you can plan next week before today is finished. Existing assignments and completed work are preserved.</p>
+      ${conflictPanel()}
+      ${previewPanel()}
       ${isAdmin()&&draft.length?`<p class="rotations-note warning">Review the proposed people and backups below, then publish. Changing a selection updates the draft only until you publish.</p>`:''}
       <div class="rotations-week-wrap"><table class="rotations-week-table"><thead><tr><th style="width:90px">Area</th>${dates.map(d=>`<th>${esc(dayName(d))}<br>${esc(dateText(d))}</th>`).join('')}</tr></thead>
       <tbody>${fields.map((area,i)=>`${i===0||areaSide(fields[i-1])!==areaSide(area)
@@ -579,8 +516,8 @@
           ${isAdmin()&&date<=now&&r.status!=='completed'?`<button data-mark-done="${r.id}">✓ Mark as done</button>`:''}
         </div></td>`;
         if(d)return`<td><div class="rotations-cell">
-          <select aria-label="Cleaner for ${esc(area)} on ${date}" data-draft-primary="${esc(date)}|${esc(area)}">${optionList(date,d.employeeId,[],false)}</select>
-          <select aria-label="Backup for ${esc(area)} on ${date}" data-draft-alternate="${esc(date)}|${esc(area)}">${optionList(date,d.alternateEmployeeId,[d.employeeId],true)}</select>
+          <select aria-label="Cleaner for ${esc(area)} on ${date}" data-draft-primary="${esc(date)}|${esc(area)}">${optionList(date,d.employeeId,[],false,area)}</select>
+          <select aria-label="Backup for ${esc(area)} on ${date}" data-draft-alternate="${esc(date)}|${esc(area)}">${optionList(date,d.alternateEmployeeId,[d.employeeId],true,area)}</select>
           <small>Suggested · 15 min</small>
         </div></td>`;
         return`<td><div class="rotations-cell"><small>${locked?'Not scheduled':'Open slot'}</small>
@@ -589,8 +526,8 @@
       }).join('')}</tr>`).join('')}</tbody></table></div>
       ${isAdmin()&&existing.some(x=>x.status!=='completed'&&x.date>=now)?'<div class="rotations-toolbar"><button id="rotationsClear" type="button">Clear unfinished days this week</button></div>':''}
     `;
-    $('rotationsPrev').onclick=()=>{week=addDays(week,-7);draft=[];render();};
-    $('rotationsNext').onclick=()=>{week=addDays(week,7);draft=[];render();};
+    $('rotationsPrev').onclick=()=>{week=addDays(week,-7);draft=[];preview=null;render();};
+    $('rotationsNext').onclick=()=>{week=addDays(week,7);draft=[];preview=null;render();};
     $('rotationsPrint').onclick=printWeeklySchedule;
     if($('rotationsSuggest'))$('rotationsSuggest').onclick=()=>{
       draft=buildSuggestions();render();if(!draft.length)showMessage('No open slots to suggest for this week.');
@@ -620,6 +557,105 @@
       const [date,area]=b.dataset.editSlot.split('|');renderSlotEditor(date,area);
     });
     document.querySelectorAll('[data-mark-done]').forEach(b=>b.onclick=()=>renderMarkDone(Number(b.dataset.markDone)));
+    wireReplan();
+  }
+  // Problems with duties that haven't happened yet (someone out, back-to-back, wrong
+  // side, booked twice). Nothing changes on its own; Admins fix them from a preview.
+  function conflictPanel(){
+    if(!isLead())return'';
+    const issues=LINE.conflicts(data,{today:today()});
+    if(!issues.length)return'';
+    return`<div class="rotations-note warning"><b>⚠ ${issues.length} schedule problem${issues.length===1?'':'s'} to fix</b>
+      <ul style="margin:6px 0 4px 18px;padding:0">${issues.map(c=>`<li>${esc(dayName(c.date))} ${esc(dateText(c.date))} · ${esc(c.area)}: <b>${esc(personName(c.employeeId))}</b> ${esc(c.text.replace(/\d{4}-\d{2}-\d{2}/g,d=>dayName(d)+' '+dateText(d)))}</li>`).join('')}</ul>
+      ${isAdmin()?`<button type="button" id="rotationsFixFlagged">Suggest fixes for these</button>`:'<small>Ask an Admin to fix these from the Weekly schedule.</small>'}</div>`;
+  }
+  function previewPanel(){
+    if(!isAdmin())return'';
+    if(!preview)return`<div class="rotations-toolbar"><label class="rotations-note" style="margin:0">Re-plan from
+      <input type="date" id="rotationsReplanFrom" min="${today()}" value="${week>today()?week:today()}"></label>
+      <button type="button" id="rotationsReplan">↻ Re-plan from here</button></div>`;
+    const who=id=>id?esc(personName(id)):'—';
+    return`<div class="rotations-absence" style="display:block">
+      <b>${esc(preview.title)}</b>
+      ${preview.changes.length?`<p class="rotations-note">Untick anything you want to leave as it is. Nothing changes until you apply, and completed or started duties are never touched.</p>
+      <div style="display:grid;gap:6px">${preview.changes.map((c,i)=>`<label style="display:flex;gap:8px;align-items:center;font-size:12px">
+        <input type="checkbox" data-preview-pick="${i}"${c.pick!==false?' checked':''}>
+        <span><b>${esc(dayName(c.assignmentDate))} ${esc(dateText(c.assignmentDate))} · ${esc(c.department)}</b> —
+        ${c.before?`${who(c.before.employeeId)} (backup ${who(c.before.alternateEmployeeId)}) → `:'Open slot → '}<b>${who(c.employeeId)}</b> (backup ${who(c.alternateEmployeeId)})</span></label>`).join('')}</div>
+      <div class="rotations-toolbar"><button class="action" type="button" id="rotationsPreviewApply">Apply ${preview.changes.filter(c=>c.pick!==false).length} change(s)</button>
+      <button type="button" id="rotationsPreviewCancel">Cancel</button></div>`
+      :`<p class="rotations-note">Nothing needs to change. The schedule already matches the line.</p><div class="rotations-toolbar"><button type="button" id="rotationsPreviewCancel">Close</button></div>`}
+      ${preview.notes.length?`<p class="rotations-note">${preview.notes.map(n=>`${esc(dateText(n.date))}: ${n.employeeId?esc(personName(n.employeeId))+' — ':''}${esc(n.text)}`).join('<br>')}</p>`:''}
+    </div>`;
+  }
+  function wireReplan(){
+    if($('rotationsFixFlagged'))$('rotationsFixFlagged').onclick=()=>{
+      const issues=LINE.conflicts(data,{today:today()});
+      const out=LINE.replan(data,{today:today(),from:today(),only:new Set(issues.map(c=>c.key))});
+      preview={title:`Suggested fixes for ${issues.length} problem${issues.length===1?'':'s'}`,changes:out.changes,notes:out.notes};render();
+    };
+    if($('rotationsReplan'))$('rotationsReplan').onclick=()=>{
+      const from=$('rotationsReplanFrom').value;
+      if(!from||from<today())return showMessage('Choose today or a later date.',true);
+      const out=LINE.replan(data,{today:today(),from});
+      preview={title:`Re-plan ${dateText(from)} – ${dateText(out.until)}`,changes:out.changes,notes:out.notes};render();
+    };
+    document.querySelectorAll('[data-preview-pick]').forEach(box=>box.onchange=()=>{preview.changes[Number(box.dataset.previewPick)].pick=box.checked;render();});
+    if($('rotationsPreviewCancel'))$('rotationsPreviewCancel').onclick=()=>{preview=null;render();};
+    if($('rotationsPreviewApply'))$('rotationsPreviewApply').onclick=applyPreview;
+  }
+  async function applyPreview(){
+    const picked=preview.changes.filter(c=>c.pick!==false);
+    if(!picked.length||busy)return;
+    // Leaving some changes unticked can put one person in two places on a day; catch that first.
+    const day=new Map();
+    for(const a of data.assignments.filter(a=>a.status!=='missed'))day.set(a.date+'|'+a.area,[a.actualEmployeeId||a.employeeId,a.alternateEmployeeId]);
+    for(const c of picked)day.set(c.assignmentDate+'|'+c.department,[c.employeeId,c.alternateEmployeeId]);
+    const seen=new Map();
+    for(const [key,ids] of day){
+      const date=key.split('|')[0];
+      for(const id of new Set(ids.filter(Boolean).map(Number))){
+        const k=date+'|'+id;
+        if(seen.has(k)&&seen.get(k)!==key)return showMessage(`${personName(id)} would be booked twice on ${dateText(date)}. Tick or untick the related changes and try again.`,true);
+        seen.set(k,key);
+      }
+    }
+    if(!confirm(`Apply ${picked.length} schedule change(s)? Let the people affected know.`))return;
+    const weeks=new Map();
+    for(const c of picked){const w=weekStart(c.assignmentDate);if(!weeks.has(w))weeks.set(w,[]);
+      weeks.get(w).push({employeeId:c.employeeId,alternateEmployeeId:c.alternateEmployeeId,assignmentDate:c.assignmentDate,department:c.department});}
+    busy=true;
+    try{
+      for(const entries of weeks.values())
+        await fetchJSON(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'acceptCleaningSuggestions',entries})});
+      preview=null;
+      await load(true);
+      showMessage(`${picked.length} schedule change(s) applied.`);
+      document.dispatchEvent(new CustomEvent('hub-cleaning-refresh'));
+    }catch(error){
+      preview=null;await load(true);
+      showMessage((error.message||'Could not apply the changes.')+' Some weeks may have updated; check the schedule.',true);
+    }finally{busy=false;}
+  }
+  // Leads and Admins: who's next, per side.
+  function renderLine(){
+    const now=today(),info=line();
+    const upcoming=id=>data.assignments.filter(a=>a.date>now&&a.status!=='missed'&&Number(a.actualEmployeeId||a.employeeId)===id)
+      .sort((a,b)=>a.date.localeCompare(b.date))[0];
+    const lastArea=p=>Object.entries(p.lastArea).find(([,d])=>d===p.last)?.[0];
+    const areaLabel=k=>areas().find(a=>a.toLowerCase()===k)||k;
+    $('rotationsContent').innerHTML=`
+      <p class="rotations-note">Who cleans next, after today's duties. Each working day you're here and don't clean moves you up one place; cleaning sends you to the back. Days out (call-outs, leave) don't count, so nobody comes back owing a pile of duties. Today's duties count as done even before they're marked. Visible to Team Leads and Admins only.</p>
+      ${info.model.unplaced.length?`<p class="rotations-note warning"><b>Not on a line:</b> ${info.model.unplaced.map(e=>esc(e.name)+' ('+esc(e.homeDepartment||'no home department')+')').join(', ')}. Set their home department in Admin Tools → Team & departments.</p>`:''}
+      ${['Inbound','Outbound'].map(side=>`<h3 class="rotations-side-title">${side} line<small>${info.line[side].length} people · ${areas().filter(a=>areaSide(a)===side).length} areas</small></h3>
+      <div class="rotations-fair-wrap"><table class="rotations-fair-table"><thead><tr><th>#</th><th>Associate</th><th>Days worked since last clean</th><th>Last cleaned</th><th>Next scheduled</th><th>Cleans · 90 days</th></tr></thead><tbody>
+      ${info.line[side].map(p=>{const n=upcoming(p.id);return`<tr><td><b>${p.position}</b></td>
+        <td><b>${esc(p.name)}</b>${p.availableToday?'':' <span class="rotations-badge warn">Out today</span>'}<small style="display:block;color:var(--muted)">${esc(p.homeDepartment)}</small></td>
+        <td><b>${p.waiting}</b></td>
+        <td>${p.last?`${esc(dayName(p.last))} ${esc(dateText(p.last))}<small style="display:block;color:var(--muted)">${esc(areaLabel(lastArea(p)||''))}</small>`:'Not in last 120 days'}</td>
+        <td>${n?`${esc(dayName(n.date))} ${esc(dateText(n.date))}<small style="display:block;color:var(--muted)">${esc(n.area)}</small>`:'—'}</td>
+        <td>${p.recent}</td></tr>`;}).join('')||'<tr><td colspan="6">Nobody on this line.</td></tr>'}
+      </tbody></table></div>`).join('')}`;
   }
   // Admin: record a duty as done after the fact, crediting whoever actually cleaned.
   function renderMarkDone(id){
@@ -650,14 +686,14 @@
     if(date<todayDate||['completed','in_progress'].includes(r?.status))return showMessage('Completed, in-progress and past assignments cannot be changed.',true);
     const host=document.createElement('div');host.className='rotations-absence';
     host.innerHTML=`<b>${esc(dayName(date))} · ${esc(areaName)}</b>
-      <label class="rotations-note">Cleaner <select id="slotPrimary">${optionList(date,old,[],false)}</select></label>
-      <label class="rotations-note">Backup <select id="slotAlternate">${optionList(date,r?.alternateEmployeeId||0,[old],true)}</select></label>
+      <label class="rotations-note">Cleaner <select id="slotPrimary">${optionList(date,old,[],false,areaName)}</select></label>
+      <label class="rotations-note">Backup <select id="slotAlternate">${optionList(date,r?.alternateEmployeeId||0,[old],true,areaName)}</select></label>
       <button type="button" id="slotSave">Save assignment</button>
       <button type="button" id="slotCancel">Cancel</button>`;
     const panel=$('rotationsContent');panel.prepend(host);
     $('slotPrimary').onchange=()=>{
       const backup=$('slotAlternate'),backupId=Number(backup.value)||null;
-      backup.innerHTML=optionList(date,backupId,[Number($('slotPrimary').value)],true);
+      backup.innerHTML=optionList(date,backupId,[Number($('slotPrimary').value)],true,areaName);
       if(backupId===Number($('slotPrimary').value))backup.value='';
     };
     $('slotSave').onclick=async()=>{
@@ -678,22 +714,13 @@
           [row.employeeId,row.alternateEmployeeId,row.actualEmployeeId].filter(Boolean).forEach(id=>used.add(Number(id)));
         }
         used.add(primary);
-        const history=new Map(fairness().map(p=>[p.id,p]));
-        const weekLoad=id=>data.assignments.filter(a=>a.date>=week&&a.date<=addDays(week,4)&&a.status!=='missed'
-          &&[a.employeeId,a.alternateEmployeeId,a.actualEmployeeId].filter(Boolean).map(Number).includes(Number(id))
-          &&Number(a.id)!==Number(r?.id||0)).length;
-        const adjacent=id=>data.assignments.some(a=>a.status!=='missed'&&(a.date===addDays(date,-1)||a.date===addDays(date,1))
+        const adjacent=id=>data.assignments.some(a=>a.status!=='missed'&&(a.date===LINE.prevWorkday(date)||a.date===LINE.nextWorkday(date))
           &&[a.employeeId,a.alternateEmployeeId,a.actualEmployeeId].filter(Boolean).map(Number).includes(Number(id)));
-        const eligible=associates().filter(p=>available(p.id,date)&&!used.has(Number(p.id)));
+        // Replacement backup: next in line on that area's side.
+        const order=line()?.line[areaSide(conflict.area)].map(x=>x.id)||[];
+        const eligible=associates().filter(p=>order.includes(p.id)&&available(p.id,date)&&!used.has(Number(p.id)));
         const spaced=eligible.filter(p=>!adjacent(p.id));
-        const choices=(spaced.length?spaced:eligible).sort((a,b)=>{
-          const ha=history.get(a.id),hb=history.get(b.id);
-          return weekLoad(a.id)-weekLoad(b.id)
-            ||(ha?.balance||0)-(hb?.balance||0)
-            ||(ha?.byArea?.[conflict.area]||0)-(hb?.byArea?.[conflict.area]||0)
-            ||dayGap(hb?.lastArea?.[conflict.area],date)-dayGap(ha?.lastArea?.[conflict.area],date)
-            ||a.name.localeCompare(b.name);
-        });
+        const choices=(spaced.length?spaced:eligible).sort((a,b)=>order.indexOf(a.id)-order.indexOf(b.id));
         replacement=choices[0]||null;
         if(!replacement)return showMessage(`${personName(primary)} is already the backup for ${conflict.area}, and there is no eligible replacement backup available that day.`,true);
       }
@@ -742,7 +769,7 @@
     const history=fairness(),completed=data.assignments.filter(a=>a.status==='completed')
       .sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id).slice(0,90);
     $('rotationsContent').innerHTML=`
-      <p class="rotations-note">Last 90 days. Actual minutes are awarded only after completed work. Leave protection affects scheduling priority, not credited minutes or Bingo coins. The shared pool rotates across both Inbound and Outbound.</p>
+      <p class="rotations-note">Last 90 days of credited minutes and Bingo history. Scheduling order now comes from the Line tab; leave protection is shown here for reference only.</p>
       <div class="rotations-fair-wrap"><table class="rotations-fair-table"><thead><tr><th>Associate</th><th>Worked</th><th>Leave protection</th><th>Rotation balance</th><th>Inbound</th><th>Outbound</th>${areas().map(a=>`<th>${esc(a)}</th>`).join('')}</tr></thead><tbody>
       ${history.map(h=>`<tr><td><b>${esc(h.name)}</b><small style="display:block;color:var(--muted)">Last: ${esc(h.last||'Never')}</small></td>
         <td>${h.minutes} min</td><td>${h.protected} min</td><td><b>${Math.round(h.balance)} min</b></td><td>${h.bySide.Inbound}</td><td>${h.bySide.Outbound}</td>
@@ -775,7 +802,7 @@
     const departments=data.departments.filter(d=>d.active).slice()
       .sort((a,b)=>Number(a.side==='Outbound')-Number(b.side==='Outbound')||a.name.localeCompare(b.name));
     $('rotationsContent').innerHTML=`
-      <p class="rotations-note">Assign every cleaning area to Inbound or Outbound. This changes its section on the dashboard and weekly planner, not which employees can clean it. Enable Cleaning area for Dock, Fulfillment, Inventory or any other department you want included.</p>
+      <p class="rotations-note">Assign every cleaning area to Inbound or Outbound. This decides which line cleans it: Inbound associates clean Inbound areas, Outbound associates clean Outbound areas. An associate's side comes from their home department. Enable Cleaning area for Dock, Fulfillment, Inventory or any other department you want included.</p>
       ${departments.map(d=>`<div class="rotations-area-config">
         <div><b>${esc(d.name)}</b><small>${d.cleaningActive?'Included in the cleaning schedule':'Not currently a cleaning area'}</small></div>
         <select aria-label="Warehouse side for ${esc(d.name)}" data-side-dept="${d.id}">
@@ -802,7 +829,7 @@
     if(!session().signedIn){
       window.HubAssociate?.open?.();return;
     }
-    tab=['today','week','fairness','areas'].includes(targetTab)?targetTab:'today';week=weekStart(today());draft=[];message='';
+    tab=['today','week','line','fairness','areas'].includes(targetTab)?targetTab:'today';week=weekStart(today());draft=[];preview=null;message='';
     if(!dialog.open)dialog.showModal();
     await load();
   }
