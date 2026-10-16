@@ -450,22 +450,30 @@ async function selectAnnouncementWinner(event, body) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Lock only the response row. Do not include the announcement LEFT JOIN in
+    // the locking query: PostgreSQL rejects FOR UPDATE on the nullable side of
+    // an outer join.
     const response = await client.query(`
-      SELECT r.id,r.announcement_id,r.employee_name,r.winner,r.rewarded_at,
-             COALESCE(a.reward_slots,3) AS reward_slots
-      FROM hub_announcement_responses r
-      LEFT JOIN hub_announcements a ON a.id=r.announcement_id
-      WHERE r.id=$1
-      FOR UPDATE OF r
+      SELECT id,announcement_id,employee_name,winner,rewarded_at
+      FROM hub_announcement_responses
+      WHERE id=$1
+      FOR UPDATE
     `, [responseId]);
     const row = response.rows[0];
     if (!row) { await client.query('ROLLBACK'); return { status: 404, body: { error: 'That response no longer exists.' } }; }
     if (row.winner) { await client.query('ROLLBACK'); return { status: 200, body: { ok: true, message: `${row.employee_name} is already selected as a winner.` } }; }
-    const count = await client.query(`
-      SELECT COUNT(*)::int AS n FROM hub_announcement_responses
-      WHERE announcement_id=$1 AND winner=TRUE
-    `, [row.announcement_id]);
-    const limit = Math.max(1, Math.min(20, Number(row.reward_slots || 3)));
+
+    const [count, question] = await Promise.all([
+      client.query(`
+        SELECT COUNT(*)::int AS n FROM hub_announcement_responses
+        WHERE announcement_id=$1 AND winner=TRUE
+      `, [row.announcement_id]),
+      client.query(`
+        SELECT reward_slots FROM hub_announcements
+        WHERE id=$1 LIMIT 1
+      `, [row.announcement_id]),
+    ]);
+    const limit = Math.max(1, Math.min(20, Number(question.rows[0]?.reward_slots || 3)));
     if (Number(count.rows[0]?.n || 0) >= limit) {
       await client.query('ROLLBACK');
       return { status: 409, body: { error: `This question already has ${limit} winner${limit === 1 ? '' : 's'}. Remove one before selecting another.` } };
