@@ -551,8 +551,11 @@ exports.handler = async function handler(event) {
         excludeName: hubSession(event)?.name || '',
       });
     }
-    if (result && result.id) result = { id: result.id };
-    else if (body.action === 'deleteAnnouncement') { body.kind = 'announcement'; await deleteRecord(body); }
+    if (result) {
+      if (result.id) result = { id: result.id };
+      return json(200, { ok: true, result });
+    }
+    if (body.action === 'deleteAnnouncement') { body.kind = 'announcement'; await deleteRecord(body); }
     else if (body.action === 'deletePolicy') { body.kind = 'policy'; await deleteRecord(body); }
     else if (body.action === 'setTheme') {
       const theme = text(body.theme, 40).toLowerCase();
@@ -571,7 +574,7 @@ exports.handler = async function handler(event) {
       if (!updated.rowCount) return json(404, { error: 'That item no longer exists.' });
     }
     else return json(400, { error: 'Unsupported action.' });
-    return json(200, { ok: true, result });
+    return json(200, { ok: true, result: null });
   } catch (error) {
     return json(400, { error: text(error?.message || 'Unexpected error.', 300) });
   }
