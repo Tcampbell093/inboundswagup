@@ -316,10 +316,11 @@ async function readFeed(includeAdmin = false, session = null) {
 
 async function upsertAnnouncement(body) {
   const title = text(body.title, 120), message = text(body.message, 1200), startDate = validDate(body.startDate), endDate = validDate(body.endDate);
-  if (!title || !message || !startDate) throw new Error('Title, message, and start date are required.');
   const questionEnabled = !!body.questionEnabled;
   const questionText = questionEnabled ? text(body.questionText, 500) : '';
+  if (!startDate) throw new Error('Start date is required.');
   if (questionEnabled && !questionText) throw new Error('Enter the question associates should answer.');
+  if (!questionEnabled && (!title || !message)) throw new Error('Title and message are required for a regular announcement.');
   const rewardSlots = Math.max(1, Math.min(20, Math.round(Number(body.rewardSlots || 3))));
   const id = text(body.id, 80) || crypto.randomUUID();
   const saved = await pool.query(`
@@ -336,7 +337,13 @@ async function upsertAnnouncement(body) {
     RETURNING (xmax = 0) AS inserted
   `, [id, title, message, startDate, endDate || null, text(body.department, 80) || 'All teams',
       !!body.pinned, !!body.showOnOpen, questionEnabled, questionText, rewardSlots]);
-  return { id, created: saved.rows[0]?.inserted === true, title, detail: message };
+  return {
+    id,
+    created: saved.rows[0]?.inserted === true,
+    title: title || (questionEnabled ? 'Prize question' : 'Announcement'),
+    detail: message || questionText,
+    questionEnabled,
+  };
 }
 async function upsertPolicy(body) {
   const title = text(body.title, 140), summary = text(body.summary, 1600), effectiveDate = validDate(body.effectiveDate);
@@ -541,10 +548,11 @@ exports.handler = async function handler(event) {
     }
     if (result?.created) {
       const isPolicy = body.action === 'upsertPolicy';
+      const isQuestion = !isPolicy && result.questionEnabled;
       await hubPush.sendAdmins(pool, {
         category: isPolicy ? 'policy' : 'announcement',
         eventKey: `${isPolicy ? 'policy' : 'announcement'}-created:${result.id}`,
-        title: `${isPolicy ? '📋 New policy' : '📣 New announcement'}: ${result.title}`,
+        title: `${isPolicy ? '📋 New policy' : (isQuestion ? '🏆 New prize question' : '📣 New announcement')}: ${result.title}`,
         body: `${result.detail}${hubSession(event)?.name ? ` · Posted by ${hubSession(event).name}` : ''}`,
         url: '/warehouse-hub/',
         tag: `${isPolicy ? 'policy' : 'announcement'}-${result.id}`,
