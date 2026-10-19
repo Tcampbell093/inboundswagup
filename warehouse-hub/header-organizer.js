@@ -11,8 +11,8 @@
   if (settings) {
     settings.classList.add('header-icon-btn','header-settings-btn');
     settings.textContent = '⚙';
-    settings.setAttribute('aria-label','Admin tools');
-    settings.title = 'Admin tools';
+    settings.setAttribute('aria-label','Hub Settings');
+    settings.title = 'Hub Settings';
   }
 
   const adminWrap = document.createElement('div');
@@ -20,10 +20,10 @@
   adminWrap.id = 'headerAdminWrap';
   adminWrap.innerHTML = `
     <button class="header-menu-btn" id="headerAdminBtn" type="button" aria-haspopup="true" aria-expanded="false">
-      <span>Admin</span><span class="header-chevron">▾</span><span class="header-badge" id="headerAdminBadge" hidden>0</span>
+      <span>Manage</span><span class="header-chevron">▾</span><span class="header-badge" id="headerAdminBadge" hidden>0</span>
     </button>
     <div class="header-menu" id="headerAdminMenu" hidden>
-      <div class="header-menu-title">Admin</div>
+      <div class="header-menu-title">Manage</div>
       <div class="header-menu-items" id="headerAdminItems"></div>
     </div>`;
 
@@ -71,6 +71,16 @@
         adminItems.appendChild(button);
       }
     });
+    if (bingo) {
+      const count = numericText(bingo.querySelector('.bingo-reward-count'));
+      bingo.innerHTML = count > 0 ? `🎲 Bingo <span class="bingo-reward-count">${count}</span>` : '🎲 Bingo';
+      bingo.title = 'Bingo';
+    }
+    if (questions) {
+      const count = numericText(questions.querySelector('.question-reward-count'));
+      questions.innerHTML = count > 0 ? `🏆 Prize Questions <span class="question-reward-count">${count}</span>` : '🏆 Prize Questions';
+      questions.title = 'Prize Questions';
+    }
 
     [requestAlerts, desktopAlerts].forEach((button) => {
       if (button && button.parentElement !== bellItems) {
@@ -78,6 +88,16 @@
         bellItems.appendChild(button);
       }
     });
+    if (requestAlerts) {
+      const badge = requestAlerts.querySelector('.request-alert-badge');
+      requestAlerts.querySelector('.request-alert-label')?.replaceChildren('Hub Alerts');
+      requestAlerts.title = 'Hub Alerts';
+      if (badge) badge.setAttribute('aria-label','Unread Hub alerts');
+    }
+    if (desktopAlerts) {
+      desktopAlerts.textContent = '🔔 Notifications';
+      desktopAlerts.title = 'Notification settings';
+    }
 
     if (settings && settings.parentElement !== top) top.appendChild(settings);
     if (associate && associate.parentElement !== top) top.insertBefore(associate, settings || null);
