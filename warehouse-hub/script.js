@@ -860,10 +860,19 @@
 
     document.querySelectorAll('[data-remove-dept]').forEach((button) => {
       button.onclick = async () => {
-        if (!confirm('Remove this department? Team members must be moved out of it first.')) return;
+        const id = Number(button.dataset.removeDept);
+        const department = departments.find((item) => Number(item.id) === id);
+        const sameName = departments.filter((item) =>
+          Number(item.id) !== id &&
+          String(item.name || '').trim().toLowerCase() === String(department?.name || '').trim().toLowerCase()
+        );
+        const prompt = sameName.length
+          ? `Remove this duplicate “${department?.name || 'department'}” entry? Team members will stay assigned to the remaining department with the same name.`
+          : 'Remove this department? Team members must be moved out of it first.';
+        if (!confirm(prompt)) return;
         try {
-          await teamAdminFetch({ action: 'removeDepartment', id: Number(button.dataset.removeDept) });
-          await refreshTeamAdmin('Department removed.');
+          await teamAdminFetch({ action: 'removeDepartment', id });
+          await refreshTeamAdmin(sameName.length ? 'Duplicate department removed.' : 'Department removed.');
         } catch (error) {
           showMessage('managerMessage', error.message || 'Could not remove department.', true);
         }
