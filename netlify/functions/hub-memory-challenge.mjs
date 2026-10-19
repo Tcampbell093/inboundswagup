@@ -141,6 +141,18 @@ async function ensureSchema() {
     CREATE INDEX IF NOT EXISTS hub_memory_challenges_active_idx
       ON hub_memory_challenges(active,active_date DESC,created_at DESC);
 
+    CREATE TABLE IF NOT EXISTS hub_memory_images (
+      id TEXT PRIMARY KEY,
+      original_name TEXT NOT NULL DEFAULT '',
+      image_mime_type TEXT NOT NULL,
+      image_bytes BYTEA NOT NULL,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_by TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS hub_memory_images_active_idx
+      ON hub_memory_images(active,created_at DESC);
+
     CREATE TABLE IF NOT EXISTS hub_memory_attempts (
       id BIGSERIAL PRIMARY KEY,
       challenge_id TEXT NOT NULL,
@@ -389,6 +401,92 @@ async function activeReviewPool(db) {
   return variants;
 }
 
+async function memoryImageList(db) {
+  const result = await db.query(`
+    SELECT id,original_name,created_at,created_by
+    FROM hub_memory_images
+    WHERE active=TRUE
+    ORDER BY created_at DESC
+    LIMIT 200
+  `);
+  return result.rows.map((row) => ({
+    id: row.id,
+    name: row.original_name || 'Memory photo',
+    createdAt: row.created_at || null,
+    createdBy: row.created_by || '',
+    imageUrl: `/api/memory-challenge?libraryImage=${encodeURIComponent(row.id)}&admin=1`,
+  }));
+}
+async function libraryImageResponse(db, session, id) {
+  if (!isManager(session)) return new Response('Admin access is required.', { status: 403 });
+  const result = await db.query(`
+    SELECT image_mime_type,image_bytes
+    FROM hub_memory_images
+    WHERE id=$1 AND active=TRUE
+    LIMIT 1
+  `, [id]);
+  const image = result.rows[0];
+  if (!image) return new Response('Image not found.', { status: 404 });
+  return new Response(image.image_bytes, {
+    status: 200,
+    headers: {
+      'Content-Type': image.image_mime_type || 'image/jpeg',
+      'Cache-Control': 'no-store, max-age=0',
+      'Pragma': 'no-cache',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
+}
+async function uploadLibraryImage(db, session, body) {
+  let image;
+  const imageLibraryId = clean(body.imageLibraryId, 80);
+  if (imageLibraryId) {
+    const selected = await db.query(`
+      SELECT image_mime_type,image_bytes
+      FROM hub_memory_images
+      WHERE id=$1 AND active=TRUE
+      LIMIT 1
+    `, [imageLibraryId]);
+    if (!selected.rows[0]) return { status: 400, body: { error: 'Choose an available photo from the library.' } };
+    image = { mimeType: selected.rows[0].image_mime_type, bytes: selected.rows[0].image_bytes };
+  } else {
+    image = decodeImageDataUrl(body.imageDataUrl);
+  }
+  const id = crypto.randomUUID();
+  const name = clean(body.fileName, 180) || 'Memory photo';
+  await db.query(`
+    INSERT INTO hub_memory_images(id,original_name,image_mime_type,image_bytes,active,created_at,created_by)
+    VALUES($1,$2,$3,$4,TRUE,NOW(),$5)
+  `, [id, name, image.mimeType, image.bytes, clean(session.name, 100)]);
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      message: 'Photo added to the Memory Challenge library.',
+      image: {
+        id,
+        name,
+        imageUrl: `/api/memory-challenge?libraryImage=${encodeURIComponent(id)}&admin=1`,
+      },
+    },
+  };
+}
+async function removeLibraryImage(db, session, body) {
+  const id = clean(body.imageId, 80);
+  if (!id) return { status: 400, body: { error: 'Photo information is missing.' } };
+  const result = await db.query(`
+    UPDATE hub_memory_images
+    SET active=FALSE
+    WHERE id=$1 AND active=TRUE
+    RETURNING id
+  `, [id]);
+  if (!result.rowCount) return { status: 404, body: { error: 'That photo is already unavailable.' } };
+  return {
+    status: 200,
+    body: { ok: true, message: 'Photo removed from the reusable library.', images: await memoryImageList(db) },
+  };
+}
+
 async function adminList(db) {
   const challenges = await db.query(`
     SELECT id,title,instructions,question,correct_answer,answer_type,options,view_seconds,
@@ -472,11 +570,17 @@ export default async (request) => {
     const url = new URL(request.url);
 
     if (request.method === 'GET') {
+      const libraryImageId = clean(url.searchParams.get('libraryImage'), 80);
+      if (libraryImageId) return libraryImageResponse(db, session, libraryImageId);
       const imageId = clean(url.searchParams.get('image'), 80);
       if (imageId) return imageResponse(db, session, imageId);
       if (url.searchParams.get('admin') === '1') {
         if (!isManager(session)) return json(403, { error: 'Admin access is required.' });
-        return json(200, { ok: true, challenges: await adminList(db) });
+        return json(200, {
+          ok: true,
+          challenges: await adminList(db),
+          images: await memoryImageList(db),
+        });
       }
       if (url.searchParams.get('review') === '1') {
         if (!isLead(session)) return json(403, { error: 'Team Lead or Admin access is required.' });
@@ -499,6 +603,16 @@ export default async (request) => {
     }
     if (action === 'submit') {
       const result = await submitAttempt(db, session, body);
+      return json(result.status, result.body);
+    }
+    if (action === 'uploadImage') {
+      if (!isManager(session)) return json(403, { error: 'Admin access is required.' });
+      const result = await uploadLibraryImage(db, session, body);
+      return json(result.status, result.body);
+    }
+    if (action === 'removeImage') {
+      if (!isManager(session)) return json(403, { error: 'Admin access is required.' });
+      const result = await removeLibraryImage(db, session, body);
       return json(result.status, result.body);
     }
     if (action === 'saveChallenge') {
