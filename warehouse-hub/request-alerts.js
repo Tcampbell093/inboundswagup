@@ -49,14 +49,14 @@
   button.type = 'button';
   button.className = 'manage-btn request-alert-btn';
   button.id = 'requestAlertBtn';
-  button.innerHTML = '<span aria-hidden="true">🔔</span><span class="request-alert-label">Alerts</span><span class="request-alert-badge" id="requestAlertBadge" hidden>0</span>';
+  button.innerHTML = '<span aria-hidden="true">🔔</span><span class="request-alert-label">Hub Alerts</span><span class="request-alert-badge" id="requestAlertBadge" hidden>0</span>';
   topActions.insertBefore(button, document.getElementById('manageBtn') || null);
 
   const dialog = document.createElement('dialog');
   dialog.className = 'request-alert-dialog';
   dialog.id = 'requestAlertDialog';
   dialog.innerHTML = `
-    <div class="dialog-head"><h3>Warehouse alerts</h3><button class="close" id="requestAlertClose" type="button">×</button></div>
+    <div class="dialog-head"><h3>Hub Alerts</h3><button class="close" id="requestAlertClose" type="button">×</button></div>
     <div class="request-alert-body">
       <p class="request-alert-intro" id="requestAlertIntro">New Warehouse Inventory requests and Bingo winners show up here.</p>
       <div id="requestAlertContent"></div>
@@ -107,7 +107,7 @@
       if (state.bingoUnseenCount) parts.push(`${state.bingoUnseenCount} Bingo winner${state.bingoUnseenCount === 1 ? '' : 's'}`);
       button.title = parts.join(' · ');
     } else if (state.bingoEligible && state.subscribed) {
-      button.title = 'No new Warehouse alerts';
+      button.title = 'No new Hub Alerts';
     } else if (state.bingoEligible) {
       button.title = 'Bingo winner alerts are on · Inventory request alerts are off';
     } else {
@@ -118,7 +118,7 @@
   async function api(query = '', options = {}) {
     const response = await fetch(`${API}${query}`, { cache: 'no-store', ...options });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.error || 'Warehouse alerts are unavailable.');
+    if (!response.ok) throw new Error(body.error || 'Hub Alerts are unavailable.');
     return body;
   }
 
@@ -257,7 +257,7 @@
       return;
     }
 
-    content.innerHTML = '<div class="request-alert-empty">Loading Warehouse alerts…</div>';
+    content.innerHTML = '<div class="request-alert-empty">Loading Hub Alerts…</div>';
     actions.innerHTML = '';
     document.getElementById('requestAlertIntro').textContent = 'New Warehouse Inventory requests and Bingo winners show up here.';
     if (!dialog.open) dialog.showModal();
@@ -269,7 +269,7 @@
       renderAlerts();
       if (state.unseenCount > 0) await markSeen();
     } catch (error) {
-      content.innerHTML = `<div class="request-alert-empty">${esc(error.message || 'Could not load Warehouse alerts.')}</div>`;
+      content.innerHTML = `<div class="request-alert-empty">${esc(error.message || 'Could not load Hub Alerts.')}</div>`;
     }
   }
 
