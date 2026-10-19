@@ -522,7 +522,25 @@ async function saveChallenge(db, session, body) {
   if (answerType === 'multiple_choice' && options.length < 2) {
     return { status: 400, body: { error: 'Multiple choice challenges need at least two answer choices.' } };
   }
-  const image = decodeImageDataUrl(body.imageDataUrl);
+  let image;
+  const imageLibraryId = clean(body.imageLibraryId, 80);
+  if (imageLibraryId) {
+    const selected = await db.query(`
+      SELECT image_mime_type,image_bytes
+      FROM hub_memory_images
+      WHERE id=$1 AND active=TRUE
+      LIMIT 1
+    `, [imageLibraryId]);
+    if (!selected.rows[0]) {
+      return { status: 400, body: { error: 'Choose an available photo from the library.' } };
+    }
+    image = {
+      mimeType: selected.rows[0].image_mime_type,
+      bytes: selected.rows[0].image_bytes,
+    };
+  } else {
+    image = decodeImageDataUrl(body.imageDataUrl);
+  }
   const viewSeconds = Math.max(3, Math.min(60, Math.round(Number(body.viewSeconds || 10))));
   const endDate = clean(body.endDate, 10);
   if (endDate && !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return { status: 400, body: { error: 'End date is invalid.' } };
