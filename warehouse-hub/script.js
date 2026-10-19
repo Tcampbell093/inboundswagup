@@ -386,7 +386,7 @@
   }
 
   function updateToolCount(count) {
-    const badge = document.querySelector('.toolcount');
+    const badge = $('liveToolCount');
     if (badge) badge.innerHTML = `<span class="dot"></span> ${count} live tool${count === 1 ? '' : 's'}`;
   }
 
@@ -1454,8 +1454,11 @@
   function updateManagerButton() {
     const session = window.HubAssociate?.getSession?.() || {};
     const manager = session.signedIn && String(session.role || '').toLowerCase() === 'manager';
-    $('manageBtn').textContent = manager ? 'Admin tools' : 'Admin';
-    $('manageBtn').title = manager ? 'Open your Admin controls' : 'Admin controls';
+    const button = $('manageBtn');
+    if (!button) return;
+    button.textContent = '⚙';
+    button.setAttribute('aria-label', manager ? 'Open Admin tools' : 'Admin controls');
+    button.title = manager ? 'Admin tools' : 'Admin controls';
   }
 
   $('manageBtn').addEventListener('click', openManager);
