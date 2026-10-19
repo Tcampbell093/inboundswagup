@@ -8,7 +8,7 @@
   const supported=()=>window.isSecureContext&&('serviceWorker'in navigator)&&('PushManager'in window)&&('Notification'in window);
   const button=document.createElement('button');
   button.type='button';button.className='toolcount hub-push-btn';button.id='hubPushButton';
-  button.textContent='🔔 Desktop alerts';button.hidden=true;
+  button.textContent='🔔 Notifications';button.hidden=true;
   top.insertBefore(button,document.getElementById('manageBtn')||null);
   const style=document.createElement('style');
   style.textContent=`
