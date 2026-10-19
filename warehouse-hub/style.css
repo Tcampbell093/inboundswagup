@@ -228,6 +228,15 @@ form.editing{outline:2px solid #f3c3aa;outline-offset:6px;border-radius:12px}
 .memory-admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .memory-image-preview{height:180px;border:1px dashed var(--line);border-radius:12px;background:#f5f7f5;display:grid;place-items:center;color:var(--muted);overflow:hidden;margin-top:6px}
 .memory-image-preview img{width:100%;height:100%;object-fit:contain;background:#fff}
+.memory-photo-library{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px;max-height:270px;overflow:auto;padding:2px}
+.memory-photo-library>.empty{grid-column:1/-1}
+.memory-photo-tile{position:relative;border:1px solid var(--line);border-radius:11px;background:#fff;overflow:hidden}
+.memory-photo-tile.selected{border:2px solid var(--green);box-shadow:0 0 0 2px rgba(18,61,52,.08)}
+.memory-photo-pick{display:block;width:100%;border:0;background:#fff;padding:0;cursor:pointer;text-align:left;color:var(--ink)}
+.memory-photo-pick img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:#f3f5f4}
+.memory-photo-pick span{display:block;padding:6px 7px 7px;font-size:9px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.memory-photo-remove{position:absolute;top:5px;right:5px;width:24px;height:24px;border:1px solid rgba(0,0,0,.12);border-radius:999px;background:rgba(255,255,255,.92);color:#8d2d25;font-weight:950;cursor:pointer;line-height:1}
+.memory-photo-tile.selected .memory-photo-pick span::before{content:'✓ ';color:var(--green)}
 .memory-admin-list{display:grid;gap:9px;max-height:650px;overflow:auto}
 .memory-admin-row{display:grid;grid-template-columns:90px minmax(0,1fr) auto;gap:10px;border:1px solid var(--line);border-radius:12px;padding:9px;background:#fff}
 .memory-admin-row.inactive{opacity:.62}
@@ -247,6 +256,7 @@ form.editing{outline:2px solid #f3c3aa;outline-offset:6px;border-radius:12px}
 .memory-response-result{font-size:10px;font-weight:950}
 @media(max-width:760px){
   .memory-admin-grid{grid-template-columns:1fr}
+  .memory-photo-library{grid-template-columns:repeat(3,minmax(0,1fr))}
   .memory-rule-grid{grid-template-columns:1fr}
   .memory-game-head{display:block}
   .memory-timer-pill,.memory-countdown{display:inline-flex;margin-top:8px}
