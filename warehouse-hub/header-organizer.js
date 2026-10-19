@@ -104,24 +104,24 @@
     const desktopAlerts = document.getElementById('hubPushButton');
 
     const adminVisible = [bingo, questions].some(visibleButton);
-    adminWrap.hidden = !adminVisible;
+    if (adminWrap.hidden === adminVisible) adminWrap.hidden = !adminVisible;
     if (!adminVisible) closeMenu(adminBtn, adminMenu);
 
     const bellVisible = [requestAlerts, desktopAlerts].some(visibleButton);
-    bellWrap.hidden = !bellVisible;
+    if (bellWrap.hidden === bellVisible) bellWrap.hidden = !bellVisible;
     if (!bellVisible) closeMenu(bellBtn, bellMenu);
 
     const adminCount =
       numericText(bingo?.querySelector('.bingo-reward-count')) +
       numericText(questions?.querySelector('.question-reward-count'));
     const adminBadge = document.getElementById('headerAdminBadge');
-    adminBadge.textContent = String(adminCount);
-    adminBadge.hidden = adminCount <= 0;
+    if (adminBadge.textContent !== String(adminCount)) adminBadge.textContent = String(adminCount);
+    if (adminBadge.hidden !== (adminCount <= 0)) adminBadge.hidden = adminCount <= 0;
 
     const requestCount = numericText(document.getElementById('requestAlertBadge'));
     const bellBadge = document.getElementById('headerBellBadge');
-    bellBadge.textContent = String(requestCount);
-    bellBadge.hidden = requestCount <= 0;
+    if (bellBadge.textContent !== String(requestCount)) bellBadge.textContent = String(requestCount);
+    if (bellBadge.hidden !== (requestCount <= 0)) bellBadge.hidden = requestCount <= 0;
 
     // These are menu rows now, not topbar pills.
     [bingo, questions, requestAlerts, desktopAlerts].forEach((button) => {
@@ -138,8 +138,8 @@
   }
   function closeMenu(button, menu) {
     if (!button || !menu) return;
-    menu.hidden = true;
-    button.setAttribute('aria-expanded','false');
+    if (!menu.hidden) menu.hidden = true;
+    if (button.getAttribute('aria-expanded') !== 'false') button.setAttribute('aria-expanded','false');
   }
   function toggleMenu(button, menu) {
     if (menu.hidden) openMenu(button,menu);
