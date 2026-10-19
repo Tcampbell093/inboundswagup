@@ -427,10 +427,18 @@
   });
 
   $('manageBtn')?.addEventListener('click', () => {
-    setTimeout(() => {
+    [300, 700, 1400].forEach((delay) => setTimeout(() => {
       if (isAdmin() && $('managerDialog')?.open) loadAnalytics();
-    }, 500);
+    }, delay));
   });
+
+  const managerDialog = $('managerDialog');
+  if (managerDialog) {
+    const dialogObserver = new MutationObserver(() => {
+      if (managerDialog.open && isAdmin()) loadAnalytics();
+    });
+    dialogObserver.observe(managerDialog, { attributes:true, attributeFilter:['open'] });
+  }
 
   // Covers the case where associate-auth completed before this script loaded.
   setTimeout(recordVisit, 700);
