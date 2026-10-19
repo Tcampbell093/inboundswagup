@@ -1274,13 +1274,13 @@
     questionRewardBtn.type = 'button';
     questionRewardBtn.className = 'toolcount question-reward-btn';
     questionRewardBtn.hidden = true;
-    questionRewardBtn.innerHTML = '🏆 Question Rewards';
+    questionRewardBtn.innerHTML = '🏆 Prize Questions';
     top.insertBefore(questionRewardBtn, $('manageBtn') || null);
 
     questionRewardDialog = document.createElement('dialog');
     questionRewardDialog.className = 'dialog question-reward-dialog';
     questionRewardDialog.innerHTML = `
-      <div class="dialog-head"><div><h3>Question rewards</h3><p class="policy-meta" style="margin:4px 0 0">Winners selected from announcement questions</p></div><button class="close" type="button" data-qreward-close>×</button></div>
+      <div class="dialog-head"><div><h3>Prize Questions</h3><p class="policy-meta" style="margin:4px 0 0">Winners selected from announcement questions</p></div><button class="close" type="button" data-qreward-close>×</button></div>
       <div class="dialog-body"><div class="message" id="questionRewardMessage"></div>
         <section class="question-reward-section"><h4><span>Pending rewards</span><span id="questionRewardPendingLabel">0 pending</span></h4><div id="questionRewardPending" class="question-reward-list"></div></section>
         <section class="question-reward-section"><h4><span>Reward history</span><span id="questionRewardHistoryLabel">0 given</span></h4><div id="questionRewardHistory" class="question-reward-list"></div></section>
@@ -1317,8 +1317,8 @@
     questionRewardBtn.hidden = !allowed;
     questionRewardBtn.classList.toggle('show', allowed);
     questionRewardBtn.innerHTML = count
-      ? `🏆 Question Rewards <span class="question-reward-count">${count}</span>`
-      : '🏆 Question Rewards';
+      ? `🏆 Prize Questions <span class="question-reward-count">${count}</span>`
+      : '🏆 Prize Questions';
     questionRewardBtn.title = count
       ? `${count} announcement reward${count === 1 ? '' : 's'} waiting to be given`
       : 'Announcement question reward history';
@@ -1457,8 +1457,8 @@
     const button = $('manageBtn');
     if (!button) return;
     button.textContent = '⚙';
-    button.setAttribute('aria-label', manager ? 'Open Admin tools' : 'Admin controls');
-    button.title = manager ? 'Admin tools' : 'Admin controls';
+    button.setAttribute('aria-label', manager ? 'Open Hub Settings' : 'Admin controls');
+    button.title = manager ? 'Hub Settings' : 'Admin controls';
   }
 
   $('manageBtn').addEventListener('click', openManager);
