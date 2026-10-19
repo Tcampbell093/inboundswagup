@@ -108,7 +108,7 @@
   rewardBtn.type = 'button';
   rewardBtn.className = 'toolcount bingo-reward-btn';
   rewardBtn.id = 'bingoRewardBtn';
-  rewardBtn.innerHTML = '🎲 Bingo Admin';
+  rewardBtn.innerHTML = '🎲 Bingo';
   topActions.insertBefore(rewardBtn, document.getElementById('manageBtn') || null);
 
   const dialog = document.createElement('dialog');
@@ -149,7 +149,7 @@
   rewardDialog.id = 'bingoRewardDialog';
   rewardDialog.innerHTML = `
     <div class="dialog-head">
-      <div><h3>Bingo Admin</h3><p class="bingo-reward-intro" style="margin:4px 0 0">Board controls + reward ledger</p></div>
+      <div><h3>Bingo</h3><p class="bingo-reward-intro" style="margin:4px 0 0">Board controls + reward ledger</p></div>
       <button class="close" id="bingoRewardClose" type="button">×</button>
     </div>
     <div class="bingo-reward-body">
@@ -272,14 +272,14 @@
     rewardBtn.classList.toggle('show', allowed);
     rewardBtn.hidden = !allowed;
     if (!allowed) {
-      rewardBtn.innerHTML = '🎲 Bingo Admin';
+      rewardBtn.innerHTML = '🎲 Bingo';
       if (rewardDialog.open) rewardDialog.close();
       return;
     }
     const count = Number(rewardLedger.pendingCount || 0);
     rewardBtn.innerHTML = count > 0
-      ? `🎲 Bingo Admin <span class="bingo-reward-count">${count}</span>`
-      : '🎲 Bingo Admin';
+      ? `🎲 Bingo <span class="bingo-reward-count">${count}</span>`
+      : '🎲 Bingo';
     rewardBtn.title = count > 0 ? `${count} Bingo reward${count === 1 ? '' : 's'} waiting to be given` : 'Bingo game controls and reward history';
   }
 
@@ -557,7 +557,7 @@
 
   function updateButton() {
     if (session.signedIn) {
-      btn.textContent = `${session.name}${String(session.role || '').toLowerCase() === 'manager' ? ' · Admin' : (session.department ? ' · ' + session.department : '')}`;
+      btn.textContent = session.name;
       btn.classList.add('signed-in');
       btn.title = 'Associate signed in for this shift';
     } else {
