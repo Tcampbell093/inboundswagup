@@ -495,8 +495,15 @@ async function applyTeamAction(db, payload) {
     }
     if (action === 'addDepartment') {
       if (!name) throw new ScheduleError('Enter a department name.');
+      const existing = await tx.query(
+        'SELECT id FROM hub_sched_departments WHERE LOWER(TRIM(name))=LOWER(TRIM($1)) AND active=TRUE LIMIT 1',
+        [name],
+      );
+      if (existing.rows[0]) throw new ScheduleError('That department already exists.', 409);
       const removed = await tx.query(
-        'UPDATE hub_sched_departments SET active=TRUE WHERE LOWER(name)=LOWER($1) AND active=FALSE RETURNING id', [name]);
+        'UPDATE hub_sched_departments SET active=TRUE WHERE LOWER(TRIM(name))=LOWER(TRIM($1)) AND active=FALSE RETURNING id',
+        [name],
+      );
       if (removed.rows[0]) return { ok: true, id: Number(removed.rows[0].id) };
       const r = await tx.query(`INSERT INTO hub_sched_departments(name,active,cleaning_active,created_at)
         VALUES($1,TRUE,FALSE,$2) RETURNING id`, [name, new Date().toISOString()]);
@@ -504,10 +511,16 @@ async function applyTeamAction(db, payload) {
     }
     if (action === 'updateDepartment') {
       if (!name) throw new ScheduleError('Enter a department name.');
-      const r = await tx.query('SELECT name FROM hub_sched_departments WHERE id=$1 FOR UPDATE', [Number(payload.id)]);
+      const departmentId = Number(payload.id);
+      const r = await tx.query('SELECT name FROM hub_sched_departments WHERE id=$1 FOR UPDATE', [departmentId]);
       if (!r.rows[0]) throw new ScheduleError('That department no longer exists.', 404);
+      const duplicate = await tx.query(
+        'SELECT id FROM hub_sched_departments WHERE id<>$1 AND active=TRUE AND LOWER(TRIM(name))=LOWER(TRIM($2)) LIMIT 1',
+        [departmentId, name],
+      );
+      if (duplicate.rows[0]) throw new ScheduleError('Another active department already uses that name.', 409);
       const oldName = r.rows[0].name;
-      await tx.query('UPDATE hub_sched_departments SET name=$2 WHERE id=$1', [Number(payload.id), name]);
+      await tx.query('UPDATE hub_sched_departments SET name=$2 WHERE id=$1', [departmentId, name]);
       if (oldName !== name) {
         // Names are stored on people and assignments, so carry a rename through.
         await tx.query('UPDATE hub_sched_employees SET home_department=$2 WHERE LOWER(home_department)=LOWER($1)', [oldName, name]);
@@ -524,16 +537,36 @@ async function applyTeamAction(db, payload) {
       return { ok: true };
     }
     if (action === 'removeDepartment') {
-      const r = await tx.query('SELECT name FROM hub_sched_departments WHERE id=$1 FOR UPDATE', [Number(payload.id)]);
+      const departmentId = Number(payload.id);
+      const r = await tx.query('SELECT name FROM hub_sched_departments WHERE id=$1 FOR UPDATE', [departmentId]);
       if (!r.rows[0]) throw new ScheduleError('That department no longer exists.', 404);
-      const people = await tx.query(
-        'SELECT COUNT(*)::int AS n FROM hub_sched_employees WHERE active=TRUE AND LOWER(home_department)=LOWER($1)',
-        [r.rows[0].name],
+      const departmentName = r.rows[0].name;
+
+      // Employees store their department by name rather than department ID.
+      // If this row is a duplicate and another active row with the same name
+      // remains, deleting this duplicate is safe: employees still resolve to
+      // the remaining department.
+      const duplicate = await tx.query(
+        'SELECT id FROM hub_sched_departments WHERE id<>$1 AND active=TRUE AND LOWER(TRIM(name))=LOWER(TRIM($2)) LIMIT 1',
+        [departmentId, departmentName],
       );
-      if (people.rows[0].n) throw new ScheduleError('Move the team members out of this department before removing it.', 409);
-      // Kept (inactive) so past assignments still show the area name.
-      await tx.query('UPDATE hub_sched_departments SET active=FALSE,cleaning_active=FALSE WHERE id=$1', [Number(payload.id)]);
-      return { ok: true };
+
+      if (!duplicate.rows[0]) {
+        const people = await tx.query(
+          'SELECT COUNT(*)::int AS n FROM hub_sched_employees WHERE active=TRUE AND LOWER(TRIM(home_department))=LOWER(TRIM($1))',
+          [departmentName],
+        );
+        if (people.rows[0].n) {
+          throw new ScheduleError('Move the team members out of this department before removing it.', 409);
+        }
+      }
+
+      // Kept inactive so past assignments still show the area name.
+      await tx.query(
+        'UPDATE hub_sched_departments SET active=FALSE,cleaning_active=FALSE WHERE id=$1',
+        [departmentId],
+      );
+      return { ok: true, duplicateRemoved: !!duplicate.rows[0], name: departmentName };
     }
     throw new ScheduleError('Unsupported team-management action.');
   });
