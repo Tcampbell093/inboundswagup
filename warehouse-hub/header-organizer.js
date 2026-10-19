@@ -73,13 +73,15 @@
     });
     if (bingo) {
       const count = numericText(bingo.querySelector('.bingo-reward-count'));
-      bingo.innerHTML = count > 0 ? `🎲 Bingo <span class="bingo-reward-count">${count}</span>` : '🎲 Bingo';
-      bingo.title = 'Bingo';
+      const desired = count > 0 ? `🎲 Bingo <span class="bingo-reward-count">${count}</span>` : '🎲 Bingo';
+      if (bingo.innerHTML !== desired) bingo.innerHTML = desired;
+      if (bingo.title !== 'Bingo') bingo.title = 'Bingo';
     }
     if (questions) {
       const count = numericText(questions.querySelector('.question-reward-count'));
-      questions.innerHTML = count > 0 ? `🏆 Prize Questions <span class="question-reward-count">${count}</span>` : '🏆 Prize Questions';
-      questions.title = 'Prize Questions';
+      const desired = count > 0 ? `🏆 Prize Questions <span class="question-reward-count">${count}</span>` : '🏆 Prize Questions';
+      if (questions.innerHTML !== desired) questions.innerHTML = desired;
+      if (questions.title !== 'Prize Questions') questions.title = 'Prize Questions';
     }
 
     [requestAlerts, desktopAlerts].forEach((button) => {
@@ -90,13 +92,14 @@
     });
     if (requestAlerts) {
       const badge = requestAlerts.querySelector('.request-alert-badge');
-      requestAlerts.querySelector('.request-alert-label')?.replaceChildren('Hub Alerts');
-      requestAlerts.title = 'Hub Alerts';
-      if (badge) badge.setAttribute('aria-label','Unread Hub alerts');
+      const label = requestAlerts.querySelector('.request-alert-label');
+      if (label && label.textContent !== 'Hub Alerts') label.textContent = 'Hub Alerts';
+      if (requestAlerts.title !== 'Hub Alerts') requestAlerts.title = 'Hub Alerts';
+      if (badge && badge.getAttribute('aria-label') !== 'Unread Hub alerts') badge.setAttribute('aria-label','Unread Hub alerts');
     }
     if (desktopAlerts) {
-      desktopAlerts.textContent = '🔔 Notifications';
-      desktopAlerts.title = 'Notification settings';
+      if (desktopAlerts.textContent !== '🔔 Notifications') desktopAlerts.textContent = '🔔 Notifications';
+      if (desktopAlerts.title !== 'Notification settings') desktopAlerts.title = 'Notification settings';
     }
 
     if (settings && settings.parentElement !== top) top.appendChild(settings);
@@ -199,7 +202,15 @@
     }
   });
 
-  const observer = new MutationObserver(() => updateMenus());
+  let updateQueued = false;
+  const observer = new MutationObserver(() => {
+    if (updateQueued) return;
+    updateQueued = true;
+    queueMicrotask(() => {
+      updateQueued = false;
+      updateMenus();
+    });
+  });
   observer.observe(top, { subtree:true, childList:true, attributes:true, characterData:true, attributeFilter:['hidden','class'] });
   document.addEventListener('hub-associate-session', () => setTimeout(updateMenus, 0));
   document.addEventListener('hub-bingo-refresh', () => setTimeout(updateMenus, 0));
