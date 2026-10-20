@@ -155,8 +155,112 @@ function minimumToday(goal, entries, total) {
   return Math.max(0, Math.ceil((goal * total - banked) / left));
 }
 
+async function repairOct20LateCloseout(db, viewer) {
+  // One-time recovery for the close-out accidentally entered on Tue Oct 20
+  // at ~7:51 AM ET. It belonged to Mon Oct 19 and its plan belongs to Tue Oct 20.
+  // The narrow timestamp window and missing Oct 19 close-out make this safe and
+  // prevent it from ever running against a later legitimate close-out.
+  if (!viewer || clean(viewer.role, 40).toLowerCase() !== 'manager' || easternToday() !== '2026-10-20') return false;
+
+  const yesterday = '2026-10-19';
+  const today = '2026-10-20';
+  const tomorrow = '2026-10-21';
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const h = await client.query(`
+      SELECT to_char(work_date,'YYYY-MM-DD') AS work_date,reads,issues,expect,closed_by,closed_at,planned_by,planned_at
+      FROM hub_huddle_days
+      WHERE work_date IN ($1,$2,$3)
+      FOR UPDATE
+    `, [yesterday, today, tomorrow]);
+    const rows = Object.fromEntries(h.rows.map((row) => [row.work_date, row]));
+    const prev = rows[yesterday] || {};
+    const cur = rows[today] || {};
+    const next = rows[tomorrow] || {};
+
+    const closedAt = cur.closed_at ? new Date(cur.closed_at).getTime() : 0;
+    const plannedAt = next.planned_at ? new Date(next.planned_at).getTime() : 0;
+    const windowStart = Date.parse('2026-10-20T11:45:00Z');
+    const windowEnd = Date.parse('2026-10-20T12:05:00Z');
+    const sameSave = closedAt >= windowStart && closedAt <= windowEnd
+      && plannedAt >= windowStart && plannedAt <= windowEnd
+      && Math.abs(plannedAt - closedAt) <= 120000
+      && clean(cur.closed_by, 100)
+      && clean(cur.closed_by, 100) === clean(next.planned_by, 100);
+
+    if (!sameSave || prev.closed_at) {
+      await client.query('ROLLBACK');
+      return false;
+    }
+
+    // Move "how Monday went" back to Monday while preserving any Monday plan note.
+    await client.query(`
+      INSERT INTO hub_huddle_days(work_date,reads,issues,closed_by,closed_at)
+      VALUES($1,$2::jsonb,$3,$4,$5)
+      ON CONFLICT(work_date) DO UPDATE SET
+        reads=EXCLUDED.reads,
+        issues=EXCLUDED.issues,
+        closed_by=EXCLUDED.closed_by,
+        closed_at=EXCLUDED.closed_at
+    `, [yesterday, JSON.stringify(cur.reads || {}), clean(cur.issues, 2000), clean(cur.closed_by, 100), cur.closed_at]);
+
+    // Move the plan that was mistakenly saved for Wednesday back to Tuesday,
+    // and clear the accidental Tuesday close-out so today's real EOD remains open.
+    await client.query(`
+      INSERT INTO hub_huddle_days(work_date,reads,issues,expect,closed_by,closed_at,planned_by,planned_at)
+      VALUES($1,'{}'::jsonb,'',$2,'',NULL,$3,$4)
+      ON CONFLICT(work_date) DO UPDATE SET
+        reads='{}'::jsonb,
+        issues='',
+        closed_by='',
+        closed_at=NULL,
+        expect=EXCLUDED.expect,
+        planned_by=EXCLUDED.planned_by,
+        planned_at=EXCLUDED.planned_at
+    `, [today, clean(next.expect, 2000), clean(next.planned_by, 100), next.planned_at]);
+
+    // The planned staffing and floor numbers were also one workday too far ahead.
+    await client.query('DELETE FROM hub_labor_assignments WHERE work_date=$1', [today]);
+    await client.query(`
+      INSERT INTO hub_labor_assignments(work_date,employee_id,department,updated_by,updated_at)
+      SELECT $1,employee_id,department,updated_by,updated_at
+      FROM hub_labor_assignments
+      WHERE work_date=$2
+    `, [today, tomorrow]);
+    await client.query('DELETE FROM hub_labor_assignments WHERE work_date=$1', [tomorrow]);
+
+    await client.query('DELETE FROM hub_labor_board WHERE work_date=$1', [today]);
+    await client.query(`
+      INSERT INTO hub_labor_board(work_date,department,pos,units,packs,updated_by,updated_at)
+      SELECT $1,department,pos,units,packs,updated_by,updated_at
+      FROM hub_labor_board
+      WHERE work_date=$2
+    `, [today, tomorrow]);
+    await client.query('DELETE FROM hub_labor_board WHERE work_date=$1', [tomorrow]);
+
+    // Leave Wednesday available for tonight's real plan.
+    await client.query(`
+      UPDATE hub_huddle_days
+      SET expect='',planned_by='',planned_at=NULL
+      WHERE work_date=$1
+    `, [tomorrow]);
+
+    await client.query('COMMIT');
+    console.log('hub-today: repaired Oct 20 morning late close-out -> Oct 19/20');
+    return true;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.warn('hub-today late close-out repair skipped:', error?.message);
+    return false;
+  } finally {
+    client.release();
+  }
+}
+
 async function boardState(db, viewer) {
   await schedule.ensureImported(db);
+  await repairOct20LateCloseout(db, viewer);
   const today = easternToday();
   const lastWorkday = previousWorkday(today);
   const monthStart = `${today.slice(0, 7)}-01`;
