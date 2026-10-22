@@ -113,6 +113,18 @@
 .edit-banner .linkbtn{border:0;background:none;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit}
 form.editing{outline:2px solid #f3c3aa;outline-offset:6px;border-radius:12px}
 
+.announcement-translate-box{border:1px solid #d8e5df;background:#f7faf8;border-radius:12px;padding:11px 12px;margin:-1px 0 12px}
+.announcement-translate-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.announcement-translate-head strong{display:block;font-size:12px;color:var(--ink)}
+.announcement-translate-head span{display:block;font-size:10px;color:var(--muted);margin-top:2px;line-height:1.4}
+.announcement-translate-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+.announcement-translate-actions button{border:1px solid #cfdad4;background:#fff;color:var(--ink);border-radius:9px;padding:8px 10px;font-size:11px;font-weight:850;cursor:pointer}
+.announcement-translate-actions button:hover{border-color:#9eb7ac;background:#fdfefe}
+.announcement-translate-actions button:disabled{opacity:.55;cursor:wait}
+.announcement-translate-status{min-height:14px;margin-top:7px;font-size:10px;font-weight:750;color:var(--muted)}
+.announcement-translate-status.good{color:var(--green)}
+.announcement-translate-status.error{color:#8f2d22}
+
 /* Policy card: compact rows that open the full policy */
 .policy-open{width:100%;border:0;border-top:1px solid var(--line);background:none;text-align:left;font:inherit;color:inherit;cursor:pointer;grid-template-columns:1fr auto;padding:13px 0}
 .policy-open:first-child{border-top:0;padding-top:0}
