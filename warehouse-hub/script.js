@@ -2,6 +2,7 @@
   const API = '/.netlify/functions/hub-feed';
   const TOOLS_API = '/.netlify/functions/hub-tools';
   const TEAM_API = '/.netlify/functions/hub-team-admin';
+  const TRANSLATE_API = '/.netlify/functions/hub-translate';
   const FAIRSHIFT = 'https://fairshift-rotations.thandoyordani.chatgpt.site';
   const $ = (id) => document.getElementById(id);
   const todayDot = $('todayDot'), weekDot = $('weekDot'), bingoDot = $('bingoDot');
@@ -1537,6 +1538,7 @@
     if (formId === 'announcementForm') updateAnnouncementQuestionFields();
     else submit.textContent = submit.dataset.label;
     setDefaultDates();
+    if (formId === 'announcementForm') announcementTranslateStatus('');
   }
   document.querySelectorAll('[data-cancel-edit]').forEach((b) => b.addEventListener('click', () => endEdit(b.dataset.cancelEdit)));
 
@@ -1596,6 +1598,77 @@
     form.querySelectorAll('input[type=checkbox]').forEach((i) => { out[i.name] = i.checked; });
     return out;
   }
+
+  function announcementTranslateStatus(message = '', kind = '') {
+    const el = $('announcementTranslateStatus');
+    if (!el) return;
+    el.textContent = message;
+    el.className = 'announcement-translate-status' + (kind ? ' ' + kind : '');
+  }
+
+  async function translateAnnouncement(mode) {
+    const form = $('announcementForm');
+    if (!form) return;
+    const buttons = [
+      $('announcementTranslateSpanish'),
+      $('announcementTranslateEnglish'),
+      $('announcementTranslateBilingual'),
+    ].filter(Boolean);
+    const labels = new Map(buttons.map((button) => [button, button.textContent]));
+    const active = mode === 'spanish' ? $('announcementTranslateSpanish')
+      : mode === 'english' ? $('announcementTranslateEnglish')
+      : $('announcementTranslateBilingual');
+
+    const payload = {
+      mode,
+      title: form.elements.title?.value?.trim() || '',
+      message: form.elements.message?.value?.trim() || '',
+      questionText: form.elements.questionText?.value?.trim() || '',
+    };
+    if (!payload.title && !payload.message && !payload.questionText) {
+      announcementTranslateStatus('Type an announcement or prize question first.', 'error');
+      form.elements.message?.focus();
+      return;
+    }
+
+    buttons.forEach((button) => { button.disabled = true; });
+    if (active) active.textContent = 'Translating…';
+    announcementTranslateStatus('Creating a translation…');
+
+    try {
+      const headers = { 'Content-Type': 'application/json', ...managerHeaders() };
+      const response = await fetch(TRANSLATE_API, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Translation failed.');
+
+      if (form.elements.title && (payload.title || data.title)) form.elements.title.value = data.title || '';
+      if (form.elements.message && (payload.message || data.message)) form.elements.message.value = data.message || '';
+      if (form.elements.questionText && (payload.questionText || data.questionText)) form.elements.questionText.value = data.questionText || '';
+
+      const label = mode === 'spanish' ? 'Spanish'
+        : mode === 'english' ? 'English'
+        : 'bilingual English + Spanish';
+      const detected = data.detectedLanguage ? ` Source detected as ${data.detectedLanguage}.` : '';
+      announcementTranslateStatus(`Converted to ${label}.${detected} Review or edit it, then post when ready.`, 'good');
+      form.elements.message?.focus({ preventScroll: true });
+    } catch (error) {
+      announcementTranslateStatus(error.message || 'Translation is temporarily unavailable.', 'error');
+    } finally {
+      buttons.forEach((button) => {
+        button.disabled = false;
+        button.textContent = labels.get(button);
+      });
+    }
+  }
+
+  $('announcementTranslateSpanish')?.addEventListener('click', () => translateAnnouncement('spanish'));
+  $('announcementTranslateEnglish')?.addEventListener('click', () => translateAnnouncement('english'));
+  $('announcementTranslateBilingual')?.addEventListener('click', () => translateAnnouncement('bilingual'));
 
   $('announcementForm').addEventListener('submit', async (e) => {
     e.preventDefault();
