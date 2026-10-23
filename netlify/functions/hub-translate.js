@@ -129,24 +129,35 @@ async function callGemini(prompt) {
   if (!apiKey) throw new Error('Translation is not configured yet.');
 
   const preferred = clean(process.env.GEMINI_TRANSLATION_MODEL, 80);
-  const models = [...new Set([preferred, 'gemini-3.8-flash'].filter(Boolean))];
+  const models = [...new Set([
+    'gemini-3.5-flash-lite',
+    preferred && !/gemini-2\./i.test(preferred) ? preferred : '',
+    'gemini-3.8-flash',
+  ].filter(Boolean))];
   let lastError = null;
 
   for (const model of models) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            maxOutputTokens: 1800,
-            responseMimeType: 'application/json',
-            thinkingConfig: { thinkingLevel: 'low' },
-          },
-        }),
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), model === 'gemini-3.8-flash' ? 9000 : 7000);
+      let response;
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          signal: controller.signal,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              maxOutputTokens: 1200,
+              responseMimeType: 'application/json',
+            },
+          }),
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         const message = data?.error?.message || `Translation service returned ${response.status}.`;
@@ -158,7 +169,9 @@ async function callGemini(prompt) {
       if (!text) throw new Error('Translation service returned an empty response.');
       return extractJson(text);
     } catch (error) {
-      lastError = error;
+      lastError = error?.name === 'AbortError'
+        ? new Error(`${model} took too long to respond.`)
+        : error;
     }
   }
 
