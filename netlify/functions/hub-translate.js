@@ -129,7 +129,7 @@ async function callGemini(prompt) {
   if (!apiKey) throw new Error('Translation is not configured yet.');
 
   const preferred = clean(process.env.GEMINI_TRANSLATION_MODEL, 80);
-  const models = [...new Set([preferred, 'gemini-3.5-flash-lite', 'gemini-2.5-flash'].filter(Boolean))];
+  const models = [...new Set([preferred, 'gemini-3.8-flash'].filter(Boolean))];
   let lastError = null;
 
   for (const model of models) {
@@ -141,9 +141,9 @@ async function callGemini(prompt) {
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
-            temperature: 0.1,
             maxOutputTokens: 1800,
             responseMimeType: 'application/json',
+            thinkingConfig: { thinkingLevel: 'low' },
           },
         }),
       });
