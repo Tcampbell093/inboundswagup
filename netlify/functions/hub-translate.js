@@ -128,19 +128,19 @@ async function callGemini(prompt) {
   const apiKey = process.env.GEMINI_API_KEY || '';
   if (!apiKey) throw new Error('Translation is not configured yet.');
 
-  const preferred = clean(process.env.GEMINI_TRANSLATION_MODEL, 80);
-  const models = [...new Set([
-    'gemini-3.5-flash-lite',
-    preferred && !/gemini-2\./i.test(preferred) ? preferred : '',
-    'gemini-3.8-flash',
-  ].filter(Boolean))];
+  // Keep translation on the low-latency stable models. Do not fall through
+  // to 3.8 Flash: it is excellent for complex reasoning, but unnecessary for
+  // a short translation and can exceed this function's request window.
+  const models = ['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite', 'gemini-3.6-flash'];
   let lastError = null;
+  const failures = [];
 
   for (const model of models) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), model === 'gemini-3.8-flash' ? 9000 : 7000);
+      const timeoutMs = model === 'gemini-3.6-flash' ? 8000 : 6000;
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
       let response;
       try {
         response = await fetch(url, {
@@ -150,7 +150,7 @@ async function callGemini(prompt) {
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
-              maxOutputTokens: 1200,
+              maxOutputTokens: 800,
               responseMimeType: 'application/json',
             },
           }),
@@ -161,9 +161,9 @@ async function callGemini(prompt) {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         const message = data?.error?.message || `Translation service returned ${response.status}.`;
+        failures.push(`${model}: ${response.status} ${message}`);
         lastError = new Error(message);
-        if ([400, 404].includes(response.status)) continue;
-        throw lastError;
+        continue;
       }
       const text = data?.candidates?.[0]?.content?.parts?.map((part) => part?.text || '').join('') || '';
       if (!text) throw new Error('Translation service returned an empty response.');
@@ -172,10 +172,12 @@ async function callGemini(prompt) {
       lastError = error?.name === 'AbortError'
         ? new Error(`${model} took too long to respond.`)
         : error;
+      failures.push(`${model}: ${lastError.message}`);
     }
   }
 
-  throw lastError || new Error('Translation service is unavailable.');
+  console.warn('All translation models failed:', failures.join(' | '));
+  throw new Error('Translation service is temporarily unavailable. Please try again.');
 }
 
 exports.handler = async function(event) {
