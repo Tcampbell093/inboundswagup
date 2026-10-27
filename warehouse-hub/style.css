@@ -160,6 +160,20 @@ form.editing{outline:2px solid #f3c3aa;outline-offset:6px;border-radius:12px}
 .question-reward-dialog{max-width:min(760px,calc(100% - 28px))}
 .question-response-dialog{max-width:min(900px,calc(100% - 28px))}
 .question-reward-section{margin-top:16px}
+.question-submission-list{display:grid;gap:12px}
+.question-submission-card{border:1px solid var(--line);background:#fff;border-radius:14px;padding:13px}
+.question-submission-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.question-submission-head strong{display:block;font-size:13px}
+.question-submission-head small{display:block;color:var(--muted);font-size:10px;margin-top:3px}
+.question-submission-question{margin:10px 0;padding:9px 10px;border-radius:10px;background:#f7f9f8;font-size:12px;font-weight:800;line-height:1.4}
+.question-submission-answers{display:grid;gap:7px;margin-top:10px}
+.question-submission-answer{display:grid;grid-template-columns:28px 1fr;gap:8px;padding:9px 0;border-top:1px solid var(--line)}
+.question-submission-answer:first-child{border-top:0}
+.question-submission-answer.winner{background:#fffaf0;border-radius:10px;padding:9px}
+.question-submission-rank{font-size:10px;font-weight:900;color:var(--muted)}
+.question-submission-copy strong{font-size:12px}
+.question-submission-copy small{display:block;color:var(--muted);font-size:9px;margin-top:2px}
+.question-submission-copy p{margin:5px 0 0;font-size:12px;line-height:1.4}
 .question-reward-section:first-of-type{margin-top:0}
 .question-reward-section h4{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 8px;font-size:13px}
 .question-reward-list,.question-response-list{display:grid;gap:8px}
