@@ -22,6 +22,7 @@ const CATEGORIES = {
   cleaning_start: { label: 'Someone starts a cleaning duty', defaultOn: false },
   cleaning_finish: { label: 'Someone finishes a cleaning duty', defaultOn: false },
   announcement: { label: 'New announcement posted', defaultOn: false },
+  quiz_response: { label: 'New prize-question answers', defaultOn: true },
   policy: { label: 'New policy posted', defaultOn: false },
 };
 const defaultCategories = () => Object.keys(CATEGORIES).filter((key) => CATEGORIES[key].defaultOn);
@@ -80,7 +81,27 @@ async function ensureSchema(pool){
       categories JSONB NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS hub_admin_push_migrations(
+      migration_key TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
+  const migration = await pool.query(
+    `INSERT INTO hub_admin_push_migrations(migration_key)
+     VALUES('20261027-quiz-response-default')
+     ON CONFLICT(migration_key) DO NOTHING
+     RETURNING migration_key`
+  );
+  if(migration.rowCount){
+    await pool.query(`
+      UPDATE hub_admin_push_preferences
+      SET categories = CASE
+        WHEN categories ? 'quiz_response' THEN categories
+        ELSE categories || '["quiz_response"]'::jsonb
+      END,
+      updated_at=NOW()
+    `);
+  }
   schemaReady=true;
 }
 function vapidPublic(){return clean(process.env.HUB_VAPID_PUBLIC_KEY||'',256);}
