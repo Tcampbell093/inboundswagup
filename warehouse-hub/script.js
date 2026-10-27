@@ -1292,6 +1292,7 @@
     questionRewardDialog.innerHTML = `
       <div class="dialog-head"><div><h3>Prize Questions</h3><p class="policy-meta" style="margin:4px 0 0">Winners selected from announcement questions</p></div><button class="close" type="button" data-qreward-close>×</button></div>
       <div class="dialog-body"><div class="message" id="questionRewardMessage"></div>
+        <section class="question-reward-section question-submission-section"><h4><span>Submitted answers</span><span id="questionSubmissionLabel">0 answers</span></h4><div id="questionSubmissionList" class="question-submission-list"></div></section>
         <section class="question-reward-section"><h4><span>Pending rewards</span><span id="questionRewardPendingLabel">0 pending</span></h4><div id="questionRewardPending" class="question-reward-list"></div></section>
         <section class="question-reward-section"><h4><span>Reward history</span><span id="questionRewardHistoryLabel">0 given</span></h4><div id="questionRewardHistory" class="question-reward-list"></div></section>
       </div>`;
@@ -1304,9 +1305,12 @@
       <div class="dialog-body"><div class="message" id="questionResponseMessage"></div><div id="questionResponseList" class="question-response-list"></div></div>`;
     document.body.appendChild(questionResponseDialog);
 
-    questionRewardBtn.addEventListener('click', () => {
-      renderQuestionRewards();
+    questionRewardBtn.addEventListener('click', async () => {
       if (!questionRewardDialog.open) questionRewardDialog.showModal();
+      const list = $('questionSubmissionList');
+      if (list) list.innerHTML = '<div class="empty">Refreshing submitted answers…</div>';
+      await loadFeed();
+      renderQuestionRewards();
     });
     questionRewardDialog.querySelector('[data-qreward-close]').onclick = () => questionRewardDialog.close();
     questionResponseDialog.querySelector('[data-qresponse-close]').onclick = () => questionResponseDialog.close();
@@ -1345,11 +1349,37 @@
     </article>`;
   }
 
+  function questionSubmissionCard(question) {
+    const responses = Array.isArray(question.responses) ? question.responses : [];
+    const answerRows = responses.map((row, index) =>
+      '<div class="question-submission-answer' + (row.winner ? ' winner' : '') + '">' +
+        '<div class="question-submission-rank">#' + (index + 1) + '</div>' +
+        '<div class="question-submission-copy"><strong>' + escapeHtml(row.employeeName) + '</strong>' +
+        '<small>' + escapeHtml(announcementResponseTime(row.submittedAt)) + '</small>' +
+        '<p>“' + escapeHtml(row.answer || '') + '”</p>' +
+        (row.winner ? '<span class="question-response-winner">🏆 Winner' + (row.rewardedAt ? ' · reward given' : ' · reward pending') + '</span>' : '') +
+        '</div></div>'
+    ).join('');
+    const winners = responses.filter((row) => row.winner).length;
+    return '<article class="question-submission-card">' +
+      '<div class="question-submission-head"><div><strong>' + escapeHtml(question.title || question.questionText || 'Prize question') + '</strong>' +
+      '<small>' + escapeHtml(question.startDate || '') + (question.endDate ? ' → ' + escapeHtml(question.endDate) : '') + ' · ' + responses.length + ' response' + (responses.length === 1 ? '' : 's') + ' · ' + winners + '/' + Number(question.rewardSlots || 3) + ' winners</small></div></div>' +
+      (question.questionText ? '<div class="question-submission-question">' + escapeHtml(question.questionText) + '</div>' : '') +
+      '<div class="question-review-answer"><strong>🔒 Correct answer</strong><span>' + escapeHtml(question.correctAnswer || 'No answer was saved for this question.') + '</span><small>Leadership only</small></div>' +
+      '<div class="question-submission-answers">' + (answerRows || '<div class="empty">No answers yet.</div>') + '</div>' +
+    '</article>';
+  }
+
   function renderQuestionRewards() {
     if (!questionRewardDialog) return;
     const rewards = feed?.questionRewards || { pending:[], history:[], pendingCount:0 };
+    const submissions = feed?.questionSubmissions || { questions:[], activeSubmissionCount:0, totalSubmissionCount:0 };
     const pending = Array.isArray(rewards.pending) ? rewards.pending : [];
     const history = Array.isArray(rewards.history) ? rewards.history : [];
+    const questions = Array.isArray(submissions.questions) ? submissions.questions : [];
+    const totalAnswers = Number(submissions.totalSubmissionCount || 0);
+    $('questionSubmissionLabel').textContent = `${totalAnswers} answer${totalAnswers === 1 ? '' : 's'}`;
+    $('questionSubmissionList').innerHTML = questions.length ? questions.map(questionSubmissionCard).join('') : '<div class="empty">No prize-question answers have been submitted yet.</div>';
     $('questionRewardPendingLabel').textContent = `${pending.length} pending`;
     $('questionRewardHistoryLabel').textContent = `${history.length} given`;
     $('questionRewardPending').innerHTML = pending.length ? pending.map(r => questionRewardCard(r, true)).join('') : '<div class="empty">No question rewards are waiting to be given.</div>';
