@@ -262,15 +262,28 @@ async function readFeed(includeAdmin = false, session = null) {
     }));
   }
   if (role === 'manager' || role === 'team lead') {
-    const rewardRows = await pool.query(`
-      SELECT id,announcement_id,announcement_title,employee_key,employee_name,answer,submitted_at,
-             winner,winner_selected_at,winner_selected_by,rewarded_at,rewarded_by,reward_note
-      FROM hub_announcement_responses
-      WHERE winner=TRUE
-      ORDER BY CASE WHEN rewarded_at IS NULL THEN 0 ELSE 1 END,
-               winner_selected_at DESC NULLS LAST, submitted_at ASC
-      LIMIT 500
-    `).catch(() => ({ rows: [] }));
+    const [rewardRows, submissionRows] = await Promise.all([
+      pool.query(`
+        SELECT id,announcement_id,announcement_title,employee_key,employee_name,answer,submitted_at,
+               winner,winner_selected_at,winner_selected_by,rewarded_at,rewarded_by,reward_note
+        FROM hub_announcement_responses
+        WHERE winner=TRUE
+        ORDER BY CASE WHEN rewarded_at IS NULL THEN 0 ELSE 1 END,
+                 winner_selected_at DESC NULLS LAST, submitted_at ASC
+        LIMIT 500
+      `).catch(() => ({ rows: [] })),
+      pool.query(`
+        SELECT
+          r.id,r.announcement_id,r.announcement_title,r.employee_key,r.employee_name,r.answer,r.submitted_at,
+          r.winner,r.rewarded_at,
+          a.title,a.question_text,a.correct_answer,a.reward_slots,a.start_date,a.end_date
+        FROM hub_announcement_responses r
+        JOIN hub_announcements a ON a.id=r.announcement_id
+        WHERE a.question_enabled=TRUE
+        ORDER BY a.start_date DESC,r.submitted_at ASC,r.id ASC
+        LIMIT 1000
+      `).catch(() => ({ rows: [] })),
+    ]);
     const rewardMap = row => ({
       responseId: Number(row.id),
       announcementId: row.announcement_id,
@@ -288,6 +301,42 @@ async function readFeed(includeAdmin = false, session = null) {
     const pending = rewardRows.rows.filter(row => !row.rewarded_at).map(rewardMap);
     const history = rewardRows.rows.filter(row => !!row.rewarded_at).map(rewardMap);
     result.questionRewards = { pendingCount: pending.length, pending, history };
+
+    const questions = new Map();
+    for (const row of submissionRows.rows) {
+      if (!questions.has(row.announcement_id)) {
+        questions.set(row.announcement_id, {
+          announcementId: row.announcement_id,
+          title: row.title || row.announcement_title || 'Prize question',
+          questionText: row.question_text || '',
+          correctAnswer: row.correct_answer || '',
+          rewardSlots: Math.max(1, Math.min(20, Number(row.reward_slots || 3))),
+          startDate: dateValue(row.start_date),
+          endDate: row.end_date ? dateValue(row.end_date) : '',
+          responses: [],
+        });
+      }
+      questions.get(row.announcement_id).responses.push({
+        id: Number(row.id),
+        employeeKey: row.employee_key,
+        employeeName: row.employee_name,
+        answer: row.answer,
+        submittedAt: row.submitted_at || null,
+        winner: !!row.winner,
+        rewardedAt: row.rewarded_at || null,
+      });
+    }
+    const questionSubmissions = [...questions.values()];
+    const todayForSubmissions = todayEastern();
+    const activeSubmissionCount = questionSubmissions.reduce((total, question) => {
+      const active = question.startDate <= todayForSubmissions && (!question.endDate || question.endDate >= todayForSubmissions);
+      return total + (active ? question.responses.length : 0);
+    }, 0);
+    result.questionSubmissions = {
+      activeSubmissionCount,
+      totalSubmissionCount: questionSubmissions.reduce((total, question) => total + question.responses.length, 0),
+      questions: questionSubmissions,
+    };
   }
   if (includeAdmin) {
     const responses = await pool.query(`
