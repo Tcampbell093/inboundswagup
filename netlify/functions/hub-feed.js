@@ -430,12 +430,26 @@ async function submitAnnouncementResponse(event, body) {
   if (!inserted.rowCount) {
     return { status: 409, body: { error: 'You already submitted an answer to this question. Your first response is the one that counts.' } };
   }
+
+  const responseId = Number(inserted.rows[0].id);
+  const employeeName = text(session.name, 100);
+  const questionTitle = text(row.title, 120) || 'Prize question';
+  await hubPush.sendAdmins(pool, {
+    category: 'quiz_response',
+    eventKey: `quiz-response:${responseId}`,
+    title: `🏆 New quiz answer: ${questionTitle}`,
+    body: `${employeeName} submitted an answer. Open the Hub to review responses.`,
+    url: '/warehouse-hub/',
+    tag: `quiz-response-${announcementId}`,
+    excludeName: employeeName,
+  });
+
   return {
     status: 200,
     body: {
       ok: true,
       response: {
-        id: Number(inserted.rows[0].id),
+        id: responseId,
         answer: inserted.rows[0].answer,
         submittedAt: inserted.rows[0].submitted_at,
       },
