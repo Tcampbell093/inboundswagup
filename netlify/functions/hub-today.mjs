@@ -258,6 +258,64 @@ async function repairOct20LateCloseout(db, viewer) {
   }
 }
 
+function editableCloseOutDay(value, fallback = easternToday()) {
+  const today = easternToday();
+  const day = clean(value, 10) || fallback;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error('Choose a valid End-of-Day date.');
+  if (day > today) throw new Error('End-of-Day cannot be saved for a future date.');
+  if (day < addDays(today, -62)) throw new Error('End-of-Day history can be edited for the last two months.');
+  if (!isWorkday(day)) throw new Error('End-of-Day is only kept for Monday to Friday.');
+  return day;
+}
+
+async function closeOutState(db, workDate) {
+  const day = editableCloseOutDay(workDate);
+  const planDay = nextWorkday(day);
+  const [people, huddleRows, planAssign, planBoard] = await Promise.all([
+    schedule.employees(db),
+    db.query(`
+      SELECT to_char(work_date,'YYYY-MM-DD') AS work_date,reads,issues,expect,closed_by,closed_at,planned_by,planned_at
+      FROM hub_huddle_days
+      WHERE work_date IN ($1,$2)
+    `, [day, planDay]),
+    db.query(`SELECT employee_id,department FROM hub_labor_assignments WHERE work_date=$1`, [planDay]),
+    db.query(`SELECT department,pos,units,packs FROM hub_labor_board WHERE work_date=$1`, [planDay]),
+  ]);
+  const huddle = Object.fromEntries(huddleRows.rows.map((row) => [row.work_date, row]));
+  const active = people.filter((person) => person.active);
+  const planMoved = new Map(planAssign.rows.map((row) => [Number(row.employee_id), row.department]));
+  const planByDept = new Map(planBoard.rows.map((row) => [row.department, row]));
+  const reads = huddle[day]?.reads && typeof huddle[day].reads === 'object' ? huddle[day].reads : {};
+  return {
+    today: day,
+    planDay,
+    todayLabel: label(day, { weekday: 'short', month: 'short', day: 'numeric' }),
+    planLabel: label(planDay, { weekday: 'long', month: 'short', day: 'numeric' }),
+    reads,
+    issues: clean(huddle[day]?.issues, 2000),
+    expect: clean(huddle[planDay]?.expect, 2000),
+    closedBy: clean(huddle[day]?.closed_by, 100),
+    closedAt: huddle[day]?.closed_at || null,
+    plannedBy: clean(huddle[planDay]?.planned_by, 100),
+    plannedAt: huddle[planDay]?.planned_at || null,
+    people: active.map((person) => ({
+      id: person.id,
+      name: person.name,
+      home: person.homeDepartment,
+      plan: planMoved.get(person.id) || person.homeDepartment,
+    })),
+    floor: LABOR_DEPARTMENTS.map((department) => {
+      const row = planByDept.get(department);
+      return {
+        department,
+        pos: row ? Number(row.pos) : null,
+        units: row ? Number(row.units) : null,
+        packs: row && row.packs !== null ? Number(row.packs) : null,
+      };
+    }),
+  };
+}
+
 async function boardState(db, viewer) {
   await schedule.ensureImported(db);
   await repairOct20LateCloseout(db, viewer);
@@ -354,30 +412,9 @@ async function boardState(db, viewer) {
       .map((row) => ({ date: row.work_date, department: row.department, uph: Number(row.uph), hours: row.hours === null ? null : Number(row.hours) }));
     result.roster = placed.map(({ id, name, home, today: dept }) => ({ id, name, home, today: dept }));
     result.departments = (await schedule.departments(db)).filter((d) => d.active).map((d) => d.name);
-    // Last workday's notes for the huddle, and a draft of tonight's close-out
-    // (today's read + the plan already saved for the next workday, if any).
+    // Last workday's notes for the huddle, and the editable End-of-Day record.
     result.lastIssues = clean(huddle[lastWorkday]?.issues, 2000);
-    const [planAssign, planBoard] = await Promise.all([
-      db.query(`SELECT employee_id,department FROM hub_labor_assignments WHERE work_date=$1`, [planDay]),
-      db.query(`SELECT department,pos,units,packs FROM hub_labor_board WHERE work_date=$1`, [planDay]),
-    ]);
-    const planMoved = new Map(planAssign.rows.map((row) => [Number(row.employee_id), row.department]));
-    const planByDept = new Map(planBoard.rows.map((row) => [row.department, row]));
-    result.closeOut = {
-      today, planDay,
-      todayLabel: label(today, { weekday: 'short', month: 'short', day: 'numeric' }),
-      planLabel: label(planDay, { weekday: 'long', month: 'short', day: 'numeric' }),
-      reads: readsOf(today),
-      issues: clean(huddle[today]?.issues, 2000),
-      expect: clean(huddle[planDay]?.expect, 2000),
-      closedBy: clean(huddle[today]?.closed_by, 100),
-      plannedBy: clean(huddle[planDay]?.planned_by, 100),
-      people: active.map((person) => ({ id: person.id, name: person.name, home: person.homeDepartment, plan: planMoved.get(person.id) || person.homeDepartment })),
-      floor: LABOR_DEPARTMENTS.map((department) => {
-        const row = planByDept.get(department);
-        return { department, pos: row ? Number(row.pos) : null, units: row ? Number(row.units) : null, packs: row && row.packs !== null ? Number(row.packs) : null };
-      }),
-    };
+    result.closeOut = await closeOutState(db, today);
   }
   return result;
 }
@@ -467,8 +504,10 @@ async function save(db, viewer, body) {
     } else if (body.action === 'saveAssignments') {
       await saveAssignments(client, today, body.assignments, actor);
     } else if (body.action === 'closeOut') {
-      // End of day: how today went (for today) + the plan (for the next workday).
-      const planDay = nextWorkday(today);
+      // End of day: how the selected workday went + the plan for its next workday.
+      // workDate is explicit for history edits; older clients still default to today.
+      const workDate = editableCloseOutDay(body.workDate, today);
+      const planDay = nextWorkday(workDate);
       const reads = {};
       for (const department of LABOR_DEPARTMENTS) {
         const value = clean(body.reads?.[department], 20);
@@ -476,7 +515,7 @@ async function save(db, viewer, body) {
       }
       await client.query(`INSERT INTO hub_huddle_days(work_date,reads,issues,closed_by,closed_at) VALUES($1,$2::jsonb,$3,$4,NOW())
         ON CONFLICT(work_date) DO UPDATE SET reads=EXCLUDED.reads,issues=EXCLUDED.issues,closed_by=EXCLUDED.closed_by,closed_at=NOW()`,
-      [today, JSON.stringify(reads), clean(body.issues, 2000), actor]);
+      [workDate, JSON.stringify(reads), clean(body.issues, 2000), actor]);
       await client.query(`INSERT INTO hub_huddle_days(work_date,expect,planned_by,planned_at) VALUES($1,$2,$3,NOW())
         ON CONFLICT(work_date) DO UPDATE SET expect=EXCLUDED.expect,planned_by=EXCLUDED.planned_by,planned_at=NOW()`,
       [planDay, clean(body.expect, 2000), actor]);
@@ -535,7 +574,16 @@ export default async (request) => {
     await ensureSchema(db);
     await schedule.ensureImported(db);
     const viewer = session(request);
-    if (request.method === 'GET') return json(200, await boardState(db, viewer));
+    if (request.method === 'GET') {
+      const url = new URL(request.url);
+      const closeOutDate = clean(url.searchParams.get('closeOutDate'), 10);
+      if (closeOutDate) {
+        if (!viewer) return json(401, { error: 'Sign in to the Hub first.' });
+        if (!canEdit(viewer)) return json(403, { error: 'Only Team Leads and Admins can view End-of-Day history.' });
+        return json(200, { ok: true, closeOut: await closeOutState(db, closeOutDate) });
+      }
+      return json(200, await boardState(db, viewer));
+    }
     if (request.method !== 'POST') return json(405, { error: 'Method not allowed.' });
     const body = await request.json().catch(() => ({}));
     if (body.action === 'backfillUph') return json(...(await backfill(db, request, body)));
