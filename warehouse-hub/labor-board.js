@@ -204,6 +204,11 @@
     .eod-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 24px;border-bottom:1px solid var(--line)}
     .eod-head h3{margin:0;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#c05026}
     .eod-head p{margin:2px 0 0;font-size:13px;color:var(--muted)}
+    .eod-head-main{min-width:0;flex:1}
+    .eod-head-tools{display:flex;align-items:center;gap:9px;flex-wrap:wrap;justify-content:flex-end}
+    .eod-date{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:900;color:var(--muted);white-space:nowrap}
+    .eod-date input{font:inherit;font-size:13px;font-weight:800;min-height:40px;padding:7px 9px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+    .eod-history-note{font-size:11px;font-weight:800;color:#a74921}
     .eod-x{min-width:44px;min-height:44px;border-radius:12px;border:1px solid var(--line);background:#fff;font-size:20px;cursor:pointer}
     .eod-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:12px 24px 0}
     .eod-steps button{font:inherit;text-align:left;display:flex;gap:8px;align-items:center;padding:10px;border-radius:12px;border:none;background:transparent;cursor:pointer;font-weight:800;font-size:13px;color:var(--ink);min-height:48px}
@@ -261,14 +266,87 @@
   `;
   document.head.appendChild(eodStyle);
 
+  const EOD_DRAFT_PREFIX = 'hubEodDraft:';
+  function eodDraftKey(day) { return EOD_DRAFT_PREFIX + String(day || ''); }
+  function readEodDraft(day) {
+    try {
+      const raw = localStorage.getItem(eodDraftKey(day));
+      const draft = raw ? JSON.parse(raw) : null;
+      return draft && draft.workDate === day ? draft : null;
+    } catch { return null; }
+  }
+  function persistEodDraft() {
+    if (!eod?.workDate || eod.busy) return;
+    try {
+      localStorage.setItem(eodDraftKey(eod.workDate), JSON.stringify({
+        workDate: eod.workDate,
+        reads: eod.reads,
+        issues: eod.issues,
+        expect: eod.expect,
+        at: eod.at,
+        floor: eod.floor,
+        updatedAt: Date.now(),
+      }));
+    } catch {}
+  }
+  function clearEodDraft(day) {
+    try { localStorage.removeItem(eodDraftKey(day)); } catch {}
+  }
+  function buildEod(c) {
+    const floor = {};
+    c.floor.forEach((r) => { floor[r.department] = { pos: r.pos ?? '', units: r.units ?? '', packs: r.packs ?? '' }; });
+    const base = {
+      step: 1,
+      workDate: c.today,
+      closeOut: c,
+      reads: { ...c.reads },
+      issues: c.issues || '',
+      expect: c.expect || '',
+      at: Object.fromEntries(c.people.map((p) => [p.id, p.plan])),
+      floor,
+      picked: null,
+      over: '',
+      busy: false,
+      loading: false,
+      error: '',
+      restoredDraft: false,
+    };
+    const draft = readEodDraft(c.today);
+    if (!draft) return base;
+    return {
+      ...base,
+      reads: { ...base.reads, ...(draft.reads || {}) },
+      issues: draft.issues ?? base.issues,
+      expect: draft.expect ?? base.expect,
+      at: { ...base.at, ...(draft.at || {}) },
+      floor: { ...base.floor, ...(draft.floor || {}) },
+      restoredDraft: true,
+    };
+  }
   function openEndOfDay() {
     const c = state?.closeOut;
     if (!c) return;
-    const floor = {};
-    c.floor.forEach((r) => { floor[r.department] = { pos: r.pos ?? '', units: r.units ?? '', packs: r.packs ?? '' }; });
-    eod = { step: 1, reads: { ...c.reads }, issues: c.issues || '', expect: c.expect || '', at: Object.fromEntries(c.people.map((p) => [p.id, p.plan])), floor, picked: null, over: '', busy: false, error: '' };
+    eod = buildEod(c);
     document.body.style.overflow = 'hidden';
     drawEod();
+  }
+  async function loadEodDate(day) {
+    if (!eod || !day || day === eod.workDate) return;
+    persistEodDraft();
+    eod.loading = true;
+    eod.error = '';
+    drawEod();
+    try {
+      const response = await fetch(API + '?closeOutDate=' + encodeURIComponent(day), { cache: 'no-store', credentials: 'same-origin' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Could not load that End-of-Day date.');
+      eod = buildEod(data.closeOut);
+      drawEod();
+    } catch (error) {
+      eod.loading = false;
+      eod.error = error.message || 'Could not load that End-of-Day date.';
+      drawEod();
+    }
   }
   function closeEod() { eod = null; document.querySelector('.eod-back')?.remove(); document.body.style.overflow = ''; }
 
@@ -318,32 +396,34 @@
 
   function drawEod() {
     if (!eod) return;
-    const c = state.closeOut;
+    const c = eod.closeOut;
     let back = document.querySelector('.eod-back');
     if (!back) { back = document.createElement('div'); back.className = 'eod-back'; document.body.appendChild(back); }
     const titles = ['How today went', 'Who goes where', 'Floor & expect', 'Review & save'];
     const scroll = back.querySelector('.eod-body')?.scrollTop || 0;
     back.innerHTML = `<div class="eod" role="dialog" aria-modal="true" aria-label="End of day">
-      <div class="eod-head"><div><h3>End of day · ${esc(c.todayLabel)}</h3><p>Close out today, plan ${esc(c.planLabel)}${c.closedBy ? ` · last saved by ${esc(c.closedBy)}` : ''}</p></div><button type="button" class="eod-x" data-x aria-label="Close">×</button></div>
+      <div class="eod-head"><div class="eod-head-main"><h3>End of day · ${esc(c.todayLabel)}</h3><p>${eod.workDate === state.today ? 'Close out today' : 'Edit this workday'}, plan ${esc(c.planLabel)}${c.closedBy ? ` · last saved by ${esc(c.closedBy)}` : ''}</p>${eod.restoredDraft ? '<div class="eod-history-note">Unsaved draft restored for this date.</div>' : ''}</div><div class="eod-head-tools"><label class="eod-date">Workday <input type="date" data-eod-date value="${esc(eod.workDate)}" max="${esc(state.today)}"></label><button type="button" class="eod-x" data-x aria-label="Close">×</button></div></div>
       <div class="eod-steps">${titles.map((t, i) => `<button type="button" data-step="${i + 1}" class="${eod.step === i + 1 ? 'on' : eod.step > i + 1 ? 'done' : ''}"><span>${eod.step > i + 1 ? '✓' : i + 1}</span>${esc(t)}</button>`).join('')}</div>
       <div class="eod-body">${eodStepHtml(c)}</div>
       <div class="eod-foot"><button type="button" class="ghost" data-prev style="${eod.step === 1 ? 'visibility:hidden' : ''}">Back</button>
         ${eod.error ? `<span class="eod-msg">${esc(eod.error)}</span>` : ''}
-        <button type="button" class="go" data-next ${eod.busy ? 'disabled' : ''}>${eod.step === 4 ? (eod.busy ? 'Saving…' : 'Save close-out & plan') : 'Next'}</button></div></div>`;
+        <button type="button" class="go" data-next ${eod.busy || eod.loading ? 'disabled' : ''}>${eod.loading ? 'Loading…' : (eod.step === 4 ? (eod.busy ? 'Saving…' : 'Save close-out & plan') : 'Next')}</button></div></div>`;
     back.querySelector('.eod-body').scrollTop = scroll;
     wireEod(back);
   }
 
   function wireEod(back) {
-    const move = (id, dep) => { if (!id) return; eod.at[id] = dep; eod.picked = null; eod.over = ''; drawEod(); };
+    const move = (id, dep) => { if (!id) return; eod.at[id] = dep; eod.picked = null; eod.over = ''; persistEodDraft(); drawEod(); };
     back.querySelector('[data-x]').onclick = closeEod;
+    const dateInput = back.querySelector('[data-eod-date]');
+    if (dateInput) dateInput.onchange = () => loadEodDate(dateInput.value);
     back.querySelectorAll('[data-step]').forEach((b) => { b.onclick = () => { eod.step = Number(b.dataset.step); drawEod(); }; });
     back.querySelector('[data-prev]').onclick = () => { eod.step = Math.max(1, eod.step - 1); drawEod(); };
     back.querySelector('[data-next]').onclick = () => { if (eod.step < 4) { eod.step += 1; drawEod(); } else submitEod(); };
-    back.querySelectorAll('[data-read]').forEach((b) => { b.onclick = () => { const d = b.dataset.read; eod.reads[d] = eod.reads[d] === b.dataset.val ? '' : b.dataset.val; drawEod(); }; });
-    back.querySelectorAll('[data-f]').forEach((t) => { t.oninput = () => { eod[t.dataset.f] = t.value; }; });
-    back.querySelectorAll('[data-floor]').forEach((i) => { i.oninput = () => { i.value = i.value.replace(/[^0-9,]/g, ''); eod.floor[i.dataset.floor][i.dataset.key] = i.value; }; });
-    back.querySelector('[data-home]')?.addEventListener('click', () => { state.closeOut.people.forEach((p) => { eod.at[p.id] = p.home; }); eod.picked = null; drawEod(); });
+    back.querySelectorAll('[data-read]').forEach((b) => { b.onclick = () => { const d = b.dataset.read; eod.reads[d] = eod.reads[d] === b.dataset.val ? '' : b.dataset.val; persistEodDraft(); drawEod(); }; });
+    back.querySelectorAll('[data-f]').forEach((t) => { t.oninput = () => { eod[t.dataset.f] = t.value; persistEodDraft(); }; });
+    back.querySelectorAll('[data-floor]').forEach((i) => { i.oninput = () => { i.value = i.value.replace(/[^0-9,]/g, ''); eod.floor[i.dataset.floor][i.dataset.key] = i.value; persistEodDraft(); }; });
+    back.querySelector('[data-home]')?.addEventListener('click', () => { eod.closeOut.people.forEach((p) => { eod.at[p.id] = p.home; }); eod.picked = null; persistEodDraft(); drawEod(); });
     back.querySelectorAll('[data-pid]').forEach((b) => {
       const id = Number(b.dataset.pid);
       b.onclick = () => { eod.picked = eod.picked === id ? null : id; drawEod(); };
@@ -359,10 +439,10 @@
   }
 
   async function submitEod() {
-    const c = state.closeOut;
+    const c = eod.closeOut;
     eod.busy = true; eod.error = ''; drawEod();
     const body = {
-      action: 'closeOut', reads: eod.reads, issues: eod.issues, expect: eod.expect,
+      action: 'closeOut', workDate: eod.workDate, reads: eod.reads, issues: eod.issues, expect: eod.expect,
       assignments: c.people.map((p) => ({ id: p.id, department: eod.at[p.id] })),
       floor: DEPTS3.map((dep) => ({ department: dep, ...eod.floor[dep] })),
     };
@@ -371,7 +451,8 @@
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || 'Could not save.');
       state = data;
-      message = `End of day saved. ${c.planLabel} is planned.`;
+      clearEodDraft(eod.workDate);
+      message = `End of day saved for ${c.todayLabel}. ${c.planLabel} is planned.`;
       closeEod();
       render();
     } catch (error) {
