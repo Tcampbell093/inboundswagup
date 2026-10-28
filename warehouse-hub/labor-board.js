@@ -352,9 +352,9 @@
 
   function eodStepHtml(c) {
     if (eod.step === 1) {
-      return `<div><h2>How did today go?</h2><p class="eod-sub">Your read before ADP. Official UPH gets entered tomorrow with Enter UPH.</p></div>
+      return `<div><h2>How did ${esc(c.todayLabel)} go?</h2><p class="eod-sub">Your read before ADP. Official UPH is entered separately with Enter UPH.</p></div>
         <div>${DEPTS3.map((dep) => `<div class="eod-read"><b>${esc(dep)}</b><div>${READS.map((r) => `<button type="button" class="eod-chip${eod.reads[dep] === r ? ' on' : ''}${r === 'Behind' ? ' behind' : ''}" data-read="${esc(dep)}" data-val="${esc(r)}" aria-pressed="${eod.reads[dep] === r}">${esc(r)}</button>`).join('')}</div></div>`).join('')}</div>
-        <label class="eod-l">Issues today<textarea data-f="issues" rows="4" placeholder="Short staffed, equipment, late trucks…">${esc(eod.issues)}</textarea></label>`;
+        <label class="eod-l">Issues for ${esc(c.todayLabel)}<textarea data-f="issues" rows="4" placeholder="Short staffed, equipment, late trucks…">${esc(eod.issues)}</textarea></label>`;
     }
     if (eod.step === 2) {
       const cols = [...(state.departments || []), 'Off'];
