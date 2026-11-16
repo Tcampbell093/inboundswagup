@@ -301,13 +301,27 @@ const optionalRows = (promise) => promise.then((result) => result.rows).catch(()
 async function playerLookup(db, employeeKeyInput) {
   const employeeKey = clean(employeeKeyInput, 100);
   const round = bingoRound.roundInfo(await bingoSettings(db));
-  const [wallet, players, draws, coinEvents] = await Promise.all([
+  const [wallet, players, draws, coinEvents, historyPlayers, historicalWinningDraws] = await Promise.all([
     optionalRows(db.query(`SELECT employee_name,coins FROM hub_bingo_wallet WHERE employee_key=$1`, [employeeKey])),
     optionalRows(db.query(`SELECT employee_name,drawn,marked,weekly_free_key,won_at,updated_at FROM hub_bingo_players
       WHERE round_key=$1 AND employee_key=$2 AND voided_at IS NULL`, [round.key, employeeKey])),
     optionalRows(db.query(`SELECT symbol,used_free,matched,bingo,coins_after,week_key,drawn_at FROM hub_bingo_draws
       WHERE round_key=$1 AND employee_key=$2 ORDER BY drawn_at DESC LIMIT 200`, [round.key, employeeKey])),
     optionalRows(db.query(`SELECT amount,created_at FROM hub_bingo_coin_events WHERE employee_key=$1 ORDER BY created_at DESC LIMIT 10`, [employeeKey])),
+    optionalRows(db.query(`
+      SELECT round_key,employee_name,won_at,voided_at,void_reason,created_at,updated_at
+      FROM hub_bingo_players
+      WHERE employee_key=$1
+      ORDER BY COALESCE(won_at,created_at) DESC
+      LIMIT 100
+    `, [employeeKey])),
+    optionalRows(db.query(`
+      SELECT round_key,week_key,symbol,used_free,matched,bingo,coins_after,drawn_at
+      FROM hub_bingo_draws
+      WHERE employee_key=$1 AND bingo=TRUE
+      ORDER BY drawn_at DESC
+      LIMIT 100
+    `, [employeeKey])),
   ]);
   if (!wallet.length && !players.length) return { status: 404, body: { error: 'No Bingo player by that name.' } };
   const player = players[0] || null;
@@ -338,6 +352,25 @@ async function playerLookup(db, employeeKeyInput) {
       lastCardChange: player?.updated_at || null,
       draws: draws.map((d) => ({ at: d.drawn_at, symbol: symbolLabel(d.symbol), free: d.used_free, matched: d.matched, bingo: d.bingo, coinsAfter: d.coins_after })),
       coinsEarned: coinEvents.map((c) => ({ at: c.created_at, amount: Number(c.amount || 0) })),
+      winHistory: historyPlayers
+        .filter((row) => !!row.won_at)
+        .map((row) => ({
+          roundKey: row.round_key,
+          wonAt: row.won_at,
+          voidedAt: row.voided_at || null,
+          voidReason: clean(row.void_reason, 200),
+          recorded: true,
+        })),
+      winningDraws: historicalWinningDraws.map((row) => ({
+        roundKey: row.round_key,
+        weekKey: row.week_key,
+        at: row.drawn_at,
+        symbol: symbolLabel(row.symbol),
+        free: !!row.used_free,
+        matched: !!row.matched,
+        bingo: !!row.bingo,
+        coinsAfter: row.coins_after,
+      })),
     },
   };
 }
