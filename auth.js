@@ -138,6 +138,13 @@
   };
 
   function init() {
+    // Demo mode (demo-mode.js): sign in a synthetic user and NEVER hit the
+    // network or redirect to the real login page. Strictly gated so production
+    // authentication is unchanged when HOUSTON_DEMO_MODE is not enabled.
+    if (window.HOUSTON_DEMO_MODE) {
+      try { if (window.__houstonDemoApplyUser) window.__houstonDemoApplyUser(); } catch (_) {}
+      return;
+    }
     const overlay     = document.getElementById('hcLoginOverlay');
     const logoutBtn   = document.getElementById('hcLogoutBtn');
     const userDisplay = document.getElementById('hcUserDisplay');
