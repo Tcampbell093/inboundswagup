@@ -591,21 +591,6 @@ export default async (request) => {
     const db = getPool();
 
     if (request.method === 'GET') {
-      // TEMP audit for manager-requested verification; remove after checking logs.
-      const auditRows = await db.query(`
-        SELECT employee_name,round_key,won_at,voided_at,void_reason
-        FROM hub_bingo_players
-        WHERE LOWER(employee_name) LIKE 'katherine%'
-        ORDER BY COALESCE(won_at,created_at) DESC
-        LIMIT 20
-      `).catch(() => ({ rows: [] }));
-      console.log('TEMP_BINGO_AUDIT_KATHERINE', JSON.stringify(auditRows.rows.map((row) => ({
-        name: row.employee_name,
-        roundKey: row.round_key,
-        wonAt: row.won_at || null,
-        voidedAt: row.voided_at || null,
-        voidReason: row.void_reason || '',
-      }))));
       const lookup = new URL(request.url).searchParams.get('player');
       if (lookup) {
         const result = await playerLookup(db, lookup);
