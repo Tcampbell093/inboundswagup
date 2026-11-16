@@ -191,7 +191,7 @@
       </section>
       <section class="bingo-admin-controls bingo-lookup">
         <h4>Player lookup</h4>
-        <p>See one player's coins, this week's free draw, and this round's draws. Read only — nothing changes. Draw times are recorded from Oct 12, 2026.</p>
+        <p>Audit one player's Bingo activity. Current-round draws are shown below, plus every recorded Bingo win from prior rounds. Read only — nothing changes. Draw times are recorded from Oct 12, 2026.</p>
         <div class="bingo-admin-control-row">
           <select id="bingoLookupSelect" aria-label="Choose a player"><option value="">Choose a player…</option></select>
         </div>
@@ -467,6 +467,15 @@
         ? `Used${d.freeDrawUsedAt ? ` ${rewardDate(d.freeDrawUsedAt)}` : ' (before draw times were recorded)'}`
         : 'Still available';
       const timed = Array.isArray(d.draws) ? d.draws : [];
+      const wins = Array.isArray(d.winHistory) ? d.winHistory : [];
+      const winningDraws = Array.isArray(d.winningDraws) ? d.winningDraws : [];
+      const historicalWinHtml = wins.length
+        ? `<div class="bingo-lookup-draws">
+            <div class="bingo-lookup-draw"><strong>Recorded win history</strong><span>${wins.length} win${wins.length === 1 ? '' : 's'}</span></div>
+            ${wins.map((win) => `<div class="bingo-lookup-draw"><span>🏆 Confirmed Bingo · Round ${esc(win.roundKey)}</span><span>${esc(rewardDate(win.wonAt))}${win.voidedAt ? ' · archived/reset' : ''}</span></div>`).join('')}
+            ${winningDraws.map((draw) => `<div class="bingo-lookup-draw"><span>Winning draw: ${esc(draw.symbol)}</span><span>${esc(rewardDate(draw.at))}</span></div>`).join('')}
+          </div>`
+        : '<div class="bingo-lookup-draws"><div class="bingo-lookup-draw"><span>No recorded Bingo wins in the Hub history.</span><span></span></div></div>';
       lookupResult.innerHTML = `
         <div class="bingo-lookup-grid">
           <div class="bingo-lookup-free ${d.freeDrawThisWeek}">Free draw this week<b>${esc(free)}</b>${esc(week)}</div>
@@ -478,7 +487,8 @@
           ${timed.map((x) => `<div class="bingo-lookup-draw"><span>${esc(x.symbol)}${x.free ? '<span class="bingo-lookup-tag free">Free draw</span>' : '<span class="bingo-lookup-tag">1 coin</span>'}${x.matched ? ' · on card' : ''}${x.bingo ? ' · BINGO' : ''}</span><span>${esc(rewardDate(x.at))}${x.coinsAfter !== null && x.coinsAfter !== undefined ? ` · ${esc(x.coinsAfter)} coins left` : ''}</span></div>`).join('')}
           ${d.untimedDraws ? `<div class="bingo-lookup-draw"><span>${esc(d.untimedDraws)} earlier draw${d.untimedDraws === 1 ? '' : 's'} this round</span><span>before draw times were recorded${d.lastCardChange ? ` · card last changed ${esc(rewardDate(d.lastCardChange))}` : ''}</span></div>` : ''}
           ${!timed.length && !d.untimedDraws ? '<div class="bingo-lookup-draw"><span>No draws yet this round.</span><span></span></div>' : ''}
-        </div>`;
+        </div>
+        ${historicalWinHtml}`;
     } catch (error) {
       lookupResult.innerHTML = `<div class="bingo-reward-empty">${esc(error.message || 'Lookup failed.')}</div>`;
     }
